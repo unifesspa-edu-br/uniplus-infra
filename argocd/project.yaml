@@ -1,0 +1,49 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: uniplus
+  namespace: argocd
+spec:
+  description: Plataforma institucional Uni+ — UNIFESSPA / CTIC
+
+  sourceRepos:
+    - https://github.com/unifesspa-edu-br/uniplus-infra
+    - https://github.com/unifesspa-edu-br/uniplus-web
+    - https://github.com/unifesspa-edu-br/uniplus-api
+
+  destinations:
+    - namespace: '*'
+      server: '*'
+
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+
+  namespaceResourceBlacklist:
+    - group: ''
+      kind: ResourceQuota
+    - group: ''
+      kind: LimitRange
+    - group: ''
+      kind: NetworkPolicy
+
+  orphanedResources:
+    warn: true
+
+  roles:
+    - name: ctic-admin
+      description: Administradores do CTIC com acesso total
+      policies:
+        - p, proj:uniplus:ctic-admin, applications, *, uniplus/*, allow
+        - p, proj:uniplus:ctic-admin, repositories, *, *, allow
+      groups:
+        - unifesspa-edu-br:ctic-admins
+
+    - name: developer
+      description: Desenvolvedores podem ver Applications
+      policies:
+        - p, proj:uniplus:developer, applications, get, uniplus/*, allow
+        - p, proj:uniplus:developer, applications, sync, uniplus/*, allow
+      groups:
+        - unifesspa-edu-br:uniplus-devs

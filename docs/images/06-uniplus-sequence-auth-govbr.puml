@@ -1,0 +1,65 @@
+@startuml Sequence_AutenticacaoGovBr
+!include /home/claude/tools/c4puml/C4_Sequence.puml
+
+title Fluxo de Autenticação Gov.br via Keycloak Federado \nProjeto Uni+ - UNIFESSPA / CTIC
+
+Person(user, "Usuário", "Candidato\n(navegador)")
+Container(fe, "Frontend Uni+", "Angular", "uniplus.unifesspa.edu.br")
+Container(api, "API Seleção", ".NET 8", "Backend protegido")
+Container(kc_eveo, "Keycloak Réplica", "Java", "auth.uniplus.unifesspa.edu.br\n(EVEO SP1/SP2)")
+Container(kc_uf, "Keycloak Master", "Java", "Keycloak institucional\n(UNIFESSPA)")
+System_Ext(govbr, "Gov.br", "OIDC IdP\nGoverno Federal")
+
+== 1. Acesso à aplicação ==
+
+Rel(user, fe, "Acessa\nuniplus.unifesspa.edu.br/selecao", "HTTPS")
+Rel(fe, fe, "Verifica sessão local\n(token JWT no storage)")
+Rel(fe, user, "Sem sessão válida →\nredireciona para login", "HTTP 302")
+
+== 2. Início do fluxo OIDC (PKCE) ==
+
+Rel(user, kc_eveo, "GET /realms/uniplus/auth\n?client_id=uniplus-frontend\n&response_type=code\n&code_challenge=...", "HTTPS")
+Rel(kc_eveo, user, "Tela de login\n[Gov.br como única opção]", "HTML")
+Rel(user, kc_eveo, "Clica em 'Entrar com Gov.br'", "HTTPS")
+
+== 3. Federação para Keycloak Master ==
+
+Rel(kc_eveo, kc_uf, "Identity Brokering\nGET /realms/unifesspa/auth\n(broker IdP=govbr)", "HTTPS / OIDC")
+Rel(kc_uf, govbr, "Redireciona para Gov.br\n(client_id, redirect_uri,\nstate, nonce)", "HTTPS / OIDC")
+
+== 4. Autenticação no Gov.br ==
+
+Rel(govbr, user, "Tela de login Gov.br", "HTTPS")
+Rel(user, govbr, "CPF + senha", "HTTPS")
+Rel(govbr, user, "Solicita 2º fator\n(SMS / app Gov.br)", "HTTPS")
+Rel(user, govbr, "Confirma 2FA", "HTTPS")
+Rel(govbr, user, "Consentimento de\ncompartilhamento de dados", "HTTPS")
+Rel(user, govbr, "Aprova", "HTTPS")
+
+== 5. Callback e troca de tokens ==
+
+Rel(govbr, kc_uf, "Redirect com authorization code\n(via browser)", "HTTPS")
+Rel(kc_uf, govbr, "POST /token\n(code + client_secret)", "HTTPS")
+Rel(govbr, kc_uf, "{ id_token, access_token,\nuserinfo: CPF, nome,\nnível de confiança }", "HTTPS")
+Rel(kc_uf, kc_uf, "Cria/atualiza usuário\nno realm UNIFESSPA\n(mapeamento de claims)")
+Rel(kc_uf, kc_eveo, "Retorna autorização\npara o broker", "HTTPS / OIDC")
+
+== 6. Emissão de tokens locais ==
+
+Rel(kc_eveo, kc_eveo, "Cria/atualiza usuário\nno realm Uni+\n(roles: candidato, etc.)")
+Rel(kc_eveo, user, "Redirect para frontend\ncom authorization code", "HTTPS")
+Rel(user, fe, "GET /callback?code=...", "HTTPS")
+Rel(fe, kc_eveo, "POST /token\n(code + PKCE verifier)", "HTTPS")
+Rel(kc_eveo, fe, "{ id_token, access_token (JWT),\nrefresh_token }", "HTTPS")
+Rel(fe, fe, "Armazena tokens\n(httpOnly cookie ou\nsecure storage)")
+
+== 7. Acesso autenticado à API ==
+
+Rel(user, fe, "Navega para /selecao/inscricoes")
+Rel(fe, api, "GET /api/inscricoes\nAuthorization: Bearer <JWT>", "HTTPS")
+Rel(api, api, "Valida assinatura JWT\n(JWKS em cache do Keycloak)")
+Rel(api, api, "Verifica claims\n(roles, exp, iss)")
+Rel(api, fe, "200 OK + dados", "HTTPS")
+Rel(fe, user, "Renderiza inscrições")
+
+@enduml

@@ -1,0 +1,80 @@
+@startuml C4_Container_UniPlus
+!include /home/claude/tools/c4puml/C4_Container.puml
+
+LAYOUT_WITH_LEGEND()
+title Diagrama de Container - Sistema Uni+ \nUNIFESSPA / CTIC
+
+Person(usuario, "Usuário Uni+", "Candidato, aluno,\nservidor ou gestor")
+
+System_Ext(cloudflare, "Cloudflare", "DNS + WAF + Anti-DDoS\n(borda externa)")
+
+System_Boundary(uniplus, "Sistema Uni+ (EVEO SP1 + SP2 — ativo-ativo)") {
+
+    Container(traefik, "Traefik", "Go", "API Gateway + Ingress\nRoteamento por path,\nTLS termination")
+
+    Boundary(fe_group, "Frontends Angular") {
+        Container(fe_portal, "Portal", "Angular + Nginx", "uniplus.unifesspa.edu.br /portal")
+        Container(fe_selecao, "Seleção", "Angular + Nginx", "uniplus.unifesspa.edu.br /selecao")
+        Container(fe_ingresso, "Ingresso", "Angular + Nginx", "uniplus.unifesspa.edu.br /ingresso")
+    }
+
+    Boundary(api_group, "APIs (.NET 8)") {
+        Container(api_portal, "API Portal", ".NET 8", "Conteúdo institucional\ne perfis")
+        Container(api_selecao, "API Seleção", ".NET 8", "Editais, inscrições\ne classificação")
+        Container(api_ingresso, "API Ingresso", ".NET 8", "Matrícula e\nvínculo acadêmico")
+    }
+
+    Container(clamav, "ClamAV Scanner", ".NET worker", "Análise antimalware\nassíncrona")
+    Container(keycloak_eveo, "Keycloak (réplica)", "Java / Quarkus", "Cache de autenticação\nlocal por DC")
+
+    Boundary(data_group, "Camada de dados (host Linux, fora do K8s)") {
+        ContainerDb(pg_portal, "PG Portal", "PostgreSQL 16", "uniplus_portal")
+        ContainerDb(pg_selecao, "PG Seleção", "PostgreSQL 16", "uniplus_selecao")
+        ContainerDb(pg_ingresso, "PG Ingresso", "PostgreSQL 16", "uniplus_ingresso")
+        ContainerQueue(kafka, "Kafka KRaft", "Apache Kafka", "Eventos de domínio")
+        ContainerDb(minio, "MinIO", "MinIO Distribuído", "Buckets: quarentena,\naprovado, bloqueado")
+        ContainerDb(redis, "Redis", "Redis", "Cache + sessões")
+    }
+}
+
+System_Ext(govbr, "Gov.br", "Provedor OIDC\nGoverno Federal")
+System_Ext(keycloak_uf, "Keycloak UNIFESSPA", "IdP institucional\n(master)")
+System_Ext(minio_uf, "MinIO UNIFESSPA", "Storage interno\n(off-site)")
+
+Rel(usuario, cloudflare, "Acessa", "HTTPS")
+Rel(cloudflare, traefik, "Encaminha tráfego válido", "HTTPS")
+
+Rel(traefik, fe_portal, "Serve", "HTTP")
+Rel(traefik, fe_selecao, "Serve", "HTTP")
+Rel(traefik, fe_ingresso, "Serve", "HTTP")
+
+Rel_R(fe_portal, api_portal, "Chamadas API\n(via Traefik)", "HTTPS")
+Rel_R(fe_selecao, api_selecao, "Chamadas API\n(via Traefik)", "HTTPS")
+Rel_R(fe_ingresso, api_ingresso, "Chamadas API\n(via Traefik)", "HTTPS")
+
+Rel(api_portal, pg_portal, "Lê/escreve", "TCP/5432")
+Rel(api_selecao, pg_selecao, "Lê/escreve", "TCP/5432")
+Rel(api_ingresso, pg_ingresso, "Lê/escreve", "TCP/5432")
+
+Rel(api_portal, kafka, "Eventos", "TCP/9092")
+Rel(api_selecao, kafka, "Eventos", "TCP/9092")
+Rel(api_ingresso, kafka, "Eventos", "TCP/9092")
+
+Rel(api_selecao, redis, "Cache", "TCP/6379")
+Rel(api_ingresso, redis, "Cache", "TCP/6379")
+
+Rel(api_selecao, minio, "Gera URLs assinadas", "S3 API")
+Rel(fe_selecao, minio, "Upload direto\n(presigned URL)", "HTTPS / S3")
+
+Rel(clamav, kafka, "Consome eventos\ndocumento.upload", "TCP/9092")
+Rel(clamav, minio, "Lê arquivo,\nmove entre buckets", "S3 API")
+
+Rel(fe_portal, keycloak_eveo, "Login OIDC", "HTTPS")
+Rel(keycloak_eveo, keycloak_uf, "Sincronização\nde realm", "HTTPS")
+Rel(keycloak_uf, govbr, "Federa autenticação", "OIDC")
+
+Rel_D(minio, minio_uf, "Replicação async\n(off-site)", "S3 API")
+
+SHOW_LEGEND()
+
+@enduml

@@ -1,0 +1,76 @@
+# Ambiente: lab-sp1
+# Máquina: Ryzen 9 9950X (Arch Linux)
+# Papel: simulação do EVEO SP1 (Cotia)
+# IP: 192.168.0.10
+# Hostname: uniplus-sp1
+
+# Hostnames públicos (via Cloudflare Tunnel)
+ingress:
+  host: uniplus-lab.shop
+  tls:
+    enabled: true
+    issuer: cloudflare  # TLS gerenciado pelo Cloudflare
+
+# Distribuição de primaries Postgres em SP1:
+# - Portal: PRIMARY
+# - Seleção: REPLICA
+# - Ingresso: PRIMARY
+postgres:
+  portal:
+    role: primary
+  selecao:
+    role: replica
+  ingresso:
+    role: primary
+
+# Recursos reduzidos para hardware do laboratório
+# Ryzen 9950X: 16C/32T, 64GB RAM, 2TB NVMe
+# K8s tem disponível: ~24 threads, ~50GB RAM
+resources:
+  api:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  frontend:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+  clamav:
+    requests:
+      cpu: 200m
+      memory: 1Gi
+    limits:
+      cpu: 1500m
+      memory: 2Gi
+
+# Réplicas reduzidas
+replicas:
+  apis: 1        # 1 réplica de cada API
+  frontends: 1   # 1 réplica de cada frontend
+  clamav: 1
+  keycloak: 1
+  redis: 1
+
+# Observabilidade com retenção curta
+observability:
+  prometheus:
+    retention: 7d  # vs 15d em prod
+    storage: 20Gi
+  loki:
+    retention: 7d
+    storage: 30Gi
+  tempo:
+    retention: 3d
+    storage: 10Gi
+
+# Cluster identification
+cluster:
+  name: lab-sp1
+  region: lab
+  dc: sp1

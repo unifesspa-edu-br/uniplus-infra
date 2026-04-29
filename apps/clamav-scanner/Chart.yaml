@@ -1,0 +1,19 @@
+apiVersion: v2
+name: clamav-scanner
+description: Worker antimalware (consumer Kafka) para análise de uploads
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - uniplus
+  - worker
+  - unifesspa
+home: https://github.com/unifesspa-edu-br/uniplus-infra
+sources:
+  - https://github.com/unifesspa-edu-br/uniplus-infra
+maintainers:
+  - name: CTIC UNIFESSPA
+    email: jeferson.ferreira@unifesspa.edu.br
+annotations:
+  category: worker
+  licenses: MIT

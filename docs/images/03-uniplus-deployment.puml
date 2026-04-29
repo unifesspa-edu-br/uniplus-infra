@@ -1,0 +1,91 @@
+@startuml C4_Deployment_UniPlus
+!include /home/claude/tools/c4puml/C4_Deployment.puml
+
+' ==========================================
+' Diagrama C4 Nível 4 - Deployment (topologia)
+' Projeto Uni+ - UNIFESSPA
+' ==========================================
+
+LAYOUT_WITH_LEGEND()
+title Diagrama de Deployment - Topologia Física \nProjeto Uni+ (UNIFESSPA / CTIC)
+
+Person(usuario, "Usuário Uni+", "Acesso via internet pública")
+
+Deployment_Node(cf, "Cloudflare", "Rede global de edge", "Anycast / DNS / WAF / DDoS") {
+    Container(cf_proxy, "Edge Proxy", "Cloudflare", "Cache + WAF + Rate limit")
+}
+
+Deployment_Node(eveo, "EVEO — Datacenter Tier III") {
+
+    Deployment_Node(sp1, "SP1 — Cotia (zona disponibilidade A)", "Servidor Dedicado") {
+        Deployment_Node(sp1_hw, "Hardware", "Intel Xeon Gold 6138 / 96 GB / 2 TB NVMe RAID 1") {
+            Deployment_Node(sp1_os, "Ubuntu Server 24.04 LTS", "OS Linux") {
+
+                Deployment_Node(sp1_k8s, "Cluster Kubernetes A", "K8s single-node + control plane") {
+                    Container(sp1_apps, "Aplicações Uni+", "Pods", "Frontends, APIs,\nClamAV, Traefik,\nKeycloak, Vault,\nObservabilidade")
+                }
+
+                Deployment_Node(sp1_host, "Containers no host (systemd)", "Docker/Podman") {
+                    ContainerDb(sp1_pg, "PostgreSQL × 3", "PG 16 + Patroni", "Portal (P), Seleção (R),\nIngresso (P)")
+                    ContainerQueue(sp1_kafka, "Kafka Broker", "Apache Kafka KRaft", "Brokers 1-2")
+                    ContainerDb(sp1_minio, "MinIO Node", "MinIO Distribuído", "Buckets distribuídos")
+                }
+            }
+        }
+    }
+
+    Deployment_Node(sp2, "SP2 — Osasco (zona disponibilidade B)", "Servidor Dedicado") {
+        Deployment_Node(sp2_hw, "Hardware", "Intel Xeon Gold 6138 / 96 GB / 2 TB NVMe RAID 1") {
+            Deployment_Node(sp2_os, "Ubuntu Server 24.04 LTS", "OS Linux") {
+
+                Deployment_Node(sp2_k8s, "Cluster Kubernetes B", "K8s single-node + control plane") {
+                    Container(sp2_apps, "Aplicações Uni+", "Pods", "Frontends, APIs,\nClamAV, Traefik,\nKeycloak, Vault,\nObservabilidade")
+                }
+
+                Deployment_Node(sp2_host, "Containers no host (systemd)", "Docker/Podman") {
+                    ContainerDb(sp2_pg, "PostgreSQL × 3", "PG 16 + Patroni", "Portal (R), Seleção (P),\nIngresso (R)")
+                    ContainerQueue(sp2_kafka, "Kafka Broker", "Apache Kafka KRaft", "Broker 3")
+                    ContainerDb(sp2_minio, "MinIO Node", "MinIO Distribuído", "Buckets distribuídos")
+                }
+            }
+        }
+    }
+}
+
+Deployment_Node(unifesspa, "UNIFESSPA — Marabá-PA", "Infraestrutura institucional interna") {
+    Deployment_Node(uf_palo, "Palo Alto", "NGFW institucional") {
+        Container(uf_fw, "Firewall + IPSEC", "Palo Alto", "Termina túneis,\nfiltra tráfego")
+    }
+    Deployment_Node(uf_servers, "Servidores institucionais", "Linux VMs") {
+        Container(uf_keycloak, "Keycloak Master", "Java", "IdP institucional")
+        Container(uf_ldap, "LDAP/AD", "OpenLDAP / AD", "Diretório de usuários")
+        ContainerDb(uf_minio, "MinIO Master", "MinIO", "Storage interno")
+        ContainerDb(uf_backup, "Storage Backup", "NAS / SAN", "pgBackRest repo,\nMinIO mirror")
+        Container(uf_witness, "etcd Witness", "etcd", "3º nó quórum Patroni")
+    }
+}
+
+System_Ext(govbr_ext, "Gov.br", "OIDC")
+
+' --- Conexões físicas ---
+Rel(usuario, cf_proxy, "HTTPS / Anycast")
+Rel(cf_proxy, sp1_apps, "HTTPS\n(IP público SP1)")
+Rel(cf_proxy, sp2_apps, "HTTPS\n(IP público SP2)")
+
+Rel_R(sp1_pg, sp2_pg, "Replicação streaming\n(L2L 500 Mbps privado)", "TCP/5432")
+Rel_R(sp1_kafka, sp2_kafka, "Replicação\nKafka cluster", "TCP/9092")
+Rel_R(sp1_minio, sp2_minio, "Erasure coding\nentre nós", "S3 API")
+
+Rel_D(sp1_apps, uf_fw, "Túnel IPSEC", "ESP/UDP")
+Rel_D(sp2_apps, uf_fw, "Túnel IPSEC", "ESP/UDP")
+
+Rel(uf_fw, uf_keycloak, "")
+Rel(uf_fw, uf_minio, "")
+Rel(uf_fw, uf_backup, "")
+Rel(uf_fw, uf_witness, "")
+
+Rel(uf_keycloak, govbr_ext, "Federação OIDC", "HTTPS")
+
+SHOW_LEGEND()
+
+@enduml

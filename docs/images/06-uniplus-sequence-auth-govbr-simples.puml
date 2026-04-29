@@ -1,0 +1,40 @@
+@startuml Sequence_AutenticacaoGovBr_Simplificado
+!include /home/claude/tools/c4puml/C4_Sequence.puml
+
+title Fluxo de Autenticação Gov.br — Visão Macro \nProjeto Uni+ — UNIFESSPA / CTIC
+
+Person(user, "Usuário", "Candidato")
+Container(fe, "Frontend Uni+", "Angular", "Aplicação cliente")
+Container(api, "API Uni+", ".NET 8", "Backend")
+Container(kc_eveo, "Keycloak Réplica", "Java", "EVEO (SP1/SP2)")
+Container(kc_uf, "Keycloak Master", "Java", "UNIFESSPA")
+System_Ext(govbr, "Gov.br", "IdP Federal\n(CPF + 2FA)")
+
+Rel(user, fe, "Acessa Uni+", "HTTPS")
+Rel(fe, kc_eveo, "Inicia login OIDC", "HTTPS")
+
+note over kc_eveo, govbr
+  Federação de identidade
+  via OIDC / Identity Brokering
+end note
+
+Rel(kc_eveo, kc_uf, "Encaminha para IdP institucional", "HTTPS / OIDC")
+Rel(kc_uf, govbr, "Redireciona para Gov.br", "HTTPS / OIDC")
+
+Rel(user, govbr, "Autentica\n(CPF + senha + 2FA)", "HTTPS")
+Rel(govbr, kc_uf, "Retorna identidade\n(CPF, nome, nível)", "HTTPS / OIDC")
+
+Rel(kc_uf, kc_eveo, "Repassa autenticação", "HTTPS / OIDC")
+Rel(kc_eveo, fe, "Emite tokens JWT\n(access + refresh)", "HTTPS")
+
+note over fe, api
+  Tokens JWT são autocontidos.
+  APIs validam localmente via JWKS,
+  sem chamada por requisição.
+end note
+
+Rel(fe, api, "Chamadas autenticadas\n(Authorization: Bearer JWT)", "HTTPS")
+Rel(api, fe, "Resposta", "HTTPS")
+Rel(fe, user, "Apresenta dados")
+
+@enduml

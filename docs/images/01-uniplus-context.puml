@@ -1,0 +1,45 @@
+@startuml C4_Context_UniPlus
+!include /home/claude/tools/c4puml/C4_Context.puml
+
+' ==========================================
+' Diagrama C4 Nível 1 - System Context
+' Projeto Uni+ - UNIFESSPA
+' ==========================================
+
+LAYOUT_WITH_LEGEND()
+title Diagrama de Contexto - Sistema Uni+ \nUNIFESSPA / CTIC
+
+' --- Atores (Personas) ---
+Person(candidato, "Candidato", "Pessoa interessada em ingressar na UNIFESSPA via processo seletivo")
+Person(aluno, "Aluno", "Estudante matriculado na UNIFESSPA")
+Person(servidor, "Servidor", "Docente ou técnico-administrativo da UNIFESSPA")
+Person(gestor, "Gestor Acadêmico", "Coordenador de processos seletivos e ingresso")
+
+' --- Sistema central ---
+System(uniplus, "Sistema Uni+", "Plataforma institucional unificada para processos seletivos, ingresso e portal acadêmico")
+
+' --- Sistemas externos ---
+System_Ext(govbr, "Gov.br", "Provedor de identidade do Governo Federal\n(login único + 2FA)")
+System_Ext(keycloak_uf, "Keycloak Institucional", "Identity & Access Management\nda UNIFESSPA (broker)")
+System_Ext(ldap_uf, "LDAP/AD UNIFESSPA", "Diretório institucional\nde alunos e servidores")
+System_Ext(minio_uf, "MinIO UNIFESSPA", "Storage de objetos\ninterno (master)")
+System_Ext(backup_uf, "Backup UNIFESSPA", "Infraestrutura interna de\nbackup e DR")
+System_Ext(email, "Servidor de E-mail", "Sistema institucional de\ne-mail UNIFESSPA")
+
+' --- Relacionamentos ---
+Rel(candidato, uniplus, "Inscreve-se em editais,\nacompanha resultados", "HTTPS")
+Rel(aluno, uniplus, "Acessa portal,\ngerencia matrícula", "HTTPS")
+Rel(servidor, uniplus, "Consulta dados,\noperações administrativas", "HTTPS")
+Rel(gestor, uniplus, "Gerencia editais,\nclassificação e ingresso", "HTTPS")
+
+Rel(uniplus, keycloak_uf, "Federa autenticação", "OIDC / HTTPS")
+Rel(keycloak_uf, govbr, "Autentica usuários", "OIDC / HTTPS")
+Rel(keycloak_uf, ldap_uf, "Sincroniza usuários", "LDAPS")
+
+Rel_R(uniplus, minio_uf, "Replica documentos\n(off-site)", "S3 API")
+Rel_R(uniplus, backup_uf, "Envia backups\n(noturno)", "SSH/rsync")
+Rel(uniplus, email, "Envia notificações\ne comunicados", "SMTP")
+
+SHOW_LEGEND()
+
+@enduml

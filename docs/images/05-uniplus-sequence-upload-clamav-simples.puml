@@ -1,0 +1,33 @@
+@startuml Sequence_UploadClamAV_Simplificado
+!include /home/claude/tools/c4puml/C4_Sequence.puml
+
+title Fluxo de Upload de Documento — Visão Macro \nProjeto Uni+ — UNIFESSPA / CTIC
+
+Person(user, "Usuário", "Candidato")
+Container(fe, "Frontend", "Angular", "Cliente web")
+Container(api, "API", ".NET 8", "Backend")
+ContainerDb(minio, "MinIO", "S3", "Storage de objetos")
+ContainerQueue(kafka, "Kafka", "KRaft", "Eventos")
+Container(clamav, "ClamAV", ".NET worker", "Antimalware")
+
+Rel(user, fe, "Envia arquivo")
+Rel(fe, api, "Solicita upload", "HTTPS")
+Rel(api, fe, "URL assinada\n(bucket: quarentena/)", "HTTPS")
+
+Rel(fe, minio, "Upload direto do arquivo\n(via presigned URL)", "HTTPS / S3")
+Rel(api, kafka, "Publica evento\ndocumento.upload.solicitado", "TCP/9092")
+
+note over clamav, kafka
+  Análise antimalware
+  ocorre de forma assíncrona
+end note
+
+Rel(clamav, kafka, "Consome evento", "TCP/9092")
+Rel(clamav, minio, "Lê arquivo + analisa\nMove para aprovado/ ou bloqueado/", "S3 API")
+Rel(clamav, kafka, "Publica resultado\n(documento.aprovado | rejeitado)", "TCP/9092")
+
+Rel(api, kafka, "Consome resultado", "TCP/9092")
+Rel(api, fe, "Notifica usuário", "WebSocket")
+Rel(fe, user, "Mostra status\n(aceito ou rejeitado)")
+
+@enduml

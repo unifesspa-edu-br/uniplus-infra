@@ -1,0 +1,116 @@
+# Default values para uniplus-web
+# Cada ambiente (lab-sp1, lab-sp2, prod-sp1, prod-sp2) define overrides
+# em environments/<ambiente>/values.yaml
+
+# Configuração comum
+nameOverride: ""
+fullnameOverride: ""
+
+# Imagens (build via GitHub Actions, push para registry)
+image:
+  registry: ghcr.io
+  repository: unifesspa-edu-br
+  pullPolicy: IfNotPresent
+  tag: ""  # se vazio, usa appVersion do Chart
+
+imagePullSecrets: []
+
+# 3 frontends Angular como deployments separados
+apps:
+  portal:
+    enabled: true
+    replicas: 2
+    image: uniplus-web-portal
+    path: /portal
+    isDefault: true  # uniplus.unifesspa.edu.br/ → portal
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
+
+  selecao:
+    enabled: true
+    replicas: 2
+    image: uniplus-web-selecao
+    path: /selecao
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
+
+  ingresso:
+    enabled: true
+    replicas: 2
+    image: uniplus-web-ingresso
+    path: /ingresso
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
+
+# Service config
+service:
+  type: ClusterIP
+  port: 80
+
+# Ingress (Traefik via IngressRoute)
+ingress:
+  enabled: true
+  className: traefik
+  host: uniplus.unifesspa.edu.br  # override em prod
+  tls:
+    enabled: true
+    certResolver: letsencrypt  # cert-manager ou traefik resolver
+    secretName: uniplus-web-tls
+
+# Probes
+probes:
+  liveness:
+    path: /
+    initialDelaySeconds: 10
+    periodSeconds: 10
+  readiness:
+    path: /
+    initialDelaySeconds: 5
+    periodSeconds: 5
+
+# Pod security
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 101  # nginx
+  fsGroup: 101
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+
+# Network policies
+networkPolicy:
+  enabled: true
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+
+# Observability (auto-discoverable pelo Prometheus)
+serviceMonitor:
+  enabled: true
+  interval: 30s
+
+# Pod anti-affinity para distribuir réplicas
+podAntiAffinity:
+  enabled: true
+  topologyKey: kubernetes.io/hostname
+
+# Labels comuns aplicados a todos os recursos
+commonLabels:
+  app.kubernetes.io/part-of: uniplus
+  app.kubernetes.io/component: frontend

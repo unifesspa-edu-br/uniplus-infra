@@ -1,0 +1,35 @@
+apiVersion: v2
+name: uniplus-web
+description: |
+  Chart Helm para os frontends Angular do Uni+ (Portal, Seleção, Ingresso).
+  Os 3 apps são parte de um workspace Nx único, mas são deployados como
+  Deployments separados para permitir scaling individual.
+
+type: application
+
+# Versão do chart
+version: 0.1.0
+
+# Versão da aplicação Uni+ Web (atualizar conforme releases)
+appVersion: "1.0.0"
+
+keywords:
+  - uniplus
+  - frontend
+  - angular
+  - unifesspa
+
+home: https://github.com/unifesspa-edu-br/uniplus-web
+
+sources:
+  - https://github.com/unifesspa-edu-br/uniplus-web
+  - https://github.com/unifesspa-edu-br/uniplus-infra
+
+maintainers:
+  - name: CTIC UNIFESSPA
+    email: jeferson.ferreira@unifesspa.edu.br
+    url: https://ctic.unifesspa.edu.br
+
+annotations:
+  category: Frontend
+  licenses: MIT

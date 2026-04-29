@@ -1,0 +1,19 @@
+apiVersion: v2
+name: uniplus-api-selecao
+description: API .NET 10 do módulo Seleção — editais e classificação
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - uniplus
+  - api
+  - unifesspa
+home: https://github.com/unifesspa-edu-br/uniplus-infra
+sources:
+  - https://github.com/unifesspa-edu-br/uniplus-infra
+maintainers:
+  - name: CTIC UNIFESSPA
+    email: jeferson.ferreira@unifesspa.edu.br
+annotations:
+  category: api
+  licenses: MIT

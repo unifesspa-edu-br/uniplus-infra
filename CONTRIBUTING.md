@@ -1,0 +1,131 @@
+# Guia de Contribuição
+
+Obrigado pelo interesse em contribuir com o `uniplus-infra`. Este documento descreve o processo recomendado para propor mudanças e o padrão esperado nas contribuições.
+
+## Antes de começar
+
+Por se tratar de infraestrutura crítica de uma instituição federal, **todas as mudanças passam por revisão técnica** do time CTIC/UNIFESSPA. Contribuições diretas em main não são permitidas — toda alteração entra via Pull Request com aprovação obrigatória.
+
+## Fluxo de contribuição
+
+### 1. Abra uma Issue antes do PR
+
+Para qualquer mudança não trivial, abra primeiro uma Issue descrevendo:
+
+- O problema que está resolvendo (ou a melhoria proposta)
+- Justificativa técnica
+- Impacto em ambientes existentes (lab e/ou produção)
+- Dependências ou pré-requisitos
+
+Issues triviais (correção de typo, ajuste de README) podem ir direto para PR.
+
+### 2. Crie um branch a partir de `main`
+
+```bash
+git checkout -b feat/nome-da-feature
+# ou
+git checkout -b fix/descricao-do-bug
+# ou
+git checkout -b docs/atualizacao-runbook
+```
+
+### 3. Faça commits seguindo Conventional Commits
+
+Veja [conventionalcommits.org](https://www.conventionalcommits.org/pt-br/v1.0.0/).
+
+Exemplos:
+
+```
+feat(traefik): adiciona middleware de rate limiting
+fix(postgres): corrige permissão de pgBouncer no Patroni
+docs(runbooks): atualiza procedimento de failover
+chore(deps): atualiza ArgoCD para 2.13.x
+```
+
+### 4. Garanta que validações passam
+
+Antes de abrir o PR, execute localmente:
+
+```bash
+# Lint dos charts Helm
+make helm-lint
+
+# Validação dos manifests YAML
+make yaml-lint
+
+# Validação de manifests K8s contra schema
+make kube-validate
+```
+
+Os mesmos checks rodam em CI e bloqueiam o merge se falharem.
+
+### 5. Abra o Pull Request
+
+Padrão do título: `<tipo>: <descrição curta>`
+
+Exemplo: `feat: adiciona Vault HA com 3 réplicas`
+
+Descrição do PR deve incluir:
+
+- **O que mudou** — resumo objetivo
+- **Por que mudou** — referência à Issue
+- **Como testou** — descrição dos testes realizados
+- **Riscos** — impactos potenciais ou rollback necessário
+- **Documentação atualizada** — se aplicável
+
+### 6. Aguarde revisão
+
+Pelo menos 1 aprovação do time CTIC é obrigatória. Mudanças em produção (`environments/prod-*`) requerem 2 aprovações.
+
+## Padrões de código
+
+### Helm Charts
+
+- Cada chart deve ter `Chart.yaml`, `values.yaml` (defaults), `README.md`
+- Templates em `templates/` seguem [boas práticas oficiais](https://helm.sh/docs/chart_best_practices/)
+- Use `helm-docs` para gerar README a partir dos values
+- Schemas de values em `values.schema.json` (recomendado)
+
+### YAML
+
+- Indentação: 2 espaços, sem tabs
+- Nomes em `kebab-case` (ex: `uniplus-api-portal`, não `uniplus_api_portal`)
+- Labels obrigatórios em todos os recursos K8s:
+  - `app.kubernetes.io/name`
+  - `app.kubernetes.io/instance`
+  - `app.kubernetes.io/version`
+  - `app.kubernetes.io/managed-by`
+  - `app.kubernetes.io/part-of: uniplus`
+
+### Documentação
+
+- Markdown em todos os documentos
+- Diagramas em PlantUML (fonte versionada) ou Mermaid inline
+- Imagens em `docs/images/`
+- Atualize o documento relevante junto com a mudança
+
+## O que NÃO commitar
+
+🚫 **Nunca commite:**
+
+- Senhas, tokens, chaves privadas, certificados
+- IPs internos da UNIFESSPA (use placeholders)
+- Detalhes de regras do Palo Alto institucional
+- Kubeconfig de produção
+- Credenciais Cloudflare ou Vault unseal keys
+
+Em caso de commit acidental de informação sensível, **avise imediatamente** o coordenador técnico para rotação de credenciais.
+
+## Reportando vulnerabilidades
+
+Vulnerabilidades de segurança devem ser reportadas em privado conforme [SECURITY.md](SECURITY.md), **nunca via Issues públicas**.
+
+## Comunicação
+
+- Issues e PRs no GitHub para discussão técnica
+- E-mail institucional para tópicos sensíveis ou estratégicos
+- Reuniões periódicas do time CTIC para alinhamento de roadmap
+
+---
+
+Obrigado por contribuir com a melhoria da infraestrutura institucional da UNIFESSPA.

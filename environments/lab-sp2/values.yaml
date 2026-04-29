@@ -1,0 +1,73 @@
+# Ambiente: lab-sp2
+# Máquina: Core i7 12ª gen (Ubuntu Server 24.04 LTS)
+# Papel: simulação do EVEO SP2 (Osasco)
+# IP: 192.168.0.20
+# Hostname: uniplus-sp2
+
+ingress:
+  host: uniplus-lab.shop
+  tls:
+    enabled: true
+    issuer: cloudflare
+
+# Distribuição de primaries Postgres em SP2:
+# - Portal: REPLICA
+# - Seleção: PRIMARY
+# - Ingresso: REPLICA
+postgres:
+  portal:
+    role: replica
+  selecao:
+    role: primary
+  ingresso:
+    role: replica
+
+# Recursos para máquina menor (32 GB RAM)
+# i7 12ª: 12C/16-20T, 32GB RAM, 1TB NVMe
+# K8s tem disponível: ~16 threads, ~26GB RAM
+resources:
+  api:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 800m
+      memory: 1Gi
+  frontend:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+  clamav:
+    requests:
+      cpu: 200m
+      memory: 1Gi
+    limits:
+      cpu: 1000m
+      memory: 1500Mi
+
+replicas:
+  apis: 1
+  frontends: 1
+  clamav: 1
+  keycloak: 1
+  redis: 1
+
+# Observabilidade reduzida (i7 tem menos RAM)
+observability:
+  prometheus:
+    retention: 3d  # menor que SP1
+    storage: 10Gi
+  loki:
+    retention: 3d
+    storage: 15Gi
+  tempo:
+    retention: 1d
+    storage: 5Gi
+
+cluster:
+  name: lab-sp2
+  region: lab
+  dc: sp2

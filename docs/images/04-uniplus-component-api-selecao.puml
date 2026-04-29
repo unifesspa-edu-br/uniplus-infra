@@ -1,0 +1,81 @@
+@startuml C4_Component_APISelecao
+!include /home/claude/tools/c4puml/C4_Component.puml
+
+' ==========================================
+' Diagrama C4 Nível 3 - Component
+' API Seleção (exemplo) - Projeto Uni+
+' ==========================================
+
+LAYOUT_WITH_LEGEND()
+title Diagrama de Componentes - API Seleção \nProjeto Uni+ (UNIFESSPA / CTIC)
+
+' --- Containers externos à API ---
+Container(traefik, "Traefik", "Go", "API Gateway")
+Container(fe_selecao, "Frontend Seleção", "Angular", "Cliente da API")
+ContainerDb(pg_selecao, "PostgreSQL Seleção", "PostgreSQL 16", "uniplus_selecao")
+ContainerQueue(kafka, "Kafka", "KRaft", "Bus de eventos")
+ContainerDb(redis, "Redis", "Redis", "Cache")
+ContainerDb(minio, "MinIO", "S3", "Storage de objetos")
+Container(keycloak, "Keycloak", "OIDC IdP", "Auth provider")
+
+' --- Boundary da API Seleção ---
+Container_Boundary(api_selecao, "API Seleção (.NET 8)") {
+
+    Component(controllers, "Controllers", "ASP.NET Core MVC", "Endpoints REST:\n/editais, /inscricoes,\n/classificacao, /recursos")
+
+    Component(authz, "Authorization Middleware", "ASP.NET Core", "Validação JWT (RS256),\nclaims-based authz,\npolicy enforcement")
+
+    Component(app_services, "Application Services", "C# / DDD", "Casos de uso:\nCriarInscricao,\nClassificarCandidatos,\nGerarUrlUpload")
+
+    Component(domain, "Domain Layer", "C# / DDD", "Entidades, agregados,\nvalue objects,\nregras de negócio")
+
+    Component(persistence, "Persistence", "EF Core 8", "Repositórios,\nmigrations,\nunit of work")
+
+    Component(event_pub, "Event Publisher", "MassTransit / Kafka", "Publicação de eventos\nde domínio:\ndocumento.upload.solicitado,\ninscricao.criada")
+
+    Component(event_cons, "Event Consumers", "MassTransit", "Consumo de eventos:\ndocumento.aprovado,\ndocumento.rejeitado")
+
+    Component(s3_client, "S3 Client", "AWSSDK.S3", "Geração de presigned URLs\npara upload direto")
+
+    Component(cache_svc, "Cache Service", "StackExchange.Redis", "Cache de leitura\n(editais públicos,\nclassificação)")
+
+    Component(observ, "Observability", "OpenTelemetry", "Tracing distribuído,\nmétricas e logs\nestruturados")
+}
+
+' --- Relacionamentos externos ---
+Rel(traefik, controllers, "Roteia /selecao", "HTTPS")
+Rel(fe_selecao, traefik, "Chamadas API", "HTTPS")
+
+' --- Fluxo interno ---
+Rel(controllers, authz, "Valida token")
+Rel(authz, keycloak, "Valida JWT (JWKS)", "HTTPS")
+Rel(controllers, app_services, "Invoca caso de uso")
+Rel(app_services, domain, "Manipula agregados")
+Rel(app_services, persistence, "Persiste mudanças")
+Rel(app_services, event_pub, "Publica eventos\nde domínio")
+Rel(app_services, s3_client, "Gera presigned URL")
+Rel(app_services, cache_svc, "Read-through cache")
+
+' --- Persistência ---
+Rel(persistence, pg_selecao, "ORM", "TCP/5432")
+
+' --- Mensageria ---
+Rel(event_pub, kafka, "Produce", "TCP/9092")
+Rel(event_cons, kafka, "Consume", "TCP/9092")
+Rel(event_cons, app_services, "Atualiza estado\nbaseado em eventos")
+
+' --- Cache ---
+Rel(cache_svc, redis, "GET/SET", "TCP/6379")
+
+' --- S3 ---
+Rel(s3_client, minio, "Sign URL", "S3 API")
+Rel(fe_selecao, minio, "Upload direto\n(presigned URL)", "HTTPS")
+
+' --- Observability ---
+Rel(observ, controllers, "Instrumenta")
+Rel(observ, app_services, "Instrumenta")
+Rel(observ, persistence, "Instrumenta")
+
+SHOW_LEGEND()
+
+@enduml

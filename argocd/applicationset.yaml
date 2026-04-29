@@ -1,0 +1,128 @@
+# ApplicationSet ArgoCD para o Uni+
+#
+# Gera Applications automaticamente combinando:
+# - Cada cluster registrado no ArgoCD
+# - Cada chart em apps/ e platform/
+#
+# Pré-requisito: clusters lab-sp1, lab-sp2, prod-sp1, prod-sp2 registrados no ArgoCD
+# (via `argocd cluster add`)
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: uniplus-apps
+  namespace: argocd
+spec:
+  generators:
+    - matrix:
+        generators:
+          # Cada cluster registrado
+          - clusters:
+              selector:
+                matchLabels:
+                  uniplus.io/managed: "true"
+          # Cada app em apps/
+          - list:
+              elements:
+                - app: uniplus-web
+                - app: uniplus-api-portal
+                - app: uniplus-api-selecao
+                - app: uniplus-api-ingresso
+                - app: clamav-scanner
+                - app: keycloak-replica
+
+  template:
+    metadata:
+      name: '{{.app}}-{{.name}}'
+      labels:
+        app.kubernetes.io/part-of: uniplus
+        environment: '{{.metadata.labels.environment}}'
+    spec:
+      project: uniplus
+      source:
+        repoURL: https://github.com/unifesspa-edu-br/uniplus-infra
+        targetRevision: main
+        path: 'apps/{{.app}}'
+        helm:
+          valueFiles:
+            - values.yaml
+            - '../../environments/{{.metadata.labels.environment}}/values.yaml'
+      destination:
+        server: '{{.server}}'
+        namespace: uniplus
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+          allowEmpty: false
+        syncOptions:
+          - CreateNamespace=true
+          - PruneLast=true
+          - ApplyOutOfSyncOnly=true
+        retry:
+          limit: 5
+          backoff:
+            duration: 5s
+            factor: 2
+            maxDuration: 3m
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: uniplus-platform
+  namespace: argocd
+spec:
+  generators:
+    - matrix:
+        generators:
+          - clusters:
+              selector:
+                matchLabels:
+                  uniplus.io/managed: "true"
+          - list:
+              elements:
+                - component: traefik
+                - component: cert-manager
+                - component: external-secrets
+                - component: vault
+                - component: cloudflared
+                - component: observability/prometheus
+                - component: observability/grafana
+                - component: observability/loki
+                - component: observability/tempo
+                - component: observability/otel-collector
+
+  template:
+    metadata:
+      name: 'platform-{{.component | replace "/" "-"}}-{{.name}}'
+      labels:
+        app.kubernetes.io/part-of: uniplus-platform
+        environment: '{{.metadata.labels.environment}}'
+    spec:
+      project: uniplus
+      source:
+        repoURL: https://github.com/unifesspa-edu-br/uniplus-infra
+        targetRevision: main
+        path: 'platform/{{.component}}'
+        helm:
+          valueFiles:
+            - values.yaml
+            - '../../environments/{{.metadata.labels.environment}}/values.yaml'
+      destination:
+        server: '{{.server}}'
+        namespace: '{{.component | replace "/" "-"}}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
+        retry:
+          limit: 5
+          backoff:
+            duration: 10s
+            factor: 2
+            maxDuration: 5m

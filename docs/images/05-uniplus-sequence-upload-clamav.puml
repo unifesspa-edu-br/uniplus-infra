@@ -1,0 +1,54 @@
+@startuml Sequence_UploadClamAV
+!include /home/claude/tools/c4puml/C4_Sequence.puml
+
+title Fluxo de Upload de Documento com Análise Antimalware (Async) \nProjeto Uni+ - UNIFESSPA / CTIC
+
+Person(user, "Usuário", "Candidato")
+Container(fe, "Frontend Seleção", "Angular", "Cliente web")
+Container(api, "API Seleção", ".NET 8", "Aplicação backend")
+ContainerDb(minio, "MinIO", "S3", "Storage de objetos")
+ContainerQueue(kafka, "Kafka", "KRaft", "Bus de eventos")
+Container(clamav, "ClamAV Scanner", ".NET worker", "Análise antimalware")
+ContainerDb(pg, "PostgreSQL", "PG 16", "uniplus_selecao")
+
+== 1. Solicitação de upload ==
+
+Rel(user, fe, "Seleciona arquivo\n(RG, histórico, etc.)")
+Rel(fe, api, "POST /uploads/solicitar\n{filename, tipo, tamanho}", "HTTPS")
+Rel(api, pg, "Valida sessão e cota\nINSERT documento (status=PENDENTE)", "TCP/5432")
+Rel(api, minio, "Gera presigned URL\n(bucket: quarentena/, TTL: 5min)", "S3 API")
+Rel(api, fe, "{ url_assinada, doc_id }", "HTTPS")
+
+== 2. Upload direto (Frontend → MinIO) ==
+
+Rel(fe, minio, "PUT /quarentena/{uuid}\n(arquivo binário)", "HTTPS / S3")
+Rel(minio, fe, "200 OK", "HTTPS")
+Rel(fe, api, "POST /uploads/concluido\n{ doc_id }", "HTTPS")
+Rel(api, kafka, "Publica evento:\ndocumento.upload.solicitado\n{ doc_id, bucket, key, owner }", "TCP/9092")
+Rel(api, fe, "202 Accepted\n(análise em andamento)", "HTTPS")
+
+== 3. Análise antimalware (assíncrona) ==
+
+Rel(clamav, kafka, "Consome evento\ndocumento.upload.solicitado", "TCP/9092")
+Rel(clamav, minio, "GET /quarentena/{uuid}", "S3 API")
+Rel(clamav, clamav, "Executa scan completo\n(clamd + signatures atualizadas)")
+
+== 4a. Resultado: arquivo LIMPO ==
+
+Rel(clamav, minio, "MOVE quarentena/{uuid}\n→ aprovado/{uuid}", "S3 API")
+Rel(clamav, kafka, "Publica evento:\ndocumento.aprovado\n{ doc_id, scan_result }", "TCP/9092")
+Rel(api, kafka, "Consome evento\ndocumento.aprovado", "TCP/9092")
+Rel(api, pg, "UPDATE documento\nSET status='APROVADO'", "TCP/5432")
+Rel(api, fe, "WebSocket / SSE:\nnotificação de aprovação", "WSS")
+Rel(fe, user, "✓ Documento aceito")
+
+== 4b. Resultado: arquivo INFECTADO ==
+
+Rel(clamav, minio, "MOVE quarentena/{uuid}\n→ bloqueado/{uuid}", "S3 API")
+Rel(clamav, kafka, "Publica evento:\ndocumento.rejeitado\n{ doc_id, motivo, ameaca }", "TCP/9092")
+Rel(api, kafka, "Consome evento\ndocumento.rejeitado", "TCP/9092")
+Rel(api, pg, "UPDATE documento\nSET status='REJEITADO'\nINSERT incidente_seguranca", "TCP/5432")
+Rel(api, fe, "WebSocket / SSE:\nnotificação de rejeição", "WSS")
+Rel(fe, user, "✗ Documento rejeitado\n(reenvio necessário)")
+
+@enduml

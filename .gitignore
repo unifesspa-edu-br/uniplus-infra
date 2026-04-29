@@ -1,0 +1,91 @@
+# ============================================
+# Secrets e arquivos sensíveis (NUNCA commitar)
+# ============================================
+*.key
+*.pem
+*.crt
+*.pfx
+*.p12
+*-secret.yaml
+*-secrets.yaml
+secrets.yaml
+.env
+.env.*
+!.env.example
+*.token
+*.credential
+credentials.json
+
+# Vault unseal keys
+unseal-keys.txt
+root-token.txt
+
+# Cloudflare Tunnel credentials
+*.cloudflared.json
+~/.cloudflared/
+
+# Kubeconfig com clusters reais
+kubeconfig
+kubeconfig.*
+*.kubeconfig
+
+# ============================================
+# Helm
+# ============================================
+charts/
+*.tgz
+.helm/
+
+# ============================================
+# Kustomize
+# ============================================
+kustomize/
+
+# ============================================
+# Editores e IDEs
+# ============================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ============================================
+# Logs e temporários
+# ============================================
+*.log
+*.tmp
+logs/
+tmp/
+
+# ============================================
+# Outputs de scripts
+# ============================================
+output/
+results/
+test-results/
+
+# ============================================
+# Backups e dumps
+# ============================================
+*.dump
+*.backup
+*.sql.gz
+backup/
+dumps/
+
+# ============================================
+# Tarball/Archives
+# ============================================
+*.tar
+*.tar.gz
+*.zip
+
+# ============================================
+# Específicos do projeto
+# ============================================
+# Configs locais geradas durante setup
+local-config/
+.local/

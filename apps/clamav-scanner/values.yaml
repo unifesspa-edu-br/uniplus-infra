@@ -1,0 +1,22 @@
+# Default values para clamav-scanner
+# TODO: implementar conforme estrutura do uniplus-web
+
+replicas: 2
+
+image:
+  registry: ghcr.io
+  repository: unifesspa-edu-br/clamav-scanner
+  pullPolicy: IfNotPresent
+  tag: ""
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+commonLabels:
+  app.kubernetes.io/part-of: uniplus
+  app.kubernetes.io/component: worker
