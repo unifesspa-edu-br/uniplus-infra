@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-> Convenções de workflow do monorepo Uni+ (issues obrigatórias, branch naming, commits em pt-BR, organização GitHub, equipe) vivem em `../../CLAUDE.md` e `../../docs/visao-do-projeto.md`. Este arquivo cobre apenas o que é específico do `uniplus-infra`.
+> **Workflow Context:** This repository is part of the Uni+ ecosystem. Global workflow conventions (mandatory issues, branch naming, commits in pt-BR, GitHub organization, team) are defined in [CONTRIBUTING.md](./CONTRIBUTING.md). This file covers only what is specific to `uniplus-infra`.
 
 ## O que este repositório é
 

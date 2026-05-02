@@ -2,7 +2,7 @@
 
 Este arquivo fornece contexto e instruções para interações do Gemini CLI neste repositório de infraestrutura da plataforma **Uni+**.
 
-> **Nota de Contexto:** Este repositório faz parte do ecossistema Uni+. Convenções globais de workflow (issues, branch naming, commits em pt-BR) vivem no root do workspace (`../../CLAUDE.md`).
+> **Nota de Contexto:** Este repositório faz parte do ecossistema Uni+. Convenções de workflow, commits em pt-BR e padrões de contribuição estão detalhados no arquivo [CONTRIBUTING.md](./CONTRIBUTING.md) deste repositório.
 
 ## 🚀 Visão Geral do Projeto
 
@@ -63,7 +63,7 @@ kubectl port-forward -n argocd svc/argocd-server 8080:443
 ## 📝 Convenções de Desenvolvimento
 
 1.  **GitOps First:** Evite `kubectl apply` manual para mudanças permanentes. Altere os Helm charts em `apps/` ou os valores em `environments/` e faça commit.
-2.  **Conventional Commits:** Siga o padrão `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `ci:`. Commits devem ser em **pt-BR**.
+2.  **Conventional Commits:** Siga o padrão `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `ci:`. Commits devem ser em **pt-BR**. Detalhes em [CONTRIBUTING.md](./CONTRIBUTING.md).
 3.  **Secrets:** NUNCA suba segredos no Git. Use o Vault e referencie via `ExternalSecret`.
 4.  **Charts Helm:** Mantenha os charts genéricos e use arquivos de valores em `environments/` para diferenciação.
 5.  **Independência de DC:** Mudanças não devem criar dependências síncronas obrigatórias entre os clusters de cada DC.
