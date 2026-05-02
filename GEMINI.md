@@ -2,6 +2,8 @@
 
 Este arquivo fornece contexto e instruções para interações do Gemini CLI neste repositório de infraestrutura da plataforma **Uni+**.
 
+> **Nota de Contexto:** Este repositório faz parte do ecossistema Uni+. Convenções globais de workflow (issues, branch naming, commits em pt-BR) vivem no root do workspace (`../../CLAUDE.md`).
+
 ## 🚀 Visão Geral do Projeto
 
 O **uniplus-infra** é o repositório de Infraestrutura como Código (IaC) e GitOps da plataforma Uni+ (UNIFESSPA). Ele gerencia o provisionamento e a operação de múltiplos ambientes (Lab e Produção) distribuídos em 3 Datacenters lógicos: **SP1**, **SP2** (ativos) e **PA1** (institucional/DR).
@@ -61,10 +63,11 @@ kubectl port-forward -n argocd svc/argocd-server 8080:443
 ## 📝 Convenções de Desenvolvimento
 
 1.  **GitOps First:** Evite `kubectl apply` manual para mudanças permanentes. Altere os Helm charts em `apps/` ou os valores em `environments/` e faça commit.
-2.  **Conventional Commits:** Siga o padrão `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `ci:`.
+2.  **Conventional Commits:** Siga o padrão `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `ci:`. Commits devem ser em **pt-BR**.
 3.  **Secrets:** NUNCA suba segredos no Git. Use o Vault e referencie via `ExternalSecret`.
 4.  **Charts Helm:** Mantenha os charts genéricos e use arquivos de valores em `environments/` para diferenciação.
 5.  **Independência de DC:** Mudanças não devem criar dependências síncronas obrigatórias entre os clusters de cada DC.
+6.  **Aprovações:** Alterações em `environments/prod-*` requerem **2 aprovações** e plano de rollback explícito no PR.
 
 ## 📖 Referências Úteis
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - Visão técnica completa.
