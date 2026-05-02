@@ -5,11 +5,11 @@
 ## Visão geral
 
 - **Modo:** KRaft (sem ZooKeeper) — Apache Kafka 3.7+
-- **Brokers:** 3 ao todo, distribuídos entre os DCs
-  - SP1: 1-2 brokers
-  - SP2: 1-2 brokers
-- **Replication factor padrão:** 2
-- **Min ISR padrão:** 1 (garante disponibilidade)
+- **Brokers/controllers:** distribuídos entre `SP1`, `SP2` e `PA1` quando a latência permitir
+- **Replication factor padrão alvo:** 3 para tópicos críticos
+- **Min ISR padrão alvo:** 2 para tópicos críticos, ajustado conforme latência validada
+
+Kafka deve usar quorum e replicação nativos do KRaft. Não criar mecanismo paralelo de replicação por fora do produto para simular ativo-ativo.
 
 ## Tópicos principais
 
@@ -24,17 +24,17 @@
 
 ## Implementação pendente
 
-- [ ] docker-compose.yml com 3 brokers KRaft
+- [ ] docker-compose.yml com brokers/controllers KRaft distribuídos entre `SP1`, `SP2` e `PA1`
 - [ ] server.properties para cada broker
 - [ ] Schema Registry (Apache Avro/Protobuf)
-- [ ] MirrorMaker 2 para replicação inter-DC
+- [ ] avaliação documentada: cluster KRaft único 3-DC vs clusters por DC + MirrorMaker 2, conforme latência real
 - [ ] Backup de configurações
 
 ## Estratégia de replicação
 
-A replicação acontece **dentro do cluster Kafka** (replication.factor=2). Em caso de queda de um DC, o cluster continua funcionando com os brokers restantes desde que ISR seja ≥ 1.
+A estratégia preferencial para a PoC é replicação **dentro do cluster Kafka**, com controllers/brokers distribuídos para tolerar a perda de qualquer 1 DC. A configuração final depende da latência real entre `SP1`, `SP2` e `PA1`.
 
-Para DR off-site (cópia para UNIFESSPA), considera-se MirrorMaker 2 em fase posterior.
+Se a latência de `PA1` inviabilizar quorum KRaft saudável, a alternativa aceitável deve ser explicitamente documentada como clusters por DC com replicação via MirrorMaker 2. Essa decisão não deve ser feita por gambiarra de aplicação.
 
 ## Validação
 
