@@ -1,16 +1,16 @@
 # Setup do Laboratório
 
-> Passo-a-passo para preparar as duas máquinas do laboratório de validação arquitetural do Uni+.
+> Passo-a-passo para preparar a réplica mínima 3-DC do laboratório de validação arquitetural do Uni+.
 
 ## Visão geral
 
-O laboratório consiste em **duas máquinas físicas** simulando os DCs SP1 e SP2 da EVEO, mais um **container isolado** simulando a infraestrutura interna da UNIFESSPA. As máquinas se comunicam pela rede LAN local (gigabit), com domínio público acessível via Cloudflare Tunnel.
+O laboratório consiste em **três DCs lógicos**: `SP1` e `SP2` simulam os datacenters externos EVEO, enquanto `PA1` simula o DC institucional da UNIFESSPA. `PA1` roda como container isolado no host i7 nesta fase de laboratório, mas deve ser tratado como DC institucional, não como simples witness.
 
 | Papel | Máquina | Hostname sugerido | IP estático |
 |-------|---------|-------------------|-------------|
 | EVEO SP1 simulado | Ryzen 9 9950X | `uniplus-sp1` | `192.168.0.10` |
 | EVEO SP2 simulado | Core i7 12ª gen | `uniplus-sp2` | `192.168.0.20` |
-| UNIFESSPA witness | Container na máquina i7 | `uniplus-witness` | rede interna isolada |
+| UNIFESSPA PA1 simulado | Container na máquina i7 | `uniplus-pa1` | rede interna isolada |
 
 ## Pré-requisitos
 
@@ -28,9 +28,9 @@ O laboratório consiste em **duas máquinas físicas** simulando os DCs SP1 e SP
 - [4. Hardening básico](#4-hardening-básico)
 - [5. Instalação do runtime de containers](#5-instalação-do-runtime-de-containers)
 - [6. Instalação do Kubernetes (K3s)](#6-instalação-do-kubernetes-k3s)
-- [7. Configuração do Cloudflare Tunnel](#7-configuração-do-cloudflare-tunnel)
+- [7. Entrada HTTP/TLS provisória de lab](#7-entrada-httptls-provisória-de-lab)
 - [8. Componentes stateful no host](#8-componentes-stateful-no-host)
-- [9. Witness UNIFESSPA simulada](#9-witness-unifesspa-simulada)
+- [9. PA1 UNIFESSPA simulado](#9-pa1-unifesspa-simulado)
 - [10. Validação final](#10-validação-final)
 - [11. Troubleshooting](#11-troubleshooting)
 
@@ -128,7 +128,7 @@ Em **ambas as máquinas**, edite `/etc/hosts`:
 # /etc/hosts
 192.168.0.10  uniplus-sp1
 192.168.0.20  uniplus-sp2
-192.168.0.21  uniplus-witness  # IP da bridge interna no container
+192.168.0.21  uniplus-pa1  # IP da bridge interna no container PA1
 ```
 
 ### 3.3 Validação de conectividade
@@ -330,9 +330,11 @@ sudo apt install -y kubectx
 sudo pacman -S kubectx
 ```
 
-## 7. Configuração do Cloudflare Tunnel
+## 7. Entrada HTTP/TLS provisória de lab
 
-### 7.1 Pré-requisitos
+Esta seção descreve uma opção gratuita para expor o laboratório durante a PoC. Ela não substitui a decisão institucional sobre borda, WAF, DNS, IPSEC, firewall ou inspeção TLS.
+
+### 7.1 Pré-requisitos para a opção Cloudflare Tunnel
 
 1. Conta Cloudflare gratuita
 2. Domínio `uniplus-lab.shop` adicionado à conta Cloudflare (NS apontando para Cloudflare)
@@ -396,7 +398,7 @@ sudo systemctl status cloudflared
 
 **Na i7:**
 
-Repita o processo criando `uniplus-lab-sp2` com **outro tunnel-id**, mas apontando para os **mesmos hostnames**. Cloudflare detectará automaticamente os múltiplos tunnels e fará load balancing entre eles.
+Repita o processo criando `uniplus-lab-sp2` com **outro tunnel-id**, mas apontando para os **mesmos hostnames**. O objetivo é ter uma entrada provisória capaz de alcançar `SP1` ou `SP2`; o comportamento exato de balanceamento deve ser validado apenas como requisito do laboratório.
 
 ⚠️ **Alternativa:** usar 1 tunnel único com 2 instâncias `cloudflared` (uma em cada máquina) compartilhando as credenciais via Vault. Para o lab, criar 2 tunnels separados é mais simples.
 
@@ -419,7 +421,7 @@ PostgreSQL, Kafka e MinIO rodam fora do K8s, em containers Docker gerenciados vi
 
 Veja [data/postgres/README.md](../data/postgres/README.md) para detalhes específicos de:
 
-- Configuração do Patroni com 3 nós etcd (incluindo witness)
+- Configuração do Patroni com consenso distribuído e `pa1-consensus-witness` quando aplicável
 - Distribuição de primaries (Portal e Ingresso em SP1, Seleção em SP2)
 - PgBouncer como pool de conexões
 - pgBackRest para backups
@@ -429,21 +431,23 @@ Veja [data/postgres/README.md](../data/postgres/README.md) para detalhes especí
 Veja [data/kafka/README.md](../data/kafka/README.md) para:
 
 - Configuração KRaft (sem ZooKeeper)
-- 3 brokers distribuídos entre os DCs
-- MirrorMaker 2 para replicação inter-DC
+- brokers/controllers distribuídos entre os DCs quando a latência permitir
+- avaliação explícita entre KRaft 3-DC e clusters por DC com MirrorMaker 2
 
 ### 8.3 MinIO Distribuído
 
 Veja [data/minio/README.md](../data/minio/README.md) para:
 
-- 4 nós lógicos (2 por DC)
-- Erasure coding configurado
+- desenho `SP1`/`SP2`/`PA1`
+- replicação/site ou bucket replication nativa
 - Buckets `quarentena/`, `aprovado/`, `bloqueado/`
-- Replicação assíncrona para MinIO master simulada
+- Replicação assíncrona para `pa1-object-storage`
 
-## 9. Witness UNIFESSPA simulada
+## 9. PA1 UNIFESSPA simulado
 
-O container `uniplus-witness` simula a infraestrutura interna da UNIFESSPA (etcd witness, Keycloak Master, MinIO master). Vamos rodá-lo na máquina i7 em uma **rede Docker isolada**.
+O container `uniplus-pa1` simula o DC institucional da UNIFESSPA. Ele concentra funções de soberania e recuperação: `pa1-oidc-source`, LDAP sintético, `pa1-backup`, `pa1-object-storage` e `pa1-consensus-witness` quando algum componente precisar de quorum externo.
+
+`PA1` não deve ficar no caminho síncrono obrigatório do atendimento normal. Se este container ficar fora, `SP1` e `SP2` devem continuar atendendo; backups e sincronizações devem acumular backlog local e equalizar quando `PA1` retornar.
 
 ### 9.1 Criar rede isolada
 
@@ -455,7 +459,7 @@ docker network create --subnet 172.30.0.0/16 unifesspa-sim
 ### 9.2 Subir os serviços simulados
 
 ```bash
-cd uniplus-infra/data/witness  # diretório a ser criado pelo time
+cd uniplus-infra/data/pa1  # diretório a ser criado pelo time
 docker compose up -d
 ```
 
@@ -468,22 +472,22 @@ networks:
     external: true
 
 services:
-  etcd-witness:
+  pa1-consensus-witness:
     image: quay.io/coreos/etcd:v3.5
-    container_name: uniplus-witness-etcd
+    container_name: uniplus-pa1-consensus
     networks: [unifesspa-sim]
     environment:
-      - ETCD_NAME=witness
+      - ETCD_NAME=pa1
       - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://172.30.0.10:2380
       - ETCD_LISTEN_PEER_URLS=http://0.0.0.0:2380
       - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
       - ETCD_ADVERTISE_CLIENT_URLS=http://172.30.0.10:2379
     volumes:
-      - witness-etcd-data:/etcd-data
+      - pa1-consensus-data:/etcd-data
 
-  keycloak-master:
-    image: quay.io/keycloak/keycloak:25.0
-    container_name: uniplus-witness-keycloak
+  pa1-oidc-source:
+    image: ghcr.io/unifesspa-edu-br/uniplus-keycloak:1.0.2
+    container_name: uniplus-pa1-oidc-source
     networks: [unifesspa-sim]
     environment:
       - KEYCLOAK_ADMIN=admin
@@ -492,9 +496,9 @@ services:
       - kc_admin
     command: start-dev
 
-  minio-master:
+  pa1-object-storage:
     image: minio/minio:latest
-    container_name: uniplus-witness-minio
+    container_name: uniplus-pa1-object-storage
     networks: [unifesspa-sim]
     environment:
       - MINIO_ROOT_USER=admin
@@ -503,11 +507,11 @@ services:
       - minio_admin
     command: server /data --console-address ":9001"
     volumes:
-      - witness-minio-data:/data
+      - pa1-object-storage-data:/data
 
 volumes:
-  witness-etcd-data:
-  witness-minio-data:
+  pa1-consensus-data:
+  pa1-object-storage-data:
 
 secrets:
   kc_admin:
@@ -516,16 +520,16 @@ secrets:
     file: ./secrets/minio_admin.txt
 ```
 
-### 9.3 Conectividade SP1 ↔ Witness
+### 9.3 Conectividade SP1/SP2 ↔ PA1
 
-A máquina Ryzen precisa enxergar o etcd witness. Isso é feito **publicando a porta** do witness na máquina i7 e adicionando entrada em `/etc/hosts` da Ryzen:
+`SP1` e `SP2` precisam alcançar os serviços publicados pelo `PA1` conforme o cenário: backup, object storage, OIDC institucional e função de consenso quando aplicável. No laboratório, isso é feito publicando portas controladas do container `uniplus-pa1` no host i7 e adicionando entradas em `/etc/hosts`:
 
 ```bash
 # /etc/hosts na Ryzen
-192.168.0.20  uniplus-witness  # IP da máquina i7
+192.168.0.20  uniplus-pa1  # IP da máquina i7
 ```
 
-E o `docker-compose.yml` do witness precisa publicar `2379:2379` no host i7.
+O `docker-compose.yml` de `PA1` publica somente as portas necessárias para a validação. Qualquer exposição adicional deve ser justificada no plano de teste.
 
 ## 10. Validação final
 
@@ -549,11 +553,11 @@ docker compose -f data/postgres/docker-compose.yml ps
 docker compose -f data/kafka/docker-compose.yml ps
 docker compose -f data/minio/docker-compose.yml ps
 
-# Witness (apenas i7)
-docker compose -f data/witness/docker-compose.yml ps
+# PA1 (apenas i7)
+docker compose -f data/pa1/docker-compose.yml ps
 ```
 
-### 10.3 Validar Cloudflare Tunnel
+### 10.3 Validar entrada HTTP/TLS provisória
 
 ```bash
 sudo systemctl status cloudflared
@@ -582,7 +586,7 @@ sudo journalctl -u k3s -f
 # - Erro de DNS (verifique /etc/hosts e systemd-resolved)
 ```
 
-### Cloudflare Tunnel desconecta
+### Entrada HTTP/TLS provisória desconecta
 
 ```bash
 sudo journalctl -u cloudflared -f
@@ -609,13 +613,13 @@ kubectl logs <nome> -n <namespace> --previous
 
 ```bash
 # Verificar quórum etcd
-docker exec uniplus-witness-etcd etcdctl member list
+docker exec uniplus-pa1-consensus etcdctl member list
 
 # Verificar status do Patroni
 docker exec patroni-sp1 patronictl list
 
 # Causas comuns:
-# - Witness inacessível (verifique conectividade)
+# - PA1 inacessível (verifique conectividade)
 # - Configuração inconsistente entre nós (revisar patroni.yml)
 ```
 

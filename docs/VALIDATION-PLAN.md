@@ -22,28 +22,29 @@
 
 ### 1.1 Objetivo principal
 
-Validar empiricamente as decisões arquiteturais do Uni+ documentadas em [ARCHITECTURE.md](ARCHITECTURE.md) e no documento institucional **DT-UNIPLUS-001 — Solicitação de Análise da Divisão de Redes**, antes da contratação dos servidores em produção e da exposição da plataforma à comunidade UNIFESSPA.
+Validar empiricamente a réplica mínima da arquitetura Uni+ documentada em [ARCHITECTURE.md](ARCHITECTURE.md), antes da implantação em produção e da exposição da plataforma à comunidade UNIFESSPA. O foco desta validação é de engenharia: redundância, escalabilidade, observabilidade, rastreamento e recuperabilidade.
 
 ### 1.2 Objetivos específicos
 
-1. **Provar resiliência**: demonstrar que a arquitetura ativo-ativo entre dois DCs sobrevive à falha total de um deles, com perda de dados dentro do RPO acordado (≤ 5 min).
-2. **Validar failover de banco**: medir o tempo real de failover do PostgreSQL via Patroni com 3 nós etcd (incluindo witness UNIFESSPA).
-3. **Demonstrar prevenção de split-brain**: reproduzir cenário de partição de rede entre DCs e provar que o witness etcd previne dois primaries simultâneos.
+1. **Provar resiliência 3-DC**: demonstrar que a arquitetura ativo-ativo entre `SP1`, `SP2` e `PA1` permanece disponível com a queda de qualquer 1 DC.
+2. **Validar recuperabilidade**: medir backup, restore, backlog e equalização quando `PA1` fica indisponível por algumas horas e retorna.
+3. **Validar failover de banco**: medir o tempo real de failover do PostgreSQL via Patroni com consenso distribuído e `pa1-consensus-witness` quando aplicável.
 4. **Mensurar comportamento sob carga**: simular 500-2.000 usuários simultâneos em pico de edital e medir latência/throughput.
 5. **Validar fluxos críticos**: exercitar end-to-end os fluxos de upload com ClamAV e autenticação Gov.br federada.
-6. **Embasar decisões pendentes**: gerar dados objetivos para subsidiar discussões com a Divisão de Redes (especialmente sobre Cloudflare e túneis IPSEC).
+6. **Gerar evidência operacional**: produzir métricas, logs e traces que comprovem redundância, escalabilidade, observabilidade e recuperação da aplicação.
 
 ## 2. Escopo
 
 ### 2.1 Dentro do escopo
 
-✅ Topologia ativo-ativo entre dois "DCs" simulados em hardware real (duas máquinas físicas separadas)
-✅ Replicação de dados (PostgreSQL streaming, Kafka MirrorMaker, MinIO replication)
-✅ Patroni com 3 nós etcd (incluindo witness em rede isolada)
+✅ Topologia ativo-ativo com 3 DCs lógicos: `SP1`, `SP2` e `PA1`
+✅ `PA1` como DC institucional, com `pa1-oidc-source`, `pa1-backup`, storage institucional e função de consenso quando aplicável
+✅ Replicação/sincronização por mecanismos nativos de cada produto, sem multi-master artificial
+✅ Patroni com consenso distribuído quando necessário
 ✅ ArgoCD GitOps em ambos os clusters
-✅ Cloudflare Tunnel como camada de borda
+✅ Entrada HTTP/TLS de laboratório apenas para roteamento funcional
 ✅ Stack de observabilidade completa (Prometheus, Grafana, Loki, Tempo)
-✅ Identidade federada via Keycloak (Gov.br homologação)
+✅ Identidade federada via OIDC (implementação atual Keycloak) e gov.br homologação
 ✅ Fluxo de upload com ClamAV
 ✅ Testes de chaos engineering (kill pod, partição de rede, latência artificial)
 
@@ -51,7 +52,7 @@ Validar empiricamente as decisões arquiteturais do Uni+ documentadas em [ARCHIT
 
 ❌ Hardware redundante (RAID 1, fonte redundante, link L2L redundante) — propriedade da EVEO
 ❌ Falha física simultânea de DC inteiro com fidelidade (sem geração elétrica, refrigeração, etc.)
-❌ Cloudflare WAF/CDN em volume real (lab usa Free tier com volume limitado)
+❌ Decisões de borda/WAF/CDN, IPSEC, DNS, firewall e inspeção TLS — responsabilidade de infraestrutura/rede
 ❌ Gov.br produção (lab usa apenas Gov.br homologação)
 ❌ Políticas reais do Palo Alto institucional
 ❌ Tráfego real de produção (sempre dados sintéticos)
@@ -61,53 +62,29 @@ Validar empiricamente as decisões arquiteturais do Uni+ documentadas em [ARCHIT
 ### 3.1 Diagrama lógico
 
 ```
-                        Internet
-                            │
-                            ▼
-          ┌─────────────────────────────────────┐
-          │       Cloudflare Edge               │
-          │  - DNS authoritative                │
-          │    (uniplus-lab.shop)               │
-          │  - WAF + Anti-DDoS                  │
-          │  - TLS automático                   │
-          │  - Edge cache                       │
-          └─────────────┬───────────────────────┘
-                        │
-                        │ Cloudflare Tunnel
-                        │ (saída via cloudflared)
-                        │
-                        ▼
-                ROTEADOR TIM FIBRA
-                (rede LAN local)
-                        │
-        ┌───────────────┴────────────────┐
-        │                                │
-        ▼                                ▼
-┌──────────────────┐            ┌────────────────────┐
-│  Ryzen 9950X     │            │  Core i7 12ª gen   │
-│  Arch Linux      │            │  Ubuntu Server     │
-│  64 GB / 2 TB    │            │  32 GB / 1 TB      │
-│  IP: 192.168.x.10│            │  IP: 192.168.x.20  │
-│                  │            │                    │
-│  "EVEO SP1"      │            │  "EVEO SP2"        │
-│  ─────────────   │            │  ─────────────     │
-│  K3s cluster A   │  ◄── L2L ──►   K3s cluster B   │
-│  Postgres P/R    │   (LAN GbE  │  Postgres R/P     │
-│  Kafka brokers   │  + tc netem)│  Kafka broker     │
-│  MinIO node      │            │  MinIO node       │
-│  cloudflared     │            │  cloudflared      │
-│                  │            │                   │
-│                  │            │  ┌──────────────┐ │
-│                  │            │  │ Container    │ │
-│                  │            │  │ "UNIFESSPA   │ │
-│                  │            │  │  Witness"    │ │
-│                  │            │  │ (rede sep.)  │ │
-│                  │            │  │              │ │
-│                  │            │  │ etcd witness │ │
-│                  │            │  │ Keycloak Mst │ │
-│                  │            │  │ MinIO Master │ │
-│                  │            │  └──────────────┘ │
-└──────────────────┘            └────────────────────┘
+                 Internet / domínio de lab
+                           │
+                           ▼
+              ┌─────────────────────────┐
+              │ Entrada HTTP/TLS de lab │
+              │ DNS/tunnel provisório   │
+              └───────────┬─────────────┘
+                          │
+                 rede LAN local
+                          │
+      ┌───────────────────┼───────────────────┐
+      ▼                   ▼                   ▼
+┌──────────────┐    ┌──────────────┐    ┌──────────────┐
+│ SP1          │    │ SP2          │    │ PA1          │
+│ EVEO Cotia   │    │ EVEO Osasco  │    │ UNIFESSPA    │
+│ simulado     │    │ simulado     │    │ simulado     │
+│              │    │              │    │              │
+│ K3s/apps     │    │ K3s/apps     │    │ pa1-backup   │
+│ OIDC local   │    │ OIDC local   │    │ pa1-oidc-src │
+│ Postgres     │◄──►│ Postgres     │◄──►│ LDAP sint.   │
+│ Kafka/MinIO  │◄──►│ Kafka/MinIO  │◄──►│ storage/DR   │
+│ observab.    │    │ observab.    │    │ consensus    │
+└──────────────┘    └──────────────┘    └──────────────┘
 ```
 
 ### 3.2 Mapeamento de hardware
@@ -116,11 +93,11 @@ Validar empiricamente as decisões arquiteturais do Uni+ documentadas em [ARCHIT
 |-------------------|----------------|---------------|
 | EVEO SP1 (Cotia) — servidor primário | **Ryzen 9 9950X** | 16C/32T, 64 GB DDR5, 2 TB NVMe, rede 2.5 Gbps |
 | EVEO SP2 (Osasco) — servidor secundário | **Core i7 12ª gen** | 12C/16-20T, 32 GB DDR4, 1 TB NVMe, rede 1 Gbps |
-| UNIFESSPA Marabá — witness + serviços internos | **Container isolado** na máquina i7 | 1 vCPU, 2 GB RAM, rede separada |
+| UNIFESSPA Marabá — `PA1` institucional | **Container isolado** na máquina i7 | Recursos dedicados para `pa1-backup`, `pa1-oidc-source`, LDAP sintético, storage/DR e consenso |
 
 ### 3.3 Domínios
 
-A simulação usa o domínio `uniplus-lab.shop` (registrado em registrar comercial, gerenciado via Cloudflare):
+A simulação pode usar o domínio `uniplus-lab.shop` com DNS/tunnel provisório apenas para expor a PoC. Essa escolha não valida a solução institucional de borda:
 
 | Domínio | Endpoint |
 |---------|----------|
@@ -131,7 +108,7 @@ A simulação usa o domínio `uniplus-lab.shop` (registrado em registrar comerci
 | `api.uniplus-lab.shop/portal` | API Portal |
 | `api.uniplus-lab.shop/selecao` | API Seleção |
 | `api.uniplus-lab.shop/ingresso` | API Ingresso |
-| `auth.uniplus-lab.shop` | Keycloak Réplica |
+| `auth.uniplus-lab.shop` | OIDC lógico do Uni+ |
 | `s3.uniplus-lab.shop` | MinIO |
 | `argocd.uniplus-lab.shop` | ArgoCD UI |
 | `grafana.uniplus-lab.shop` | Grafana |
@@ -159,7 +136,7 @@ A simulação usa o domínio `uniplus-lab.shop` (registrado em registrar comerci
 | 3× PostgreSQL no host | 6 GB | 3 |
 | Kafka broker | 4 GB | 3 |
 | MinIO node | 3 GB | 2 |
-| Container "UNIFESSPA witness" | 2.5 GB | 2 |
+| Container `PA1` institucional | 2.5 GB+ | 2+ |
 | **Total** | **31.5 GB** | **18** |
 
 ### 3.5 Latência simulada
@@ -187,16 +164,16 @@ sudo tc qdisc del dev eth0 root
 | **Storage** | 2 TB NVMe RAID 1 por DC | 2 TB NVMe + 1 TB NVMe (sem RAID) |
 | **Link inter-DC** | L2L privado 500 Mbps redundante | LAN GbE doméstica |
 | **Latência inter-DC** | < 1 ms RTT | 0.3-0.8 ms RTT |
-| **Borda externa** | Cloudflare (decisão pendente) | Cloudflare Tunnel (Free tier) |
-| **DNS** | unifesspa.edu.br (delegação a definir) | uniplus-lab.shop (Cloudflare) |
-| **TLS** | Cloudflare ou cert-manager + Let's Encrypt | Cloudflare automático |
+| **Borda externa** | A definir por infraestrutura/rede | Entrada HTTP/TLS provisória de lab |
+| **DNS** | unifesspa.edu.br (delegação a definir) | uniplus-lab.shop ou `/etc/hosts` |
+| **TLS** | A definir por infraestrutura/rede | Certificado provisório ou TLS automático do lab |
 | **K8s** | K3s ou similar 1.30+ | K3s 1.30+ (mesma distribuição) |
 | **Postgres** | PostgreSQL 16 + Patroni + PgBouncer | Idem |
 | **Kafka** | KRaft mode, 3 brokers | Idem |
 | **MinIO** | Distribuído entre DCs | Idem (escala reduzida) |
 | **Identidade** | Gov.br produção | Gov.br homologação |
-| **UNIFESSPA** | Marabá-PA com Palo Alto + serviços | Container isolado na máquina i7 |
-| **Backup destino** | Infra UNIFESSPA real | "UNIFESSPA simulada" no container |
+| **PA1 / UNIFESSPA** | Marabá-PA com Palo Alto, LDAP, OIDC institucional, backup e DR | Container isolado na máquina i7 |
+| **Backup destino** | `pa1-backup` no DC institucional | `pa1-backup` no container PA1 |
 
 **Princípio:** mesma stack, mesmas tecnologias, mesmas versões. Apenas o substrato físico difere.
 
@@ -253,7 +230,7 @@ Os cenários abaixo serão executados sequencialmente, do mais simples ao mais c
 **Hipótese:** Patroni promove o standby a primary em ≤ 30 segundos, com perda de dados ≤ 1 segundo (lag de replicação típico).
 
 **Procedimento:**
-1. Cluster PostgreSQL operacional (1 primary em SP1, 1 standby em SP2, etcd witness em UNIFESSPA simulada)
+1. Cluster PostgreSQL operacional (primaries distribuídos entre `SP1` e `SP2`, réplicas nos demais nós e consenso com `pa1-consensus-witness` quando aplicável)
 2. Aplicação ativamente escrevendo na base via PgBouncer (script de carga sintética)
 3. **Kill abrupto** do container PostgreSQL primary em SP1 (`docker kill postgres-primary`)
 4. Cronometrar até standby em SP2 virar primary
@@ -273,60 +250,59 @@ Os cenários abaixo serão executados sequencialmente, do mais simples ao mais c
 
 ---
 
-### Cenário 4: Prevenção de split-brain via witness etcd
+### Cenário 4: Queda do PA1 sem interromper atendimento
 
-**Objetivo:** demonstrar empiricamente o valor do witness etcd na UNIFESSPA.
+**Objetivo:** demonstrar que `PA1` não é ponto único de falha do sistema.
 
-**Hipótese:** com partição de rede entre SP1 e SP2 (mas ambos enxergando o witness), o lado conectado ao witness mantém o primary; o outro lado vira read-only.
+**Hipótese:** com `PA1` fora por algumas horas, `SP1` e `SP2` continuam atendendo tráfego de usuário, login principal via gov.br/OIDC, escrita operacional e leitura. Backups, sincronização institucional e retenção entram em modo degradado até o retorno do `PA1`.
 
 **Procedimento:**
-
-**Parte A — sem witness (cenário negativo):**
-1. Reconfigurar Patroni com apenas 2 nós etcd (SP1 e SP2, sem witness)
-2. Provocar partição de rede com firewall: bloquear tráfego SP1↔SP2
-3. Observar comportamento (ambos os lados podem virar primary → split-brain)
-4. Documentar a divergência de dados resultante
-
-**Parte B — com witness (cenário pretendido):**
-1. Reconfigurar com 3 nós etcd: SP1 + SP2 + witness UNIFESSPA
-2. Provocar mesma partição entre SP1↔SP2 (mas mantendo SP1↔witness e SP2↔witness)
-3. Observar comportamento
-4. Verificar qual lado se manteve como primary
+1. Ambiente 3-DC operacional, com `SP1`, `SP2` e `PA1` sincronizados
+2. Gerar carga sintética em `SP1`/`SP2`
+3. Derrubar o container ou host lógico `PA1`
+4. Executar login via gov.br/OIDC e chamadas às APIs
+5. Confirmar que backups/replicações para `PA1` entram em backlog local
+6. Reativar `PA1`
+7. Medir tempo até sincronização e backlog voltarem a zero
 
 **Métricas:**
-- Tempo até detecção da partição
-- Identificação correta do lado isolado
-- Lado isolado vira read-only?
-- Lado conectado ao witness mantém primary?
+- Disponibilidade HTTP em `SP1`/`SP2`
+- Sucesso de login via OIDC
+- Tamanho do backlog de backup/replicação
+- Tempo de equalização após retorno de `PA1`
+- Erros e traces durante a janela de degradação
 
 **Critério de sucesso:**
-- Parte A: split-brain ocorre (resultado esperado, prova o problema)
-- Parte B: split-brain é prevenido em ≤ 60 segundos, lado isolado vira read-only
+- Sistema permanece disponível em `SP1`/`SP2`
+- Login principal via gov.br/OIDC continua funcionando
+- Backlog local é preservado sem perda de dados
+- Retorno de `PA1` sincroniza backlog até zero sem intervenção manual destrutiva
 
-**Importância:** este cenário é particularmente valioso para a Divisão de Redes — prova com dados a necessidade do nó witness na UNIFESSPA.
+**Importância:** este cenário prova que `PA1` é DC institucional de soberania, backup e sincronização, mas não ponto único de falha do atendimento normal.
 
 ---
 
-### Cenário 5: Catch-up após manutenção planejada
+### Cenário 5: Queda de SP1 ou SP2 com atendimento pelo DC restante
 
-**Objetivo:** validar tempo de recuperação após "DC inteiro" ficar fora por período prolongado.
+**Objetivo:** validar que a perda de qualquer DC externo não derruba a aplicação.
 
-**Hipótese:** SP2 fora por 1 hora consegue se sincronizar completamente em ≤ 30 minutos após retorno.
+**Hipótese:** `SP1` e `SP2` são ativos para tráfego de usuário; se um deles cair, o outro continua atendendo. Quando o DC retornar, bancos, Kafka, MinIO, GitOps e observabilidade devem convergir.
 
 **Procedimento:**
-1. Ambiente operacional, com aplicação gerando carga de escrita constante em SP1 (primary)
-2. Desligar máquina i7 (simula "manutenção do DC SP2")
-3. Manter operação em SP1 por 60 minutos com carga ativa
-4. Religar máquina i7
-5. Observar Patroni reincorporar SP2 como standby
-6. Medir tempo até replicação atingir lag = 0
+1. Ambiente operacional, com tráfego distribuído entre `SP1` e `SP2`
+2. Derrubar `SP1`
+3. Validar atendimento por `SP2`
+4. Retornar `SP1` e medir equalização
+5. Repetir o mesmo procedimento derrubando `SP2`
 
 **Métricas:**
 - Volume de WAL acumulado durante "indisponibilidade"
-- Tempo até standby recuperar consistência
+- Tempo até tráfego estabilizar no DC restante
+- Tempo até réplicas recuperarem consistência
 - Banda usada na recuperação
+- Erros HTTP e traces durante failover
 
-**Critério de sucesso:** standby em SP2 atinge `replay_lag = 0` em ≤ 30 minutos.
+**Critério de sucesso:** queda de `SP1` ou `SP2` não torna o sistema indisponível; o DC recuperado equaliza dados e estado operacional sem perda além do RPO validado.
 
 ---
 
@@ -334,10 +310,10 @@ Os cenários abaixo serão executados sequencialmente, do mais simples ao mais c
 
 **Objetivo:** validar continuidade de eventos em caso de falha de broker.
 
-**Hipótese:** com `replication.factor=2` e `min.insync.replicas=1`, o cluster sobrevive à falha de um broker sem perda de mensagens.
+**Hipótese:** com quorum/replicação nativos e distribuição adequada de brokers/controllers, o cluster sobrevive à falha de um broker e, no cenário alvo, à perda temporária de 1 DC.
 
 **Procedimento:**
-1. Cluster Kafka operacional (3 brokers distribuídos: 2 em SP1, 1 em SP2)
+1. Cluster Kafka operacional distribuído entre `SP1`, `SP2` e `PA1`, quando a latência permitir
 2. Producer enviando mensagens continuamente para tópico de teste
 3. Consumer agregando recebimentos
 4. Kill abrupto do broker líder de uma partição
@@ -349,20 +325,20 @@ Os cenários abaixo serão executados sequencialmente, do mais simples ao mais c
 - Tempo de re-eleição de líder
 - Latência durante a transição
 
-**Critério de sucesso:** zero mensagens perdidas, re-eleição em ≤ 10 segundos.
+**Critério de sucesso:** zero mensagens perdidas no cenário de broker individual; para queda de DC, o comportamento aceito deve estar explicitamente validado conforme quorum escolhido.
 
 ---
 
-### Cenário 7: MinIO erasure coding distribuído
+### Cenário 7: Object storage com replicação nativa
 
-**Objetivo:** validar que objetos permanecem acessíveis após perda de um nó.
+**Objetivo:** validar que objetos permanecem acessíveis após perda de um DC ou nó conforme a política de replicação escolhida.
 
-**Hipótese:** com 4 nós lógicos (2 por DC) em modo distribuído, a perda de 1 nó mantém leitura/escrita disponível.
+**Hipótese:** com replicação/site ou bucket replication nativa entre `SP1`, `SP2` e `PA1`, objetos continuam disponíveis durante perda de 1 DC conforme política definida para leitura/escrita.
 
 **Procedimento:**
-1. MinIO distribuído operacional
+1. MinIO/object storage operacional em `SP1`, `SP2` e `PA1`
 2. Upload de 100 objetos de tamanhos variados (1 KB a 100 MB)
-3. Kill de 1 nó MinIO
+3. Derrubar 1 nó/site MinIO conforme desenho da PoC
 4. Tentar leitura dos 100 objetos
 5. Tentar escrita de 50 novos objetos
 6. Religar o nó e verificar healing automático
@@ -372,7 +348,7 @@ Os cenários abaixo serão executados sequencialmente, do mais simples ao mais c
 - Objetos escritos com sucesso (esperado: 50/50)
 - Tempo de healing após retorno do nó
 
-**Critério de sucesso:** 100% de disponibilidade durante a falha, healing completo em ≤ 15 minutos após retorno.
+**Critério de sucesso:** objetos permanecem acessíveis conforme política definida, e o DC recuperado equaliza replicação/healing após retorno.
 
 ---
 
@@ -440,21 +416,22 @@ Os cenários abaixo serão executados sequencialmente, do mais simples ao mais c
 
 ---
 
-### Cenário 10: Autenticação Gov.br homologação
+### Cenário 10: Autenticação Gov.br/OIDC com PA1 indisponível
 
-**Objetivo:** validar fluxo completo de federação Gov.br via Keycloak.
+**Objetivo:** validar fluxo completo de federação Gov.br via OIDC e confirmar que `PA1` não é dependência síncrona do login normal.
 
-**Hipótese:** o fluxo OIDC com Identity Brokering funciona end-to-end com Gov.br homologação.
+**Hipótese:** o fluxo OIDC com Identity Brokering funciona end-to-end com Gov.br homologação em `SP1` e `SP2`, mesmo com LDAP/`pa1-oidc-source` indisponível temporariamente.
 
 **Procedimento:**
 1. Acessar `uniplus-lab.shop/selecao`
-2. Iniciar login → redireciona para Keycloak Réplica
+2. Iniciar login → redireciona para o endpoint OIDC lógico do Uni+
 3. Selecionar "Entrar com Gov.br"
-4. Keycloak Réplica → Keycloak Master → Gov.br homologação
+4. Serviço OIDC do DC ativo → Gov.br homologação
 5. Autenticar com CPF de teste do Gov.br
 6. Retornar ao frontend autenticado
 7. Fazer requisição autenticada à API
 8. Validar token JWT no servidor
+9. Derrubar `PA1` e repetir o fluxo em `SP1`/`SP2`
 
 **Métricas:**
 - Tempo total do fluxo de login
@@ -462,58 +439,61 @@ Os cenários abaixo serão executados sequencialmente, do mais simples ao mais c
 - Mapeamento de roles aplicado
 - Validade e estrutura do JWT emitido
 
-**Critério de sucesso:** fluxo completo funcional, JWT válido, claims corretas, acesso autorizado às APIs.
+**Critério de sucesso:** fluxo completo funcional, JWT válido, claims corretas, acesso autorizado às APIs e nenhuma dependência síncrona obrigatória de LDAP/`PA1` para o login principal.
 
 ---
 
-### Cenário 11: Cloudflare Tunnel + WAF
+### Cenário 11: Observabilidade, logs e traces durante falhas
 
-**Objetivo:** validar a opção da camada de borda Cloudflare apresentada no DT-UNIPLUS-001 Seção 9.1.
+**Objetivo:** demonstrar que a plataforma permite diagnosticar falhas e recuperação com métricas, logs e traces correlacionados.
 
-**Hipótese:** o Cloudflare Tunnel fornece exposição segura com WAF ativo, sem necessidade de IP público.
+**Hipótese:** durante queda de pod, falha de DC, backlog de backup e retorno de `PA1`, Prometheus, Loki e Tempo mostram sinais suficientes para identificar causa, impacto, duração e recuperação.
 
 **Procedimento:**
-1. Configurar Cloudflare Tunnel em ambas as máquinas (Ryzen e i7)
-2. DNS `uniplus-lab.shop` apontando para o tunnel
-3. Acessar de várias redes externas (móvel 4G, outra rede)
-4. Disparar requisições com payloads OWASP típicos:
-   - SQL injection em parâmetros
-   - XSS em campos de formulário
-   - Path traversal
-5. Verificar bloqueio pelo WAF Cloudflare
-6. Desligar Ryzen → verificar se Cloudflare redireciona para i7 (failover automático)
+1. Executar carga sintética com `X-Correlation-Id`
+2. Derrubar um pod de API e observar recriação pelo K8s
+3. Simular queda de `SP1`, `SP2` e `PA1` em janelas separadas
+4. Acompanhar métricas de disponibilidade, latência, erro, backlog e uso de recursos
+5. Consultar logs por correlation id
+6. Abrir trace end-to-end no Tempo/OTel e identificar a etapa degradada
 
 **Métricas:**
-- Tempo de propagação DNS
-- TLS válido (cert Cloudflare)
-- Payloads OWASP bloqueados pelo WAF
-- Failover entre `cloudflared` em segundos
+- Latência p50/p95/p99
+- Taxa de erro por serviço/DC
+- Backlog de backup/replicação
+- Tempo até recuperação
+- Percentual de requests com trace completo
+- Logs encontrados por correlation id
 
 **Critério de sucesso:**
-- Acesso via internet pública sem IP público no lab
-- WAF bloqueia ataques OWASP padrão
-- Failover automático entre Ryzen e i7 em ≤ 30s
-
-**Importância:** gera dados objetivos para a Divisão de Redes decidir sobre Cloudflare em produção.
+- Dashboards indicam claramente indisponibilidade, degradação e recuperação
+- Logs não expõem PII sensível
+- Traces permitem rastrear pelo menos um fluxo HTTP → API → banco/mensageria
+- Queda de `PA1` aparece como degradação de backup/sincronização, não como indisponibilidade total
 
 ---
 
-### Cenário 12: Backup e restore para "UNIFESSPA simulada"
+### Cenário 12: Backup, backlog e restore via PA1
 
 **Objetivo:** validar fluxo de backup e procedimento de DR.
 
 **Hipótese:** restore completo a partir de backup é possível em ≤ 1 hora.
 
 **Procedimento:**
-1. Configurar pgBackRest com destino na "UNIFESSPA simulada" (container)
+1. Configurar pgBackRest com destino no `pa1-backup`
 2. Operação normal por 48 horas (backups full + diferenciais + WAL contínuo)
-3. **Cenário catastrófico:** wipe completo de SP1 e SP2 (drop bancos, deletar volumes)
-4. Restaurar a partir do backup na UNIFESSPA simulada
-5. Validar consistência dos dados restaurados
-6. Medir RPO real (última transação preservada)
+3. Derrubar `PA1` por algumas horas e manter escrita ativa em `SP1`/`SP2`
+4. Confirmar spool/backlog local de WAL/backups
+5. Retornar `PA1` e aguardar equalização do backlog
+6. **Cenário catastrófico:** wipe completo de SP1 e SP2 (drop bancos, deletar volumes)
+7. Restaurar a partir do backup em `PA1`
+8. Validar consistência dos dados restaurados
+9. Medir RPO real (última transação preservada)
 
 **Métricas:**
 - Volume total de backups acumulados
+- Backlog local durante indisponibilidade de `PA1`
+- Tempo de equalização após retorno de `PA1`
 - Tempo de restore
 - Última transação preservada vs perdida
 - Integridade dos dados restaurados
@@ -522,6 +502,7 @@ Os cenários abaixo serão executados sequencialmente, do mais simples ao mais c
 - Restore completo em ≤ 1 hora (RTO)
 - Perda de dados ≤ 5 minutos (RPO)
 - 100% de integridade nos dados restaurados
+- Backlog criado durante queda de `PA1` é sincronizado sem intervenção manual destrutiva
 
 ## 6. Métricas e Critérios de Sucesso
 
@@ -552,10 +533,11 @@ A arquitetura é considerada validada quando:
 |----------|---------------|
 | Cenários 1-12 executados | Todos |
 | Cenários com critério de sucesso atingido | ≥ 10/12 |
+| Queda de qualquer 1 DC | Sistema principal disponível |
 | RPO real medido | ≤ 5 minutos |
 | RTO real medido | ≤ 1 hora |
 | Failover Postgres | ≤ 30 segundos |
-| Split-brain prevention | Demonstrado |
+| Retorno/equalização de PA1 | Demonstrado |
 | Capacidade suportada | ≥ 1.000 usuários simultâneos no lab |
 
 ## 7. Limitações Declaradas
@@ -567,7 +549,7 @@ Limitações conhecidas do laboratório que devem ser consideradas ao interpreta
 | Hardware doméstico vs servidor enterprise | Números absolutos de performance não comparáveis a produção |
 | LAN gigabit vs L2L 500 Mbps | Banda inter-DC superior no lab; resultados de catch-up otimistas |
 | Sem RAID 1, sem fonte redundante | Não testa cenários de falha de hardware no nó |
-| Cloudflare Free tier | Volume de testes WAF limitado, sem bot management avançado |
+| Sem borda/WAF institucional | O laboratório mede a aplicação e a plataforma; políticas de borda ficam fora do escopo da PoC |
 | Gov.br homologação | Fluxo idêntico ao produção, mas usuários sintéticos |
 | Sem Palo Alto real | Não testa políticas reais; usa iptables/ufw como substituto |
 | 1 cluster K3s single-node por DC | Em produção, esperam-se múltiplos workers; capacity planning não 1:1 |
@@ -581,14 +563,14 @@ Estimativa baseada em equipe de 1 tech lead + 1 analista de sistemas dedicados p
 |--------|-----------|
 | 1 | Setup das máquinas (Cenário 1) — bootstrap completo |
 | 2 | Cenários 2 e 3 — GitOps e failover Postgres |
-| 3 | Cenário 4 — split-brain prevention (mais valioso para Divisão de Redes) |
+| 3 | Cenário 4 — queda do PA1 sem interromper atendimento |
 | 4 | Cenários 5, 6, 7 — catch-up, Kafka, MinIO |
-| 5 | Cenário 8 — carga em pico (mais demorado, com tunnings) |
+| 5 | Cenário 8 — carga em pico (mais demorado, com tunings) |
 | 6 | Cenários 9 e 10 — fluxos end-to-end (upload, Gov.br) |
-| 7 | Cenário 11 — Cloudflare Tunnel e WAF |
+| 7 | Cenário 11 — observabilidade, logs e traces durante falhas |
 | 8 | Cenário 12 — backup e restore |
 | 9 | Consolidação de relatório final |
-| 10 | Apresentação dos resultados à Divisão de Redes |
+| 10 | Apresentação dos resultados aos times de Engenharia e CTIC |
 
 **Estimativa total: 10 semanas (≈ 2,5 meses)** para validação completa.
 
@@ -596,14 +578,15 @@ Estimativa baseada em equipe de 1 tech lead + 1 analista de sistemas dedicados p
 
 Os resultados deste plano de validação serão usados para:
 
-### 9.1 Subsidiar a Divisão de Redes
+### 9.1 Comprovar o desenho de plataforma
 
-Os cenários 4 (split-brain), 11 (Cloudflare) e 12 (backup) geram dados objetivos para os pontos abertos do **DT-UNIPLUS-001**:
+Os cenários 4, 11 e 12 geram evidências objetivas sobre continuidade, rastreabilidade e recuperabilidade:
 
-- **Seção 9.1 (proteção de borda)** ← Cenário 11
-- **Seção 9.2 (túneis IPSEC)** ← Cenário 4
-- **Seção 9.5 (DNS)** ← Cenário 11
-- **Seção 9.7 (resposta a incidentes)** ← Cenários 8, 9, 11
+- **Queda de PA1**: SP1 e SP2 continuam atendendo, com degradação explícita apenas nos serviços dependentes do DC institucional.
+- **Rastreamento de falhas**: métricas, logs e traces mostram causa, impacto e tempo de recuperação.
+- **Retorno/equalização**: backlog de backup/sincronização é drenado quando PA1 volta.
+
+Decisões de borda, WAF, IPSEC, DNS, firewall e inspeção TLS permanecem responsabilidade do time de infraestrutura/rede quando a plataforma estiver disponível para validação.
 
 ### 9.2 Confirmar dimensionamento
 
@@ -615,7 +598,7 @@ Os cenários 3, 4, 5 e 12 produzem runbooks detalhados de failover, recuperaçã
 
 ### 9.4 Demonstração executiva
 
-Os cenários 4, 8 e 11 produzem **demonstrações visuais** (vídeo, capturas de Grafana) que podem ser apresentados à Reitoria e à Diretoria do CTIC como evidência de rigor técnico do projeto.
+Os cenários 4, 8 e 11 produzem **demonstrações visuais** (vídeo, capturas de Grafana) para evidenciar continuidade, escalabilidade e rastreabilidade do projeto.
 
 ## 10. Histórico de versões
 

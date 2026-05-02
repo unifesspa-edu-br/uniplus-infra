@@ -1,5 +1,5 @@
 @startuml Sequence_UploadClamAV
-!include /home/claude/tools/c4puml/C4_Sequence.puml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Sequence.puml
 
 title Fluxo de Upload de Documento com Análise Antimalware (Async) \nProjeto Uni+ - UNIFESSPA / CTIC
 

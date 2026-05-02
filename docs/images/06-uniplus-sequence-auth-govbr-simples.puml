@@ -1,31 +1,31 @@
 @startuml Sequence_AutenticacaoGovBr_Simplificado
-!include /home/claude/tools/c4puml/C4_Sequence.puml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Sequence.puml
 
 title Fluxo de Autenticação Gov.br — Visão Macro \nProjeto Uni+ — UNIFESSPA / CTIC
 
 Person(user, "Usuário", "Candidato")
 Container(fe, "Frontend Uni+", "Angular", "Aplicação cliente")
 Container(api, "API Uni+", ".NET 8", "Backend")
-Container(kc_eveo, "Keycloak Réplica", "Java", "EVEO (SP1/SP2)")
-Container(kc_uf, "Keycloak Master", "Java", "UNIFESSPA")
+Container(oidc_local, "Serviço OIDC Uni+", "OIDC", "SP1/SP2/PA1")
+Container(oidc_pa1, "pa1-oidc-source", "OIDC", "PA1")
 System_Ext(govbr, "Gov.br", "IdP Federal\n(CPF + 2FA)")
 
 Rel(user, fe, "Acessa Uni+", "HTTPS")
-Rel(fe, kc_eveo, "Inicia login OIDC", "HTTPS")
+Rel(fe, oidc_local, "Inicia login OIDC", "HTTPS")
 
-note over kc_eveo, govbr
+note over oidc_local, govbr
   Federação de identidade
   via OIDC / Identity Brokering
 end note
 
-Rel(kc_eveo, kc_uf, "Encaminha para IdP institucional", "HTTPS / OIDC")
-Rel(kc_uf, govbr, "Redireciona para Gov.br", "HTTPS / OIDC")
+Rel(oidc_local, oidc_pa1, "Encaminha para IdP institucional", "HTTPS / OIDC")
+Rel(oidc_pa1, govbr, "Redireciona para Gov.br", "HTTPS / OIDC")
 
 Rel(user, govbr, "Autentica\n(CPF + senha + 2FA)", "HTTPS")
-Rel(govbr, kc_uf, "Retorna identidade\n(CPF, nome, nível)", "HTTPS / OIDC")
+Rel(govbr, oidc_pa1, "Retorna identidade\n(CPF, nome, nível)", "HTTPS / OIDC")
 
-Rel(kc_uf, kc_eveo, "Repassa autenticação", "HTTPS / OIDC")
-Rel(kc_eveo, fe, "Emite tokens JWT\n(access + refresh)", "HTTPS")
+Rel(oidc_pa1, oidc_local, "Repassa autenticação", "HTTPS / OIDC")
+Rel(oidc_local, fe, "Emite tokens JWT\n(access + refresh)", "HTTPS")
 
 note over fe, api
   Tokens JWT são autocontidos.

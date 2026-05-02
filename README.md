@@ -24,14 +24,14 @@ uniplus-infra/
 │   ├── uniplus-api-selecao/    # API .NET 10 — módulo Seleção
 │   ├── uniplus-api-ingresso/   # API .NET 10 — módulo Ingresso
 │   ├── clamav-scanner/         # Worker antimalware (consumer Kafka)
-│   └── keycloak-replica/       # Réplica do Keycloak institucional
+│   └── keycloak-replica/       # Serviço OIDC local (Keycloak na implementação atual)
 ├── platform/                   # Componentes de plataforma (infra do K8s)
 │   ├── traefik/                # API Gateway + Ingress Controller
 │   ├── argocd/                 # GitOps controller
 │   ├── vault/                  # Gestão de secrets
 │   ├── external-secrets/       # Sync Vault → K8s Secrets
 │   ├── cert-manager/           # Provisionamento TLS automático
-│   ├── cloudflared/            # Cloudflare Tunnel (borda externa)
+│   ├── cloudflared/            # Entrada HTTP/TLS provisória do lab
 │   └── observability/          # Prometheus, Grafana, Loki, Tempo, OTel
 ├── data/                       # Componentes stateful (fora do K8s)
 │   ├── postgres/               # 3 instâncias + Patroni + PgBouncer
@@ -41,7 +41,7 @@ uniplus-infra/
 ├── environments/               # Overrides por ambiente
 │   ├── lab-sp1/                # Laboratório local — máquina principal
 │   ├── lab-sp2/                # Laboratório local — máquina secundária
-│   ├── lab-witness/            # Laboratório local — UNIFESSPA simulada
+│   ├── lab-witness/            # Legado: alvo de renomeação para lab-pa1
 │   ├── prod-sp1/               # Produção — EVEO Cotia
 │   └── prod-sp2/               # Produção — EVEO Osasco
 ├── argocd/                     # Bootstrap GitOps (ApplicationSet)
@@ -62,13 +62,15 @@ uniplus-infra/
 
 **1. GitOps como fonte única de verdade.** Todo o estado declarativo da plataforma reside neste repositório. O ArgoCD em cada cluster reconcilia continuamente o estado real com o desejado.
 
-**2. Mesma stack, ambientes diferentes.** Os mesmos charts Helm rodam em laboratório e produção. Apenas valores específicos por ambiente diferem (réplicas, recursos, hostnames, secrets).
+**2. Três DCs lógicos.** A plataforma é modelada como `SP1`, `SP2` e `PA1`. `SP1` e `SP2` atendem tráfego de usuário em modo ativo-ativo; `PA1` é o DC institucional da UNIFESSPA, responsável por identidade institucional, backup, observabilidade/retenção e funções de consenso quando aplicável.
 
-**3. Componentes stateful fora do Kubernetes.** PostgreSQL, Kafka e MinIO operam como containers gerenciados por systemd diretamente no host Linux, garantindo performance previsível e operação simplificada (backup, restore, troubleshooting).
+**3. Ativo-ativo no nível da plataforma.** Cada componente usa o mecanismo nativo de HA, replicação, sincronização ou quorum suportado pelo produto. Onde multi-writer limpo não existir, distribuímos responsabilidade e usamos failover controlado, sem simular multi-master artificial.
 
-**4. Secrets nunca em código.** Toda credencial, chave ou token reside no HashiCorp Vault e é injetada nos pods via External Secrets Operator. Os manifests do Git contém apenas referências (`ExternalSecret`).
+**4. Componentes stateful fora do Kubernetes.** PostgreSQL, Kafka e MinIO operam como containers gerenciados por systemd diretamente no host Linux, garantindo performance previsível e operação simplificada (backup, restore, troubleshooting).
 
-**5. Soberania institucional.** Backups, identidade institucional e configurações sensíveis permanecem sob controle da UNIFESSPA. Provedores externos (EVEO, Cloudflare) atuam apenas no caminho de tráfego, nunca como detentores de dados.
+**5. Secrets nunca em código.** Toda credencial, chave ou token reside no cofre institucional e é injetada nos pods via External Secrets Operator. Os manifests do Git contêm apenas referências (`ExternalSecret`).
+
+**6. Soberania institucional sem ponto único de falha.** `PA1` concentra LDAP institucional, `pa1-oidc-source` e `pa1-backup`, mas não fica no caminho síncrono obrigatório do atendimento normal. Se `PA1` ficar fora por algumas horas, `SP1` e `SP2` continuam atendendo e sincronizam backlog/backup quando `PA1` retornar.
 
 ## Documentação
 
@@ -90,25 +92,26 @@ uniplus-infra/
 | API Gateway / Ingress | Traefik | 3.x |
 | Service mesh (futuro) | — | a definir |
 | Secrets | HashiCorp Vault + ESO | 1.17+ / 0.10+ |
-| Borda externa | Cloudflare Tunnel | latest |
+| Entrada HTTP/TLS de lab | cloudflared ou alternativa gratuita | latest |
 | Observabilidade — métricas | Prometheus + Grafana | 2.x / 11.x |
 | Observabilidade — logs | Loki + Promtail | 3.x |
 | Observabilidade — traces | Tempo + OpenTelemetry Collector | 2.x |
 | Banco relacional | PostgreSQL + Patroni + PgBouncer | 16+ |
 | Mensageria | Apache Kafka (KRaft mode) | 3.7+ |
 | Storage de objetos | MinIO (modo distribuído) | latest |
-| Cache | Redis + Redis Sentinel | 7.x |
+| Cache | Valkey / Redis OSS-compatible + Sentinel | a definir |
 | Antimalware | ClamAV | latest |
 | IdP federado | Keycloak | 25+ |
 
 ## Status atual
 
-| Componente | Lab SP1 | Lab SP2 | Lab Witness | Prod SP1 | Prod SP2 |
-|------------|---------|---------|-------------|----------|----------|
-| Provisionamento | 🟡 em planejamento | 🟡 em planejamento | 🟡 em planejamento | ⚪ aguardando contrato EVEO | ⚪ aguardando contrato EVEO |
-| ArgoCD | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ |
-| Vault | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ |
-| Aplicações Uni+ | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ |
+| Componente | Lab SP1 | Lab SP2 | Lab PA1 | Prod SP1 | Prod SP2 | Prod PA1 |
+|------------|---------|---------|---------|----------|----------|----------|
+| Provisionamento | 🟡 em planejamento | 🟡 em planejamento | 🟡 em planejamento | ⚪ aguardando contrato EVEO | ⚪ aguardando contrato EVEO | 🟡 institucional |
+| GitOps / ArgoCD | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ |
+| OIDC | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | 🟡 fonte institucional |
+| Backup / DR | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | 🟡 destino institucional |
+| Aplicações Uni+ | ⚪ | ⚪ | — | ⚪ | ⚪ | — |
 
 🟢 operacional · 🟡 em construção · 🔴 com problemas · ⚪ não iniciado
 
