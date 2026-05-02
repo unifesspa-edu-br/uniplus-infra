@@ -14,9 +14,10 @@ assignees: ''
 
 - [ ] lab-sp1 (Ryzen)
 - [ ] lab-sp2 (i7)
-- [ ] lab-witness
+- [ ] lab-pa1
 - [ ] prod-sp1
 - [ ] prod-sp2
+- [ ] prod-pa1
 
 ## Como reproduzir
 

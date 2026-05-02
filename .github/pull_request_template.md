@@ -43,9 +43,10 @@ Closes #
 
 - [ ] lab-sp1
 - [ ] lab-sp2
-- [ ] lab-witness
+- [ ] lab-pa1
 - [ ] prod-sp1
 - [ ] prod-sp2
+- [ ] prod-pa1
 
 ## Notas para revisores
 
