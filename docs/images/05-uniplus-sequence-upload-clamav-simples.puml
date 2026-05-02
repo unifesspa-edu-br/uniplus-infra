@@ -1,5 +1,5 @@
 @startuml Sequence_UploadClamAV_Simplificado
-!include /home/claude/tools/c4puml/C4_Sequence.puml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Sequence.puml
 
 title Fluxo de Upload de Documento — Visão Macro \nProjeto Uni+ — UNIFESSPA / CTIC
 

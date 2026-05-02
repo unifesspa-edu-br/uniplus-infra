@@ -1,4 +1,4 @@
-# Default values para keycloak-replica
+# Default values para o serviço OIDC local (chart legado keycloak-replica)
 # TODO: implementar conforme estrutura do uniplus-web
 
 replicas: 2

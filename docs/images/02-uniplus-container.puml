@@ -1,12 +1,12 @@
 @startuml C4_Container_UniPlus
-!include /home/claude/tools/c4puml/C4_Container.puml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
 
 LAYOUT_WITH_LEGEND()
 title Diagrama de Container - Sistema Uni+ \nUNIFESSPA / CTIC
 
 Person(usuario, "Usuário Uni+", "Candidato, aluno,\nservidor ou gestor")
 
-System_Ext(cloudflare, "Cloudflare", "DNS + WAF + Anti-DDoS\n(borda externa)")
+System_Ext(edge_lab, "Entrada HTTP/TLS de lab", "DNS/tunnel provisório\nfora da validação de borda")
 
 System_Boundary(uniplus, "Sistema Uni+ (EVEO SP1 + SP2 — ativo-ativo)") {
 
@@ -25,7 +25,7 @@ System_Boundary(uniplus, "Sistema Uni+ (EVEO SP1 + SP2 — ativo-ativo)") {
     }
 
     Container(clamav, "ClamAV Scanner", ".NET worker", "Análise antimalware\nassíncrona")
-    Container(keycloak_eveo, "Keycloak (réplica)", "Java / Quarkus", "Cache de autenticação\nlocal por DC")
+    Container(oidc_local, "Serviço OIDC local", "OIDC", "Autenticação local por DC\n(Keycloak atual)")
 
     Boundary(data_group, "Camada de dados (host Linux, fora do K8s)") {
         ContainerDb(pg_portal, "PG Portal", "PostgreSQL 16", "uniplus_portal")
@@ -33,16 +33,16 @@ System_Boundary(uniplus, "Sistema Uni+ (EVEO SP1 + SP2 — ativo-ativo)") {
         ContainerDb(pg_ingresso, "PG Ingresso", "PostgreSQL 16", "uniplus_ingresso")
         ContainerQueue(kafka, "Kafka KRaft", "Apache Kafka", "Eventos de domínio")
         ContainerDb(minio, "MinIO", "MinIO Distribuído", "Buckets: quarentena,\naprovado, bloqueado")
-        ContainerDb(redis, "Redis", "Redis", "Cache + sessões")
+        ContainerDb(redis, "Valkey/Redis", "Redis-compatible", "Cache local descartável")
     }
 }
 
 System_Ext(govbr, "Gov.br", "Provedor OIDC\nGoverno Federal")
-System_Ext(keycloak_uf, "Keycloak UNIFESSPA", "IdP institucional\n(master)")
-System_Ext(minio_uf, "MinIO UNIFESSPA", "Storage interno\n(off-site)")
+System_Ext(oidc_pa1, "pa1-oidc-source", "OIDC institucional\n(PA1, assíncrono)")
+System_Ext(object_pa1, "pa1-object-storage", "Storage interno\n(PA1)")
 
-Rel(usuario, cloudflare, "Acessa", "HTTPS")
-Rel(cloudflare, traefik, "Encaminha tráfego válido", "HTTPS")
+Rel(usuario, edge_lab, "Acessa", "HTTPS")
+Rel(edge_lab, traefik, "Encaminha tráfego válido", "HTTPS")
 
 Rel(traefik, fe_portal, "Serve", "HTTP")
 Rel(traefik, fe_selecao, "Serve", "HTTP")
@@ -69,11 +69,11 @@ Rel(fe_selecao, minio, "Upload direto\n(presigned URL)", "HTTPS / S3")
 Rel(clamav, kafka, "Consome eventos\ndocumento.upload", "TCP/9092")
 Rel(clamav, minio, "Lê arquivo,\nmove entre buckets", "S3 API")
 
-Rel(fe_portal, keycloak_eveo, "Login OIDC", "HTTPS")
-Rel(keycloak_eveo, keycloak_uf, "Sincronização\nde realm", "HTTPS")
-Rel(keycloak_uf, govbr, "Federa autenticação", "OIDC")
+Rel(fe_portal, oidc_local, "Login OIDC", "HTTPS")
+Rel(oidc_local, govbr, "Federa autenticação", "OIDC")
+Rel(oidc_local, oidc_pa1, "Sincronização institucional\nassíncrona", "HTTPS")
 
-Rel_D(minio, minio_uf, "Replicação async\n(off-site)", "S3 API")
+Rel_D(minio, object_pa1, "Replicação async\n(off-site)", "S3 API")
 
 SHOW_LEGEND()
 

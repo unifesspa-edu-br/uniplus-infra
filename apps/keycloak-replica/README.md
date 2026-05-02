@@ -1,12 +1,14 @@
 # keycloak-replica
 
-Réplica local do Keycloak institucional para autenticação
+Serviço OIDC local do Uni+.
+
+> O nome do chart ainda é legado. Na arquitetura, este componente deve ser tratado como serviço OIDC local; a implementação atual usa Keycloak.
 
 > ⚠️ **Status:** placeholder inicial. Implementação dos templates pendente.
 
 ## Visão geral
 
-Componente da plataforma Uni+. Veja [docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md) para contexto.
+Componente da plataforma Uni+ responsável por login OIDC local em cada DC. Veja [docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md) para contexto.
 
 ## Pré-requisitos
 

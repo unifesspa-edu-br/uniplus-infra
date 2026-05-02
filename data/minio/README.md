@@ -4,9 +4,11 @@
 
 ## Visão geral
 
-- **Modo:** Distribuído com Erasure Coding
-- **Nós:** 4 ao todo (2 por DC)
-- **Tolerância:** sobrevive à perda de 1 nó
+- **Modo:** replicação/site ou bucket replication nativa do MinIO, conforme desenho validado
+- **DCs:** `SP1`, `SP2` e `PA1`
+- **Tolerância alvo:** perda de qualquer 1 DC sem perda de objetos já confirmados conforme política de replicação
+
+Objetos devem usar chaves imutáveis/UUID sempre que possível. Isso reduz conflitos em replicação active-active e evita depender de sobrescrita concorrente.
 
 ## Buckets
 
@@ -18,10 +20,10 @@
 
 ## Implementação pendente
 
-- [ ] docker-compose.yml em modo distribuído
-- [ ] Configuração de erasure coding entre os 4 nós
+- [ ] docker-compose.yml para `SP1`, `SP2` e `PA1`
+- [ ] Configuração de replicação nativa entre sites/buckets
 - [ ] Bucket policies (presigned URL apenas, TTL curto)
-- [ ] Replicação assíncrona para MinIO master UNIFESSPA
+- [ ] Replicação assíncrona para `pa1-object-storage`
 - [ ] Lifecycle rules (auto-purge da quarentena)
 - [ ] Configuração de eventos (notificações Kafka)
 - [ ] Hardening SSL/TLS

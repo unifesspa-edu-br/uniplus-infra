@@ -12,7 +12,8 @@
 - [6. Componentes Internos (C4 Nível 3)](#6-componentes-internos-c4-nível-3)
 - [7. Fluxos Principais](#7-fluxos-principais)
 - [8. Decisões Arquiteturais](#8-decisões-arquiteturais)
-- [9. Mapeamento de Componentes](#9-mapeamento-de-componentes)
+- [9. Estratégia por Componente](#9-estratégia-por-componente)
+- [10. Mapeamento de Componentes](#10-mapeamento-de-componentes)
 
 ## 1. Contexto
 
@@ -48,9 +49,15 @@ A integração entre módulos ocorre via **eventos de domínio** publicados no A
 
 ### 2.2 Independência operacional entre datacenters
 
-Dois clusters Kubernetes **independentes** (um por DC), cada um com seu próprio control plane e workers. Não há cluster K8s estendido entre os DCs.
+A plataforma é modelada como **3 DCs lógicos**:
 
-**Implicação:** falha do link inter-DC não compromete a operação dos clusters individualmente. Replicação de dados ocorre na camada de aplicação (PostgreSQL streaming, Kafka MirrorMaker, MinIO replication).
+- `SP1`: datacenter externo EVEO Cotia, ativo para tráfego de usuário.
+- `SP2`: datacenter externo EVEO Osasco, ativo para tráfego de usuário.
+- `PA1`: datacenter institucional da UNIFESSPA em Marabá, origem institucional de identidade, backup/DR, retenção e funções de consenso quando aplicável.
+
+`SP1` e `SP2` mantêm clusters Kubernetes independentes. `PA1` não é um simples witness: é um DC institucional com serviços próprios. Não há cluster K8s estendido entre DCs.
+
+**Implicação:** a perda de qualquer 1 DC deve manter o serviço principal disponível. A indisponibilidade de `PA1` degrada sincronização institucional, backup e retenção, mas não deve interromper o atendimento normal em `SP1` e `SP2`.
 
 ### 2.3 Componentes stateful pesados fora do Kubernetes
 
@@ -69,7 +76,15 @@ Todo o estado declarativo da plataforma reside no Git, aplicado via ArgoCD em am
 
 ### 2.5 Soberania institucional dos dados
 
-Backups, identidade institucional (LDAP/AD master) e configurações sensíveis permanecem sob controle da UNIFESSPA. Provedores externos atuam apenas no caminho de tráfego, nunca como detentores de dados.
+Backups, LDAP institucional, origem OIDC institucional (`pa1-oidc-source`) e configurações sensíveis permanecem sob controle da UNIFESSPA em `PA1`. Provedores externos atuam no caminho de tráfego e execução dos serviços, nunca como detentores únicos dos dados.
+
+### 2.6 Ativo-ativo no nível da plataforma
+
+O Uni+ adota ativo-ativo **no nível da plataforma**, não multi-master artificial em todos os produtos.
+
+**Decisão:** para cada componente, usamos o mecanismo nativo de HA, replicação, sincronização ou quorum suportado pelo produto. Onde multi-writer não é suportado de forma limpa, distribuímos responsabilidade, usamos failover controlado e mantemos todos os DCs com papel ativo no sistema.
+
+**Consequência:** a disponibilidade do usuário depende de `SP1` e `SP2` conseguirem atender sem chamada síncrona obrigatória ao `PA1`. Quando `PA1` retorna, processos de sincronização, backlog de backup, replicação e equalização devem prosseguir até convergir.
 
 ## 3. Visão de Contexto (C4 Nível 1)
 
@@ -91,9 +106,9 @@ Backups, identidade institucional (LDAP/AD master) e configurações sensíveis 
 | Sistema | Responsabilidade |
 |---------|-----------------|
 | **Gov.br** | Provedor de identidade do Governo Federal (login único + 2FA) |
-| **Keycloak Institucional** | IdP da UNIFESSPA, atua como broker entre Uni+ e Gov.br |
+| **pa1-oidc-source** | Origem institucional de metadados de identidade e integração LDAP no PA1; implementação atual usa Keycloak |
 | **LDAP/AD UNIFESSPA** | Diretório institucional de alunos e servidores |
-| **MinIO UNIFESSPA** | Storage de objetos interno (master, off-site backup) |
+| **pa1-object-storage** | Storage de objetos institucional para retenção, replicação e DR |
 | **Backup UNIFESSPA** | Infraestrutura interna de backup e DR |
 | **Servidor de E-mail** | Envio de notificações e comunicados |
 
@@ -105,7 +120,7 @@ Backups, identidade institucional (LDAP/AD master) e configurações sensíveis 
 
 ### 4.1 Camada de borda
 
-- **Cloudflare**: DNS autoritativo, WAF, anti-DDoS, edge cache. Encaminha tráfego válido aos servidores via Cloudflare Tunnel.
+- **Entrada HTTP/TLS de lab**: mecanismo provisório para expor a PoC. Não valida WAF, DNS institucional, IPSEC, firewall ou inspeção TLS.
 - **Traefik**: API Gateway + Ingress Controller dentro de cada cluster K8s. Roteia por path para os componentes corretos.
 
 ### 4.2 Camada de apresentação
@@ -116,12 +131,12 @@ Três frontends Angular independentes (Portal, Seleção, Ingresso), servidos po
 
 - **3 APIs .NET 10**: Portal, Seleção, Ingresso — uma por módulo, com SharedKernel como library compartilhada.
 - **ClamAV Scanner**: worker assíncrono de análise antimalware, consumer de eventos Kafka.
-- **Keycloak Réplica**: réplica do IdP institucional para autenticação local em cada DC.
+- **OIDC local**: serviço de autenticação em cada DC. A implementação atual usa Keycloak, mas o contrato arquitetural é OIDC.
 
 ### 4.4 Camada de mensageria e cache
 
-- **Kafka KRaft**: bus de eventos de domínio, replicado entre os DCs.
-- **Redis**: cache distribuído + sessões transientes.
+- **Kafka KRaft**: bus de eventos de domínio, com quorum e replicação nativos quando a latência entre DCs permitir.
+- **Redis/Valkey**: cache local por DC para dados descartáveis e sessões transientes não críticas.
 
 ### 4.5 Camada de dados
 
@@ -132,7 +147,7 @@ Três frontends Angular independentes (Portal, Seleção, Ingresso), servidos po
 
 ![Diagrama de Deployment](images/03-uniplus-deployment.png)
 
-> Diagrama de Deployment — Topologia física entre Cloudflare, EVEO (SP1+SP2) e UNIFESSPA.
+> Diagrama de Deployment — Topologia física entre entrada de lab, EVEO (`SP1`/`SP2`) e UNIFESSPA (`PA1`).
 
 ### 5.1 EVEO — Datacenter Tier III
 
@@ -148,20 +163,20 @@ Dois servidores físicos dedicados, distribuídos entre as zonas de disponibilid
 
 Conectados por **link L2L privado de 500 Mbps**, redundante e com latência sub-milissegundo.
 
-### 5.2 UNIFESSPA — Marabá-PA
+### 5.2 PA1 — UNIFESSPA Marabá-PA
 
-Infraestrutura institucional interna que abriga:
+`PA1` é o DC institucional da UNIFESSPA. Ele abriga serviços de soberania e recuperação, mas não deve ser ponto único de falha para o atendimento normal:
 
 - **Palo Alto**: NGFW que termina os túneis IPSEC dos DCs EVEO
-- **Keycloak Master**: IdP institucional federado com Gov.br
-- **LDAP/AD**: diretório de usuários
-- **MinIO Master**: storage de objetos interno (backup off-site)
-- **Storage Backup**: pgBackRest repo + MinIO mirror
-- **etcd Witness**: 3º nó do quórum Patroni (evita split-brain)
+- **pa1-oidc-source**: origem institucional de identidade/OIDC; implementação atual usa Keycloak
+- **LDAP/AD**: diretório institucional, existente apenas em `PA1`
+- **pa1-object-storage**: storage institucional para retenção e replicação de objetos
+- **pa1-backup**: destino real de pgBackRest, snapshots e artefatos de recuperação
+- **pa1-consensus-witness**: função opcional de quorum para componentes que usam consenso externo, como Patroni/etcd
 
-### 5.3 Cloudflare — Edge Global
+### 5.3 Entrada HTTP/TLS de laboratório
 
-Atua como camada de borda externa: DNS, WAF, anti-DDoS, TLS, edge cache. Conecta-se aos servidores EVEO via Cloudflare Tunnel (sem necessidade de IP público).
+Atua apenas como forma provisória de acesso externo à PoC. A arquitetura de produção para borda, DNS, WAF, IPSEC, firewall e inspeção TLS será definida por infraestrutura/rede sobre a réplica mínima de produção.
 
 ### 5.4 Distribuição de primaries de banco
 
@@ -172,6 +187,8 @@ Para balancear carga de escrita entre os DCs, os primaries dos bancos são distr
 | `uniplus_portal` | SP1 | SP2 |
 | `uniplus_selecao` | SP2 | SP1 |
 | `uniplus_ingresso` | SP1 | SP2 |
+
+`PA1` participa da recuperabilidade e pode manter réplicas/backup conforme o componente, mas não recebe primary operacional obrigatório para tráfego de usuário.
 
 ## 6. Componentes Internos (C4 Nível 3)
 
@@ -205,28 +222,31 @@ A `SharedKernel` (referenciada como library) contém: tipos comuns (`Result<T>`,
 
 **Detalhes técnicos completos:** veja [docs/RUNBOOKS.md](RUNBOOKS.md#fluxo-de-upload).
 
-### 7.2 Autenticação Gov.br via Keycloak federado
+### 7.2 Autenticação Gov.br via OIDC federado
 
 ![Fluxo de Autenticação](images/06-uniplus-sequence-auth-govbr-simples.png)
 
-> Visão macro da autenticação Gov.br via Keycloak federado (Identity Brokering).
+> Visão macro da autenticação Gov.br via OIDC federado. A implementação atual usa Keycloak, mas o contrato documentado é OIDC.
 
-**Resumo:** o frontend inicia OIDC contra o Keycloak Réplica (EVEO), que encaminha para o Keycloak Master (UNIFESSPA), que por sua vez federa com o Gov.br. Após autenticação no Gov.br (CPF + 2FA), tokens JWT são emitidos e o frontend acessa as APIs.
+**Resumo:** o frontend inicia OIDC contra o endpoint lógico de autenticação do Uni+. `SP1`, `SP2` e `PA1` executam serviço OIDC operacional, com contrato comum para o realm `unifesspa`. O login principal usa gov.br; o LDAP institucional existe apenas em `PA1` e alimenta sincronização institucional, mas não deve ser dependência síncrona obrigatória para o atendimento normal.
+
+Se `PA1` ficar indisponível, `SP1` e `SP2` continuam aptos a atender o fluxo principal de login via gov.br/OIDC. A sincronização institucional e eventuais atualizações oriundas do LDAP ficam pendentes até o retorno de `PA1`.
 
 ## 8. Decisões Arquiteturais
 
-### ADR-001: Dois clusters K8s independentes em vez de cluster estendido
+### ADR-001: Três DCs lógicos e clusters K8s independentes
 
 **Status:** ✅ Aceito.
 
-**Contexto:** A plataforma roda em dois DCs (SP1 e SP2). Há duas abordagens: cluster K8s único estendido entre DCs, ou dois clusters independentes.
+**Contexto:** A plataforma roda em `SP1`, `SP2` e `PA1`. Há duas abordagens para os DCs externos: cluster K8s único estendido entre DCs, ou clusters independentes.
 
-**Decisão:** Adotar dois clusters Kubernetes independentes, com replicação de dados na camada de aplicação.
+**Decisão:** Adotar clusters Kubernetes independentes em `SP1` e `SP2`, com replicação/sincronização na camada de cada produto. `PA1` é DC institucional para identidade, backup, retenção e funções de consenso quando aplicável.
 
 **Consequências:**
 - ✅ Falha do link inter-DC não derruba o cluster
 - ✅ Manutenção e upgrades podem ser feitos cluster por cluster
 - ✅ Operação independente reduz raio de impacto de erros
+- ✅ Queda temporária de `PA1` não deve derrubar o atendimento normal
 - ⚠️ Configuração precisa ser idêntica entre os clusters (mitigado via GitOps)
 - ⚠️ Estado eventualmente consistente entre DCs (aceitável para o domínio)
 
@@ -245,30 +265,31 @@ A `SharedKernel` (referenciada como library) contém: tipos comuns (`Result<T>`,
 - ⚠️ Operação dual: K8s + systemd (gerenciada via Ansible)
 - ⚠️ Sem auto-healing K8s para esses componentes (mitigado por Patroni para PG, KRaft para Kafka, MinIO healing nativo)
 
-### ADR-003: Gov.br exclusivo, federado via Keycloak
+### ADR-003: Gov.br exclusivo, federado via OIDC institucional
 
 **Status:** ✅ Aceito.
 
-**Contexto:** O Uni+ precisa de provedor de identidade. Opções: Gov.br direto, Keycloak local, Keycloak federado com Gov.br.
+**Contexto:** O Uni+ precisa de provedor de identidade. Opções: Gov.br direto, OIDC local por DC, OIDC institucional federado com Gov.br.
 
-**Decisão:** Federar o Gov.br através do Keycloak institucional da UNIFESSPA.
+**Decisão:** Federar o Gov.br através do contrato OIDC institucional da UNIFESSPA, operado nos três DCs. `PA1` mantém a origem institucional (`pa1-oidc-source`) e LDAP, mas `SP1` e `SP2` devem conseguir executar o login principal durante indisponibilidade temporária de `PA1`. A implementação atual usa Keycloak, mas a documentação arquitetural trata o serviço como contrato OIDC.
 
 **Consequências:**
 - ✅ Conformidade com Decreto 10.543/2020 (Gov.br como padrão federal)
 - ✅ Centralização da governança de identidade na UNIFESSPA
 - ✅ Roles específicas do Uni+ aplicadas sobre identidade Gov.br
 - ✅ Auditoria unificada de autenticações institucionais
-- ⚠️ Dependência operacional do Keycloak Master (mitigado por réplicas em cada DC)
+- ✅ OIDC operacional nos 3 DCs evita que `PA1` seja ponto único de falha do login principal
+- ⚠️ LDAP institucional existe apenas em `PA1`; queda de `PA1` degrada sincronização institucional, não o fluxo normal via gov.br/OIDC
 
-### ADR-004: Cloudflare como camada de borda
+### ADR-004: Borda externa fora do escopo da PoC de engenharia
 
-**Status:** 🟡 Em validação (vide [VALIDATION-PLAN.md](VALIDATION-PLAN.md)).
+**Status:** 🟡 Pendente de decisão de infraestrutura/rede.
 
 **Contexto:** Servidores na EVEO atendem usuários diretamente via IP público. Há necessidade de proteção contra DDoS volumétrico, WAF e edge cache.
 
-**Decisão preliminar:** Adotar Cloudflare como camada de borda externa, conectado aos servidores EVEO via Cloudflare Tunnel (sem IP público exposto).
+**Decisão:** A PoC de engenharia pode usar uma entrada HTTP/TLS provisória para expor o laboratório, mas não deve tentar validar WAF, IPSEC, DNS, firewall ou inspeção TLS. Esses pontos serão avaliados pelo time de infraestrutura/rede quando a réplica mínima de produção estiver disponível.
 
-**Decisão final aguarda parecer da Divisão de Redes** sobre adequação institucional e LGPD.
+**Consequência:** Evidências da PoC devem focar redundância, escalabilidade, observabilidade, rastreamento e recuperabilidade da aplicação.
 
 ### ADR-005: Componentes stateful em containers (não bare-metal)
 
@@ -297,9 +318,23 @@ A `SharedKernel` (referenciada como library) contém: tipos comuns (`Result<T>`,
 - Auditoria nativa via Git history
 - Suporte nativo a Helm e Kustomize
 
-## 9. Mapeamento de Componentes
+## 9. Estratégia por Componente
 
-### 9.1 Componentes no Kubernetes (por DC)
+Esta seção define o mecanismo de redundância aceito para cada família de serviço. O objetivo é manter ativo-ativo no nível da plataforma sem forçar modos que o produto não suporta de forma limpa.
+
+| Componente | Estratégia |
+|------------|------------|
+| OIDC / identidade | Serviço OIDC operacional em `SP1`, `SP2` e `PA1`, com contrato lógico comum. `pa1-oidc-source` concentra a origem institucional e integração LDAP; login principal via gov.br/OIDC deve continuar em `SP1`/`SP2` com `PA1` fora. |
+| PostgreSQL | Ativo-ativo por distribuição de primaries entre módulos, réplicas por DC, failover controlado e `pa1-backup`. Não há multi-master artificial. |
+| Kafka | Quorum e replicação nativos do KRaft quando a latência permitir. A distribuição de controllers/brokers deve tolerar a perda de qualquer 1 DC no cenário alvo. |
+| MinIO / objetos | Replicação/site ou bucket replication nativa entre `SP1`, `SP2` e `PA1`, com chaves de objeto imutáveis sempre que possível. |
+| Cache Redis/Valkey | Cache local por DC, descartável e reconstruível. Não participa de consenso global nem deve armazenar estado autoritativo. |
+| Observabilidade | Coleta local por DC e agregação/retenção conforme desenho. Queda de `PA1` não deve impedir métricas/logs/traces locais em `SP1` e `SP2`. |
+| Backup / DR | `PA1` é destino real de backup. Se `PA1` ficar indisponível, `SP1` e `SP2` mantêm spool/backlog local e sincronizam quando `PA1` retornar. |
+
+## 10. Mapeamento de Componentes
+
+### 10.1 Componentes no Kubernetes (por DC)
 
 | Serviço | Réplicas | CPU req → limit | RAM req → limit |
 |---------|----------|-----------------|-----------------|
@@ -311,23 +346,23 @@ A `SharedKernel` (referenciada como library) contém: tipos comuns (`Result<T>`,
 | API Ingresso | 2 | 500m → 2000m | 512 MB → 2 GB |
 | ClamAV Scanner | 1-2 | 500m → 4000m | 2 GB → 4 GB |
 | Traefik | 2 | 200m → 1000m | 256 MB → 512 MB |
-| Keycloak Réplica | 2 | 500m → 2000m | 1 GB → 2 GB |
+| Serviço OIDC (Keycloak atual) | 2 | 500m → 2000m | 1 GB → 2 GB |
 | Redis | 2 | 200m → 1000m | 1 GB → 4 GB |
 | ArgoCD | 1 | 200m → 1000m | 512 MB → 2 GB |
 | Vault | 1 (HA: 3) | 200m → 500m | 256 MB → 512 MB |
 | Prometheus | 1 | 500m → 2000m | 2 GB → 4 GB |
 | Grafana + Loki + Tempo + OTel | — | ~1 vCPU | ~6 GB |
 
-### 9.2 Componentes fora do Kubernetes (por DC)
+### 10.2 Componentes fora do Kubernetes (por DC)
 
 | Serviço | CPU dedicada | RAM dedicada | Disco dedicado |
 |---------|-------------|--------------|----------------|
 | PostgreSQL × 3 | 12 threads | 24 GB | 400 GB |
 | Kafka broker | 6 threads | 8 GB | 300 GB |
 | MinIO node | 4 threads | 6 GB | 800 GB |
-| etcd (Patroni) | compartilhada | 256 MB | 5 GB |
+| etcd / função de consenso | compartilhada | 256 MB | 5 GB |
 
-### 9.3 Distribuição de recursos
+### 10.3 Distribuição de recursos
 
 | Camada | vCPU | RAM | Disco | % do total |
 |--------|------|-----|-------|------------|

@@ -55,7 +55,7 @@
    ```
 5. Validar aplicação funcional via smoke tests
 
-**Em caso de falha:** ver [seção 2.5 — Rollback de deploy](#25-rollback-de-deploy).
+**Em caso de falha:** ver [seção 2.6 — Rollback de deploy](#26-rollback-de-deploy).
 
 ### 1.3 Adicionar novo segredo no Vault
 
@@ -103,6 +103,14 @@
 
 ## 2. Failover e Recuperação
 
+### Estados operacionais
+
+| Estado | Significado |
+|--------|-------------|
+| Disponível | Usuários conseguem acessar frontend, autenticar via gov.br/OIDC, chamar APIs e gravar dados operacionais. |
+| Degradado | Serviço principal continua disponível, mas alguma capacidade não crítica está pendente, como backup para `PA1`, sincronização LDAP ou agregação central de observabilidade. |
+| Indisponível | Fluxo principal do usuário não consegue completar leitura/escrita ou autenticação. |
+
 ### 2.1 Failover do PostgreSQL (automático via Patroni)
 
 **Quando:** o primary cai (crash, OOM, falha de hardware).
@@ -132,7 +140,7 @@ patronictl -c /etc/patroni/patroni.yml list
 kubectl logs -n uniplus deploy/api-portal | grep -i "postgres\|connection"
 ```
 
-**Se falhar:** ver [Cenário 4 — Split-brain prevention](#46-split-brain-prevention) para verificar se o quórum etcd está saudável.
+**Se falhar:** verificar consenso do Patroni/etcd, incluindo `pa1-consensus-witness` quando essa função estiver ativa.
 
 ### 2.2 Failover manual do Postgres
 
@@ -159,7 +167,7 @@ patronictl -c /etc/patroni/patroni.yml switchover \
    ping uniplus-sp2
    ```
 2. **Verificar que o outro DC está atendendo**:
-   - Cloudflare deve ter detectado e direcionado todo tráfego ao DC operacional
+   - A entrada HTTP/TLS de lab deve direcionar tráfego ao DC operacional
    - Verificar via `https://uniplus-lab.shop` se o sistema responde
 3. **Confirmar promoção do Postgres** (se o DC caído tinha primary):
    ```bash
@@ -178,27 +186,64 @@ patronictl -c /etc/patroni/patroni.yml switchover \
 
 **Tempo estimado de RTO:** ≤ 1 hora (medido em [VALIDATION-PLAN.md](VALIDATION-PLAN.md) Cenário 5).
 
-### 2.4 Failover do Cloudflare Tunnel
+### 2.4 PA1 indisponível
+
+**Cenário:** o DC institucional `PA1` fica fora por algumas horas, incluindo `pa1-backup`, `pa1-oidc-source`, LDAP institucional, storage institucional e função de consenso hospedada nele.
+
+**Comportamento esperado:** `SP1` e `SP2` continuam atendendo usuários. Login principal via gov.br/OIDC permanece funcional nos DCs externos. Backup, replicação para `PA1`, sincronização LDAP e retenção central entram em estado **degradado**, com backlog local preservado.
+
+**Passos:**
+
+1. **Confirmar indisponibilidade do PA1**:
+   ```bash
+   ping uniplus-pa1
+   curl -f http://uniplus-pa1:18080/realms/unifesspa/.well-known/openid-configuration
+   ```
+2. **Confirmar atendimento por SP1/SP2**:
+   ```bash
+   curl -f https://uniplus-lab.shop/portal
+   curl -f https://api.uniplus-lab.shop/selecao/health
+   curl -f https://api.uniplus-lab.shop/ingresso/health
+   ```
+3. **Verificar degradações esperadas**:
+   - fila/backlog de pgBackRest ou spool de WAL aguardando `pa1-backup`
+   - replicação de objetos pendente para `pa1-object-storage`
+   - sincronização LDAP/OIDC institucional pendente
+   - agregação central de logs/traces com retry
+4. **Comunicar estado degradado** ao time, sem tratar como indisponibilidade do sistema se o fluxo principal continuar operacional.
+5. **Quando PA1 voltar**, acompanhar equalização:
+   ```bash
+   # exemplos conceituais; comandos finais serão definidos na implementação
+   pgbackrest --stanza=uniplus info
+   mc admin replicate status <alias>
+   kubectl get pods -A
+   ```
+6. **Encerrar incidente** apenas quando backlog voltar a zero ou houver plano aceito para pendência residual.
+
+**Critério de recuperação:** `SP1` e `SP2` permanecem disponíveis durante a queda; após retorno de `PA1`, backlog de backup/replicação/sincronização converge sem intervenção destrutiva.
+
+### 2.5 Failover da entrada HTTP/TLS de lab
 
 **Quando:** uma das máquinas (SP1 ou SP2) fica fora.
 
-**Comportamento esperado:** Cloudflare detecta automaticamente e redireciona requisições para o tunnel ativo restante.
+**Comportamento esperado:** o mecanismo provisório de entrada do laboratório redireciona requisições para o endpoint ativo restante. Esta verificação não valida WAF, DNS institucional, IPSEC, firewall ou inspeção TLS.
 
 **Verificação:**
 
 ```bash
-# Status do cloudflared local
+# Status do agente de tunnel/entrada local, quando usado
 sudo systemctl status cloudflared
 
 # Logs
 sudo journalctl -u cloudflared -f
 ```
 
-**Métricas no painel Cloudflare:**
-- Acessar `dash.cloudflare.com` → Zero Trust → Networks → Tunnels
-- Verificar status de cada tunnel (Healthy/Degraded)
+**Métricas esperadas:**
+- Status do agente de entrada em `SP1` e `SP2`
+- Códigos HTTP 2xx/5xx por endpoint
+- Latência antes, durante e após a falha
 
-### 2.5 Rollback de deploy
+### 2.6 Rollback de deploy
 
 **Quando:** deploy quebrou aplicação ou introduziu bug.
 
@@ -310,7 +355,7 @@ vault operator raft snapshot restore /tmp/vault-snapshot-20260428.snap
 
 ### 3.4 Backup do MinIO
 
-A replicação contínua para o MinIO master da UNIFESSPA já atua como backup primário. Adicionalmente, snapshots noturnos via `mc`:
+A replicação contínua para `pa1-object-storage` atua como cópia institucional. Adicionalmente, snapshots noturnos via `mc`:
 
 ```bash
 mc mirror minio-eveo/aprovado minio-unifesspa/aprovado
@@ -380,7 +425,7 @@ mc mirror minio-eveo/aprovado minio-unifesspa/aprovado
    ```bash
    curl -I https://uniplus-lab.shop
    ```
-2. Verificar Cloudflare Status: `https://www.cloudflarestatus.com`
+2. Verificar o mecanismo provisório de entrada HTTP/TLS do lab
 3. Verificar dashboards Grafana
 
 **Diagnóstico (próximos 10 minutos):**
@@ -394,7 +439,7 @@ kubectl --context uniplus-sp2 get pods -A | grep -v Running
 ping uniplus-sp2  # da Ryzen
 ping uniplus-sp1  # da i7
 
-# Tunnels Cloudflare?
+# Entrada HTTP/TLS de lab?
 sudo systemctl status cloudflared
 
 # Bancos saudáveis?
@@ -415,8 +460,7 @@ patronictl list
 1. **NÃO entrar em pânico** e NÃO desligar serviços impulsivamente
 2. **Coletar evidências antes de alterar:**
    ```bash
-   # Logs Cloudflare WAF
-   # Disponível via dashboard Cloudflare
+   # Logs da borda/entrada HTTP/TLS de lab
    
    # Logs Loki
    # Filtrar por status 4xx/5xx anômalos
@@ -425,9 +469,9 @@ patronictl list
    sudo journalctl -u sshd --since "1 hour ago"
    ```
 3. **Bloquear vetor de ataque** sem destruir evidências:
-   - Bloquear IPs maliciosos via Cloudflare
+   - Bloquear IPs maliciosos na borda definida para o ambiente
    - Rotação de credenciais expostas
-4. **Acionar Divisão de Redes UNIFESSPA**
+4. **Acionar infraestrutura/rede UNIFESSPA** quando o vetor depender de borda, firewall, DNS ou conectividade institucional
 5. **Acionar Encarregado de Dados (DPO)** se houver dados pessoais envolvidos
 6. **Documentar timeline** do incidente
 
@@ -563,7 +607,7 @@ sudo tcpdump -i any -w /tmp/capture.pcap port 5432
 | Divisão de Sistemas CTIC | (preencher) |
 | Diretoria CTIC | (preencher) |
 | Suporte EVEO (24/7) | (preencher após contratação) |
-| Cloudflare Support | dash.cloudflare.com |
+| Suporte de borda/DNS | (preencher conforme decisão de infraestrutura/rede) |
 | Encarregado de Dados (DPO) | (preencher) |
 
 ## Apêndice B — Matriz de criticidade

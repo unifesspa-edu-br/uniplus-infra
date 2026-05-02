@@ -1,5 +1,5 @@
 @startuml C4_Component_APISelecao
-!include /home/claude/tools/c4puml/C4_Component.puml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
 
 ' ==========================================
 ' Diagrama C4 Nível 3 - Component

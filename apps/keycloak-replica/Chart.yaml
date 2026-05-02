@@ -1,6 +1,6 @@
 apiVersion: v2
 name: keycloak-replica
-description: Réplica local do Keycloak institucional para autenticação
+description: Serviço OIDC local do Uni+; nome do chart mantido por compatibilidade
 type: application
 version: 0.1.0
 appVersion: "1.0.0"
