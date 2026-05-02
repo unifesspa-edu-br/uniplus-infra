@@ -7,7 +7,7 @@ Person(user, "Usuário", "Candidato\n(navegador)")
 Container(fe, "Frontend Uni+", "Angular", "uniplus.unifesspa.edu.br")
 Container(api, "API Seleção", ".NET 8", "Backend protegido")
 Container(oidc_local, "Serviço OIDC Uni+", "OIDC", "auth.uniplus.unifesspa.edu.br\n(SP1/SP2/PA1)")
-Container(oidc_pa1, "pa1-oidc-source", "OIDC", "Fonte institucional\n(PA1)")
+Container(oidc_pa1, "pa1-oidc-source", "OIDC", "Fonte institucional\n(PA1, fora do caminho síncrono)")
 System_Ext(govbr, "Gov.br", "OIDC IdP\nGoverno Federal")
 
 == 1. Acesso à aplicação ==
@@ -22,10 +22,9 @@ Rel(user, oidc_local, "GET /realms/uniplus/auth\n?client_id=uniplus-frontend\n&r
 Rel(oidc_local, user, "Tela de login\n[Gov.br como única opção]", "HTML")
 Rel(user, oidc_local, "Clica em 'Entrar com Gov.br'", "HTTPS")
 
-== 3. Federação para fonte OIDC institucional ==
+== 3. Federação direta com Gov.br ==
 
-Rel(oidc_local, oidc_pa1, "Identity Brokering\nGET /realms/unifesspa/auth\n(broker IdP=govbr)", "HTTPS / OIDC")
-Rel(oidc_pa1, govbr, "Redireciona para Gov.br\n(client_id, redirect_uri,\nstate, nonce)", "HTTPS / OIDC")
+Rel(oidc_local, govbr, "Redireciona para Gov.br\n(client_id, redirect_uri,\nstate, nonce)", "HTTPS / OIDC")
 
 == 4. Autenticação no Gov.br ==
 
@@ -38,20 +37,24 @@ Rel(user, govbr, "Aprova", "HTTPS")
 
 == 5. Callback e troca de tokens ==
 
-Rel(govbr, oidc_pa1, "Redirect com authorization code\n(via browser)", "HTTPS")
-Rel(oidc_pa1, govbr, "POST /token\n(code + client_secret)", "HTTPS")
-Rel(govbr, oidc_pa1, "{ id_token, access_token,\nuserinfo: CPF, nome,\nnível de confiança }", "HTTPS")
-Rel(oidc_pa1, oidc_pa1, "Cria/atualiza usuário\nno realm institucional\n(mapeamento de claims)")
-Rel(oidc_pa1, oidc_local, "Retorna autorização\npara o broker", "HTTPS / OIDC")
+Rel(govbr, oidc_local, "Redirect com authorization code\n(via browser)", "HTTPS")
+Rel(oidc_local, govbr, "POST /token\n(code + client_secret)", "HTTPS")
+Rel(govbr, oidc_local, "{ id_token, access_token,\nuserinfo: CPF, nome,\nnível de confiança }", "HTTPS")
+Rel(oidc_local, oidc_local, "Cria/atualiza usuário\nno realm Uni+\n(mapeamento de claims)")
 
 == 6. Emissão de tokens locais ==
 
-Rel(oidc_local, oidc_local, "Cria/atualiza usuário\nno realm Uni+\n(roles: candidato, etc.)")
+Rel(oidc_local, oidc_local, "Aplica roles locais\n(candidato, etc.)")
 Rel(oidc_local, user, "Redirect para frontend\ncom authorization code", "HTTPS")
 Rel(user, fe, "GET /callback?code=...", "HTTPS")
 Rel(fe, oidc_local, "POST /token\n(code + PKCE verifier)", "HTTPS")
 Rel(oidc_local, fe, "{ id_token, access_token (JWT),\nrefresh_token }", "HTTPS")
 Rel(fe, fe, "Armazena tokens\n(httpOnly cookie ou\nsecure storage)")
+
+== 6.1 Sincronização institucional assíncrona ==
+
+Rel(oidc_local, oidc_pa1, "Sincroniza metadados institucionais\nquando PA1 estiver disponível", "HTTPS / OIDC")
+Rel(oidc_pa1, oidc_pa1, "Integra LDAP institucional\nsem bloquear login principal")
 
 == 7. Acesso autenticado à API ==
 

@@ -20,7 +20,7 @@ System(uniplus, "Sistema Uni+", "Plataforma institucional unificada para process
 
 ' --- Sistemas externos ---
 System_Ext(govbr, "Gov.br", "Provedor de identidade do Governo Federal\n(login único + 2FA)")
-System_Ext(oidc_pa1, "pa1-oidc-source", "OIDC institucional\n(PA1)")
+System_Ext(oidc_pa1, "pa1-oidc-source", "OIDC institucional\n(PA1, assíncrono)")
 System_Ext(ldap_uf, "LDAP/AD UNIFESSPA", "Diretório institucional\nde alunos e servidores")
 System_Ext(object_pa1, "pa1-object-storage", "Storage de objetos\ninstitucional")
 System_Ext(backup_pa1, "pa1-backup", "Infraestrutura interna de\nbackup e DR")
@@ -32,8 +32,8 @@ Rel(aluno, uniplus, "Acessa portal,\ngerencia matrícula", "HTTPS")
 Rel(servidor, uniplus, "Consulta dados,\noperações administrativas", "HTTPS")
 Rel(gestor, uniplus, "Gerencia editais,\nclassificação e ingresso", "HTTPS")
 
-Rel(uniplus, oidc_pa1, "Federa autenticação", "OIDC / HTTPS")
-Rel(oidc_pa1, govbr, "Autentica usuários", "OIDC / HTTPS")
+Rel(uniplus, govbr, "Autentica usuários", "OIDC / HTTPS")
+Rel(uniplus, oidc_pa1, "Sincroniza metadados\nquando disponível", "OIDC / HTTPS")
 Rel(oidc_pa1, ldap_uf, "Sincroniza usuários", "LDAPS")
 
 Rel_R(uniplus, object_pa1, "Replica documentos\n(off-site)", "S3 API")

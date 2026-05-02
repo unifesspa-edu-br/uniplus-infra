@@ -38,7 +38,7 @@ System_Boundary(uniplus, "Sistema Uni+ (EVEO SP1 + SP2 — ativo-ativo)") {
 }
 
 System_Ext(govbr, "Gov.br", "Provedor OIDC\nGoverno Federal")
-System_Ext(oidc_pa1, "pa1-oidc-source", "OIDC institucional\n(PA1)")
+System_Ext(oidc_pa1, "pa1-oidc-source", "OIDC institucional\n(PA1, assíncrono)")
 System_Ext(object_pa1, "pa1-object-storage", "Storage interno\n(PA1)")
 
 Rel(usuario, edge_lab, "Acessa", "HTTPS")
@@ -70,8 +70,8 @@ Rel(clamav, kafka, "Consome eventos\ndocumento.upload", "TCP/9092")
 Rel(clamav, minio, "Lê arquivo,\nmove entre buckets", "S3 API")
 
 Rel(fe_portal, oidc_local, "Login OIDC", "HTTPS")
-Rel(oidc_local, oidc_pa1, "Federação/sincronização\nOIDC", "HTTPS")
-Rel(oidc_pa1, govbr, "Federa autenticação", "OIDC")
+Rel(oidc_local, govbr, "Federa autenticação", "OIDC")
+Rel(oidc_local, oidc_pa1, "Sincronização institucional\nassíncrona", "HTTPS")
 
 Rel_D(minio, object_pa1, "Replicação async\n(off-site)", "S3 API")
 

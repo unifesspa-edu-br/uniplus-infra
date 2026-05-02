@@ -197,7 +197,7 @@ patronictl -c /etc/patroni/patroni.yml switchover \
 1. **Confirmar indisponibilidade do PA1**:
    ```bash
    ping uniplus-pa1
-   curl -k https://auth.uniplus-lab.shop/realms/unifesspa/.well-known/openid-configuration
+   curl -f http://uniplus-pa1:18080/realms/unifesspa/.well-known/openid-configuration
    ```
 2. **Confirmar atendimento por SP1/SP2**:
    ```bash

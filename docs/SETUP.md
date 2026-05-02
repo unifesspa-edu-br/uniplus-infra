@@ -128,7 +128,7 @@ Em **ambas as máquinas**, edite `/etc/hosts`:
 # /etc/hosts
 192.168.0.10  uniplus-sp1
 192.168.0.20  uniplus-sp2
-192.168.0.21  uniplus-pa1  # IP da bridge interna no container PA1
+192.168.0.20  uniplus-pa1  # PA1 publicado no host i7 no lab
 ```
 
 ### 3.3 Validação de conectividade
@@ -476,12 +476,14 @@ services:
     image: quay.io/coreos/etcd:v3.5
     container_name: uniplus-pa1-consensus
     networks: [unifesspa-sim]
+    ports:
+      - "12379:2379"
     environment:
       - ETCD_NAME=pa1
       - ETCD_INITIAL_ADVERTISE_PEER_URLS=http://172.30.0.10:2380
       - ETCD_LISTEN_PEER_URLS=http://0.0.0.0:2380
       - ETCD_LISTEN_CLIENT_URLS=http://0.0.0.0:2379
-      - ETCD_ADVERTISE_CLIENT_URLS=http://172.30.0.10:2379
+      - ETCD_ADVERTISE_CLIENT_URLS=http://uniplus-pa1:12379
     volumes:
       - pa1-consensus-data:/etcd-data
 
@@ -489,6 +491,8 @@ services:
     image: ghcr.io/unifesspa-edu-br/uniplus-keycloak:1.0.2
     container_name: uniplus-pa1-oidc-source
     networks: [unifesspa-sim]
+    ports:
+      - "18080:8080"
     environment:
       - KEYCLOAK_ADMIN=admin
       - KEYCLOAK_ADMIN_PASSWORD_FILE=/run/secrets/kc_admin
@@ -500,6 +504,9 @@ services:
     image: minio/minio:latest
     container_name: uniplus-pa1-object-storage
     networks: [unifesspa-sim]
+    ports:
+      - "19000:9000"
+      - "19001:9001"
     environment:
       - MINIO_ROOT_USER=admin
       - MINIO_ROOT_PASSWORD_FILE=/run/secrets/minio_admin
@@ -522,12 +529,19 @@ secrets:
 
 ### 9.3 Conectividade SP1/SP2 ↔ PA1
 
-`SP1` e `SP2` precisam alcançar os serviços publicados pelo `PA1` conforme o cenário: backup, object storage, OIDC institucional e função de consenso quando aplicável. No laboratório, isso é feito publicando portas controladas do container `uniplus-pa1` no host i7 e adicionando entradas em `/etc/hosts`:
+`SP1` e `SP2` precisam alcançar os serviços publicados pelo `PA1` conforme o cenário: backup, object storage, OIDC institucional e função de consenso quando aplicável. No laboratório, isso é feito publicando portas controladas dos containers de `PA1` no host i7 e adicionando entradas em `/etc/hosts`:
 
 ```bash
 # /etc/hosts na Ryzen
 192.168.0.20  uniplus-pa1  # IP da máquina i7
 ```
+
+Exemplos de endpoints publicados no lab:
+
+- `uniplus-pa1:12379` → `pa1-consensus-witness` / etcd
+- `uniplus-pa1:18080` → `pa1-oidc-source`
+- `uniplus-pa1:19000` → `pa1-object-storage` API S3
+- `uniplus-pa1:19001` → console administrativo do object storage
 
 O `docker-compose.yml` de `PA1` publica somente as portas necessárias para a validação. Qualquer exposição adicional deve ser justificada no plano de teste.
 

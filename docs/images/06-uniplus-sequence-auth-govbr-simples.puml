@@ -7,7 +7,7 @@ Person(user, "Usuário", "Candidato")
 Container(fe, "Frontend Uni+", "Angular", "Aplicação cliente")
 Container(api, "API Uni+", ".NET 8", "Backend")
 Container(oidc_local, "Serviço OIDC Uni+", "OIDC", "SP1/SP2/PA1")
-Container(oidc_pa1, "pa1-oidc-source", "OIDC", "PA1")
+Container(oidc_pa1, "pa1-oidc-source", "OIDC", "PA1\nfora do caminho síncrono")
 System_Ext(govbr, "Gov.br", "IdP Federal\n(CPF + 2FA)")
 
 Rel(user, fe, "Acessa Uni+", "HTTPS")
@@ -18,19 +18,24 @@ note over oidc_local, govbr
   via OIDC / Identity Brokering
 end note
 
-Rel(oidc_local, oidc_pa1, "Encaminha para IdP institucional", "HTTPS / OIDC")
-Rel(oidc_pa1, govbr, "Redireciona para Gov.br", "HTTPS / OIDC")
+Rel(oidc_local, govbr, "Redireciona para Gov.br", "HTTPS / OIDC")
 
 Rel(user, govbr, "Autentica\n(CPF + senha + 2FA)", "HTTPS")
-Rel(govbr, oidc_pa1, "Retorna identidade\n(CPF, nome, nível)", "HTTPS / OIDC")
+Rel(govbr, oidc_local, "Retorna identidade\n(CPF, nome, nível)", "HTTPS / OIDC")
 
-Rel(oidc_pa1, oidc_local, "Repassa autenticação", "HTTPS / OIDC")
 Rel(oidc_local, fe, "Emite tokens JWT\n(access + refresh)", "HTTPS")
+
+Rel(oidc_local, oidc_pa1, "Sincronização institucional\nassíncrona quando disponível", "HTTPS / OIDC")
 
 note over fe, api
   Tokens JWT são autocontidos.
   APIs validam localmente via JWKS,
   sem chamada por requisição.
+end note
+
+note over oidc_local, oidc_pa1
+  Se PA1 estiver indisponível,
+  login gov.br continua em SP1/SP2.
 end note
 
 Rel(fe, api, "Chamadas autenticadas\n(Authorization: Bearer JWT)", "HTTPS")

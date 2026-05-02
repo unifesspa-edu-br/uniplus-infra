@@ -27,7 +27,7 @@ Esta distribuição balanceia carga de escrita e exercita rotineiramente os meca
 - Docker + Docker Compose instalado no host
 - Volume LVM dedicado em `/var/lib/postgres` (ver [SETUP.md](../../docs/SETUP.md))
 - Conectividade entre nós via L2L (ou LAN no laboratório)
-- `pa1-consensus-witness` acessível em `192.168.0.21:2379` no lab quando Patroni usar consenso externo
+- `pa1-consensus-witness` acessível em `uniplus-pa1:12379` no lab quando Patroni usar consenso externo
 - `pa1-backup` acessível para arquivamento de WAL e backups pgBackRest
 
 ## Estrutura
@@ -67,7 +67,7 @@ etcd3:
   hosts:
     - 192.168.0.10:2379    # SP1
     - 192.168.0.20:2379    # SP2
-    - 192.168.0.21:2379    # PA1 / pa1-consensus-witness
+    - uniplus-pa1:12379    # PA1 / pa1-consensus-witness publicado no host i7
 
 bootstrap:
   dcs:

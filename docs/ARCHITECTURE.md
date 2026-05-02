@@ -106,7 +106,7 @@ O Uni+ adota ativo-ativo **no nível da plataforma**, não multi-master artifici
 | Sistema | Responsabilidade |
 |---------|-----------------|
 | **Gov.br** | Provedor de identidade do Governo Federal (login único + 2FA) |
-| **pa1-oidc-source** | Origem institucional de identidade/OIDC no PA1; implementação atual usa Keycloak |
+| **pa1-oidc-source** | Origem institucional de metadados de identidade e integração LDAP no PA1; implementação atual usa Keycloak |
 | **LDAP/AD UNIFESSPA** | Diretório institucional de alunos e servidores |
 | **pa1-object-storage** | Storage de objetos institucional para retenção, replicação e DR |
 | **Backup UNIFESSPA** | Infraestrutura interna de backup e DR |
