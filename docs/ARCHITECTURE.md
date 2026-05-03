@@ -238,12 +238,12 @@ As decisões arquiteturais da infraestrutura são formalizadas como ADRs (Archit
 
 ### Resumo das ADRs de Infraestrutura
 
-- **[ADR-0001: Três DCs lógicos e clusters K8s independentes](adrs/0001-tres-dcs-logicos-e-clusters-k8s-independentes.md)**: Opção por clusters independentes para isolamento de falha e autonomia operacional.
-- **[ADR-0002: Componentes stateful pesados fora do Kubernetes](adrs/0002-componentes-stateful-pesados-fora-do-kubernetes.md)**: Bancos e mensageria no host para performance e simplificação de DR.
-- **[ADR-0003: Gov.br federado via OIDC institucional](adrs/0003-govbr-federado-via-oidc-institucional.md)**: Uso de OIDC institucional federado com Gov.br para soberania de identidade.
-- **[ADR-0004: Borda externa fora do escopo da PoC](adrs/0004-borda-externa-fora-do-escopo-da-poc.md)**: Definição de WAF/DNS delegada à infra de rede após validação da PoC.
-- **[ADR-0005: Stateful em containers via systemd](adrs/0005-stateful-em-containers-via-systemd.md)**: Empacotamento de serviços de dados em containers fora do K8s para portabilidade.
-- **[ADR-0006: GitOps com ArgoCD](adrs/0006-gitops-com-argocd.md)**: Uso de ArgoCD para garantir estado declarativo e evitar drift entre clusters.
+- **[ADR-001: Três DCs lógicos e clusters K8s independentes](adrs/ADR-001-tres-dcs-logicos-e-clusters-k8s-independentes.md)**: Opção por clusters independentes para isolamento de falha e autonomia operacional.
+- **[ADR-002: Componentes stateful pesados fora do Kubernetes](adrs/ADR-002-componentes-stateful-pesados-fora-do-kubernetes.md)**: Bancos e mensageria no host (em containers via systemd) para performance e simplificação de DR.
+- **[ADR-003: Gov.br federado via OIDC institucional](adrs/ADR-003-govbr-federado-via-oidc-institucional.md)**: Uso de OIDC institucional federado com Gov.br para soberania de identidade.
+- **[ADR-004: Borda externa fora do escopo da PoC](adrs/ADR-004-borda-externa-fora-do-escopo-da-poc.md)**: Definição de WAF/DNS delegada à infra de rede após validação da PoC.
+- **[ADR-005: Stateful em containers via systemd](adrs/ADR-005-stateful-em-containers-via-systemd.md)**: Empacotamento de serviços de dados em containers fora do K8s para portabilidade.
+- **[ADR-006: GitOps com ArgoCD](adrs/ADR-006-gitops-com-argocd.md)**: Uso de ArgoCD para garantir estado declarativo e evitar drift entre clusters.
 
 Para decisões futuras e histórico completo, consulte o [diretório de ADRs](adrs/README.md).
 
