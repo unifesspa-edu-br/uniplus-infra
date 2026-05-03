@@ -73,10 +73,14 @@ storage:
   enabled: true
   storageClass:
     name: prod-local-nvme
-    isDefault: true
+    # Default mantém isDefault=false — em prod o cluster K3s pode ou não vir
+    # com SC default pré-existente. DIRSI deve confirmar antes da promoção.
+    isDefault: false
     # TODO DIRSI: confirmar provisioner antes da promoção a HML.
     # Default mantém local-path para facilitar bootstrap inicial.
     provisioner: rancher.io/local-path
+    # Prod mantém Retain (default do chart) — dados Vault/Postgres não devem
+    # ser perdidos por reclaim automático.
 
 # ============================================================================
 # Vault HA Raft com auto-unseal Transit contra prod-pa1 (ADR-007).

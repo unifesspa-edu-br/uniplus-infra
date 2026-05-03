@@ -28,8 +28,9 @@ storage:
   enabled: true
   storageClass:
     name: prod-local-nvme
-    isDefault: true
+    isDefault: false  # ver prod-sp1 para detalhes
     provisioner: rancher.io/local-path
+    # reclaimPolicy: Retain (default — prod preserva dados)
 
 # Vault de aplicação NÃO roda em PA1 — apenas Vault Transit.
 vault:

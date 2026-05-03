@@ -79,8 +79,9 @@ storage:
   enabled: true
   storageClass:
     name: lab-local-nvme
-    isDefault: true
+    isDefault: false
     provisioner: rancher.io/local-path
+    reclaimPolicy: Delete  # lab descartável; prod mantém Retain
 
 # ============================================================================
 # Vault HA Raft com auto-unseal Transit contra lab-pa1 (ADR-007).

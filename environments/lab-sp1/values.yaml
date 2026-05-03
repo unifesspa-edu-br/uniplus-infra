@@ -82,8 +82,12 @@ storage:
   enabled: true
   storageClass:
     name: lab-local-nvme
-    isDefault: true
+    # K3s ships com 'local-path' já default — não duplicar (ver values default).
+    isDefault: false
     provisioner: rancher.io/local-path
+    # Lab é descartável — Delete evita acúmulo de PVs órfãos quando devs
+    # sobem/derrubam Vault repetidamente. Prod mantém Retain (data sensível).
+    reclaimPolicy: Delete
 
 # ============================================================================
 # Vault HA Raft com auto-unseal Transit contra lab-pa1 (ADR-007).
