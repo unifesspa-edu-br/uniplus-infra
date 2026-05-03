@@ -1,0 +1,27 @@
+# Configuração do helm-docs (https://github.com/norwoodj/helm-docs).
+#
+# Para gerar/atualizar README.md dos charts a partir de values.yaml:
+#   make helm-docs
+#
+# Pré-requisito (uma vez):
+#   go install github.com/norwoodj/helm-docs/cmd/helm-docs@latest
+# ou via Docker (sem instalar Go):
+#   HELM_DOCS='docker run --rm -v "$(pwd):/work" -w /work jnorwood/helm-docs:latest helm-docs' make helm-docs
+#
+# helm-docs descobre `# --` comentários em values.yaml como descrições
+# das chaves e gera o README a partir do template README.md.gotmpl
+# (se existir; caso contrário usa o default do helm-docs).
+
+chart-search-root: .
+chart-to-generate:
+  - apps
+  - platform
+
+# Nome do template a usar. helm-docs procura README.md.gotmpl em cada
+# chart antes de cair no default. README.md é regenerado a partir dele.
+template-files:
+  - README.md.gotmpl
+
+# Não tocar charts sem o arquivo — evita sobrescrever READMEs hand-written
+# que ainda não foram migrados para o formato helm-docs.
+ignore-non-descriptions: true
