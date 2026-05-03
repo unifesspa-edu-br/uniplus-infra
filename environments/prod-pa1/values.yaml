@@ -94,6 +94,13 @@ networkPolicy:
   allowedSourceCidrs: []  # TODO: preencher com CIDRs reais SP1/SP2
   traefikNamespace: traefik
 
+serviceMonitor:
+  enabled: false
+  port: https
+  scheme: https
+  tlsConfig:
+    insecureSkipVerify: true
+
 # ----------------------------------------------------------------------------
 # Componentes hospedados em prod-pa1 fora do K8s — entram em PRs futuros
 # (Postgres backup, MinIO replica, etcd/quorum, OIDC source institucional).
