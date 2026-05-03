@@ -1,0 +1,117 @@
+# Ambiente: lab-pa1
+# Cluster K3s na máquina i7 (Ubuntu) simulando o DC institucional UNIFESSPA (PA1).
+# Papel: 3º DC lógico — hospeda Vault Transit (auto-unseal cross-cluster),
+# Keycloak source, MinIO replica, backup target e funções de quorum.
+# Rede: 172.30.0.0/16 (Docker bridge isolada para serviços fora do K8s).
+# Hostname: uniplus-pa1
+#
+# Renomeado de lab-witness em 2026-05-03 (issue #13). Promovido a cluster K3s
+# real conforme ADR-007 — antes era apenas host com containers Docker.
+
+cluster:
+  name: lab-pa1
+  region: lab
+  dc: pa1
+
+# Vault de aplicação NÃO roda em PA1 — apenas Vault Transit.
+vault:
+  enabled: false
+
+# Vault Transit — chart platform/vault-transit/.
+# 1 réplica em lab/sanidade (recursos reduzidos); 3 réplicas Raft em hml/prod.
+vaultTransit:
+  enabled: true
+
+  global:
+    # cert-manager (#15) ainda placeholder — TLS interno desabilitado por enquanto.
+    # Habilitar quando #14 + #15 estiverem prontos.
+    tlsDisable: true
+
+  server:
+    ha:
+      enabled: false
+      replicas: 1
+
+    dataStorage:
+      size: 1Gi
+      # storageClass: <pendente sub-issue StorageClass>
+
+    auditStorage:
+      size: 1Gi
+
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+# NetworkPolicy do vault-transit — libera 8200/tcp para os Vaults SP1/SP2.
+networkPolicy:
+  enabled: true
+  # Em lab usamos a rede plana 192.168.0.0/16 do laboratório (máquinas Ryzen
+  # e i7 estão nessa faixa). Em prod-pa1 estes CIDRs serão os blocos reais
+  # dos racks EVEO Cotia/Osasco.
+  allowedSourceCidrs:
+    - 192.168.0.0/16
+  traefikNamespace: traefik
+
+# ----------------------------------------------------------------------------
+# Componentes simulados FORA do K8s (mantidos do lab-witness original).
+# Containers Docker isolados no host i7, na rede 172.30.0.0/16.
+# Estas chaves são consumidas pelo bootstrap-lab.sh, não por charts Helm.
+# ----------------------------------------------------------------------------
+
+consensusWitness:
+  enabled: true
+  etcd:
+    image: quay.io/coreos/etcd:v3.5
+    name: pa1-consensus-witness
+    listenClientUrls: http://0.0.0.0:2379
+    listenPeerUrls: http://0.0.0.0:2380
+    advertiseClientUrls: http://172.30.0.10:2379
+    initialAdvertisePeerUrls: http://172.30.0.10:2380
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 256Mi
+
+keycloakMaster:
+  enabled: true
+  image: quay.io/keycloak/keycloak:25.0
+  mode: start-dev
+  realm: unifesspa
+  resources:
+    requests:
+      cpu: 200m
+      memory: 1Gi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+
+minioMaster:
+  enabled: true
+  image: minio/minio:latest
+  consoleAddress: ":9001"
+  buckets:
+    - aprovado-mirror
+    - bloqueado-mirror
+    - postgres-backup
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+backupTarget:
+  enabled: true
+  storage: 50Gi
+  retention:
+    full: 4 weeks
+    incremental: 7 days

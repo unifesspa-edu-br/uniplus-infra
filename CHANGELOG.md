@@ -15,7 +15,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 - 6 diagramas C4 (Context, Container, Deployment, Component, 2 Sequence) com fontes PlantUML
 - Estrutura de Helm charts em `apps/` e `platform/`
 - Configuração de componentes stateful em `data/`
-- Ambientes lab-sp1, lab-sp2, lab-witness, prod-sp1, prod-sp2
+- Ambientes lab-sp1, lab-sp2, lab-pa1, prod-sp1, prod-sp2
 - ArgoCD ApplicationSet + AppProject com RBAC
 - Scripts de bootstrap, validação e teardown do laboratório
 - GitHub Actions CI (yamllint, helm lint, shellcheck, markdown lint)
