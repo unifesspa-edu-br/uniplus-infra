@@ -1,0 +1,50 @@
+{{- if and .Values.networkPolicy.enabled .Values.vaultTransit.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-vault-transit
+  labels:
+    app.kubernetes.io/name: vault-transit
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: uniplus
+spec:
+  # Chart upstream da HashiCorp aplica o nome do alias como label
+  # (app.kubernetes.io/name = nome do chart, com alias vira `vaultTransit`).
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: vaultTransit
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes:
+    - Ingress
+  ingress:
+    {{- with .Values.networkPolicy.allowedSourceCidrs }}
+    # Tráfego cross-cluster: Vaults SP1/SP2 chamam o endpoint Transit
+    # (8200/tcp). CIDRs definidos em environments/<env>/values.yaml.
+    - from:
+        {{- range . }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: 8200
+    {{- end }}
+    # Acesso administrativo via Traefik (mesmo cluster).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.traefikNamespace | quote }}
+      ports:
+        - protocol: TCP
+          port: 8200
+    # Replicação Raft entre peers do próprio Vault Transit (mesmo namespace).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vaultTransit
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - protocol: TCP
+          port: 8201
+{{- end }}

@@ -1,0 +1,43 @@
+apiVersion: v2
+name: vault-transit
+description: |
+  HashiCorp Vault dedicado em PA1 com engine Transit habilitada, usado como
+  auto-unseal cross-cluster pelos Vaults de aplicação em SP1 e SP2.
+  Implementa a metade "central" da decisão do ADR-007.
+type: application
+
+# Versão do chart wrapper Uni+.
+version: 0.1.0
+
+# Versão do Vault upstream empacotado (mantida em sincronia com a dependência).
+appVersion: "1.21.2"
+
+home: https://github.com/unifesspa-edu-br/uniplus-infra
+sources:
+  - https://github.com/unifesspa-edu-br/uniplus-infra
+  - https://github.com/hashicorp/vault-helm
+
+maintainers:
+  - name: CTIC Unifesspa
+    url: https://github.com/unifesspa-edu-br
+
+keywords:
+  - vault
+  - secrets
+  - transit
+  - auto-unseal
+  - hashicorp
+  - uniplus
+
+# Dependência do chart upstream oficial da HashiCorp.
+# Alias `vaultTransit` para que os values dos environments fiquem sob
+# `vaultTransit.*` e não conflitem com o chart `platform/vault/`, cujos
+# values ficam sob `vault.*`.
+dependencies:
+  - name: vault
+    version: 0.32.0
+    repository: https://helm.releases.hashicorp.com
+    alias: vaultTransit
+    # Permite desligar o subchart por environment (vaultTransit.enabled: false
+    # em clusters SP1/SP2, que não rodam o Vault Transit).
+    condition: vaultTransit.enabled
