@@ -53,8 +53,8 @@ spec:
         - protocol: TCP
           port: 8200
   egress:
-    # Auto-unseal cross-cluster: Vault chama o Transit em PA1 (8200/tcp).
-    # CIDRs definidos em environments/<env>-{sp1,sp2}/values.yaml.
+    # Auto-unseal cross-cluster: Vault chama o Transit em PA1.
+    # CIDRs e portas definidos em environments/<env>-{sp1,sp2}/values.yaml.
     {{- with .Values.networkPolicy.transitEndpointCidrs }}
     - to:
         {{- range . }}
@@ -62,8 +62,10 @@ spec:
             cidr: {{ . | quote }}
         {{- end }}
       ports:
+        {{- range $.Values.networkPolicy.transitEndpointPorts }}
         - protocol: TCP
-          port: 8200
+          port: {{ . }}
+        {{- end }}
     {{- end }}
     # DNS (kube-dns).
     - to:

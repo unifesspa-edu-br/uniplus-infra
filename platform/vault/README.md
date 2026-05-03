@@ -48,6 +48,7 @@ Procedimento detalhado em [`docs/RUNBOOKS.md` §1.4.B](../../docs/RUNBOOKS.md).
 | `vault.server.resources` | `200m/256Mi → 500m/512Mi` | Tabela 10.1 do ARCHITECTURE.md. Elevar em prod. |
 | `vault.injector.enabled` | `true` | Vault Agent Injector. |
 | `networkPolicy.transitEndpointCidrs` | `[]` | CIDRs do cluster PA1 onde o Transit roda. Definir por environment. |
+| `networkPolicy.transitEndpointPorts` | `[8200]` | Portas do endpoint Transit. Lab usa NodePort `30200`; prod usa `443` via DNS público. |
 | `serviceMonitor.enabled` | `false` | Ligar quando #26 estiver pronto. |
 | `ingress.enabled` | `false` | Ligar quando integração OIDC estiver pronta. |
 
@@ -57,7 +58,7 @@ Métricas internas do Vault expostas em `/v1/sys/metrics?format=prometheus`. Col
 
 ## Network
 
-Tráfego cross-cluster (este Vault → Vault Transit em PA1, 8200/tcp) precisa ser liberado pela DIRSI antes da promoção a sanidade. Linhas correspondentes documentadas em [`docs/network-matrix.md`](../../docs/network-matrix.md).
+Tráfego cross-cluster (este Vault → Vault Transit em PA1) precisa ser liberado pela DIRSI antes da promoção a sanidade. No lab, o endpoint é o NodePort `30200/tcp`; em prod, os values apontam para HTTPS público `443/tcp`. Linhas correspondentes documentadas em [`docs/network-matrix.md`](../../docs/network-matrix.md).
 
 ## Segurança
 

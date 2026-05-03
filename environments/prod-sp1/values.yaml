@@ -159,3 +159,5 @@ networkPolicy:
   # CIDR do PA1 real (Marabá) — confirmar com a DIRSI antes da promoção.
   # Evitar 0.0.0.0/0 — usar bloco específico do datacenter UNIFESSPA.
   transitEndpointCidrs: []  # TODO: preencher antes de habilitar Vault em prod
+  transitEndpointPorts:
+    - 443
