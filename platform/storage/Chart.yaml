@@ -1,0 +1,29 @@
+apiVersion: v2
+name: storage
+description: |
+  StorageClass nomeada por ambiente para a plataforma Uni+. Cria uma
+  StorageClass com nome alinhado ao tier do environment (lab-local-nvme,
+  san-local-nvme, hml-local-nvme, prod-local-nvme), referenciada
+  explicitamente pelos PVCs de Vault, Postgres-on-K8s, observability
+  (#26-30) e demais cargas de plataforma.
+type: application
+
+version: 0.1.0
+
+# Não há dependência upstream — manifesto puro de StorageClass.
+# A identificação do appVersion é simbólica (versão do API K8s storage.k8s.io/v1).
+appVersion: "1"
+
+home: https://github.com/unifesspa-edu-br/uniplus-infra
+sources:
+  - https://github.com/unifesspa-edu-br/uniplus-infra
+
+maintainers:
+  - name: CTIC Unifesspa
+    url: https://github.com/unifesspa-edu-br
+
+keywords:
+  - storage
+  - storageclass
+  - persistence
+  - uniplus
