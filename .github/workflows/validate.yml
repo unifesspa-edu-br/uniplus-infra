@@ -19,8 +19,7 @@ jobs:
       - name: Run yamllint
         run: |
           yamllint -c .yamllint.yaml \
-            apps/ platform/ data/ environments/ argocd/ \
-            || true  # warning-only por enquanto
+            apps/ platform/ data/ environments/ argocd/
 
   helm-lint:
     name: Helm Lint
@@ -38,7 +37,7 @@ jobs:
           for chart in apps/*/; do
             if [ -f "$chart/Chart.yaml" ]; then
               echo "Linting $chart"
-              helm lint "$chart" || true
+              helm lint "$chart"
             fi
           done
 
@@ -47,7 +46,8 @@ jobs:
           for chart in platform/*/; do
             if [ -f "$chart/Chart.yaml" ]; then
               echo "Linting $chart"
-              helm lint "$chart" || true
+              helm dependency update "$chart"
+              helm lint "$chart"
             fi
           done
 
@@ -73,4 +73,3 @@ jobs:
         uses: DavidAnson/markdownlint-cli2-action@v16
         with:
           globs: '**/*.md'
-        continue-on-error: true  # warning-only por enquanto
