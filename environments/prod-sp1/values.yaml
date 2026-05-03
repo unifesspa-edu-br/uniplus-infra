@@ -62,3 +62,100 @@ cluster:
   name: prod-sp1
   region: prod
   dc: sp1
+
+# ============================================================================
+# Vault HA Raft com auto-unseal Transit contra prod-pa1 (ADR-007).
+# ----------------------------------------------------------------------------
+# CONFIGURAÇÃO COMPLETA, MAS DESLIGADA POR DEFAULT ATÉ AS DEPENDÊNCIAS DE
+# INFRAESTRUTURA REAL ESTAREM PRONTAS:
+#   - cert-manager (#15) precisa entregar certificados via Secret vault-tls.
+#   - Traefik (#14) precisa rotear tráfego para o IngressRoute do Vault.
+#   - StorageClass nomeada precisa estar definida (sub-issue StorageClass).
+#   - DNS público vault-transit.uniplus.unifesspa.edu.br precisa apontar
+#     para o Traefik em prod-pa1, com regra de firewall liberando 8200/tcp
+#     SP1 → PA1 (validada pela DIRSI conforme docs/network-matrix.md).
+#   - Cluster K3s prod-sp1 precisa estar provisionado e registrado no ArgoCD
+#     com label uniplus.io/managed=true.
+#   - Vault Transit em prod-pa1 precisa ter sido bootstrapped (Shamir 5/3,
+#     engine Transit, token criado) — ver docs/RUNBOOKS.md §1.4.A.
+#   - Secret vault-transit-token precisa existir no namespace vault.
+# Quando todos os pré-requisitos estiverem prontos, trocar `enabled: false`
+# para `true` e abrir PR (toca prod-* → exige 2 aprovações conforme política).
+# ============================================================================
+vault:
+  enabled: false
+
+  global:
+    tlsDisable: false
+
+  server:
+    ha:
+      enabled: true
+      replicas: 3
+
+      raft:
+        enabled: true
+        setNodeId: true
+        config: |
+          ui = true
+
+          listener "tcp" {
+            tls_disable     = 0
+            address         = "[::]:8200"
+            cluster_address = "[::]:8201"
+            tls_cert_file   = "/vault/tls/tls.crt"
+            tls_key_file    = "/vault/tls/tls.key"
+          }
+
+          storage "raft" {
+            path = "/vault/data"
+          }
+
+          seal "transit" {
+            address         = "https://vault-transit.uniplus.unifesspa.edu.br"
+            token           = "${VAULT_TRANSIT_TOKEN}"
+            disable_renewal = "false"
+            key_name        = "autounseal"
+            mount_path      = "transit/"
+            tls_skip_verify = "false"
+          }
+
+          service_registration "kubernetes" {}
+
+    extraSecretEnvironmentVars:
+      - envName: VAULT_TRANSIT_TOKEN
+        secretName: vault-transit-token
+        secretKey: token
+
+    # TLS cert montado a partir de Secret entregue pelo cert-manager.
+    extraVolumes:
+      - type: secret
+        name: vault-tls
+
+    dataStorage:
+      size: 50Gi
+      # storageClass: <pendente sub-issue StorageClass — bloqueante para prod>
+
+    auditStorage:
+      size: 50Gi
+
+    # Recursos prod — folga acima da Tabela 10.1 (200m→500m / 256Mi→512Mi)
+    # para suportar carga de produção. Limits ~2× requests.
+    resources:
+      requests:
+        cpu: 500m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+
+vaultTransit:
+  enabled: false
+
+networkPolicy:
+  enabled: true
+  externalSecretsNamespace: external-secrets
+  traefikNamespace: traefik
+  # CIDR do PA1 real (Marabá) — confirmar com a DIRSI antes da promoção.
+  # Evitar 0.0.0.0/0 — usar bloco específico do datacenter UNIFESSPA.
+  transitEndpointCidrs: []  # TODO: preencher antes de habilitar Vault em prod
