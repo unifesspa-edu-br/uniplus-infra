@@ -87,6 +87,7 @@ spec:
                 - component: cert-manager
                 - component: external-secrets
                 - component: vault
+                - component: vault-transit
                 - component: cloudflared
                 - component: observability/prometheus
                 - component: observability/grafana
