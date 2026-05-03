@@ -53,7 +53,7 @@ A plataforma é modelada como **`SP1` + `SP2` + `PA1`**, e essa nomenclatura per
 
 **Princípio "ativo-ativo no nível da plataforma":** cada componente usa o mecanismo nativo de HA (Patroni para Postgres, KRaft para Kafka, modo distribuído do MinIO, etc.). Onde multi-writer limpo não existe, distribui-se responsabilidade com failover controlado — **nunca simular multi-master artificial**.
 
-`environments/lab-witness/` é legado e está marcado para renomeação para `lab-pa1` — manter consistência com a nomenclatura atual nas referências novas.
+`environments/lab-pa1/` é o cluster K3s no host i7 simulando o DC institucional PA1 (renomeado de `lab-witness` em 2026-05-03 conforme issue #13 e ADR-007). Hospeda o Vault Transit + componentes legados em containers Docker (etcd, keycloak-master, minio-master, backup-target).
 
 ## Layout: por que está dividido assim
 
@@ -62,7 +62,7 @@ A plataforma é modelada como **`SP1` + `SP2` + `PA1`**, e essa nomenclatura per
 | `apps/` | Helm charts das aplicações Uni+ (`uniplus-web`, `uniplus-api-{portal,selecao,ingresso}`, `clamav-scanner`, `keycloak-replica`) | Workloads K8s puros, namespace `uniplus` |
 | `platform/` | Componentes de plataforma K8s (Traefik, ArgoCD, Vault, External Secrets, cert-manager, cloudflared, observability) | Rodam **dentro** do K8s, suportam `apps/` |
 | `data/` | PostgreSQL (+ Patroni + PgBouncer), Kafka KRaft, MinIO, Redis | **Rodam fora do K8s** — containers gerenciados por systemd no host, em LVM dedicada no NVMe. Decisão deliberada: backup/restore/troubleshooting independem da saúde do K8s |
-| `environments/{lab,prod}-{sp1,sp2,witness}/` | `values.yaml` com overrides de Helm por ambiente | Defaults ficam em `apps/*/values.yaml` e `platform/*/values.yaml`; ambiente só sobrescreve o necessário |
+| `environments/{lab,prod}-{sp1,sp2,pa1}/` | `values.yaml` com overrides de Helm por ambiente | Defaults ficam em `apps/*/values.yaml` e `platform/*/values.yaml`; ambiente só sobrescreve o necessário |
 | `argocd/` | `applicationset.yaml` + `project.yaml` (bootstrap GitOps) | Aplica os charts conforme o ambiente do cluster |
 
 Mudanças em `environments/prod-*` requerem **2 aprovações** (vs. 1 padrão), descrição do lab onde foi testado e plano de rollback explícito no PR.

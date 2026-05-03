@@ -41,7 +41,7 @@ uniplus-infra/
 ├── environments/               # Overrides por ambiente
 │   ├── lab-sp1/                # Laboratório local — máquina principal
 │   ├── lab-sp2/                # Laboratório local — máquina secundária
-│   ├── lab-witness/            # Legado: alvo de renomeação para lab-pa1
+│   ├── lab-pa1/                # Laboratório local — cluster K3s simulando PA1 (i7)
 │   ├── prod-sp1/               # Produção — EVEO Cotia
 │   └── prod-sp2/               # Produção — EVEO Osasco
 ├── argocd/                     # Bootstrap GitOps (ApplicationSet)
