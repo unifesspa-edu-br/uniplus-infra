@@ -1,4 +1,4 @@
-# ADR 0001: Três DCs lógicos e clusters K8s independentes
+# ADR-001: Três DCs lógicos e clusters K8s independentes
 
 - **Status:** ✅ Aceito
 - **Data:** 2026-04-20
@@ -6,23 +6,26 @@
 
 ## Contexto
 
-A plataforma Uni+ precisa operar com alta disponibilidade e soberania de dados. O cenário físico envolve dois datacenters externos (EVEO em Cotia/SP e Osasco/SP) e um datacenter institucional (PA1 em Marabá/PA). Precisamos decidir como os clusters Kubernetes serão organizados entre esses locais.
+A plataforma Uni+ precisa operar com alta disponibilidade e soberania de dados. O cenário físico envolve dois datacenters externos (EVEO em Cotia/SP e Osasco/SP) e um datacenter institucional (`PA1` em Marabá/PA). Precisamos decidir como os clusters Kubernetes serão organizados entre esses locais.
 
-As opções avaliadas foram:
-1.  **Cluster K8s Único Estendido:** Um único plano de controle gerenciando nós em todos os DCs.
-2.  **Clusters Independentes:** Clusters K8s separados por DC, com sincronização na camada de aplicação/dados.
+## Alternativas consideradas
+
+1. **Cluster K8s único estendido entre DCs:** Um único plano de controle gerenciando nós em todos os datacenters.
+   - ❌ Rejeitada: latência inter-DC inviabiliza o consenso do etcd; falha de link derruba o plano de controle inteiro; manutenção exige janela coordenada entre os 3 DCs.
+2. **Clusters independentes por DC, sincronização na camada de aplicação/dados:** Cada DC opera um cluster K3s autônomo; replicação acontece nos componentes (Patroni para Postgres, KRaft para Kafka, etc.).
+   - ✅ Escolhida.
 
 ## Decisão
 
-Adotar **clusters Kubernetes independentes** em `SP1` e `SP2`. O DC institucional `PA1` atuará como local para identidade (origem), backup, retenção e funções de consenso (witness) quando aplicável.
+Adotar **clusters Kubernetes independentes** em `SP1` e `SP2`. O DC institucional `PA1` atua como local para identidade (origem), backup, retenção e funções de consenso (witness) quando aplicável.
 
 Não haverá cluster estendido entre datacenters geográficos.
 
 ## Consequências
 
-- ✅ **Resiliência de Rede:** Falhas no link inter-DC ou latência excessiva não derrubam o plano de controle do cluster.
-- ✅ **Isolamento de Falha:** Erros de configuração ou problemas no etcd de um cluster não afetam o outro automaticamente.
-- ✅ **Upgrades Graduais:** Manutenções e atualizações de versão do K8s podem ser realizadas cluster por cluster.
-- ✅ **Autonomia do DC Institucional:** A indisponibilidade temporária de `PA1` não interrompe o atendimento normal de tráfego em `SP1` e `SP2`.
-- ⚠️ **Drift de Configuração:** Exige rigor no uso de GitOps (ArgoCD) para garantir que as definições permaneçam idênticas entre os clusters.
+- ✅ **Resiliência de rede:** Falhas no link inter-DC ou latência excessiva não derrubam o plano de controle do cluster.
+- ✅ **Isolamento de falha:** Erros de configuração ou problemas no etcd de um cluster não afetam o outro automaticamente.
+- ✅ **Upgrades graduais:** Manutenções e atualizações de versão do K8s podem ser realizadas cluster por cluster.
+- ✅ **Autonomia do DC institucional:** A indisponibilidade temporária de `PA1` não interrompe o atendimento normal de tráfego em `SP1` e `SP2`.
+- ⚠️ **Drift de configuração:** Exige rigor no uso de GitOps (ArgoCD — ver [ADR-006](ADR-006-gitops-com-argocd.md)) para garantir que as definições permaneçam idênticas entre os clusters.
 - ⚠️ **Consistência:** O estado entre DCs passa a ser eventualmente consistente na camada de dados, o que é aceitável para o domínio de processos seletivos.
