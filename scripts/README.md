@@ -20,8 +20,8 @@ chmod +x scripts/*.sh
 # Bootstrap da máquina secundária (i7)
 ./scripts/bootstrap-lab.sh --role=sp2
 
-# Bootstrap do witness UNIFESSPA simulado (no host i7)
-./scripts/bootstrap-lab.sh --role=witness
+# Bootstrap do DC institucional UNIFESSPA simulado (cluster K3s + containers Docker, no host i7)
+./scripts/bootstrap-lab.sh --role=pa1
 
 # Com Cloudflare Tunnel
 ./scripts/bootstrap-lab.sh --role=sp1 --enable-cloudflared

@@ -37,7 +37,7 @@ CI atual roda esses checks em modo *warning-only* (`|| true`, `continue-on-error
 Scripts em `scripts/` gerenciam o ambiente de validação local:
 
 ```bash
-./scripts/bootstrap-lab.sh --role={sp1|sp2|witness} [--dry-run]   # provisiona K3s + Docker + cloudflared
+./scripts/bootstrap-lab.sh --role={sp1|sp2|pa1} [--dry-run]   # provisiona K3s + Docker + cloudflared
 ./scripts/validate-cluster.sh                                       # checa Docker/Helm/K8s/ArgoCD/serviços
 ./scripts/teardown-lab.sh                                           # limpa
 ```
