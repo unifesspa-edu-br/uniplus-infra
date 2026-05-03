@@ -1,0 +1,98 @@
+# Defaults para o Vault Transit em PA1.
+#
+# Topologia (ADR-007): cluster K3s em PA1 hospeda este Vault, configurado
+# APENAS com a engine Transit habilitada. Vaults de aplicação em SP1 e SP2
+# (chart `platform/vault/`) usam este Transit como auto-unseal via
+# `seal "transit"`.
+#
+# Bootstrap manual após o primeiro deploy: ver docs/RUNBOOKS.md §1.4.A.
+#
+# Defaults aqui assumem ambiente de laboratório (1 réplica, escala reduzida
+# alinhada à Tabela 10.1 do ARCHITECTURE.md). Override por environment em
+# environments/<env>/values.yaml — em hml/prod habilitar HA Raft 3 réplicas.
+
+vaultTransit:
+  # Liga/desliga o subchart inteiro. Default true (este chart só é deployed
+  # em clusters PA1; em SP1/SP2 o environment override seta false).
+  enabled: true
+
+  global:
+    enabled: true
+    # TLS no listener interno do Vault. Default false até cert-manager (#15)
+    # entregar certificados via Secret. TLS terminado no Traefik (#14) por
+    # enquanto. Ligar para true quando #14 + #15 estiverem prontos —
+    # auto-unseal Transit cross-cluster requer HTTPS no endpoint Transit.
+    tlsDisable: true
+
+  # Vault Injector não faz sentido em um Vault Transit-only.
+  injector:
+    enabled: false
+
+  server:
+    enabled: true
+
+    # Single-node por default (lab/sanidade). HA Raft 3 réplicas em hml/prod
+    # via override (vaultTransit.server.ha.enabled: true + replicas: 3).
+    ha:
+      enabled: false
+      replicas: 1
+
+      raft:
+        enabled: false
+        # config Raft (peer discovery) preenchida em hml/prod via override
+
+    # Storage local com PVC durável. StorageClass nomeada definida no
+    # environment (sub-issue StorageClass).
+    dataStorage:
+      enabled: true
+      size: 1Gi
+      mountPath: /vault/data
+      # storageClass: <definido por environment>
+
+    auditStorage:
+      enabled: true
+      size: 1Gi
+
+    # Recursos lab — alinhados a "1 (HA: 3) | 200m → 500m | 256 MB → 512 MB"
+    # da Tabela 10.1. Em hml/prod elevar conforme tabela.
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+    service:
+      enabled: true
+      type: ClusterIP
+
+    statefulSet:
+      extraLabels:
+        app.kubernetes.io/part-of: uniplus
+        app.kubernetes.io/component: vault-transit
+
+# NetworkPolicy controlando ingress no Pod do Vault Transit.
+networkPolicy:
+  enabled: true
+  # CIDRs dos clusters SP1 e SP2 autorizados a chamar o endpoint Transit
+  # (8200/tcp). Default vazio — preencher por environment.
+  # Em lab: CIDRs das máquinas Ryzen (sp1) e i7 (sp2).
+  # Em prod: CIDRs reais dos racks EVEO.
+  allowedSourceCidrs: []
+  # Namespace do Traefik no mesmo cluster (PA1) com acesso administrativo
+  # ao endpoint via IngressRoute.
+  traefikNamespace: traefik
+
+# ServiceMonitor para Prometheus (Vault expõe métricas em /v1/sys/metrics).
+# Desligado por default — ligar quando #26 (Prometheus chart) estiver pronto.
+serviceMonitor:
+  enabled: false
+  interval: 30s
+
+# IngressRoute (Traefik) para acesso administrativo ao UI.
+# Desligado por default — ligar quando integração OIDC com Keycloak estiver
+# pronta (sub-issue futura). Acesso só via VPN institucional.
+ingress:
+  enabled: false
+  host: ""
