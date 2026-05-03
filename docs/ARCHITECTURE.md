@@ -262,6 +262,7 @@ Esta seção define o mecanismo de redundância aceito para cada família de ser
 | Observabilidade | Coleta local por DC e agregação/retenção conforme desenho. Queda de `PA1` não deve impedir métricas/logs/traces locais em `SP1` e `SP2`. |
 | Backup / DR | `PA1` é destino real de backup. Se `PA1` ficar indisponível, `SP1` e `SP2` mantêm spool/backlog local e sincronizam quando `PA1` retornar. |
 | Vault / secrets | HashiCorp Vault OSS em HA Raft (3 réplicas) por cluster `SP1` e `SP2`, independentes. Vault Transit dedicado em `PA1` provê auto-unseal cross-cluster via `seal "transit"`. Topologia idêntica desde lab até prod, variando apenas escala. Detalhes em [ADR-007](adrs/ADR-007-vault-ha-storage-unseal.md). |
+| StorageClass | Cada cluster tem **uma StorageClass nomeada explicitamente por tier**: `lab-local-nvme`, `san-local-nvme`, `hml-local-nvme`, `prod-local-nvme`. Provisioner padrão `rancher.io/local-path` (K3s) — em hml/prod a DIRSI confirma se mantém local-path ou substitui por CSI driver dedicado. Nome estável minimiza churn nos values dos demais charts. Chart `platform/storage/` cria a SC; PVCs de Vault, Postgres-on-K8s e observability referenciam por nome. |
 
 ## 10. Mapeamento de Componentes
 
