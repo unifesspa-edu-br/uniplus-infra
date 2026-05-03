@@ -1,0 +1,130 @@
+# Defaults para o Vault de aplicação em SP1 e SP2.
+#
+# Topologia (ADR-007): cluster K3s em SP1 e SP2 hospeda este Vault em
+# HA Raft (3 réplicas). Auto-unseal via `seal "transit"` apontando para o
+# Vault Transit em PA1 (chart `platform/vault-transit/`).
+#
+# Bootstrap manual após o primeiro deploy em cada ambiente: ver
+# docs/RUNBOOKS.md §1.4.B.
+#
+# IMPORTANTE: o bloco `seal "transit"` na config Raft NÃO está presente
+# nos defaults — só `vault.server.ha.raft.config` deste arquivo gera Vault
+# HA com Shamir manual (útil para `helm template` / `helm lint` standalone).
+# A configuração real com Transit é definida em cada environment, que
+# substitui `vault.server.ha.raft.config` por uma string que inclui o bloco
+# seal apontando para o Transit do environment correspondente. Veja
+# environments/<env>-{sp1,sp2}/values.yaml.
+
+vault:
+  enabled: true
+
+  global:
+    enabled: true
+    # TLS no listener interno do Vault. Default false até cert-manager (#15)
+    # entregar certificados via Secret. TLS terminado no Traefik (#14) por
+    # enquanto. Ligar para true quando #14 + #15 estiverem prontos.
+    tlsDisable: true
+
+  # Vault Agent Injector — injeta secrets em Pods de aplicação anotados.
+  injector:
+    enabled: true
+    replicas: 1
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+
+  server:
+    enabled: true
+
+    image:
+      repository: hashicorp/vault
+      tag: "1.21.2"
+
+    # HA Raft 3 réplicas — topologia idêntica em todas as fases (ADR-007).
+    # Recursos reduzidos por default; environments de prod elevam conforme
+    # Tabela 10.1 do ARCHITECTURE.md.
+    ha:
+      enabled: true
+      replicas: 3
+
+      raft:
+        enabled: true
+        setNodeId: true
+        # Config Raft default — SEM seal Transit. Cada environment de SP1/SP2
+        # substitui esta string inteira para incluir o bloco
+        # `seal "transit"` apontando para o Vault Transit em PA1.
+        config: |
+          ui = true
+
+          listener "tcp" {
+            tls_disable = 1
+            address = "[::]:8200"
+            cluster_address = "[::]:8201"
+          }
+
+          storage "raft" {
+            path = "/vault/data"
+          }
+
+          service_registration "kubernetes" {}
+
+    # Storage local com PVC durável. StorageClass nomeada definida no
+    # environment (sub-issue StorageClass).
+    dataStorage:
+      enabled: true
+      size: 5Gi
+      mountPath: /vault/data
+      # storageClass: <definido por environment>
+
+    auditStorage:
+      enabled: true
+      size: 5Gi
+
+    # Recursos lab — alinhados a "1 (HA: 3) | 200m → 500m | 256 MB → 512 MB"
+    # da Tabela 10.1. Em prod elevar conforme tabela.
+    resources:
+      requests:
+        cpu: 200m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+    service:
+      enabled: true
+      type: ClusterIP
+
+    statefulSet:
+      extraLabels:
+        app.kubernetes.io/part-of: uniplus
+        app.kubernetes.io/component: vault
+
+# NetworkPolicy controlando ingress/egress no Pod do Vault de aplicação.
+networkPolicy:
+  enabled: true
+  # Namespace do external-secrets operator (consumidor primário do Vault).
+  externalSecretsNamespace: external-secrets
+  # Namespace do Traefik no mesmo cluster (acesso UI/API).
+  traefikNamespace: traefik
+  # Endpoint do Vault Transit em PA1 (CIDR do cluster PA1) — egress
+  # autorizado para auto-unseal cross-cluster. Default vazio; configurar
+  # por environment.
+  transitEndpointCidrs: []
+
+# ServiceMonitor para Prometheus (Vault expõe métricas em /v1/sys/metrics).
+# Desligado por default — ligar quando #26 (Prometheus chart) estiver pronto.
+serviceMonitor:
+  enabled: false
+  interval: 30s
+
+# IngressRoute (Traefik) para acesso administrativo ao UI.
+# Desligado por default — ligar quando integração OIDC com Keycloak estiver
+# pronta (sub-issue futura). Acesso restrito via VPN ou Cloudflare Access.
+ingress:
+  enabled: false
+  host: ""
+  entryPoint: websecure

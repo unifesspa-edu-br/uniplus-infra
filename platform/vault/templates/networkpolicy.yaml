@@ -1,0 +1,84 @@
+{{- if and .Values.networkPolicy.enabled .Values.vault.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-vault
+  labels:
+    app.kubernetes.io/name: vault
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: uniplus
+spec:
+  # Chart upstream sem alias — Pods recebem app.kubernetes.io/name: vault
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: vault
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # External-secrets operator lê secrets do Vault (8200/tcp).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.externalSecretsNamespace | quote }}
+      ports:
+        - protocol: TCP
+          port: 8200
+    # Traefik expõe UI/API via IngressRoute (mesmo cluster).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.traefikNamespace | quote }}
+      ports:
+        - protocol: TCP
+          port: 8200
+    # Replicação Raft entre peers do Vault (mesmo namespace).
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vault
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - protocol: TCP
+          port: 8201
+    # Vault Agent Injector chama o Vault para emitir tokens.
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vault-agent-injector
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - protocol: TCP
+          port: 8200
+  egress:
+    # Auto-unseal cross-cluster: Vault chama o Transit em PA1 (8200/tcp).
+    # CIDRs definidos em environments/<env>-{sp1,sp2}/values.yaml.
+    {{- with .Values.networkPolicy.transitEndpointCidrs }}
+    - to:
+        {{- range . }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: 8200
+    {{- end }}
+    # DNS (kube-dns).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Kubernetes API (service registration).
+    - ports:
+        - protocol: TCP
+          port: 6443
+        - protocol: TCP
+          port: 443
+{{- end }}

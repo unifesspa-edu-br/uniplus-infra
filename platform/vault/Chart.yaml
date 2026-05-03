@@ -1,0 +1,39 @@
+apiVersion: v2
+name: vault
+description: |
+  HashiCorp Vault de aplicação em HA Raft (3 réplicas) por cluster SP1/SP2,
+  com auto-unseal Transit contra o Vault Transit em PA1 (ADR-007).
+  Empacotado como chart wrapper sobre hashicorp/vault.
+type: application
+
+# Versão do chart wrapper Uni+.
+version: 0.1.0
+
+# Versão do Vault upstream empacotado (mantida em sincronia com a dependência).
+appVersion: "1.21.2"
+
+home: https://github.com/unifesspa-edu-br/uniplus-infra
+sources:
+  - https://github.com/unifesspa-edu-br/uniplus-infra
+  - https://github.com/hashicorp/vault-helm
+
+maintainers:
+  - name: CTIC Unifesspa
+    url: https://github.com/unifesspa-edu-br
+
+keywords:
+  - vault
+  - secrets
+  - hashicorp
+  - uniplus
+
+# Dependência do chart upstream oficial da HashiCorp.
+# Sem alias — values ficam sob `vault.*`, alinhado ao nome natural.
+# Não conflita com `platform/vault-transit/`, que usa alias `vaultTransit`.
+dependencies:
+  - name: vault
+    version: 0.32.0
+    repository: https://helm.releases.hashicorp.com
+    # Permite desligar o subchart por environment (vault.enabled: false em
+    # clusters PA1, que não rodam Vault de aplicação).
+    condition: vault.enabled
