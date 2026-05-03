@@ -234,89 +234,18 @@ Se `PA1` ficar indisponível, `SP1` e `SP2` continuam aptos a atender o fluxo pr
 
 ## 8. Decisões Arquiteturais
 
-### ADR-001: Três DCs lógicos e clusters K8s independentes
+As decisões arquiteturais da infraestrutura são formalizadas como ADRs (Architectural Decision Records) e podem ser encontradas em [docs/adrs/](adrs/README.md).
 
-**Status:** ✅ Aceito.
+### Resumo das ADRs de Infraestrutura
 
-**Contexto:** A plataforma roda em `SP1`, `SP2` e `PA1`. Há duas abordagens para os DCs externos: cluster K8s único estendido entre DCs, ou clusters independentes.
+- **[ADR-0001: Três DCs lógicos e clusters K8s independentes](adrs/0001-tres-dcs-logicos-e-clusters-k8s-independentes.md)**: Opção por clusters independentes para isolamento de falha e autonomia operacional.
+- **[ADR-0002: Componentes stateful pesados fora do Kubernetes](adrs/0002-componentes-stateful-pesados-fora-do-kubernetes.md)**: Bancos e mensageria no host para performance e simplificação de DR.
+- **[ADR-0003: Gov.br federado via OIDC institucional](adrs/0003-govbr-federado-via-oidc-institucional.md)**: Uso de OIDC institucional federado com Gov.br para soberania de identidade.
+- **[ADR-0004: Borda externa fora do escopo da PoC](adrs/0004-borda-externa-fora-do-escopo-da-poc.md)**: Definição de WAF/DNS delegada à infra de rede após validação da PoC.
+- **[ADR-0005: Stateful em containers via systemd](adrs/0005-stateful-em-containers-via-systemd.md)**: Empacotamento de serviços de dados em containers fora do K8s para portabilidade.
+- **[ADR-0006: GitOps com ArgoCD](adrs/0006-gitops-com-argocd.md)**: Uso de ArgoCD para garantir estado declarativo e evitar drift entre clusters.
 
-**Decisão:** Adotar clusters Kubernetes independentes em `SP1` e `SP2`, com replicação/sincronização na camada de cada produto. `PA1` é DC institucional para identidade, backup, retenção e funções de consenso quando aplicável.
-
-**Consequências:**
-- ✅ Falha do link inter-DC não derruba o cluster
-- ✅ Manutenção e upgrades podem ser feitos cluster por cluster
-- ✅ Operação independente reduz raio de impacto de erros
-- ✅ Queda temporária de `PA1` não deve derrubar o atendimento normal
-- ⚠️ Configuração precisa ser idêntica entre os clusters (mitigado via GitOps)
-- ⚠️ Estado eventualmente consistente entre DCs (aceitável para o domínio)
-
-### ADR-002: Componentes stateful pesados fora do Kubernetes
-
-**Status:** ✅ Aceito.
-
-**Contexto:** PostgreSQL, Kafka e MinIO são componentes críticos com requisitos de I/O e operação que se beneficiam de acesso direto ao hardware.
-
-**Decisão:** Operar PostgreSQL, Kafka e MinIO como containers gerenciados por systemd no host Linux, fora do K8s.
-
-**Consequências:**
-- ✅ Performance previsível (sem CSI driver overhead)
-- ✅ Backup, restore e troubleshooting independem do K8s
-- ✅ Recovery independente em caso de falha do cluster
-- ⚠️ Operação dual: K8s + systemd (gerenciada via Ansible)
-- ⚠️ Sem auto-healing K8s para esses componentes (mitigado por Patroni para PG, KRaft para Kafka, MinIO healing nativo)
-
-### ADR-003: Gov.br exclusivo, federado via OIDC institucional
-
-**Status:** ✅ Aceito.
-
-**Contexto:** O Uni+ precisa de provedor de identidade. Opções: Gov.br direto, OIDC local por DC, OIDC institucional federado com Gov.br.
-
-**Decisão:** Federar o Gov.br através do contrato OIDC institucional da UNIFESSPA, operado nos três DCs. `PA1` mantém a origem institucional (`pa1-oidc-source`) e LDAP, mas `SP1` e `SP2` devem conseguir executar o login principal durante indisponibilidade temporária de `PA1`. A implementação atual usa Keycloak, mas a documentação arquitetural trata o serviço como contrato OIDC.
-
-**Consequências:**
-- ✅ Conformidade com Decreto 10.543/2020 (Gov.br como padrão federal)
-- ✅ Centralização da governança de identidade na UNIFESSPA
-- ✅ Roles específicas do Uni+ aplicadas sobre identidade Gov.br
-- ✅ Auditoria unificada de autenticações institucionais
-- ✅ OIDC operacional nos 3 DCs evita que `PA1` seja ponto único de falha do login principal
-- ⚠️ LDAP institucional existe apenas em `PA1`; queda de `PA1` degrada sincronização institucional, não o fluxo normal via gov.br/OIDC
-
-### ADR-004: Borda externa fora do escopo da PoC de engenharia
-
-**Status:** 🟡 Pendente de decisão de infraestrutura/rede.
-
-**Contexto:** Servidores na EVEO atendem usuários diretamente via IP público. Há necessidade de proteção contra DDoS volumétrico, WAF e edge cache.
-
-**Decisão:** A PoC de engenharia pode usar uma entrada HTTP/TLS provisória para expor o laboratório, mas não deve tentar validar WAF, IPSEC, DNS, firewall ou inspeção TLS. Esses pontos serão avaliados pelo time de infraestrutura/rede quando a réplica mínima de produção estiver disponível.
-
-**Consequência:** Evidências da PoC devem focar redundância, escalabilidade, observabilidade, rastreamento e recuperabilidade da aplicação.
-
-### ADR-005: Componentes stateful em containers (não bare-metal)
-
-**Status:** ✅ Aceito.
-
-**Contexto:** Mesmo decidindo operar PostgreSQL, Kafka e MinIO fora do K8s, há a opção de instalá-los direto no host (bare-metal) ou em containers Docker/Podman gerenciados por systemd.
-
-**Decisão:** Containers gerenciados por systemd, com volumes em partições LVM dedicadas.
-
-**Consequências:**
-- ✅ Versionamento explícito (image tag = versão do componente)
-- ✅ Rollback simples (mudar tag e restartar)
-- ✅ Configuração via variables/files montados como volumes
-- ✅ Mesma ferramenta (Docker/Podman) usada em desenvolvimento
-- ⚠️ Pequeno overhead vs bare-metal (irrelevante na prática)
-
-### ADR-006: GitOps com ArgoCD
-
-**Status:** ✅ Aceito.
-
-**Decisão:** ArgoCD em cada cluster, com `ApplicationSet` para gerar Applications a partir de generators (cluster + git).
-
-**Razões:**
-- Padrão de mercado para GitOps em produção
-- Reconciliação contínua reduz drift entre desejado e real
-- Auditoria nativa via Git history
-- Suporte nativo a Helm e Kustomize
+Para decisões futuras e histórico completo, consulte o [diretório de ADRs](adrs/README.md).
 
 ## 9. Estratégia por Componente
 
