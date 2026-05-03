@@ -154,6 +154,9 @@ helm-template:  ## Renderiza todos os charts × environments (smoke local)
 	@# Capturar exit code via `if helm template`, não `OUT=$(helm template ...)`.
 	@# Com .SHELLFLAGS=-euo pipefail -c, atribuição com falha aborta o loop
 	@# imediatamente — usuário nunca vê quais outras combinações falharam.
+	@# No ramo de falha, o `grep | head` pode não encontrar 'Error/error'
+	@# (ex.: 'helm: command not found') e, sob pipefail, exit 1 do grep
+	@# abortaria o loop — fallback para `tail` garante que algo seja exibido.
 	@for chart_dir in $(CHART_DIRS); do \
 	    chart_name=$$(basename "$$chart_dir"); \
 	    for env in $(ENVS); do \
@@ -163,7 +166,8 @@ helm-template:  ## Renderiza todos os charts × environments (smoke local)
 	            printf "  $(GREEN)✓$(RESET) $$chart_name × $$env  ($$KINDS recursos)\n"; \
 	        else \
 	            printf "  $(RED)✗$(RESET) $$chart_name × $$env\n"; \
-	            echo "$$OUT" | grep -A2 -E "Error|error" | head -5; \
+	            { echo "$$OUT" | grep -A2 -E "Error|error" | head -5 \
+	                || echo "$$OUT" | tail -10; } || true; \
 	        fi; \
 	    done; \
 	done
