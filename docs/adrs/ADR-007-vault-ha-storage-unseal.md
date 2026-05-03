@@ -24,7 +24,7 @@ A plataforma Uni+ centraliza secrets (credenciais de banco, tokens de integraç�
    - ❌ Rejeitada: viola explicitamente o ADR-001 ("PA1 pode ficar fora algumas horas sem derrubar SP1/SP2"). Se PA1 cair, SP1/SP2 perdem acesso a secrets e ficam degradados.
 
 4. **Auto-unseal faseado: dev em lab, Shamir em sanidade, Transit em HML/prod.** Plano original — simplifica o lab.
-   - ❌ Rejeitada: contraria o propósito do laboratório. Se lab não exercita o caminho de auto-unseal real (porta 8200 cross-cluster SP1→PA1, SP2→PA1), problemas de roteamento/firewall só aparecem em sanidade ou depois. Além disso, o time de redes recebe documentação que não corresponde ao que será implantado.
+   - ❌ Rejeitada: contraria o propósito do laboratório. Se lab não exercita o caminho de auto-unseal real entre SP1→PA1 e SP2→PA1, problemas de roteamento/firewall só aparecem em sanidade ou depois. Além disso, o time de redes recebe documentação que não corresponde ao que será implantado.
 
 5. **Vault Transit central em PA1, auto-unseal cross-cluster desde o lab.** Vault dedicado em PA1 hospeda apenas a engine Transit; Vaults de aplicação em SP1/SP2 unseals contra ele via tokens dedicados.
    - ✅ Escolhida.
@@ -54,11 +54,11 @@ Este é o **primeiro chart funcional** do diretório `platform/`. A estrutura ad
 
 ## Consequências
 
-- ✅ **Topologia exercitada desde o lab.** Tráfego cross-cluster (8200/tcp SP1→PA1, SP2→PA1) é reproduzido em laboratório, permitindo à DIRSI avaliar regras de roteamento e firewall antes da fase de sanidade.
+- ✅ **Topologia exercitada desde o lab.** Tráfego cross-cluster do endpoint Transit (lab via NodePort `30200/tcp`, produção via HTTPS público `443/tcp` salvo decisão diferente da DIRSI) é reproduzido em laboratório, permitindo à DIRSI avaliar regras de roteamento e firewall antes da fase de sanidade.
 - ✅ **Auto-unseal sem provedor externo.** Reinícios de Pods do Vault em SP1/SP2 acontecem sem intervenção humana, mantendo a soberania institucional.
 - ✅ **PA1 indisponível por horas mantém aplicação rodando.** Vaults SP1/SP2 já desbloqueados continuam servindo secrets; só novo restart de Pod do Vault precisa esperar PA1 voltar (documentado em RUNBOOKS).
 - ✅ **DR previsível.** Snapshot do Raft em cada Vault + procedimento Shamir documentado para o Transit em PA1 cobrem cenários de perda de cluster e perda do próprio Transit.
 - ⚠️ **Secrets não replicam entre SP1 e SP2.** Cada cluster mantém seu próprio conjunto de secrets via `ExternalSecret`. Políticas e configurações de secret stores ficam versionadas em GitOps; segredos em si vivem no Vault de cada DC.
-- ⚠️ **Tráfego cross-DC novo.** Liberação de 8200/tcp entre SP1↔PA1 e SP2↔PA1 precisa ser combinada com a DIRSI antes de promover qualquer fase. Documentado em `docs/network-matrix.md`.
+- ⚠️ **Tráfego cross-DC novo.** Liberação da porta do endpoint Transit entre SP1↔PA1 e SP2↔PA1 precisa ser combinada com a DIRSI antes de promover qualquer fase. Documentado em `docs/network-matrix.md`.
 - ⚠️ **Bootstrap do Transit é manual.** O Vault Transit em PA1 inicia selado e exige unseal Shamir manual no primeiro provisionamento e após restore de DR. Procedimento detalhado em `docs/RUNBOOKS.md`.
 - ⚠️ **PA1 vira ponto crítico para reinícios.** Embora SP1/SP2 mantenham operação durante queda de PA1, o tempo máximo aceitável de PA1 fora corresponde ao MTBF de reinício de Pods do Vault. Monitorar e priorizar restauração de PA1 acima de outros componentes secundários.

@@ -110,10 +110,11 @@ networkPolicy:
   externalSecretsNamespace: external-secrets
   # Namespace do Traefik no mesmo cluster (acesso UI/API).
   traefikNamespace: traefik
-  # Endpoint do Vault Transit em PA1 (CIDR do cluster PA1) — egress
-  # autorizado para auto-unseal cross-cluster. Default vazio; configurar
-  # por environment.
+  # Endpoint do Vault Transit em PA1 — egress autorizado para auto-unseal
+  # cross-cluster. Defaults vazios/8200; configurar por environment.
   transitEndpointCidrs: []
+  transitEndpointPorts:
+    - 8200
 
 # ServiceMonitor para Prometheus (Vault expõe métricas em /v1/sys/metrics).
 # Desligado por default — ligar quando #26 (Prometheus chart) estiver pronto.

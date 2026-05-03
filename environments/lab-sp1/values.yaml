@@ -142,6 +142,9 @@ networkPolicy:
   enabled: true
   externalSecretsNamespace: external-secrets
   traefikNamespace: traefik
-  # CIDR do host i7 (lab-pa1) para egress 8200/tcp do Vault rumo ao Transit.
+  # CIDR do host i7 (lab-pa1) para egress do Vault rumo ao Transit.
   transitEndpointCidrs:
     - 192.168.0.20/32
+  # NodePort exposto pelo Vault Transit em lab-pa1.
+  transitEndpointPorts:
+    - 30200

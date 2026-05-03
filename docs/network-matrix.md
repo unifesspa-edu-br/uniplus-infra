@@ -20,9 +20,9 @@ Cada linha referencia o documento que originou a decisão (ADR, RUNBOOK ou chart
 
 | # | Origem | Destino | Porta/Protocolo | Direção | Propósito | Fase em que aparece | Referência |
 |---|--------|---------|------------------|---------|-----------|---------------------|------------|
-| 1 | Pods Vault em `*-sp1` | Vault Transit em `*-pa1` | 8200/tcp (HTTPS) | SP1 → PA1 | Auto-unseal cross-cluster via `seal "transit"`. Cada Pod do Vault em SP1 chama o endpoint Transit em PA1 para descriptografar a chave-mestra ao iniciar. | Lab em diante | [ADR-007](adrs/ADR-007-vault-ha-storage-unseal.md) |
-| 2 | Pods Vault em `*-sp2` | Vault Transit em `*-pa1` | 8200/tcp (HTTPS) | SP2 → PA1 | Idem item 1, a partir de SP2. | Lab em diante | [ADR-007](adrs/ADR-007-vault-ha-storage-unseal.md) |
-| 3 | DIRSI/CTIC (admin) | Vault Transit em `*-pa1` | 8200/tcp (HTTPS) | Externo → PA1 | Bootstrap inicial do Transit (Shamir 5/3) e operações de DR. Acesso restrito via VPN institucional ou IngressRoute interno. | Lab em diante (manual) | [docs/RUNBOOKS.md](RUNBOOKS.md) |
+| 1 | Pods Vault em `*-sp1` | Vault Transit em `*-pa1` | Lab: 30200/tcp (NodePort); prod: 443/tcp (HTTPS público) | SP1 → PA1 | Auto-unseal cross-cluster via `seal "transit"`. Cada Pod do Vault em SP1 chama o endpoint Transit em PA1 para descriptografar a chave-mestra ao iniciar. | Lab em diante | [ADR-007](adrs/ADR-007-vault-ha-storage-unseal.md) |
+| 2 | Pods Vault em `*-sp2` | Vault Transit em `*-pa1` | Lab: 30200/tcp (NodePort); prod: 443/tcp (HTTPS público) | SP2 → PA1 | Idem item 1, a partir de SP2. | Lab em diante | [ADR-007](adrs/ADR-007-vault-ha-storage-unseal.md) |
+| 3 | DIRSI/CTIC (admin) | Vault Transit em `*-pa1` | Lab: 30200/tcp (NodePort); prod: 443/tcp (HTTPS público) | Externo → PA1 | Bootstrap inicial do Transit (Shamir 5/3) e operações de DR. Acesso restrito via VPN institucional ou IngressRoute interno. | Lab em diante (manual) | [docs/RUNBOOKS.md](RUNBOOKS.md) |
 
 > **Tráfego intra-cluster do Vault** (peers Raft em 8201/tcp dentro do mesmo K3s) é governado por NetworkPolicy do chart `platform/vault/` e não entra nesta matriz por ser local ao cluster.
 

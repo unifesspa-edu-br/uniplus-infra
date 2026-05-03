@@ -134,3 +134,5 @@ networkPolicy:
   traefikNamespace: traefik
   transitEndpointCidrs:
     - 192.168.0.20/32
+  transitEndpointPorts:
+    - 30200

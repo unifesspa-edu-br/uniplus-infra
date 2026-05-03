@@ -183,14 +183,33 @@ step_install_k3s() {
         return
     fi
 
+    local node_name="uniplus-$ROLE"
+
     if command -v k3s &> /dev/null; then
-        log_success "K3s já instalado: $(k3s --version | head -1)"
-        return
+        local existing_node_name=""
+        if command -v kubectl &> /dev/null; then
+            existing_node_name=$(kubectl get nodes -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+        fi
+        if [[ -z "$existing_node_name" ]]; then
+            existing_node_name=$(sudo k3s kubectl get nodes -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+        fi
+
+        if [[ "$existing_node_name" == "$node_name" ]]; then
+            log_success "K3s já instalado para role '$ROLE': $(k3s --version | head -1)"
+            return
+        fi
+
+        if [[ -n "$existing_node_name" ]]; then
+            log_error "K3s já instalado para outro role: node '$existing_node_name' != esperado '$node_name'."
+        else
+            log_error "K3s já instalado, mas não foi possível identificar o node atual."
+        fi
+        log_error "Use um host/VM limpo para este role ou remova o cluster K3s existente antes de prosseguir."
+        exit 1
     fi
 
     log_info "Instalando K3s (cluster independente para $ROLE)..."
 
-    local node_name="uniplus-$ROLE"
     local node_ip
     node_ip=$(hostname -I | awk '{print $1}')
 
