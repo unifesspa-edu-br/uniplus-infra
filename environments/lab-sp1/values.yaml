@@ -76,6 +76,16 @@ cluster:
   dc: sp1
 
 # ============================================================================
+# StorageClass do tier de laboratório (ADR-007 + #31).
+# ============================================================================
+storage:
+  enabled: true
+  storageClass:
+    name: lab-local-nvme
+    isDefault: true
+    provisioner: rancher.io/local-path
+
+# ============================================================================
 # Vault HA Raft com auto-unseal Transit contra lab-pa1 (ADR-007).
 # ============================================================================
 vault:
@@ -131,7 +141,10 @@ vault:
 
     dataStorage:
       size: 5Gi
-      # storageClass: <pendente sub-issue StorageClass>
+      storageClass: lab-local-nvme
+    auditStorage:
+      size: 5Gi
+      storageClass: lab-local-nvme
 
 # Vault Transit não roda em SP — apenas em PA1.
 vaultTransit:
