@@ -47,6 +47,15 @@ vaultTransit:
         cpu: 500m
         memory: 512Mi
 
+    # Service exposto como NodePort no host i7 (192.168.0.20:30200) para que
+    # os Vaults SP1/SP2 alcancem o endpoint Transit via rede do laboratório.
+    # Em hml/prod este Service vira ClusterIP + IngressRoute via Traefik.
+    service:
+      type: NodePort
+      port: 8200
+      targetPort: 8200
+      nodePort: 30200
+
 # NetworkPolicy do vault-transit — libera 8200/tcp para os Vaults SP1/SP2.
 networkPolicy:
   enabled: true

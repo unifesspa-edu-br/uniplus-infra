@@ -74,3 +74,74 @@ cluster:
   name: lab-sp1
   region: lab
   dc: sp1
+
+# ============================================================================
+# Vault HA Raft com auto-unseal Transit contra lab-pa1 (ADR-007).
+# ============================================================================
+vault:
+  enabled: true
+
+  global:
+    tlsDisable: true  # cert-manager (#15) ainda placeholder
+
+  server:
+    ha:
+      enabled: true
+      replicas: 3
+
+      raft:
+        enabled: true
+        setNodeId: true
+        # Substitui a config default do chart `platform/vault/` para incluir
+        # o bloco `seal "transit"` apontando para o Vault Transit em lab-pa1.
+        # O endpoint NodePort 192.168.0.20:30200 é exposto pelo cluster K3s
+        # de lab-pa1 (rede plana 192.168.0.0/16 do laboratório).
+        # tls_skip_verify=true aceita cert self-signed enquanto cert-manager
+        # (#15) ainda é placeholder.
+        config: |
+          ui = true
+
+          listener "tcp" {
+            tls_disable = 1
+            address = "[::]:8200"
+            cluster_address = "[::]:8201"
+          }
+
+          storage "raft" {
+            path = "/vault/data"
+          }
+
+          seal "transit" {
+            address         = "http://192.168.0.20:30200"
+            token           = "${VAULT_TRANSIT_TOKEN}"
+            disable_renewal = "false"
+            key_name        = "autounseal"
+            mount_path      = "transit/"
+            tls_skip_verify = "true"
+          }
+
+          service_registration "kubernetes" {}
+
+    # Token do Transit é injetado via env var (Secret criado manualmente
+    # após bootstrap do Transit em lab-pa1 — ver RUNBOOKS §1.4.B).
+    extraSecretEnvironmentVars:
+      - envName: VAULT_TRANSIT_TOKEN
+        secretName: vault-transit-token
+        secretKey: token
+
+    dataStorage:
+      size: 5Gi
+      # storageClass: <pendente sub-issue StorageClass>
+
+# Vault Transit não roda em SP — apenas em PA1.
+vaultTransit:
+  enabled: false
+
+# NetworkPolicy do chart vault/ libera egress para o endpoint Transit.
+networkPolicy:
+  enabled: true
+  externalSecretsNamespace: external-secrets
+  traefikNamespace: traefik
+  # CIDR do host i7 (lab-pa1) para egress 8200/tcp do Vault rumo ao Transit.
+  transitEndpointCidrs:
+    - 192.168.0.20/32

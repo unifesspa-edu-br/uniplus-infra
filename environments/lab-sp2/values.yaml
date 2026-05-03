@@ -71,3 +71,66 @@ cluster:
   name: lab-sp2
   region: lab
   dc: sp2
+
+# ============================================================================
+# Vault HA Raft com auto-unseal Transit contra lab-pa1 (ADR-007).
+# Configuração simétrica a lab-sp1 — mesmo endpoint Transit, mesmo CIDR
+# autorizado. Embora lab-sp2 e lab-pa1 compartilhem o host i7 fisicamente,
+# do ponto de vista de K8s são clusters K3s distintos (cross-cluster real).
+# ============================================================================
+vault:
+  enabled: true
+
+  global:
+    tlsDisable: true
+
+  server:
+    ha:
+      enabled: true
+      replicas: 3
+
+      raft:
+        enabled: true
+        setNodeId: true
+        config: |
+          ui = true
+
+          listener "tcp" {
+            tls_disable = 1
+            address = "[::]:8200"
+            cluster_address = "[::]:8201"
+          }
+
+          storage "raft" {
+            path = "/vault/data"
+          }
+
+          seal "transit" {
+            address         = "http://192.168.0.20:30200"
+            token           = "${VAULT_TRANSIT_TOKEN}"
+            disable_renewal = "false"
+            key_name        = "autounseal"
+            mount_path      = "transit/"
+            tls_skip_verify = "true"
+          }
+
+          service_registration "kubernetes" {}
+
+    extraSecretEnvironmentVars:
+      - envName: VAULT_TRANSIT_TOKEN
+        secretName: vault-transit-token
+        secretKey: token
+
+    dataStorage:
+      size: 5Gi
+      # storageClass: <pendente sub-issue StorageClass>
+
+vaultTransit:
+  enabled: false
+
+networkPolicy:
+  enabled: true
+  externalSecretsNamespace: external-secrets
+  traefikNamespace: traefik
+  transitEndpointCidrs:
+    - 192.168.0.20/32
