@@ -1,0 +1,48 @@
+# Defaults para o chart `platform/storage/`.
+#
+# Cria uma StorageClass nomeada explicitamente, referenciada pelos PVCs dos
+# demais charts (Vault, Postgres-on-K8s, observability). Nome alinhado ao tier
+# de ambiente: `lab-local-nvme`, `san-local-nvme`, `hml-local-nvme`,
+# `prod-local-nvme`. Override obrigatório em cada environment para garantir
+# que cada cluster aplique a SC com o nome correto.
+#
+# Em lab/sanidade: provisioner `rancher.io/local-path` (já incluído no K3s).
+# Em hml/prod: a decisão final fica com a DIRSI — local NVMe direto ou
+# CSI driver dedicado (NetApp, Longhorn, etc.). Override por environment.
+#
+# Issue: #31 (sub de #3).
+
+storage:
+  # Liga/desliga o subchart inteiro. Default true (queremos a SC em todos os
+  # clusters).
+  enabled: true
+
+  storageClass:
+    # Nome explícito da StorageClass. SEMPRE override por environment para
+    # casar com o tier (lab-*, san-*, hml-*, prod-*).
+    name: local-nvme
+
+    # Marca esta SC como default no cluster. Pods sem `storageClassName`
+    # explícito caem nela. Em clusters multi-SC, garantir que apenas UMA
+    # tem isDefault: true.
+    isDefault: true
+
+    # Provisioner. K3s ships com `rancher.io/local-path` por default.
+    # Override em hml/prod conforme decisão da DIRSI.
+    provisioner: rancher.io/local-path
+
+    # WaitForFirstConsumer evita binding prematuro do PVC a um nó —
+    # importante porque o Pod pode ser agendado em outro nó pelo scheduler.
+    # Alternativa: Immediate (binding imediato).
+    volumeBindingMode: WaitForFirstConsumer
+
+    # Retain preserva os dados ao deletar o PVC (importante para Vault, PG).
+    # Workloads efêmeros podem usar Delete via override.
+    reclaimPolicy: Retain
+
+    # Permite resize de PVC (kubectl edit pvc + reload).
+    allowVolumeExpansion: true
+
+    # Parâmetros específicos do provisioner. local-path não usa nada;
+    # CSI drivers podem precisar de fsType, replication-factor, etc.
+    parameters: {}
