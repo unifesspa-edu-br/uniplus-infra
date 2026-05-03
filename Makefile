@@ -151,17 +151,19 @@ helm-deps:  ## Roda helm dependency update em todos os charts com dependências
 .PHONY: helm-template
 helm-template:  ## Renderiza todos os charts × environments (smoke local)
 	@printf "$(BLUE)→ helm template (todos chart × env)$(RESET)\n"
+	@# Capturar exit code via `if helm template`, não `OUT=$(helm template ...)`.
+	@# Com .SHELLFLAGS=-euo pipefail -c, atribuição com falha aborta o loop
+	@# imediatamente — usuário nunca vê quais outras combinações falharam.
 	@for chart_dir in $(CHART_DIRS); do \
 	    chart_name=$$(basename "$$chart_dir"); \
 	    for env in $(ENVS); do \
-	        OUT=$$(helm template "$$chart_name" "$$chart_dir" \
-	                -f "environments/$$env/values.yaml" 2>&1); \
-	        if echo "$$OUT" | grep -q "Error"; then \
-	            printf "  $(RED)✗$(RESET) $$chart_name × $$env\n"; \
-	            echo "$$OUT" | grep -A2 Error | head -5; \
-	        else \
+	        if OUT=$$(helm template "$$chart_name" "$$chart_dir" \
+	                -f "environments/$$env/values.yaml" 2>&1); then \
 	            KINDS=$$(echo "$$OUT" | grep -c "^kind:" || true); \
 	            printf "  $(GREEN)✓$(RESET) $$chart_name × $$env  ($$KINDS recursos)\n"; \
+	        else \
+	            printf "  $(RED)✗$(RESET) $$chart_name × $$env\n"; \
+	            echo "$$OUT" | grep -A2 -E "Error|error" | head -5; \
 	        fi; \
 	    done; \
 	done
