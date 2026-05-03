@@ -5,9 +5,15 @@
 # Provisiona o laboratório Uni+ em uma máquina Linux do zero.
 #
 # Uso:
-#   ./bootstrap-lab.sh --role=sp1     # máquina Ryzen
-#   ./bootstrap-lab.sh --role=sp2     # máquina i7
-#   ./bootstrap-lab.sh --role=witness # apenas o container witness (na i7)
+#   ./bootstrap-lab.sh --role=sp1   # máquina Ryzen — cluster K3s simulando SP1
+#   ./bootstrap-lab.sh --role=sp2   # máquina i7    — cluster K3s simulando SP2
+#   ./bootstrap-lab.sh --role=pa1   # máquina i7    — cluster K3s simulando PA1
+#                                   # (em adição aos containers Docker do DC
+#                                   # institucional simulado: etcd quorum,
+#                                   # keycloak-master, minio-master, backup-target)
+#
+# Nota: --role=witness é alias DEPRECATED de --role=pa1, mantido para
+# compatibilidade com a documentação anterior. Emite warning e prossegue.
 # ============================================================================
 
 set -euo pipefail
@@ -36,12 +42,18 @@ log_error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 
 usage() {
     cat <<EOF
-Uso: $0 --role={sp1|sp2|witness} [opções]
+Uso: $0 --role={sp1|sp2|pa1} [opções]
 
 Roles:
-  sp1       Configura a máquina principal (Ryzen 9950X — Arch Linux)
-  sp2       Configura a máquina secundária (Core i7 — Ubuntu Server)
-  witness   Configura apenas o container witness UNIFESSPA (na i7)
+  sp1       Cluster K3s na máquina principal (Ryzen 9950X — Arch Linux)
+            simulando o EVEO SP1 (Cotia).
+  sp2       Cluster K3s na máquina secundária (Core i7 — Ubuntu Server)
+            simulando o EVEO SP2 (Osasco).
+  pa1       Cluster K3s + containers Docker isolados na máquina i7
+            simulando o DC institucional UNIFESSPA (Marabá). Hospeda Vault
+            Transit (auto-unseal cross-cluster), etcd quorum, Keycloak source,
+            MinIO replica e backup target.
+  witness   ALIAS DEPRECATED de pa1 (emite warning).
 
 Opções:
   --skip-k3s          Pula instalação do K3s
@@ -53,7 +65,7 @@ Opções:
 Exemplos:
   $0 --role=sp1
   $0 --role=sp2 --enable-cloudflared
-  $0 --role=witness
+  $0 --role=pa1
 EOF
     exit 0
 }
@@ -72,7 +84,18 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$ROLE" ]]; then
-    log_error "Role obrigatório (--role=sp1|sp2|witness)"
+    log_error "Role obrigatório (--role=sp1|sp2|pa1)"
+    usage
+fi
+
+# Alias DEPRECATED: witness → pa1.
+if [[ "$ROLE" == "witness" ]]; then
+    log_warn "--role=witness é alias DEPRECATED de --role=pa1. Use --role=pa1."
+    ROLE="pa1"
+fi
+
+if [[ "$ROLE" != "sp1" && "$ROLE" != "sp2" && "$ROLE" != "pa1" ]]; then
+    log_error "Role inválido: '$ROLE'. Use sp1, sp2 ou pa1."
     usage
 fi
 
@@ -159,23 +182,18 @@ step_install_k3s() {
         log_warn "Pulando instalação do K3s (--skip-k3s)"
         return
     fi
-    
-    if [[ "$ROLE" == "witness" ]]; then
-        log_info "Role 'witness' não precisa de K3s. Pulando."
-        return
-    fi
-    
+
     if command -v k3s &> /dev/null; then
         log_success "K3s já instalado: $(k3s --version | head -1)"
         return
     fi
-    
+
     log_info "Instalando K3s (cluster independente para $ROLE)..."
-    
+
     local node_name="uniplus-$ROLE"
     local node_ip
     node_ip=$(hostname -I | awk '{print $1}')
-    
+
     run "curl -sfL https://get.k3s.io | sh -s - \
         --node-name $node_name \
         --cluster-init \
@@ -183,12 +201,12 @@ step_install_k3s() {
         --tls-san $node_ip \
         --disable servicelb \
         --write-kubeconfig-mode 644"
-    
+
     # Configurar kubectl local
     run "mkdir -p $HOME/.kube"
     run "sudo cp /etc/rancher/k3s/k3s.yaml $HOME/.kube/config"
     run "sudo chown $(id -u):$(id -g) $HOME/.kube/config"
-    
+
     log_success "K3s instalado e operacional."
 }
 
@@ -204,10 +222,6 @@ step_install_helm() {
 }
 
 step_install_argocd() {
-    if [[ "$ROLE" == "witness" ]]; then
-        return
-    fi
-    
     log_info "Instalando ArgoCD..."
     
     run "kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -"
@@ -223,19 +237,23 @@ step_install_argocd() {
     log_success "ArgoCD instalado."
 }
 
-step_setup_witness() {
-    if [[ "$ROLE" != "witness" ]]; then
+step_setup_pa1_extras() {
+    if [[ "$ROLE" != "pa1" ]]; then
         return
     fi
-    
-    log_info "Configurando container witness UNIFESSPA simulada..."
-    
+
+    log_info "Configurando containers Docker isolados do DC institucional simulado (PA1)..."
+
+    # Bridge dedicada para os componentes que rodam fora do K8s em pa1
+    # (etcd quorum, keycloak-master, minio-master, backup-target).
+    # CIDR alinhado ao environments/lab-pa1/values.yaml (172.30.0.0/16).
     run "docker network create --subnet 172.30.0.0/16 unifesspa-sim 2>/dev/null || true"
-    
-    log_warn "Witness setup ainda não implementado totalmente. Veja docs/SETUP.md seção 9."
+
+    log_warn "Containers PA1 (etcd, keycloak-master, minio-master, backup-target) ainda não automatizados. Veja docs/SETUP.md seção 9."
     log_info "Próximos passos manuais:"
-    echo "  1. cd $REPO_ROOT/data/witness"
-    echo "  2. Criar docker-compose.yml conforme SETUP.md"
+    echo "  1. cd $REPO_ROOT/data/pa1-extras"
+    echo "  2. Criar docker-compose.yml conforme SETUP.md (consensusWitness, keycloakMaster,"
+    echo "     minioMaster, backupTarget conforme environments/lab-pa1/values.yaml)"
     echo "  3. docker compose up -d"
 }
 
@@ -286,14 +304,31 @@ step_summary() {
         echo "       kubectl apply -f $REPO_ROOT/argocd/project.yaml"
         echo "       kubectl apply -f $REPO_ROOT/argocd/applicationset.yaml"
         echo ""
-        echo "  5. Validar instalação:"
+        echo "  5. Para auto-unseal Transit funcionar, criar Secret com token"
+        echo "     gerado no bootstrap do Vault Transit em pa1 (RUNBOOKS §1.4):"
+        echo "       kubectl -n vault create secret generic vault-transit-token \\"
+        echo "         --from-literal=token=<SP_AUTOUNSEAL_TOKEN>"
+        echo ""
+        echo "  6. Validar instalação:"
         echo "       $REPO_ROOT/scripts/validate-cluster.sh"
     fi
-    
-    if [[ "$ROLE" == "witness" ]]; then
-        echo "  1. Criar docker-compose.yml em data/witness/"
-        echo "  2. docker compose up -d"
-        echo "  3. Verificar quórum etcd dos clusters Patroni"
+
+    if [[ "$ROLE" == "pa1" ]]; then
+        echo "  1. Verificar K3s:"
+        echo "       kubectl get nodes"
+        echo ""
+        echo "  2. Aplicar manifests do ArgoCD (este cluster):"
+        echo "       kubectl apply -f $REPO_ROOT/argocd/project.yaml"
+        echo "       kubectl apply -f $REPO_ROOT/argocd/applicationset.yaml"
+        echo ""
+        echo "  3. Aguardar Vault Transit subir (selado, esperado):"
+        echo "       kubectl -n vault-transit get pods"
+        echo ""
+        echo "  4. Bootstrap do Vault Transit (Shamir 5/3, engine Transit, token):"
+        echo "       seguir docs/RUNBOOKS.md §1.4.A"
+        echo ""
+        echo "  5. Subir containers Docker isolados (etcd, keycloak-master,"
+        echo "     minio-master, backup-target) — ver passo manual acima."
     fi
     
     echo ""
@@ -313,6 +348,6 @@ step_install_docker
 step_install_k3s
 step_install_helm
 step_install_argocd
-step_setup_witness
+step_setup_pa1_extras
 step_setup_cloudflared
 step_summary
