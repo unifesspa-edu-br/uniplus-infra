@@ -101,6 +101,87 @@
    kubectl get secret <servico>-credentials -n <namespace>
    ```
 
+### 1.4 Bootstrap inicial do Vault em um ambiente novo
+
+**Quando:** primeira vez que um ambiente (`lab-pa1`, `san-pa1`, `hml-pa1`, `prod-pa1`, ou um cluster `*-sp1`/`*-sp2` novo) recebe o Vault. Operação one-time por ambiente. Para a topologia de fundo, ver [ADR-007](adrs/ADR-007-vault-ha-storage-unseal.md).
+
+**Pré-requisitos:**
+
+- Charts `platform/vault-transit/` (em PA1) e `platform/vault/` (em SP1/SP2) sincronizados pelo ArgoCD. Pods sobem mas ficam selados — esperado.
+- Acesso administrativo a `kubectl` nos contextos dos clusters do ambiente.
+- Procedimento institucional de guarda de chaves Shamir definido com a DIRSI/CTIC (Apêndice A).
+
+#### A. Bootstrap do Vault Transit em PA1
+
+1. Verificar estado do Pod do Transit (deve estar `Running` mas selado — readiness probe falhando é esperado):
+   ```bash
+   kubectl --context uniplus-<env>-pa1 -n vault-transit get pods
+   ```
+
+2. Inicializar com Shamir 5/3:
+   ```bash
+   kubectl --context uniplus-<env>-pa1 -n vault-transit exec -it vault-transit-0 -- \
+     vault operator init -key-shares=5 -key-threshold=3
+   ```
+   Output: 5 unseal keys + root token. **Distribuir conforme procedimento institucional** (cofre físico, gestores designados — ver Apêndice A).
+
+3. Unseal manual com 3 dos 5 shares (executar 3 vezes, com shares diferentes):
+   ```bash
+   kubectl --context uniplus-<env>-pa1 -n vault-transit exec -it vault-transit-0 -- \
+     vault operator unseal <share-N>
+   ```
+
+4. Login com root token e habilitar a engine Transit + criar a chave de auto-unseal:
+   ```bash
+   vault login <root-token>
+   vault secrets enable transit
+   vault write -f transit/keys/autounseal type=aes256-gcm96
+   ```
+
+5. Criar policy + token periódico para SP1 e SP2 desbloquearem (token tem renovação automática enquanto Vault SP estiver vivo):
+   ```bash
+   vault policy write autounseal-sp - <<EOF
+   path "transit/encrypt/autounseal" {
+     capabilities = ["update"]
+   }
+   path "transit/decrypt/autounseal" {
+     capabilities = ["update"]
+   }
+   EOF
+   vault token create -policy=autounseal-sp -period=8760h -orphan
+   ```
+   Guardar o token gerado (`<SP_AUTOUNSEAL_TOKEN>`) para o passo B.
+
+#### B. Bootstrap dos Vaults SP1 e SP2
+
+1. Aplicar Secret com o token de auto-unseal no namespace do Vault (não versionar — Secret manual ou via ExternalSecret):
+   ```bash
+   kubectl --context uniplus-<env>-sp1 -n vault create secret generic vault-transit-token \
+     --from-literal=token=<SP_AUTOUNSEAL_TOKEN>
+   ```
+
+2. Garantir que o `values.yaml` do environment já tem o bloco `vault.server.seal.transit.address` apontando para o Vault Transit em PA1 (configurado no PR de #13). Reiniciar o StatefulSet para reler a config:
+   ```bash
+   kubectl --context uniplus-<env>-sp1 -n vault rollout restart statefulset/vault
+   ```
+
+3. Inicializar com **Recovery Keys** (auto-unseal já está ativo via Transit, então só recovery keys são geradas — substituem as unseal keys para cenários de DR):
+   ```bash
+   kubectl --context uniplus-<env>-sp1 -n vault exec -it vault-0 -- \
+     vault operator init -recovery-shares=5 -recovery-threshold=3
+   ```
+   Output: 5 recovery keys + root token. **Guardar conforme procedimento institucional** — recovery keys são a única saída se o Transit em PA1 for perdido (cenário §3.5.D).
+
+4. Validar:
+   ```bash
+   kubectl --context uniplus-<env>-sp1 -n vault exec -it vault-0 -- vault status
+   # esperado: Sealed=false, HA Mode=active em vault-0; standby em vault-1 e vault-2
+   ```
+
+5. Repetir os passos 1-4 para SP2.
+
+A partir daqui, restarts de Pods do Vault em SP1/SP2 (manutenção, reboot do node, rolling update) acontecem sem intervenção humana — o auto-unseal Transit cuida.
+
 ## 2. Failover e Recuperação
 
 ### Estados operacionais
@@ -337,7 +418,7 @@ docker exec pgbackrest pgbackrest \
 
 ### 3.3 Backup do Vault
 
-**Frequência configurada:** snapshot diário do storage Raft.
+**Frequência configurada:** snapshot diário do storage Raft, em todos os Vaults (Transit em PA1 e Vaults de aplicação em SP1/SP2). Destino: `pa1-backup`.
 
 **Snapshot manual:**
 
@@ -347,11 +428,17 @@ vault operator raft snapshot save /tmp/vault-snapshot-$(date +%Y%m%d).snap
 rsync /tmp/vault-snapshot-*.snap unifesspa-backup:/backups/vault/
 ```
 
-**Restore:**
+**Restore (caso simples — Pod ou cluster SP perdido):**
 
 ```bash
 vault operator raft snapshot restore /tmp/vault-snapshot-20260428.snap
 ```
+
+> **Observação sobre restore.** O comportamento difere conforme o que está sendo restaurado:
+>
+> - **Restore em SP1/SP2** com Transit em PA1 intacto: após `restore`, o auto-unseal Transit destrava sozinho. Sem intervenção manual.
+> - **Restore no Transit em PA1**: após `restore`, o Transit volta selado. É preciso reentrar 3 dos 5 shares Shamir originais (procedimento §1.4.A passo 3).
+> - **Perda do Transit + perda do snapshot do Transit**: cenário catastrófico. Ver §3.5.D.
 
 ### 3.4 Backup do MinIO
 
@@ -360,6 +447,52 @@ A replicação contínua para `pa1-object-storage` atua como cópia instituciona
 ```bash
 mc mirror minio-eveo/aprovado minio-unifesspa/aprovado
 ```
+
+### 3.5 Disaster Recovery do Vault
+
+Cenários ordenados por gravidade. O caminho A é cotidiano; D é o cenário extremo a ser evitado a todo custo.
+
+**A. Perda de um Pod do Vault em SP1 ou SP2 (caso comum).** O StatefulSet recria o Pod; auto-unseal Transit destrava automaticamente. Sem intervenção. Apenas validar que o Pod voltou ao estado `Running` e que o Vault no cluster mantém quórum Raft.
+
+**B. Perda completa do cluster Vault em SP1 ou SP2 (cluster K3s reprovisionado).** Transit em PA1 está intacto.
+
+1. Garantir que o cluster K3s está sincronizado pelo ArgoCD com o chart `platform/vault/`.
+2. Recriar o Secret `vault-transit-token` (passo §1.4.B.1).
+3. Restaurar o snapshot Raft mais recente:
+   ```bash
+   kubectl --context uniplus-<env>-sp1 -n vault exec -it vault-0 -- \
+     vault operator raft snapshot restore /backups/vault-snapshot-<data>.snap
+   ```
+4. Auto-unseal Transit destrava os 3 Pods em sequência. Validar com `vault status`.
+
+**C. Perda completa do Vault Transit em PA1 (snapshot disponível).** Vaults SP que já estão unselados continuam servindo, **mas qualquer restart de Pod do Vault em SP trava** até o Transit voltar.
+
+1. Reprovisionar K3s em PA1 + ArgoCD sincroniza `platform/vault-transit/`.
+2. Restaurar o snapshot do Transit:
+   ```bash
+   vault operator raft snapshot restore /backups/vault-transit-snapshot-<data>.snap
+   ```
+3. Após o restore, o Transit volta selado. Reentrar 3 shares Shamir (§1.4.A passo 3).
+4. Validar que `transit/keys/autounseal` está acessível e tem o material criptográfico original (mesmo `version` antes e depois). Sem isso, Pods de Vault em SP não conseguirão unseal.
+
+**D. Perda do Transit + perda do snapshot do Transit (catastrófico).** A chave `autounseal` é irrecuperável. Caminho de recovery:
+
+1. Bootstrap de um novo Vault Transit em PA1 (procedimento §1.4.A inteiro). Gera nova chave `autounseal` e novo `<SP_AUTOUNSEAL_TOKEN>`.
+2. Em cada Vault SP, destravar manualmente com **recovery keys** (geradas no init original do Vault SP — §1.4.B passo 3):
+   ```bash
+   vault operator unseal <recovery-key-1>
+   vault operator unseal <recovery-key-2>
+   vault operator unseal <recovery-key-3>
+   ```
+3. Atualizar o Secret `vault-transit-token` em cada cluster SP com o novo token gerado no passo 1.
+4. Atualizar config de seal apontando para o novo Transit (caso o endpoint tenha mudado).
+5. Reiniciar os Pods. Próximos restarts usarão o novo Transit normalmente.
+
+> **Princípio de guarda de chaves (LGPD + soberania):**
+>
+> - **Unseal keys do Transit (PA1):** 5 shares Shamir, threshold 3, distribuídos entre 5 gestores designados (Apêndice A).
+> - **Recovery keys dos Vaults SP1/SP2:** 5 shares cada, threshold 3, **guardadas em cofre distinto** dos shares do Transit. Perder ambos os conjuntos = secret store irrecuperável (rotação completa de credenciais).
+> - **Snapshots Raft em `pa1-backup`** ficam criptografados em repouso. Restore exige acesso ao próprio Vault (`vault operator raft snapshot restore` valida assinatura interna).
 
 ## 4. Atualizações
 
