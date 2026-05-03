@@ -47,17 +47,31 @@ chore(deps): atualiza ArgoCD para 2.13.x
 Antes de abrir o PR, execute localmente:
 
 ```bash
-# Lint dos charts Helm
-make helm-lint
+# Roda todos os linters (yaml + helm + markdown + shell)
+make lint
 
-# Validação dos manifests YAML
-make yaml-lint
+# Roda lint + helm dependency update + validação contra values.schema.json
+make validate
 
-# Validação de manifests K8s contra schema
-make kube-validate
+# Lista todos os targets disponíveis
+make help
 ```
 
-Os mesmos checks rodam em CI e bloqueiam o merge se falharem.
+Targets individuais úteis durante desenvolvimento:
+
+| Target | Função |
+|---|---|
+| `make yaml-lint` | yamllint nos diretórios de manifests/values |
+| `make helm-lint` | helm lint em todos os charts (apps/ + platform/) |
+| `make helm-template` | renderiza todas as combinações chart × environment |
+| `make schema-validate` | valida values dos environments contra `values.schema.json` |
+| `make markdown-lint` | markdownlint-cli2 em todos os `.md` |
+| `make shellcheck` | shellcheck em `scripts/*.sh` |
+| `make helm-deps` | `helm dependency update` em charts com dependências |
+| `make helm-docs` | gera/atualiza READMEs a partir de `values.yaml` (exige helm-docs CLI) |
+| `make clean` | remove `charts/` baixados, `*.tgz`, `Chart.lock` |
+
+Os mesmos checks rodam em CI (`.github/workflows/validate.yml`) e bloqueiam o merge se falharem.
 
 ### 5. Abra o Pull Request
 
@@ -83,8 +97,8 @@ Pelo menos 1 aprovação do time CTIC é obrigatória. Mudanças em produção (
 
 - Cada chart deve ter `Chart.yaml`, `values.yaml` (defaults), `README.md`
 - Templates em `templates/` seguem [boas práticas oficiais](https://helm.sh/docs/chart_best_practices/)
-- Use `helm-docs` para gerar README a partir dos values
-- Schemas de values em `values.schema.json` (recomendado)
+- Use `helm-docs` para gerar README a partir dos values (`make helm-docs`). Configuração em `.helm-docs.yaml`. Charts ainda não migrados mantêm README hand-written; migração é gradual.
+- **`values.schema.json` obrigatório** para charts em `platform/` (validação automática pelo Helm em `helm template`/`install`/`upgrade`). Chart wrapper `platform/vault/` e `platform/vault-transit/` servem de referência. Use `additionalProperties: true` em blocos compartilhados entre múltiplos charts (`networkPolicy`, `serviceMonitor`, `ingress`).
 
 ### YAML
 
