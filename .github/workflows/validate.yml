@@ -63,6 +63,43 @@ jobs:
           scandir: './scripts'
           severity: warning
 
+  schema-validate:
+    name: Schema Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'v3.14.0'
+
+      - name: Validate values.schema.json across charts × environments
+        run: |
+          set -euo pipefail
+          ENVS="lab-sp1 lab-sp2 lab-pa1 prod-sp1 prod-sp2 prod-pa1"
+          FAILS=0
+          for chart_dir in apps/*/ platform/*/; do
+            chart_name=$(basename "$chart_dir")
+            if [ ! -f "$chart_dir/Chart.yaml" ]; then continue; fi
+            if grep -q '^dependencies:' "$chart_dir/Chart.yaml"; then
+              helm dependency update "$chart_dir" >/dev/null
+            fi
+            for env in $ENVS; do
+              echo "Validating $chart_name × $env"
+              if ! helm template "$chart_name" "$chart_dir" \
+                  -f "environments/$env/values.yaml" >/dev/null 2>/tmp/render.log; then
+                echo "✗ $chart_name × $env"
+                cat /tmp/render.log
+                FAILS=$((FAILS+1))
+              fi
+            done
+          done
+          if [ "$FAILS" -gt 0 ]; then
+            echo "✗ $FAILS combinação(ões) chart × env falharam"
+            exit 1
+          fi
+
   markdown-lint:
     name: Markdown Lint
     runs-on: ubuntu-latest
