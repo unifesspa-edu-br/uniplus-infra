@@ -83,6 +83,7 @@ spec:
                   uniplus.io/managed: "true"
           - list:
               elements:
+                - component: storage
                 - component: traefik
                 - component: cert-manager
                 - component: external-secrets
