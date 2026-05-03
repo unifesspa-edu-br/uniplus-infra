@@ -46,8 +46,8 @@ vaultTransit:
             tls_disable     = 0
             address         = "[::]:8200"
             cluster_address = "[::]:8201"
-            tls_cert_file   = "/vault/tls/tls.crt"
-            tls_key_file    = "/vault/tls/tls.key"
+            tls_cert_file   = "/vault/userconfig/vault-transit-tls/tls.crt"
+            tls_key_file    = "/vault/userconfig/vault-transit-tls/tls.key"
           }
 
           storage "raft" {
