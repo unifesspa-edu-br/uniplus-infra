@@ -1,0 +1,210 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/unifesspa-edu-br/uniplus-infra/platform/vault/values.schema.json",
+  "title": "vault chart values",
+  "description": "Schema dos values do chart platform/vault/. Valida overrides em environments/<env>/values.yaml. Subchart hashicorp/vault tem seu próprio schema — additionalProperties=true permite passar overrides que serão validados pelo upstream.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "vault": {
+      "type": "object",
+      "description": "Bloco do subchart hashicorp/vault.",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Liga/desliga o subchart. False em PA1 (que só hospeda Vault Transit)."
+        },
+        "global": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "tlsDisable": {
+              "type": "boolean",
+              "description": "TLS no listener interno do Vault. Default true até cert-manager (#15) entregar."
+            }
+          }
+        },
+        "injector": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "replicas": { "type": "integer", "minimum": 1 },
+            "resources": { "$ref": "#/$defs/k8sResources" }
+          }
+        },
+        "server": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "image": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "repository": {
+                  "type": "string",
+                  "description": "Imagem do Vault (default hashicorp/vault)."
+                },
+                "tag": {
+                  "type": "string",
+                  "description": "Versão do Vault (ex.: 1.21.2)."
+                }
+              }
+            },
+            "ha": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "replicas": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 7,
+                  "description": "Sempre 3 conforme ADR-007 (topologia idêntica em todas as fases)."
+                },
+                "raft": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "properties": {
+                    "enabled": { "type": "boolean" },
+                    "setNodeId": { "type": "boolean" },
+                    "config": {
+                      "type": "string",
+                      "description": "HCL config string. Cada environment SP1/SP2 substitui esta para incluir seal \"transit\"."
+                    }
+                  }
+                }
+              }
+            },
+            "dataStorage": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "size": { "type": "string", "pattern": "^[0-9]+(Mi|Gi|Ti)$" },
+                "storageClass": {
+                  "type": ["string", "null"],
+                  "description": "Nome da StorageClass (ex.: lab-local-nvme, prod-local-nvme). null usa a default do cluster."
+                },
+                "mountPath": { "type": "string" }
+              }
+            },
+            "auditStorage": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "size": { "type": "string", "pattern": "^[0-9]+(Mi|Gi|Ti)$" },
+                "storageClass": { "type": ["string", "null"] }
+              }
+            },
+            "resources": { "$ref": "#/$defs/k8sResources" },
+            "extraSecretEnvironmentVars": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["envName", "secretName", "secretKey"],
+                "properties": {
+                  "envName": { "type": "string" },
+                  "secretName": { "type": "string" },
+                  "secretKey": { "type": "string" }
+                }
+              }
+            },
+            "extraVolumes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["type", "name"],
+                "properties": {
+                  "type": {
+                    "type": "string",
+                    "enum": ["secret", "configMap"]
+                  },
+                  "name": { "type": "string" }
+                }
+              }
+            },
+            "service": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": ["ClusterIP", "NodePort", "LoadBalancer"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "externalSecretsNamespace": { "type": "string" },
+        "traefikNamespace": { "type": "string" },
+        "transitEndpointCidrs": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[0-9.]+/[0-9]+$" },
+          "description": "CIDRs autorizados como destino do egress Transit. Vazio bloqueia auto-unseal."
+        },
+        "transitEndpointPorts": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 1, "maximum": 65535 },
+          "description": "Portas do endpoint Transit. Lab=30200 (NodePort); prod=443 (HTTPS)."
+        }
+      }
+    },
+    "vaultTransit": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Override do chart platform/vault-transit/ neste cluster (normalmente enabled=false em SP1/SP2).",
+      "properties": {
+        "enabled": { "type": "boolean" }
+      }
+    },
+    "serviceMonitor": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "interval": { "type": "string", "pattern": "^[0-9]+[smh]$" },
+        "port": { "type": "string" },
+        "scheme": { "type": "string", "enum": ["http", "https"] },
+        "tlsConfig": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "ingress": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "host": { "type": "string" },
+        "entryPoint": { "type": "string" }
+      }
+    }
+  },
+  "$defs": {
+    "k8sResources": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requests": { "$ref": "#/$defs/k8sResourceList" },
+        "limits": { "$ref": "#/$defs/k8sResourceList" }
+      }
+    },
+    "k8sResourceList": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cpu": { "type": ["string", "integer"] },
+        "memory": { "type": "string", "pattern": "^[0-9]+(Ki|Mi|Gi|Ti)$" }
+      }
+    }
+  }
+}
