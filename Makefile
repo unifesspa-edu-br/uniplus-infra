@@ -89,9 +89,14 @@ markdown-lint:  ## Roda markdownlint-cli2 em todos os .md
 	$(MARKDOWNLINT) '**/*.md' '!**/charts/**' '!**/node_modules/**'
 
 .PHONY: shellcheck
-shellcheck:  ## Roda shellcheck em scripts/*.sh
+shellcheck:  ## Roda shellcheck em scripts/*.sh (skip gracefully se não instalado)
 	@printf "$(BLUE)→ shellcheck$(RESET)\n"
-	shellcheck scripts/*.sh
+	@if command -v shellcheck >/dev/null 2>&1; then \
+	    shellcheck scripts/*.sh; \
+	else \
+	    printf "$(YELLOW)⚠ shellcheck não instalado localmente — pulando (CI cobre via ludeeus/action-shellcheck)$(RESET)\n"; \
+	    printf "  Instalar: pacman -S shellcheck (Arch) | apt install shellcheck (Ubuntu)\n"; \
+	fi
 
 .PHONY: schema-validate
 schema-validate:  ## Valida values.yaml dos environments contra os schemas dos charts
@@ -121,7 +126,9 @@ schema-validate:  ## Valida values.yaml dos environments contra os schemas dos c
 lint: yaml-lint helm-lint markdown-lint shellcheck  ## Roda todos os linters
 
 .PHONY: validate
-validate: lint helm-deps schema-validate  ## Lint + render de templates contra schemas
+validate: helm-deps lint schema-validate  ## Lint + render de templates contra schemas
+# Ordem importa: helm-deps PRIMEIRO popula charts/ — sem isso, helm-lint e
+# schema-validate podem falhar em fresh checkout com "missing in charts/ directory".
 
 .PHONY: all
 all: validate  ## Alias de validate (default do CI)
@@ -162,10 +169,13 @@ helm-template:  ## Renderiza todos os charts × environments (smoke local)
 .PHONY: helm-docs
 helm-docs:  ## Gera README.md dos charts a partir de values.yaml e README.md.gotmpl
 	@printf "$(BLUE)→ helm-docs$(RESET)\n"
-	@if ! command -v $(HELM_DOCS) >/dev/null 2>&1; then \
-	    printf "$(RED)✗ helm-docs não encontrado. Instalar:$(RESET)\n"; \
-	    echo "    go install github.com/norwoodj/helm-docs/cmd/helm-docs@latest"; \
-	    echo "  ou usar via docker: HELM_DOCS='docker run --rm -v \"\$$(pwd):/work\" -w /work jnorwood/helm-docs:latest helm-docs' make helm-docs"; \
+	@# Tenta invocar HELM_DOCS --version diretamente. Funciona com binário simples
+	@# (`helm-docs`) e com wrapper docker (`docker run ... jnorwood/helm-docs ...`).
+	@# `command -v` não funcionaria com strings que contêm argumentos.
+	@if ! $(HELM_DOCS) --version >/dev/null 2>&1; then \
+	    printf "$(RED)✗ helm-docs não disponível (HELM_DOCS=$(HELM_DOCS))$(RESET)\n"; \
+	    echo "  Instalar: go install github.com/norwoodj/helm-docs/cmd/helm-docs@latest"; \
+	    echo "  Ou via docker: HELM_DOCS='docker run --rm -v \"\$$(pwd):/work\" -w /work jnorwood/helm-docs:latest helm-docs' make helm-docs"; \
 	    exit 1; \
 	fi
 	$(HELM_DOCS) --chart-search-root=. --chart-to-generate=apps,platform
