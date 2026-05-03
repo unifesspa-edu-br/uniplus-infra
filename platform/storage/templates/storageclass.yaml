@@ -8,14 +8,28 @@ metadata:
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/managed-by: {{ .Release.Service }}
     app.kubernetes.io/part-of: uniplus
-  {{- if .Values.storage.storageClass.isDefault }}
   annotations:
+    # Sync wave negativa garante que a StorageClass seja criada ANTES dos
+    # demais charts da plataforma (vault, observability, etc.) cujos PVCs
+    # referenciam esta SC por nome. Sem isso, no bootstrap inicial PVCs
+    # podem ficar Pending até retry do ArgoCD.
+    argocd.argoproj.io/sync-wave: "-100"
+    {{- if .Values.storage.storageClass.isDefault }}
     storageclass.kubernetes.io/is-default-class: "true"
-  {{- end }}
+    {{- end }}
 provisioner: {{ required "storage.storageClass.provisioner é obrigatório" .Values.storage.storageClass.provisioner }}
 volumeBindingMode: {{ .Values.storage.storageClass.volumeBindingMode | default "WaitForFirstConsumer" }}
 reclaimPolicy: {{ .Values.storage.storageClass.reclaimPolicy | default "Retain" }}
-allowVolumeExpansion: {{ .Values.storage.storageClass.allowVolumeExpansion | default true }}
+{{- /*
+  allowVolumeExpansion é boolean. O helper `default` do Sprig trata `false`
+  como vazio — então `... | default true` ignoraria override explícito para
+  false. Usar hasKey preserva o valor passado pelo operador.
+*/}}
+{{- if hasKey .Values.storage.storageClass "allowVolumeExpansion" }}
+allowVolumeExpansion: {{ .Values.storage.storageClass.allowVolumeExpansion }}
+{{- else }}
+allowVolumeExpansion: true
+{{- end }}
 {{- with .Values.storage.storageClass.parameters }}
 parameters:
   {{- toYaml . | nindent 2 }}

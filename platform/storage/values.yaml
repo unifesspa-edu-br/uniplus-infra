@@ -22,10 +22,17 @@ storage:
     # casar com o tier (lab-*, san-*, hml-*, prod-*).
     name: local-nvme
 
-    # Marca esta SC como default no cluster. Pods sem `storageClassName`
-    # explícito caem nela. Em clusters multi-SC, garantir que apenas UMA
-    # tem isDefault: true.
-    isDefault: true
+    # Marca esta SC como default no cluster.
+    # ATENÇÃO: K3s ships com `local-path` SC já marcada como default. Manter
+    # `isDefault: false` aqui evita o cenário "duas SCs default" que K8s tolera
+    # mas gera warning no kube-controller-manager e comportamento não-determinístico
+    # para PVCs sem storageClassName explícito.
+    # Todos os PVCs do projeto usam storageClassName explícito (vault.dataStorage,
+    # vaultTransit.dataStorage, etc.), então não dependemos da default.
+    # Override para true só se: (a) a SC default do K3s for desabilitada via
+    # patch ou (b) o cluster não vier com SC default pré-existente (ex.: HML/prod
+    # com CSI customizado).
+    isDefault: false
 
     # Provisioner. K3s ships com `rancher.io/local-path` por default.
     # Override em hml/prod conforme decisão da DIRSI.
