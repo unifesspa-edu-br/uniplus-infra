@@ -18,3 +18,4 @@ Este diretório contém as decisões arquiteturais da infraestrutura da platafor
 | 004 | [Borda externa fora do escopo da PoC](ADR-004-borda-externa-fora-do-escopo-da-poc.md) | 🟡 Pendente | 2026-04-20 | [#20](https://github.com/unifesspa-edu-br/uniplus-infra/issues/20) |
 | 005 | [Stateful em containers via systemd](ADR-005-stateful-em-containers-via-systemd.md) | ✅ Aceito | 2026-04-20 | [#21](https://github.com/unifesspa-edu-br/uniplus-infra/issues/21) |
 | 006 | [GitOps com ArgoCD](ADR-006-gitops-com-argocd.md) | ✅ Aceito | 2026-04-20 | [#16](https://github.com/unifesspa-edu-br/uniplus-infra/issues/16) |
+| 007 | [Vault HA com auto-unseal Transit centralizado em PA1](ADR-007-vault-ha-storage-unseal.md) | ✅ Aceito | 2026-05-03 | [#13](https://github.com/unifesspa-edu-br/uniplus-infra/issues/13) |
