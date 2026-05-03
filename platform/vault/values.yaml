@@ -121,6 +121,12 @@ networkPolicy:
 serviceMonitor:
   enabled: false
   interval: 30s
+  # O endpoint de métricas fica no listener da API (8200), não no listener
+  # interno de cluster/Raft (8201). Com tlsDisable=true, o chart upstream nomeia
+  # a porta como `http`; em prod, sobrescrever para `https`.
+  port: http
+  scheme: http
+  tlsConfig: {}
 
 # IngressRoute (Traefik) para acesso administrativo ao UI.
 # Desligado por default — ligar quando integração OIDC com Keycloak estiver

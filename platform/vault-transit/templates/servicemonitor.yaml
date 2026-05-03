@@ -14,12 +14,14 @@ spec:
       app.kubernetes.io/name: vaultTransit
       app.kubernetes.io/instance: {{ .Release.Name }}
   endpoints:
-    - port: https-internal
+    - port: {{ .Values.serviceMonitor.port | default "http" }}
       path: /v1/sys/metrics
       interval: {{ .Values.serviceMonitor.interval | default "30s" }}
-      scheme: https
+      scheme: {{ .Values.serviceMonitor.scheme | default "http" }}
+      {{- with .Values.serviceMonitor.tlsConfig }}
       tlsConfig:
-        insecureSkipVerify: true
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       params:
         format:
           - prometheus

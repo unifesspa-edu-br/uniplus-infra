@@ -161,3 +161,10 @@ networkPolicy:
   transitEndpointCidrs: []  # TODO: preencher antes de habilitar Vault em prod
   transitEndpointPorts:
     - 443
+
+serviceMonitor:
+  enabled: false
+  port: https
+  scheme: https
+  tlsConfig:
+    insecureSkipVerify: true
