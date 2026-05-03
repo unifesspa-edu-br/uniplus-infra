@@ -244,6 +244,7 @@ As decisões arquiteturais da infraestrutura são formalizadas como ADRs (Archit
 - **[ADR-004: Borda externa fora do escopo da PoC](adrs/ADR-004-borda-externa-fora-do-escopo-da-poc.md)**: Definição de WAF/DNS delegada à infra de rede após validação da PoC.
 - **[ADR-005: Stateful em containers via systemd](adrs/ADR-005-stateful-em-containers-via-systemd.md)**: Empacotamento de serviços de dados em containers fora do K8s para portabilidade.
 - **[ADR-006: GitOps com ArgoCD](adrs/ADR-006-gitops-com-argocd.md)**: Uso de ArgoCD para garantir estado declarativo e evitar drift entre clusters.
+- **[ADR-007: Vault HA com auto-unseal Transit centralizado em PA1](adrs/ADR-007-vault-ha-storage-unseal.md)**: Vault OSS com 3 réplicas Raft por cluster SP1/SP2 e Vault Transit dedicado em PA1 para auto-unseal cross-cluster, mantendo soberania institucional.
 
 Para decisões futuras e histórico completo, consulte o [diretório de ADRs](adrs/README.md).
 
@@ -260,6 +261,7 @@ Esta seção define o mecanismo de redundância aceito para cada família de ser
 | Cache Redis/Valkey | Cache local por DC, descartável e reconstruível. Não participa de consenso global nem deve armazenar estado autoritativo. |
 | Observabilidade | Coleta local por DC e agregação/retenção conforme desenho. Queda de `PA1` não deve impedir métricas/logs/traces locais em `SP1` e `SP2`. |
 | Backup / DR | `PA1` é destino real de backup. Se `PA1` ficar indisponível, `SP1` e `SP2` mantêm spool/backlog local e sincronizam quando `PA1` retornar. |
+| Vault / secrets | HashiCorp Vault OSS em HA Raft (3 réplicas) por cluster `SP1` e `SP2`, independentes. Vault Transit dedicado em `PA1` provê auto-unseal cross-cluster via `seal "transit"`. Topologia idêntica desde lab até prod, variando apenas escala. Detalhes em [ADR-007](adrs/ADR-007-vault-ha-storage-unseal.md). |
 
 ## 10. Mapeamento de Componentes
 
