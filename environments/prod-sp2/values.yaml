@@ -63,6 +63,17 @@ cluster:
   dc: sp2
 
 # ============================================================================
+# StorageClass do tier de produção (#31).
+# Espelha prod-sp1 — a decisão final de provisioner é da DIRSI.
+# ============================================================================
+storage:
+  enabled: true
+  storageClass:
+    name: prod-local-nvme
+    isDefault: true
+    provisioner: rancher.io/local-path
+
+# ============================================================================
 # Vault HA Raft com auto-unseal Transit contra prod-pa1 (ADR-007).
 # Configuração simétrica a prod-sp1 — mesmas dependências bloqueantes.
 # Veja prod-sp1/values.yaml para a lista completa do que precisa estar
@@ -120,10 +131,11 @@ vault:
 
     dataStorage:
       size: 50Gi
-      # storageClass: <pendente sub-issue StorageClass — bloqueante para prod>
+      storageClass: prod-local-nvme
 
     auditStorage:
       size: 50Gi
+      storageClass: prod-local-nvme
 
     resources:
       requests:

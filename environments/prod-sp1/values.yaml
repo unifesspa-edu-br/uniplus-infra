@@ -64,6 +64,21 @@ cluster:
   dc: sp1
 
 # ============================================================================
+# StorageClass do tier de produção (#31).
+# Provisioner final (local-path vs CSI dedicado) é decisão da DIRSI durante
+# a fase de promoção a HML/prod. Nome estável (prod-local-nvme) minimiza
+# churn nos values dos demais charts independentemente do provisioner.
+# ============================================================================
+storage:
+  enabled: true
+  storageClass:
+    name: prod-local-nvme
+    isDefault: true
+    # TODO DIRSI: confirmar provisioner antes da promoção a HML.
+    # Default mantém local-path para facilitar bootstrap inicial.
+    provisioner: rancher.io/local-path
+
+# ============================================================================
 # Vault HA Raft com auto-unseal Transit contra prod-pa1 (ADR-007).
 # ----------------------------------------------------------------------------
 # CONFIGURAÇÃO COMPLETA, MAS DESLIGADA POR DEFAULT ATÉ AS DEPENDÊNCIAS DE
@@ -134,10 +149,11 @@ vault:
 
     dataStorage:
       size: 50Gi
-      # storageClass: <pendente sub-issue StorageClass — bloqueante para prod>
+      storageClass: prod-local-nvme
 
     auditStorage:
       size: 50Gi
+      storageClass: prod-local-nvme
 
     # Recursos prod — folga acima da Tabela 10.1 (200m→500m / 256Mi→512Mi)
     # para suportar carga de produção. Limits ~2× requests.
