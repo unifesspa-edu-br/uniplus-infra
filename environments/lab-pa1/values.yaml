@@ -13,6 +13,16 @@ cluster:
   region: lab
   dc: pa1
 
+# ============================================================================
+# StorageClass do tier de laboratório (ADR-007 + #31).
+# ============================================================================
+storage:
+  enabled: true
+  storageClass:
+    name: lab-local-nvme
+    isDefault: true
+    provisioner: rancher.io/local-path
+
 # Vault de aplicação NÃO roda em PA1 — apenas Vault Transit.
 vault:
   enabled: false
@@ -34,10 +44,11 @@ vaultTransit:
 
     dataStorage:
       size: 1Gi
-      # storageClass: <pendente sub-issue StorageClass>
+      storageClass: lab-local-nvme
 
     auditStorage:
       size: 1Gi
+      storageClass: lab-local-nvme
 
     resources:
       requests:
