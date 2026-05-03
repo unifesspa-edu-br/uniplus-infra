@@ -20,6 +20,17 @@ cluster:
   region: prod
   dc: pa1
 
+# ============================================================================
+# StorageClass do tier de produção (#31).
+# Mesma SC dos clusters SP1/SP2 — provisioner final é decisão da DIRSI.
+# ============================================================================
+storage:
+  enabled: true
+  storageClass:
+    name: prod-local-nvme
+    isDefault: true
+    provisioner: rancher.io/local-path
+
 # Vault de aplicação NÃO roda em PA1 — apenas Vault Transit.
 vault:
   enabled: false
@@ -65,10 +76,11 @@ vaultTransit:
 
     dataStorage:
       size: 20Gi
-      # storageClass: <pendente sub-issue StorageClass — bloqueante para prod>
+      storageClass: prod-local-nvme
 
     auditStorage:
       size: 20Gi
+      storageClass: prod-local-nvme
 
     # Recursos prod — folga acima da Tabela 10.1 para HA Raft em produção.
     resources:
