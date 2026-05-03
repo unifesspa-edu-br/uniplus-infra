@@ -27,3 +27,6 @@ ignore: |
   /charts/
   /node_modules/
   *.tgz
+  # Helm chart templates contêm Go templates ({{- ... -}}) que não são
+  # YAML válido — `helm lint` é o linter correto para esses arquivos.
+  **/templates/

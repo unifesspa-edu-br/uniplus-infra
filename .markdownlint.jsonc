@@ -1,0 +1,64 @@
+// Configuração do markdownlint para o uniplus-infra.
+//
+// O estilo do projeto é prosa fluida em pt-BR, sem quebra manual em 80 chars
+// (alinhado ao yamllint que tem line-length: max: 200). As regras desabilitadas
+// abaixo são cosméticas/opinativas e não capturam erros reais de conteúdo.
+// As regras ativas garantem o que importa: heading levels coerentes, links
+// válidos, listas bem formadas, code fences fechados, sem syntax errors.
+//
+// Mudança discutida na issue #13. Sub-issue #35 (tooling) pode evoluir esta
+// config conforme limpamos a base existente.
+//
+// Padrão adotado por projetos similares: kubernetes/kubernetes, helm/helm,
+// argoproj/argo-cd.
+{
+  "default": true,
+
+  // ───── Regras de formato/estilo (visualmente irrelevantes) ─────
+
+  // MD009 — trailing spaces: lixo visual sem impacto funcional.
+  "MD009": false,
+
+  // MD013 — line-length: prosa pt-BR sem quebra manual em 80 chars.
+  "MD013": false,
+
+  // MD022 — headings precisam de linha em branco antes/depois: cosmético.
+  "MD022": false,
+
+  // MD028 — linha em branco dentro de blockquote: cosmético.
+  "MD028": false,
+
+  // MD030 — espaços depois de marker de lista: cosmético.
+  "MD030": false,
+
+  // MD031 — fenced code blocks precisam de linha em branco antes/depois: cosmético.
+  "MD031": false,
+
+  // MD032 — listas precisam de linha em branco antes/depois: cosmético.
+  "MD032": false,
+
+  // MD033 — HTML inline: permitido (callouts <details>, <summary>, <kbd>).
+  "MD033": false,
+
+  // MD034 — bare URLs: permitido (URLs cruas em prosa técnica são naturais).
+  "MD034": false,
+
+  // MD040 — fenced code blocks precisam de language tag: muitos snippets
+  // de prosa não justificam tag. Ativar se a base for migrada futuramente.
+  "MD040": false,
+
+  // MD041 — primeira linha precisa ser h1: nem todo .md tem h1 (snippets,
+  // arquivos de issue/PR template).
+  "MD041": false,
+
+  // MD060 — table-column-style: cosmético. GitHub renderiza idêntico
+  // independente do estilo dos pipes.
+  "MD060": false,
+
+  // ───── Regras ajustadas ─────
+
+  // MD024 — múltiplos headings com o mesmo conteúdo: permitir em seções
+  // diferentes (comum em RUNBOOKS e ADRs: "Contexto" / "Decisão" repetidos
+  // por subseção).
+  "MD024": { "siblings_only": true }
+}
