@@ -61,3 +61,83 @@ cluster:
   name: prod-sp2
   region: prod
   dc: sp2
+
+# ============================================================================
+# Vault HA Raft com auto-unseal Transit contra prod-pa1 (ADR-007).
+# Configuração simétrica a prod-sp1 — mesmas dependências bloqueantes.
+# Veja prod-sp1/values.yaml para a lista completa do que precisa estar
+# pronto antes de habilitar (cert-manager, Traefik, StorageClass, DNS,
+# bootstrap do Transit em prod-pa1, Secret vault-transit-token).
+# ============================================================================
+vault:
+  enabled: false
+
+  global:
+    tlsDisable: false
+
+  server:
+    ha:
+      enabled: true
+      replicas: 3
+
+      raft:
+        enabled: true
+        setNodeId: true
+        config: |
+          ui = true
+
+          listener "tcp" {
+            tls_disable     = 0
+            address         = "[::]:8200"
+            cluster_address = "[::]:8201"
+            tls_cert_file   = "/vault/tls/tls.crt"
+            tls_key_file    = "/vault/tls/tls.key"
+          }
+
+          storage "raft" {
+            path = "/vault/data"
+          }
+
+          seal "transit" {
+            address         = "https://vault-transit.uniplus.unifesspa.edu.br"
+            token           = "${VAULT_TRANSIT_TOKEN}"
+            disable_renewal = "false"
+            key_name        = "autounseal"
+            mount_path      = "transit/"
+            tls_skip_verify = "false"
+          }
+
+          service_registration "kubernetes" {}
+
+    extraSecretEnvironmentVars:
+      - envName: VAULT_TRANSIT_TOKEN
+        secretName: vault-transit-token
+        secretKey: token
+
+    extraVolumes:
+      - type: secret
+        name: vault-tls
+
+    dataStorage:
+      size: 50Gi
+      # storageClass: <pendente sub-issue StorageClass — bloqueante para prod>
+
+    auditStorage:
+      size: 50Gi
+
+    resources:
+      requests:
+        cpu: 500m
+        memory: 512Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+
+vaultTransit:
+  enabled: false
+
+networkPolicy:
+  enabled: true
+  externalSecretsNamespace: external-secrets
+  traefikNamespace: traefik
+  transitEndpointCidrs: []  # TODO: preencher com CIDR do PA1 antes de habilitar Vault em prod
