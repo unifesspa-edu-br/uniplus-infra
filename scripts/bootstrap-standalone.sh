@@ -154,26 +154,26 @@ step_install_k3s() {
         existing=$(sudo k3s kubectl get nodes -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
         if [[ "$existing" == "$node_name" ]]; then
             log_success "K3s já instalado: $(k3s --version | head -1)"
-            return
+        else
+            log_error "K3s instalado com node '$existing' (esperado '$node_name'). Use host limpo ou remova o cluster."
+            exit 1
         fi
-        log_error "K3s instalado com node '$existing' (esperado '$node_name'). Use host limpo ou remova o cluster."
-        exit 1
+    else
+        local node_ip
+        node_ip=$(hostname -I | awk '{print $1}')
+
+        log_info "Instalando K3s $K3S_VERSION (node: $node_name, IP: $node_ip)..."
+
+        run "curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=$K3S_VERSION sh -s - \
+            --node-name $node_name \
+            --cluster-init \
+            --tls-san $node_name \
+            --tls-san $node_ip \
+            --tls-san $K8S_PUBLIC_IP \
+            --tls-san $K8S_DOMAIN \
+            --disable servicelb \
+            --write-kubeconfig-mode 644"
     fi
-
-    local node_ip
-    node_ip=$(hostname -I | awk '{print $1}')
-
-    log_info "Instalando K3s $K3S_VERSION (node: $node_name, IP: $node_ip)..."
-
-    run "curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=$K3S_VERSION sh -s - \
-        --node-name $node_name \
-        --cluster-init \
-        --tls-san $node_name \
-        --tls-san $node_ip \
-        --tls-san $K8S_PUBLIC_IP \
-        --tls-san $K8S_DOMAIN \
-        --disable servicelb \
-        --write-kubeconfig-mode 644"
 
     run "mkdir -p $HOME/.kube"
     run "sudo cp /etc/rancher/k3s/k3s.yaml $HOME/.kube/config"
@@ -369,11 +369,13 @@ setup_lvm_volume() {
 
     log_info "Configurando LVM: $disk → $vg_name/$lv_name → $mount_point"
 
-    if sudo vgs "$vg_name" &>/dev/null; then
-        log_success "$vg_name já existe. Pulando pvcreate/vgcreate/lvcreate/mkfs."
+    if sudo lvs "$vg_name/$lv_name" &>/dev/null; then
+        log_success "$vg_name/$lv_name já existe. Pulando provisionamento LVM."
     else
-        run "sudo pvcreate $disk"
-        run "sudo vgcreate $vg_name $disk"
+        if ! sudo vgs "$vg_name" &>/dev/null; then
+            run "sudo pvcreate $disk"
+            run "sudo vgcreate $vg_name $disk"
+        fi
         run "sudo lvcreate -l 100%FREE -n $lv_name $vg_name"
         run "sudo mkfs.xfs /dev/$vg_name/$lv_name"
     fi
