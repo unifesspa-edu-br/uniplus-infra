@@ -16,7 +16,7 @@ PVCs dos charts de plataforma (Vault, Vault Transit, Postgres-on-K8s, Prometheus
 
 Em hml/prod, a escolha final do provisioner (local-path vs CSI driver dedicado — NetApp, Longhorn, etc.) é decisão da DIRSI durante a fase de promoção. O nome da StorageClass permanece estável (`prod-local-nvme`) para minimizar churn nos values dos demais charts.
 
-O tier **standalone** (ADR-008) usa `reclaimPolicy: Delete` em vez do default `Retain` — o ambiente é monolocal e descartável (re-bootstrap via Tofu re-cria os PVs), e o `Retain` acumularia PVs órfãos. O override está em `environments/standalone/values.yaml`.
+O tier **standalone** (ADR-008) usa `reclaimPolicy: Delete` em vez do default `Retain` — o ambiente é monolocal e descartável (re-bootstrap via Tofu re-cria os PVs), e o `Retain` acumularia PVs órfãos. O override é injetado pelo overlay `environments/standalone/values.yaml`, introduzido em #73 (PR [#95](https://github.com/unifesspa-edu-br/uniplus-infra/pull/95)).
 
 ## Por que nome explícito por tier?
 
