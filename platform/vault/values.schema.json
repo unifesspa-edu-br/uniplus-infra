@@ -62,7 +62,7 @@
                   "type": "integer",
                   "minimum": 1,
                   "maximum": 7,
-                  "description": "Sempre 3 conforme ADR-007 (topologia idêntica em todas as fases)."
+                  "description": "3 nas topologias 3-DC (lab/prod/hml SP1+SP2+PA1) conforme ADR-007. 1 na topologia standalone (single-host) conforme ADR-008 — Raft com peer único, mantido como backend para fidelidade arquitetural."
                 },
                 "raft": {
                   "type": "object",

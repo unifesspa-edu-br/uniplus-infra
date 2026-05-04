@@ -115,6 +115,13 @@ vault:
       enabled: true
       replicas: 1
 
+      # Com replicas=1 o chart upstream renderiza PDB com maxUnavailable=0,
+      # o que bloqueia kubectl drain do k8s-host (upgrade K3s, manutenção)
+      # sem benefício real — não há outro Pod para preservar. Desligamos o
+      # PDB neste overlay; lab/prod 3-DC mantêm o default (enabled=true).
+      disruptionBudget:
+        enabled: false
+
       raft:
         enabled: true
         setNodeId: true
@@ -172,13 +179,13 @@ vault:
       storageClass: standalone-local-nvme
 
 # Vault Transit não roda em standalone — auto-unseal usa KMS do provider
-# (ADR-008). Mantém o chart desligado para o ApplicationSet pular o sync.
+# (ADR-008), e o cluster não tem peer PA1 para hospedar o Transit. Desligar
+# o chart faz o ApplicationSet pular o sync; com pa1HostIP="" (default do
+# chart vault/) o egress de NetworkPolicy para PA1 fica inerte e o Secret
+# vault-transit-endpoint não é consumido. transitNodePort=8200 default
+# satisfaz o values.schema.json sem efeito prático.
 vaultTransit:
   enabled: false
-
-# Topologia Transit ausente — standalone não consome o Secret vault-transit-endpoint
-# nem precisa de NetworkPolicy de egress para PA1. Mantemos os defaults do chart
-# (pa1HostIP="" desliga o egress, transitNodePort=8200 fica inerte).
 
 # NetworkPolicy do chart vault/ — sem egress Transit (vaultTransit.enabled=false).
 networkPolicy:
