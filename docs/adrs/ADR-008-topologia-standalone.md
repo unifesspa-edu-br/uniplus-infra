@@ -34,7 +34,7 @@ Introduzir **`standalone`** como modelo de topologia paralelo, com as seguintes 
 
 ### O que muda
 
-- **`environments/standalone/`** — overlay GitOps com values Helm para todos os charts existentes em `apps/` e `platform/`. Provider-agnostic: não contém OCIDs, ARNs ou qualquer referência a cloud específica. Overrides relevantes: `seal "ocikms"` (consumindo placeholder preenchido pelo provisioning), Postgres single-primary por banco, Keycloak sem federação Gov.br no MVP, observabilidade single-stack, `StorageClass: standalone-local-nvme`, ingress single-host.
+- **`environments/standalone/`** — overlay GitOps com values Helm para todos os charts existentes em `apps/` e `platform/`. Agnóstico de provider em termos de identificadores: não contém OCIDs, ARNs, endpoints ou credenciais de cloud específica — esses valores chegam via External Secrets ou parâmetros de bootstrap. O mecanismo de unseal do Vault (`seal "ocikms"` para OCI, `seal "awskms"` para AWS, Shamir manual para on-prem) é o único campo do values que deve ser substituído ao usar um provider diferente de OCI; os demais overrides são universais: Postgres single-primary por banco, Keycloak sem federação Gov.br no MVP, `platform/vault-transit/` desabilitado (standalone não tem Vault Transit; o unseal é feito via KMS do provider), observabilidade single-stack, `StorageClass: standalone-local-nvme`, ingress single-host.
 - **`provisioning/oci/standalone/`** — código OpenTofu específico para OCI: VCN, subnets (pública para K8s + privada para data), NSGs, 2 instâncias Compute (k8s-host e data-host), Block Volumes, Reserved Public IP, registros DNS, OCI Vault KMS + Dynamic Group + IAM Policy para auto-unseal. State (`.tfstate`) **não vai para o Git** — inicialmente local, OCI Object Storage como evolução.
 - **`scripts/bootstrap-standalone.sh`** — refator incremental de `bootstrap-lab.sh`, adicionando roles `standalone-k8s` e `standalone-data`. Roles existentes (`sp1`, `sp2`, `pa1`) continuam funcionando sem alteração.
 - **`scripts/validate-standalone.sh`** — derivado de `validate-cluster.sh`, com checks específicos do modelo monolocal.
@@ -42,7 +42,7 @@ Introduzir **`standalone`** como modelo de topologia paralelo, com as seguintes 
 ### O que não muda
 
 - `argocd/applicationset.yaml` — o ApplicationSet já é genérico via label `environment: <env>`. Registrar o cluster com `uniplus.io/managed=true` + `environment=standalone` é suficiente para o GitOps reconciliar `environments/standalone/values.yaml` automaticamente. Nenhuma mudança estrutural.
-- ADR-001 a ADR-007 — continuam válidos para a topologia 3-DC. Standalone opera fora do escopo de ADR-001 (1 cluster, não 3) e ADR-007 (Vault usa `seal "ocikms"` via OCI KMS, não Transit cross-cluster).
+- [ADR-001](ADR-001-tres-dcs-logicos-e-clusters-k8s-independentes.md) a [ADR-007](ADR-007-vault-ha-storage-unseal.md) — continuam válidos para a topologia 3-DC. Standalone opera fora do escopo de ADR-001 (1 cluster, não 3) e ADR-007 (standalone não usa Vault Transit; o unseal é feito via KMS do provider).
 
 ### Decisões de design já tomadas
 
@@ -67,7 +67,7 @@ Introduzir **`standalone`** como modelo de topologia paralelo, com as seguintes 
 - ✅ **Caminho de entrada para OCI.** A OCI pode ser avaliada sem exigir provisionamento dos 3 DCs completos antes.
 - ✅ **ApplicationSet sem mudança estrutural.** A generalização por label `environment` já implementada absorve o standalone automaticamente.
 - ✅ **Fidelidade arquitetural preservada.** Standalone mantém ADR-002 (stateful fora do K8s), ADR-005 (containers via systemd), ADR-003 (Gov.br via OIDC, 1 réplica Keycloak), ADR-006 (GitOps via ArgoCD). Não simplifica a ponto de virar "ambiente diferente".
-- ⚠️ **Não valida resiliência geográfica.** Standalone pode mascarar bugs de latência cross-DC, race conditions entre primaries Patroni distribuídos, particionamento Kafka KRaft cross-site. Standalone passa, prod 3-DC pode falhar — risco explicitamente documentado em `environments/standalone/README.md`.
+- ⚠️ **Não valida resiliência geográfica.** Standalone pode mascarar bugs de latência cross-DC, race conditions entre primaries Patroni distribuídos, particionamento Kafka KRaft cross-site. Standalone passa, prod 3-DC pode falhar — risco a ser documentado em `environments/standalone/README.md` (a ser criado).
 - ⚠️ **Provider-specific confinado a `provisioning/`.** Nenhum OCID, ARN ou referência de provider pode entrar em `environments/standalone/`. Provider-specifics chegam via External Secrets ou parâmetros de bootstrap. Regra a ser fiscalizada em todo PR que toque standalone.
 - ⚠️ **Vault init é operação manual única.** `vault operator init -recovery-shares=5 -recovery-threshold=3` é executado uma vez; recovery keys + root token armazenados fora do repo (gestor de senhas institucional ou cofre offline). Auto-unseal via OCI KMS dispensa intervenção em restarts subsequentes.
 - ⚠️ **Charts `data/*` são pré-requisito para validação completa.** Standalone entrega GitOps + provisioning + bootstrap K8s completos; a matriz de validação (16 itens) só fecha 100% após o Epic `data/*` aterrissar.
