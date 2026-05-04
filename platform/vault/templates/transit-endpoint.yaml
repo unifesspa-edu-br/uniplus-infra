@@ -2,6 +2,10 @@
 # Secret gerado pelo chart a partir de topology.{transitScheme,pa1HostIP,transitNodePort}.
 # Montado via extraSecretEnvironmentVars como VAULT_TRANSIT_ADDRESS nos Pods do Vault.
 # Environments SP1/SP2 usam ${VAULT_TRANSIT_ADDRESS} no bloco seal "transit" do HCL config.
+#
+# Nome fixo (sem Release.Name) por design: os environments referenciam o secretName
+# como literal em extraSecretEnvironmentVars (values YAML não aceita template syntax).
+# Um único release do chart vault/ por namespace SP — sem risco de colisão.
 apiVersion: v1
 kind: Secret
 metadata:
@@ -11,6 +15,7 @@ metadata:
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/managed-by: {{ .Release.Service }}
     app.kubernetes.io/part-of: uniplus
+    app.kubernetes.io/component: vault
 stringData:
   address: "{{ .Values.topology.transitScheme }}://{{ .Values.topology.pa1HostIP }}:{{ .Values.topology.transitNodePort }}"
 {{- end }}

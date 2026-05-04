@@ -14,7 +14,9 @@ cluster:
   dc: pa1
 
 # Topologia do host PA1 no laboratório.
-# transitNodePort e hostIP são referenciados nos environments lab-sp1/sp2.
+# Referenciado por lab-sp1/sp2 em topology.pa1HostIP e topology.transitNodePort.
+# Não consumido diretamente pelo chart vault-transit — serve como fonte de
+# documentação e consistência entre os environments do laboratório.
 topology:
   hostIP: "192.168.0.20"    # IP do host i7 na rede 192.168.0.0/16
   transitNodePort: 30200    # NodePort do Vault Transit exposto pelo K3s
