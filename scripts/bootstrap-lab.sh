@@ -21,6 +21,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# ============== Versões pinadas (supply chain) ==============
+# Atualizar ao promover o lab para nova versão estável validada.
+K3S_VERSION="v1.31.4+k3s1"
+HELM_VERSION="v3.16.4"
+CLOUDFLARED_VERSION="2024.12.2"
+
 # ============== Defaults ==============
 ROLE=""
 SKIP_K3S=false
@@ -165,7 +171,10 @@ step_install_docker() {
     os=$(detect_os)
     
     if [[ "$os" == "ubuntu" ]]; then
-        run "curl -fsSL https://get.docker.com | sudo sh"
+        # Pacote do repositório oficial Ubuntu — evita curl-pipe-sh como root.
+        run "sudo apt-get update -qq"
+        run "sudo apt-get install -y docker.io docker-compose-v2"
+        run "sudo systemctl enable --now docker"
         run "sudo usermod -aG docker $USER"
     elif [[ "$os" == "arch" ]]; then
         run "sudo pacman -Sy --noconfirm docker docker-compose"
@@ -208,12 +217,12 @@ step_install_k3s() {
         exit 1
     fi
 
-    log_info "Instalando K3s (cluster independente para $ROLE)..."
+    log_info "Instalando K3s $K3S_VERSION (cluster independente para $ROLE)..."
 
     local node_ip
     node_ip=$(hostname -I | awk '{print $1}')
 
-    run "curl -sfL https://get.k3s.io | sh -s - \
+    run "curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=$K3S_VERSION sh -s - \
         --node-name $node_name \
         --cluster-init \
         --tls-san $node_name \
@@ -234,10 +243,17 @@ step_install_helm() {
         log_success "Helm já instalado: $(helm version --short)"
         return
     fi
-    
-    log_info "Instalando Helm..."
-    run "curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash"
-    log_success "Helm instalado."
+
+    log_info "Instalando Helm $HELM_VERSION..."
+    local helm_tar="/tmp/helm-${HELM_VERSION}-linux-amd64.tar.gz"
+    local helm_sha="/tmp/helm-${HELM_VERSION}-linux-amd64.tar.gz.sha256sum"
+    run "curl -fsSL https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz -o $helm_tar"
+    run "curl -fsSL https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz.sha256sum -o $helm_sha"
+    run "sha256sum -c $helm_sha"
+    run "tar -xzf $helm_tar -C /tmp linux-amd64/helm"
+    run "sudo install /tmp/linux-amd64/helm /usr/local/bin/helm"
+    run "rm -rf $helm_tar $helm_sha /tmp/linux-amd64"
+    log_success "Helm $HELM_VERSION instalado."
 }
 
 step_install_argocd() {
@@ -276,6 +292,34 @@ step_setup_pa1_extras() {
     echo "  3. docker compose up -d"
 }
 
+step_setup_vault_transit_tls() {
+    if [[ "$ROLE" != "pa1" ]]; then
+        return
+    fi
+
+    log_info "Gerando certificado TLS self-signed para Vault Transit (achado #37)..."
+
+    local cert_dir="/tmp/vault-transit-tls-$$"
+    run "mkdir -p $cert_dir"
+    run "openssl req -x509 -newkey rsa:4096 \
+        -keyout $cert_dir/tls.key \
+        -out $cert_dir/tls.crt \
+        -days 3650 -nodes \
+        -subj '/CN=vault-transit.uniplus.lab/O=UniPlus Lab' \
+        -addext 'subjectAltName=IP:192.168.0.20,DNS:vault-transit'"
+
+    run "kubectl create namespace vault-transit --dry-run=client -o yaml | kubectl apply -f -"
+    run "kubectl create secret tls vault-transit-tls \
+        --cert=$cert_dir/tls.crt \
+        --key=$cert_dir/tls.key \
+        -n vault-transit \
+        --dry-run=client -o yaml | kubectl apply -f -"
+
+    run "rm -rf $cert_dir"
+    log_success "Secret vault-transit-tls criado em namespace vault-transit."
+    log_warn "Cert self-signed válido por 3650 dias. Substituir por cert gerenciado quando cert-manager (#15) estiver pronto."
+}
+
 step_setup_cloudflared() {
     if $SKIP_CLOUDFLARED; then
         log_warn "Pulando Cloudflare Tunnel (use --enable-cloudflared para incluir)"
@@ -285,9 +329,15 @@ step_setup_cloudflared() {
     if command -v cloudflared &> /dev/null; then
         log_success "cloudflared já instalado"
     else
-        log_info "Instalando cloudflared..."
-        run "curl -L https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 -o /tmp/cloudflared"
-        run "sudo install /tmp/cloudflared /usr/local/bin/cloudflared"
+        log_info "Instalando cloudflared $CLOUDFLARED_VERSION..."
+        local cf_bin="/tmp/cloudflared-linux-amd64"
+        local cf_sha="/tmp/cloudflared-linux-amd64.sha256"
+        run "curl -fsSL https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-linux-amd64 -o $cf_bin"
+        run "curl -fsSL https://github.com/cloudflare/cloudflared/releases/download/${CLOUDFLARED_VERSION}/cloudflared-linux-amd64.sha256 -o $cf_sha"
+        # Formato do arquivo: apenas o hash, sem nome de arquivo — usar sha256sum -c
+        run "echo \"\$(cat $cf_sha)  $cf_bin\" | sha256sum -c"
+        run "sudo install $cf_bin /usr/local/bin/cloudflared"
+        run "rm -f $cf_bin $cf_sha"
     fi
     
     log_warn "Configuração interativa do Cloudflare Tunnel:"
@@ -348,6 +398,9 @@ step_summary() {
         echo ""
         echo "  5. Subir containers Docker isolados (etcd, keycloak-master,"
         echo "     minio-master, backup-target) — ver passo manual acima."
+        echo ""
+        echo "  Nota: cert TLS self-signed do Transit criado em vault-transit/vault-transit-tls."
+        echo "        Substituir por cert gerenciado quando cert-manager (#15) estiver pronto."
     fi
     
     echo ""
@@ -368,5 +421,6 @@ step_install_k3s
 step_install_helm
 step_install_argocd
 step_setup_pa1_extras
+step_setup_vault_transit_tls
 step_setup_cloudflared
 step_summary
