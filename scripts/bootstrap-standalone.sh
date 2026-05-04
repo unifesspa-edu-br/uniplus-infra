@@ -258,15 +258,13 @@ step_data_check_prerequisites() {
         fi
     done
 
-    # Verificar se há discos raw para LVM
-    local raw_count
-    raw_count=$(lsblk -b -d -o NAME,TYPE,FSTYPE | awk '$2=="disk" && $3=="" && $1!~/^loop/' | wc -l)
-    # subtrai 1 pelo boot disk (sda sem fs no header, mas sda tem partições — lsblk -d mostra só o disk)
-    # Filtra sda explicitamente
-    raw_count=$(lsblk -b -d -o NAME,TYPE,FSTYPE | awk '$2=="disk" && $3=="" && $1!="sda" && $1!~/^loop/' | wc -l)
+    # Verifica discos de dados: raw (pré-provisionamento) ou LVM2_member (já inicializados).
+    # Aceitar ambos os estados garante idempotência após o primeiro run.
+    local disk_count
+    disk_count=$(lsblk -b -d -o NAME,TYPE,FSTYPE | awk '$2=="disk" && ($3=="" || $3=="LVM2_member") && $1!="sda" && $1!~/^loop/' | wc -l)
 
-    if [[ "$raw_count" -lt 4 ]]; then
-        log_warn "Encontrado $raw_count disco(s) raw sem filesystem (esperado 4)."
+    if [[ "$disk_count" -lt 4 ]]; then
+        log_warn "Encontrado $disk_count disco(s) de dados (esperado 4)."
         log_warn "Verifique se os block volumes OCI estão anexados: lsblk -o NAME,SIZE,FSTYPE"
         if ! $DRY_RUN; then
             log_error "Pré-requisito não atendido. Corrija antes de continuar."
@@ -274,7 +272,7 @@ step_data_check_prerequisites() {
         fi
     fi
 
-    log_success "Pré-requisitos OK ($raw_count discos raw detectados)."
+    log_success "Pré-requisitos OK ($disk_count disco(s) de dados detectados)."
 }
 
 step_install_docker() {
@@ -306,17 +304,17 @@ discover_disks() {
 
     mapfile -t raw_disks < <(
         lsblk -b -d -o NAME,SIZE,FSTYPE |
-        awk '$1!="NAME" && $1!~/^loop/ && $1!="sda" && $3==""' |
+        awk '$1!="NAME" && $1!~/^loop/ && $1!="sda" && ($3=="" || $3=="LVM2_member")' |
         sort -k1
     )
 
     if [[ ${#raw_disks[@]} -eq 0 ]]; then
-        log_error "Nenhum disco raw encontrado. Verifique os attachments OCI."
+        log_error "Nenhum disco de dados encontrado. Verifique os attachments OCI."
         exit 1
     fi
 
     echo ""
-    log_info "Discos raw detectados:"
+    log_info "Discos de dados detectados:"
     printf "  %-8s %-12s %s\n" "DEVICE" "TAMANHO" "PROPÓSITO"
 
     DISK_POSTGRES=""
