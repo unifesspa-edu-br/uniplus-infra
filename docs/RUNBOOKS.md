@@ -922,7 +922,7 @@ Avisos são esperados enquanto serviços da Epic `data/*` ainda não estiverem p
 
 ```bash
 # A partir do k8s-host — SSH no data-host e executar teardown
-ssh -i ~/.ssh/id_ed25519 ubuntu@10.0.2.87 \
+ssh -t -i ~/.ssh/id_ed25519 ubuntu@10.0.2.87 \
   "cd uniplus-infra && ./scripts/teardown-lab.sh --role=standalone-data"
 ```
 
