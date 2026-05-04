@@ -144,24 +144,38 @@ step_k8s_check_prerequisites() {
 
 step_install_k3s() {
     if $SKIP_K3S; then
-        log_warn "Pulando K3s (--skip-k3s)"
+        log_warn "Pulando instalação do K3s (--skip-k3s)"
+        # Kubeconfig ainda é necessário para step_install_argocd
+        if [[ -f /etc/rancher/k3s/k3s.yaml ]]; then
+            run "mkdir -p $HOME/.kube"
+            run "sudo cp /etc/rancher/k3s/k3s.yaml $HOME/.kube/config"
+            run "sudo chown $(id -u):$(id -g) $HOME/.kube/config"
+            log_success "Kubeconfig copiado."
+        else
+            log_warn "K3s não instalado — kubeconfig indisponível. step_install_argocd pode falhar."
+        fi
         return
     fi
 
     local node_name="uniplus-standalone"
 
     if command -v k3s &>/dev/null; then
-        # API pode demorar alguns segundos após boot da instância — retry com backoff
+        # API pode demorar alguns segundos após boot — retry com backoff; skip em dry-run
         local existing attempts=0
-        until existing=$(sudo k3s kubectl get nodes -o jsonpath='{.items[0].metadata.name}' 2>/dev/null) && [[ -n "$existing" ]]; do
-            attempts=$(( attempts + 1 ))
-            if [[ "$attempts" -ge 6 ]]; then
-                log_error "API K3s não respondeu após 30s. Verifique: sudo systemctl status k3s"
-                exit 1
-            fi
-            log_warn "API K3s ainda inicializando, aguardando 5s... ($attempts/6)"
-            sleep 5
-        done
+        if $DRY_RUN; then
+            log_warn "Dry-run: pulando probe da API K3s."
+            existing="$node_name"
+        else
+            until existing=$(sudo k3s kubectl get nodes -o jsonpath='{.items[0].metadata.name}' 2>/dev/null) && [[ -n "$existing" ]]; do
+                attempts=$(( attempts + 1 ))
+                if [[ "$attempts" -ge 6 ]]; then
+                    log_error "API K3s não respondeu após 30s. Verifique: sudo systemctl status k3s"
+                    exit 1
+                fi
+                log_warn "API K3s ainda inicializando, aguardando 5s... ($attempts/6)"
+                sleep 5
+            done
+        fi
         if [[ "$existing" == "$node_name" ]]; then
             log_success "K3s já instalado: $(k3s --version | head -1)"
         else
@@ -302,12 +316,13 @@ step_install_docker() {
         return
     fi
 
-    if command -v docker &>/dev/null; then
+    if command -v docker &>/dev/null && docker compose version &>/dev/null 2>&1; then
         log_success "Docker já instalado: $(docker --version)"
+        log_success "Docker Compose já instalado: $(docker compose version --short 2>/dev/null || true)"
         return
     fi
 
-    log_info "Instalando Docker..."
+    log_info "Instalando Docker + Compose v2..."
     run "sudo apt-get update -qq"
     run "sudo apt-get install -y docker.io docker-compose-v2"
     run "sudo systemctl enable --now docker"
