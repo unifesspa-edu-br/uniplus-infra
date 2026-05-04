@@ -369,20 +369,25 @@ setup_lvm_volume() {
 
     log_info "Configurando LVM: $disk → $vg_name/$lv_name → $mount_point"
 
-    # PV
-    run "sudo pvcreate $disk"
-    # VG
-    run "sudo vgcreate $vg_name $disk"
-    # LV — usa 100% do VG
-    run "sudo lvcreate -l 100%FREE -n $lv_name $vg_name"
-    # Filesystem XFS
-    run "sudo mkfs.xfs /dev/$vg_name/$lv_name"
-    # Mount point
+    if sudo vgs "$vg_name" &>/dev/null; then
+        log_success "$vg_name já existe. Pulando pvcreate/vgcreate/lvcreate/mkfs."
+    else
+        run "sudo pvcreate $disk"
+        run "sudo vgcreate $vg_name $disk"
+        run "sudo lvcreate -l 100%FREE -n $lv_name $vg_name"
+        run "sudo mkfs.xfs /dev/$vg_name/$lv_name"
+    fi
+
     run "sudo mkdir -p $mount_point"
-    run "sudo mount /dev/$vg_name/$lv_name $mount_point"
-    # fstab para persistência
-    run "echo '/dev/$vg_name/$lv_name $mount_point xfs defaults,nofail 0 2' | sudo tee -a /etc/fstab"
-    # Permissão para o usuário ubuntu gerenciar o diretório
+
+    if ! mountpoint -q "$mount_point" 2>/dev/null; then
+        run "sudo mount /dev/$vg_name/$lv_name $mount_point"
+    fi
+
+    if ! grep -qF "/dev/$vg_name/$lv_name" /etc/fstab 2>/dev/null; then
+        run "echo '/dev/$vg_name/$lv_name $mount_point xfs defaults,nofail 0 2' | sudo tee -a /etc/fstab"
+    fi
+
     run "sudo chown ubuntu:ubuntu $mount_point"
 
     log_success "$mount_point pronto."
@@ -392,12 +397,6 @@ step_setup_lvm() {
     log_info "Instalando LVM2..."
     run "sudo apt-get update -qq"
     run "sudo apt-get install -y lvm2 xfsprogs"
-
-    # Verifica se LVM já foi configurado (idempotência)
-    if sudo vgs 2>/dev/null | grep -q "vg-postgres"; then
-        log_success "LVM já configurado. Pulando."
-        return
-    fi
 
     setup_lvm_volume "$DISK_POSTGRES" "vg-postgres" "lv-postgres" "$DATA_BASE/postgres"
     setup_lvm_volume "$DISK_KAFKA"   "vg-kafka"    "lv-kafka"    "$DATA_BASE/kafka"
