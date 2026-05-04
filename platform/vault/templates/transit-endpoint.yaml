@@ -1,0 +1,16 @@
+{{- if and .Values.vault.enabled .Values.topology.pa1HostIP }}
+# Secret gerado pelo chart a partir de topology.{transitScheme,pa1HostIP,transitNodePort}.
+# Montado via extraSecretEnvironmentVars como VAULT_TRANSIT_ADDRESS nos Pods do Vault.
+# Environments SP1/SP2 usam ${VAULT_TRANSIT_ADDRESS} no bloco seal "transit" do HCL config.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: vault-transit-endpoint
+  labels:
+    app.kubernetes.io/name: vault
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: uniplus
+stringData:
+  address: "{{ .Values.topology.transitScheme }}://{{ .Values.topology.pa1HostIP }}:{{ .Values.topology.transitNodePort }}"
+{{- end }}

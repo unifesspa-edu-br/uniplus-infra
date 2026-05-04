@@ -13,6 +13,12 @@ cluster:
   region: lab
   dc: pa1
 
+# Topologia do host PA1 no laboratório.
+# transitNodePort e hostIP são referenciados nos environments lab-sp1/sp2.
+topology:
+  hostIP: "192.168.0.20"    # IP do host i7 na rede 192.168.0.0/16
+  transitNodePort: 30200    # NodePort do Vault Transit exposto pelo K3s
+
 # ============================================================================
 # StorageClass do tier de laboratório (ADR-007 + #31).
 # ============================================================================
