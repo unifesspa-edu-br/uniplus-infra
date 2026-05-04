@@ -265,8 +265,15 @@ step_data_check_prerequisites() {
 
     # Verifica discos de dados: raw (pré-provisionamento) ou LVM2_member (já inicializados).
     # Aceitar ambos os estados garante idempotência após o primeiro run.
+    # Deriva o disco de boot dinamicamente para não depender do nome fixo "sda"
+    # (em hosts com vda/nvme0n1 o hardcode destruiria o disco raiz).
+    local root_source root_disk
+    root_source=$(findmnt -n -o SOURCE / 2>/dev/null || true)
+    root_disk=$(lsblk -no pkname "$root_source" 2>/dev/null || true)
+    [[ -z "$root_disk" ]] && root_disk="sda"
+
     local disk_count
-    disk_count=$(lsblk -b -d -o NAME,TYPE,FSTYPE | awk '$2=="disk" && ($3=="" || $3=="LVM2_member") && $1!="sda" && $1!~/^loop/' | wc -l)
+    disk_count=$(lsblk -b -d -o NAME,TYPE,FSTYPE | awk -v boot="$root_disk" '$2=="disk" && ($3=="" || $3=="LVM2_member") && $1!=boot && $1!~/^loop/' | wc -l)
 
     if [[ "$disk_count" -lt 4 ]]; then
         log_warn "Encontrado $disk_count disco(s) de dados (esperado 4)."
@@ -307,9 +314,14 @@ step_install_docker() {
 discover_disks() {
     log_info "Descobrindo mapeamento de discos..."
 
+    local root_source root_disk
+    root_source=$(findmnt -n -o SOURCE / 2>/dev/null || true)
+    root_disk=$(lsblk -no pkname "$root_source" 2>/dev/null || true)
+    [[ -z "$root_disk" ]] && root_disk="sda"
+
     mapfile -t raw_disks < <(
         lsblk -b -d -o NAME,SIZE,FSTYPE |
-        awk '$1!="NAME" && $1!~/^loop/ && $1!="sda" && ($3=="" || $3=="LVM2_member")' |
+        awk -v boot="$root_disk" '$1!="NAME" && $1!~/^loop/ && $1!=boot && ($3=="" || $3=="LVM2_member")' |
         sort -k1
     )
 
