@@ -1,0 +1,205 @@
+# Ambiente: standalone
+# Topologia paralela provider-agnostic — ADR-008.
+#
+# Modelo single-DC, single-host para K8s + 1 host externo para componentes
+# stateful (Postgres, Kafka, MinIO, Redis) gerenciados por systemd. NÃO valida
+# resiliência geográfica nem failover entre DCs — ver environments/standalone/README.md.
+#
+# Provider de referência: OCI (issue #47, Epic #40). O único campo provider-
+# specific é `vault.server.ha.raft.config` (bloco `seal "ocikms"`); para outro
+# provider, substituir por `seal "awskms"`, `seal "azurekeyvault"`, etc.
+# Nenhum OCID/ARN/endpoint entra neste arquivo — esses valores chegam via
+# External Secrets / variáveis de ambiente injetadas no Pod do Vault.
+
+cluster:
+  name: standalone
+  region: standalone
+  dc: standalone
+
+# Hostname público único — todos os apps (web, APIs, Keycloak, Vault UI) sob
+# o mesmo FQDN com pathing no Traefik. Override de host concreto fica fora
+# deste arquivo provider-agnostic; o operador injeta via External Secret ou
+# parametriza por --set ao registrar o cluster no ArgoCD.
+ingress:
+  host: standalone.example
+  tls:
+    enabled: true
+    issuer: letsencrypt  # cert-manager emite via HTTP-01 (single-host simplifica DNS-01)
+
+# Postgres single-primary por banco — sem replica (data-host é único).
+# Patroni é dispensado nesta topologia; chart consumidor deve interpretar
+# `role: primary` sem replica peer como deploy single-instance.
+postgres:
+  portal:
+    role: primary
+  selecao:
+    role: primary
+  ingresso:
+    role: primary
+
+# Recursos enxutos — VMs OCI E4.Flex de referência (k8s-host: 4 OCPU/24GB,
+# data-host: 2 OCPU/16GB). Suficiente para sanidade integrada e demos.
+resources:
+  api:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  frontend:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+  clamav:
+    requests:
+      cpu: 200m
+      memory: 1Gi
+    limits:
+      cpu: 1500m
+      memory: 2Gi
+
+# 1 réplica de tudo — single-point por design (ADR-008).
+replicas:
+  apis: 1
+  frontends: 1
+  clamav: 1
+  keycloak: 1
+  redis: 1
+
+# Observabilidade single-stack com retenção curta — standalone não substitui
+# a observabilidade do lab/prod 3-DC, serve apenas para validação local.
+observability:
+  prometheus:
+    retention: 7d
+    storage: 10Gi
+  loki:
+    retention: 7d
+    storage: 15Gi
+  tempo:
+    retention: 3d
+    storage: 5Gi
+
+# ============================================================================
+# StorageClass do tier standalone (#74, ADR-008).
+# rancher.io/local-path mapeado para /var/lib/uniplus/* no NVMe local da VM.
+# ============================================================================
+storage:
+  enabled: true
+  storageClass:
+    name: standalone-local-nvme
+    isDefault: false
+    provisioner: rancher.io/local-path
+    # Standalone é monolocal e descartável (re-bootstrap via Tofu); Delete
+    # evita acúmulo de PVs órfãos. Re-init do Vault re-gera Shamir keys —
+    # decisão consciente: standalone NÃO é cofre durável.
+    reclaimPolicy: Delete
+
+# ============================================================================
+# Vault HA Raft single-replica com auto-unseal via OCI KMS.
+# Replicas=1 na topologia single-host (StatefulSet 3-réplica ficaria Pending).
+# Mantém Raft como storage backend para preservar fidelidade arquitetural
+# com lab/prod 3-DC — só o número de peers difere.
+# ============================================================================
+vault:
+  enabled: true
+
+  global:
+    tlsDisable: true  # TLS terminado no Traefik até cert-manager (#15)
+
+  server:
+    ha:
+      enabled: true
+      replicas: 1
+
+      raft:
+        enabled: true
+        setNodeId: true
+        # Substitui o config default do chart `platform/vault/` para incluir
+        # o bloco `seal "ocikms"`. OCID do Key, endpoints crypto/management
+        # e auth_type vêm via env vars injetados a partir de Secret
+        # `vault-ocikms-config` (External Secret consumindo OCI Vault — #64).
+        #
+        # auth_type_api_key="false" força autenticação por Resource Principal
+        # (Dynamic Group + IAM Policy) — instance principal da VM k8s-host.
+        # Nenhum OCID literal entra aqui (regra ADR-008).
+        config: |
+          ui = true
+
+          listener "tcp" {
+            tls_disable     = 1
+            address         = "[::]:8200"
+            cluster_address = "[::]:8201"
+          }
+
+          storage "raft" {
+            path = "/vault/data"
+          }
+
+          seal "ocikms" {
+            key_id              = "${VAULT_SEAL_OCIKMS_KEY_ID}"
+            crypto_endpoint     = "${VAULT_SEAL_OCIKMS_CRYPTO_ENDPOINT}"
+            management_endpoint = "${VAULT_SEAL_OCIKMS_MANAGEMENT_ENDPOINT}"
+            auth_type_api_key   = "false"
+          }
+
+          service_registration "kubernetes" {}
+
+    # Env vars injetados via Secret vault-ocikms-config (criado por External
+    # Secrets a partir do OCI Vault — sub-issue #64). Estrutura esperada:
+    #   data.key_id              → OCID da chave master no OCI KMS
+    #   data.crypto_endpoint     → https://<vault-id>-crypto.kms.<region>.oci.oraclecloud.com
+    #   data.management_endpoint → https://<vault-id>-management.kms.<region>.oci.oraclecloud.com
+    extraSecretEnvironmentVars:
+      - envName: VAULT_SEAL_OCIKMS_KEY_ID
+        secretName: vault-ocikms-config
+        secretKey: key_id
+      - envName: VAULT_SEAL_OCIKMS_CRYPTO_ENDPOINT
+        secretName: vault-ocikms-config
+        secretKey: crypto_endpoint
+      - envName: VAULT_SEAL_OCIKMS_MANAGEMENT_ENDPOINT
+        secretName: vault-ocikms-config
+        secretKey: management_endpoint
+
+    dataStorage:
+      size: 5Gi
+      storageClass: standalone-local-nvme
+    auditStorage:
+      size: 5Gi
+      storageClass: standalone-local-nvme
+
+# Vault Transit não roda em standalone — auto-unseal usa KMS do provider
+# (ADR-008). Mantém o chart desligado para o ApplicationSet pular o sync.
+vaultTransit:
+  enabled: false
+
+# Topologia Transit ausente — standalone não consome o Secret vault-transit-endpoint
+# nem precisa de NetworkPolicy de egress para PA1. Mantemos os defaults do chart
+# (pa1HostIP="" desliga o egress, transitNodePort=8200 fica inerte).
+
+# NetworkPolicy do chart vault/ — sem egress Transit (vaultTransit.enabled=false).
+networkPolicy:
+  enabled: true
+  externalSecretsNamespace: external-secrets
+  traefikNamespace: traefik
+
+# ----------------------------------------------------------------------------
+# Keycloak local (apps/keycloak-replica) — sem federação Gov.br no MVP.
+# 1 réplica, valida apenas o contrato OIDC/JWT entre frontends e APIs.
+# Federação Gov.br fica fora do escopo standalone (depende de cadastro
+# institucional do client OIDC; demos podem usar usuários locais).
+# ----------------------------------------------------------------------------
+keycloak:
+  enabled: true
+  govbr:
+    enabled: false
+
+# ----------------------------------------------------------------------------
+# Componentes stateful no data-host (Postgres, Kafka, MinIO, Redis) rodam
+# FORA do K8s, gerenciados por systemd em /var/lib/uniplus/* (ADR-002 +
+# ADR-005). Endpoints chegam às apps via External Secrets sintetizados a
+# partir do bootstrap; não são valores deste arquivo.
+# ----------------------------------------------------------------------------
