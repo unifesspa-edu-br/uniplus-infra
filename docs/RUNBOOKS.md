@@ -11,6 +11,7 @@
 - [5. Resposta a Incidentes](#5-resposta-a-incidentes)
 - [6. Operações de Banco](#6-operações-de-banco)
 - [7. Diagnóstico](#7-diagnóstico)
+- [8. Bootstrap e Teardown — Ambiente Standalone OCI](#8-bootstrap-e-teardown--ambiente-standalone-oci)
 
 ## 1. Procedimentos Rotineiros
 
@@ -756,6 +757,184 @@ sudo tcpdump -i any -w /tmp/capture.pcap port 5432
 | MinIO | 🟠 Médio-alto | 2 h | Uploads ficam indisponíveis |
 | Keycloak | 🔴 Crítico | 15 min | Sem login = sem sistema |
 | Observabilidade | 🟢 Baixo | 24 h | Não afeta usuários |
+
+---
+
+## 8. Bootstrap e Teardown — Ambiente Standalone OCI
+
+Ambiente de homologação e produção inicial composto por dois hosts Ubuntu na OCI:
+
+| Host | Papel | IP público | IP privado |
+|------|-------|-----------|-----------|
+| `k8s-host` | K3s single-node + Helm + ArgoCD | `164.152.53.29` | — |
+| `data-host` | Docker + LVM (Postgres, Kafka, MinIO, Vault, Redis) | — | `10.0.2.87` |
+
+> Pré-requisito: chave SSH `~/.ssh/id_ed25519` com acesso a ambos os hosts como usuário `ubuntu`.
+
+### 8.1 Bootstrap do k8s-host
+
+**Quando:** primeira configuração do ambiente ou após teardown completo.
+
+**Executar no k8s-host:**
+
+```bash
+# Clonar o repositório (se ainda não estiver presente)
+git clone https://github.com/unifesspa-edu-br/uniplus-infra.git
+cd uniplus-infra
+
+# Dry-run primeiro — verificar o que será feito
+./scripts/bootstrap-standalone.sh --role=standalone-k8s --dry-run
+
+# Executar (instala K3s, Helm e ArgoCD)
+./scripts/bootstrap-standalone.sh --role=standalone-k8s
+```
+
+**Flags disponíveis:**
+- `--skip-k3s` — pular instalação do K3s (útil se K3s já estiver instalado)
+- `--dry-run` — mostrar ações sem executar
+
+**Validação imediata após bootstrap:**
+
+```bash
+# K3s operacional
+kubectl get nodes
+kubectl get pods -n kube-system
+
+# ArgoCD operacional
+kubectl get pods -n argocd
+```
+
+**Tempo estimado:** 5–10 minutos (depende da velocidade de download dos binários).
+
+### 8.2 Bootstrap do data-host
+
+> ⚠️ **Bloqueado** até a Epic `data/*` estar implementada (Postgres, Kafka, MinIO, Redis via Docker Compose). Os volumes LVM já são provisionados pelo bootstrap; os containers precisam dos charts/compose em `data/`.
+
+**Executar no data-host (via SSH do k8s-host):**
+
+```bash
+ssh -i ~/.ssh/id_ed25519 ubuntu@10.0.2.87
+
+# Dentro do data-host:
+git clone https://github.com/unifesspa-edu-br/uniplus-infra.git
+cd uniplus-infra
+
+# Dry-run
+./scripts/bootstrap-standalone.sh --role=standalone-data --dry-run
+
+# Executar (instala Docker, configura LVM e monta volumes)
+./scripts/bootstrap-standalone.sh --role=standalone-data
+```
+
+**Flags disponíveis:**
+- `--skip-docker` — pular instalação do Docker
+- `--dry-run` — mostrar ações sem executar
+
+**Topologia de volumes esperada** (verificar com `lsblk` antes de rodar):
+
+| Volume OCI | Tamanho | VG | Mount point |
+|-----------|---------|-----|-------------|
+| Block volume 1 | 50 GB | `vg-vault` | `/var/lib/uniplus/vault` |
+| Block volume 2 | 100 GB | `vg-kafka` | `/var/lib/uniplus/kafka` |
+| Block volume 3 | 200 GB | `vg-postgres` | `/var/lib/uniplus/postgres` |
+| Block volume 4 | 200 GB | `vg-minio` | `/var/lib/uniplus/minio` |
+
+### 8.3 Registro do cluster no ArgoCD
+
+> Procedimento detalhado a ser documentado em #85. Resumo:
+
+```bash
+# No k8s-host, autenticar no ArgoCD e registrar o cluster local
+argocd login localhost:8080 --insecure --username admin --password <senha-inicial>
+
+# O kubeconfig do K3s aponta para o cluster local — registrar como "standalone"
+argocd cluster add default --name uniplus-standalone --in-cluster
+```
+
+Após o registro, o ApplicationSet em `argocd/applicationset.yaml` detecta o cluster pelo label e inicia a sincronização.
+
+### 8.4 Init e verificação do Vault (OCI KMS auto-unseal)
+
+> Procedimento detalhado a ser documentado em #87. Resumo:
+
+O Vault standalone usa **OCI Vault KMS** para auto-unseal (diferente do lab, que usa Transit em PA1). O pod sobe selado e desvela automaticamente ao encontrar o KMS configurado.
+
+```bash
+# Verificar estado do Vault
+kubectl exec -n vault vault-0 -- vault status
+
+# Se Initialized=false, inicializar:
+kubectl exec -n vault vault-0 -- vault operator init \
+    -recovery-shares=5 -recovery-threshold=3
+# Guardar recovery keys conforme procedimento institucional (Apêndice A)
+
+# Validar auto-unseal ativo (Sealed=false sem intervenção manual):
+kubectl exec -n vault vault-0 -- vault status | grep Sealed
+# Esperado: Sealed          false
+```
+
+### 8.5 Validação completa do ambiente
+
+**Executar no k8s-host após todos os bootstraps:**
+
+```bash
+# Usando o IP padrão do data-host (10.0.2.87)
+./scripts/validate-standalone.sh
+
+# Sobrepor IP se necessário
+DATA_HOST_IP=10.0.2.87 ./scripts/validate-standalone.sh
+```
+
+**Saída esperada em ambiente completo:**
+
+```
+============================================
+  Resumo: X OK, 0 ERROS, Y AVISOS
+============================================
+```
+
+Avisos são esperados enquanto serviços da Epic `data/*` ainda não estiverem provisionados (Vault não inicializado, containers de dados não rodando).
+
+**Critério de sucesso:** `0 ERROS` nos checks críticos (K3s, kubectl, ArgoCD, SSH ao data-host).
+
+### 8.6 Teardown do k8s-host
+
+**Quando:** re-provisionar o ambiente standalone ou liberar recursos.
+
+```bash
+# Executar no k8s-host
+./scripts/teardown-lab.sh --role=standalone-k8s
+```
+
+**O que é removido:**
+- K3s e todo o estado do cluster (pods, PVs, namespaces)
+- `~/.kube/config`
+- Helm binário (`/usr/local/bin/helm`)
+- cloudflared (se ativo)
+
+**O que é preservado:** volumes LVM do data-host ficam intactos.
+
+**Pós-teardown:** re-bootstrap via `./scripts/bootstrap-standalone.sh --role=standalone-k8s`.
+
+### 8.7 Teardown do data-host
+
+**Quando:** encerrar o ambiente de dados ou preparar re-provisionamento.
+
+```bash
+# A partir do k8s-host — SSH no data-host e executar teardown
+ssh -t -i ~/.ssh/id_ed25519 ubuntu@10.0.2.87 \
+  "cd uniplus-infra && ./scripts/teardown-lab.sh --role=standalone-data"
+```
+
+**O que é removido:**
+- Todos os containers Docker (stop + rm)
+- Volumes Docker (`docker volume prune`)
+- Pontos de montagem LVM (`/var/lib/uniplus/{postgres,kafka,minio,vault}` são desmontados)
+- Entradas dos VGs no `/etc/fstab`
+
+**O que é preservado:** dados nos block volumes OCI — o LVM fica intacto, apenas desmontado. Re-montagem pelo bootstrap recupera os dados.
+
+**Pós-teardown:** re-bootstrap via `./scripts/bootstrap-standalone.sh --role=standalone-data`.
 
 ---
 
