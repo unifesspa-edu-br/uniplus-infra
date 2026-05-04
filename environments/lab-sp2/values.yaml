@@ -84,10 +84,18 @@ storage:
     reclaimPolicy: Delete  # lab descartável; prod mantém Retain
 
 # ============================================================================
-# Vault HA Raft com auto-unseal Transit contra lab-pa1 (ADR-007).
-# Configuração simétrica a lab-sp1 — mesmo endpoint Transit, mesmo CIDR
-# autorizado. Embora lab-sp2 e lab-pa1 compartilhem o host i7 fisicamente,
+# Topologia do laboratório — fonte única de verdade para IP/porta do Transit.
+# Simétrico a lab-sp1: mesmo endpoint PA1, mesmas chaves topology.*.
+# Embora lab-sp2 e lab-pa1 compartilhem o host i7 fisicamente,
 # do ponto de vista de K8s são clusters K3s distintos (cross-cluster real).
+# ============================================================================
+topology:
+  pa1HostIP: "192.168.0.20"   # host i7 (lab-pa1)
+  transitNodePort: 30200       # NodePort exposto pelo K3s de lab-pa1
+  transitScheme: https         # obrigatório após achado #37
+
+# ============================================================================
+# Vault HA Raft com auto-unseal Transit contra lab-pa1 (ADR-007).
 # ============================================================================
 vault:
   enabled: true
@@ -117,7 +125,7 @@ vault:
           }
 
           seal "transit" {
-            address         = "https://192.168.0.20:30200"
+            address         = "${VAULT_TRANSIT_ADDRESS}"
             token           = "${VAULT_TRANSIT_TOKEN}"
             disable_renewal = "false"
             key_name        = "autounseal"
@@ -131,6 +139,9 @@ vault:
       - envName: VAULT_TRANSIT_TOKEN
         secretName: vault-transit-token
         secretKey: token
+      - envName: VAULT_TRANSIT_ADDRESS
+        secretName: vault-transit-endpoint
+        secretKey: address
 
     dataStorage:
       size: 5Gi
@@ -142,11 +153,8 @@ vault:
 vaultTransit:
   enabled: false
 
+# NetworkPolicy do chart vault/ — egress Transit derivado de topology.* acima.
 networkPolicy:
   enabled: true
   externalSecretsNamespace: external-secrets
   traefikNamespace: traefik
-  transitEndpointCidrs:
-    - 192.168.0.20/32
-  transitEndpointPorts:
-    - 30200

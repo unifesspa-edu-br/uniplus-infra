@@ -90,6 +90,16 @@ storage:
     reclaimPolicy: Delete
 
 # ============================================================================
+# Topologia do laboratório — fonte única de verdade para IP/porta do Transit.
+# O chart platform/vault/ usa estes valores para gerar o Secret
+# vault-transit-endpoint (VAULT_TRANSIT_ADDRESS) e a NetworkPolicy de egress.
+# ============================================================================
+topology:
+  pa1HostIP: "192.168.0.20"   # host i7 (lab-pa1); SP1 e SP2 compartilham o mesmo PA1
+  transitNodePort: 30200       # NodePort exposto pelo K3s de lab-pa1
+  transitScheme: https         # obrigatório após achado #37 (cert self-signed no bootstrap)
+
+# ============================================================================
 # Vault HA Raft com auto-unseal Transit contra lab-pa1 (ADR-007).
 # ============================================================================
 vault:
@@ -108,10 +118,9 @@ vault:
         setNodeId: true
         # Substitui a config default do chart `platform/vault/` para incluir
         # o bloco `seal "transit"` apontando para o Vault Transit em lab-pa1.
-        # O endpoint NodePort 192.168.0.20:30200 é exposto pelo cluster K3s
-        # de lab-pa1 (rede plana 192.168.0.0/16 do laboratório).
-        # tls_skip_verify=true aceita cert self-signed gerado pelo bootstrap
-        # (achado #37 — Transit agora serve HTTPS).
+        # O endereço é lido do env var VAULT_TRANSIT_ADDRESS, injetado via
+        # Secret vault-transit-endpoint gerado pelo chart a partir de topology.*
+        # (achado #37 — Transit serve HTTPS com cert self-signed do bootstrap).
         config: |
           ui = true
 
@@ -126,7 +135,7 @@ vault:
           }
 
           seal "transit" {
-            address         = "https://192.168.0.20:30200"
+            address         = "${VAULT_TRANSIT_ADDRESS}"
             token           = "${VAULT_TRANSIT_TOKEN}"
             disable_renewal = "false"
             key_name        = "autounseal"
@@ -136,12 +145,16 @@ vault:
 
           service_registration "kubernetes" {}
 
-    # Token do Transit é injetado via env var (Secret criado manualmente
-    # após bootstrap do Transit em lab-pa1 — ver RUNBOOKS §1.4.B).
+    # Env vars injetados via Secrets:
+    # - vault-transit-token: criado manualmente após bootstrap (RUNBOOKS §1.4.B)
+    # - vault-transit-endpoint: gerado pelo chart a partir de topology.*
     extraSecretEnvironmentVars:
       - envName: VAULT_TRANSIT_TOKEN
         secretName: vault-transit-token
         secretKey: token
+      - envName: VAULT_TRANSIT_ADDRESS
+        secretName: vault-transit-endpoint
+        secretKey: address
 
     dataStorage:
       size: 5Gi
@@ -154,14 +167,8 @@ vault:
 vaultTransit:
   enabled: false
 
-# NetworkPolicy do chart vault/ libera egress para o endpoint Transit.
+# NetworkPolicy do chart vault/ — egress Transit derivado de topology.* acima.
 networkPolicy:
   enabled: true
   externalSecretsNamespace: external-secrets
   traefikNamespace: traefik
-  # CIDR do host i7 (lab-pa1) para egress do Vault rumo ao Transit.
-  transitEndpointCidrs:
-    - 192.168.0.20/32
-  # NodePort exposto pelo Vault Transit em lab-pa1.
-  transitEndpointPorts:
-    - 30200

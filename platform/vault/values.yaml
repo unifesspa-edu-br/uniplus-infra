@@ -103,6 +103,18 @@ vault:
         app.kubernetes.io/part-of: uniplus
         app.kubernetes.io/component: vault
 
+# Topologia de rede do ambiente. Obrigatório nos environments SP1/SP2 que usam
+# auto-unseal Transit. Fonte única de verdade para IP/porta do endpoint Transit:
+# o template networkpolicy.yaml e o Secret vault-transit-endpoint derivam daqui.
+topology:
+  # IP ou hostname do host PA1 acessível pelos clusters SP1/SP2.
+  # Vazio por default — torna o egress Transit e o Secret opcionais (helm lint OK).
+  pa1HostIP: ""
+  # Porta do endpoint Transit em PA1 (NodePort em lab, 8200 em prod via ClusterIP+Ingress).
+  transitNodePort: 8200
+  # Esquema do endpoint Transit. https obrigatório após achado #37 (PR #70).
+  transitScheme: https
+
 # NetworkPolicy controlando ingress/egress no Pod do Vault de aplicação.
 networkPolicy:
   enabled: true
@@ -110,11 +122,6 @@ networkPolicy:
   externalSecretsNamespace: external-secrets
   # Namespace do Traefik no mesmo cluster (acesso UI/API).
   traefikNamespace: traefik
-  # Endpoint do Vault Transit em PA1 — egress autorizado para auto-unseal
-  # cross-cluster. Defaults vazios/8200; configurar por environment.
-  transitEndpointCidrs: []
-  transitEndpointPorts:
-    - 8200
   # CIDRs restritos para egress ao Kubernetes API server (service registration).
   # Padrão: service CIDR do K3s (10.43.0.0/16) — cobre o ClusterIP do
   # serviço `kubernetes` em `default` sem permitir destinos externos em 443/6443.
