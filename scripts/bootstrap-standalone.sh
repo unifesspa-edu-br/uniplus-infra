@@ -204,7 +204,9 @@ step_install_argocd() {
     log_info "Instalando ArgoCD..."
 
     run "kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -"
-    run "kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml"
+    # --server-side evita o limite de 262144 bytes nas anotações dos CRDs do ArgoCD no K3s
+    # --force-conflicts resolve conflitos de field manager (necessário em re-runs após falha client-side)
+    run "kubectl apply --server-side --force-conflicts -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml"
 
     log_info "Aguardando ArgoCD ficar disponível (até 5 min)..."
     run "kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd"
