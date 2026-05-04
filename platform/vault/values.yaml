@@ -119,6 +119,9 @@ networkPolicy:
   # Padrão: service CIDR do K3s (10.43.0.0/16) — cobre o ClusterIP do
   # serviço `kubernetes` em `default` sem permitir destinos externos em 443/6443.
   # Ajustar em environments/ se o service CIDR do cluster for diferente.
+  # ATENÇÃO: lista vazia suprime a regra inteiramente — service_registration
+  # "kubernetes" {} falhará. Só usar [] se o cluster não precisar de
+  # service registration (ex.: Vault sem injeção de secrets via K8s).
   kubeApiCidrs:
     - 10.43.0.0/16
 
