@@ -42,7 +42,7 @@ Introduzir **`standalone`** como modelo de topologia paralelo, com as seguintes 
 ### O que não muda
 
 - `argocd/applicationset.yaml` — o ApplicationSet já é genérico via label `environment: <env>`. Registrar o cluster com `uniplus.io/managed=true` + `environment=standalone` é suficiente para o GitOps reconciliar `environments/standalone/values.yaml` automaticamente. Nenhuma mudança estrutural.
-- [ADR-001](ADR-001-tres-dcs-logicos-e-clusters-k8s-independentes.md) a [ADR-007](ADR-007-vault-ha-storage-unseal.md) — continuam válidos para a topologia 3-DC. Standalone opera fora do escopo de ADR-001 (1 cluster, não 3) e ADR-007 (standalone não usa Vault Transit; o unseal é feito via KMS do provider).
+- **[ADR-001](ADR-001-tres-dcs-logicos-e-clusters-k8s-independentes.md) a [ADR-007](ADR-007-vault-ha-storage-unseal.md) — não são alterados em nenhum aspecto.** Standalone é estritamente aditivo: nenhum arquivo existente recebe modificação, nota de rodapé ou seção de aplicabilidade em decorrência desta ADR. As ADRs da topologia distribuída descrevem o modelo 3-DC e permanecem como estão; esta ADR descreve o modelo standalone de forma autossuficiente.
 
 ### Decisões de design já tomadas
 
