@@ -26,6 +26,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # ============== Versões pinadas ==============
 K3S_VERSION="v1.31.4+k3s1"
 HELM_VERSION="v3.16.4"
+ARGOCD_VERSION="v2.14.3"
 
 # ============== Defaults ==============
 ROLE=""
@@ -104,7 +105,7 @@ run() {
     if $DRY_RUN; then
         echo "[DRY-RUN] $*"
     else
-        eval "$*"
+        bash -c "$*"
     fi
 }
 
@@ -206,10 +207,14 @@ step_install_argocd() {
     run "kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -"
     # --server-side evita o limite de 262144 bytes nas anotações dos CRDs do ArgoCD no K3s
     # --force-conflicts resolve conflitos de field manager (necessário em re-runs após falha client-side)
-    run "kubectl apply --server-side --force-conflicts -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml"
+    run "kubectl apply --server-side --force-conflicts -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/$ARGOCD_VERSION/manifests/install.yaml"
 
     log_info "Aguardando ArgoCD ficar disponível (até 5 min)..."
-    run "kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd"
+    run "kubectl wait --for=condition=available --timeout=300s \
+        deployment/argocd-server \
+        deployment/argocd-repo-server \
+        deployment/argocd-applicationset-controller \
+        -n argocd"
 
     log_info "Senha inicial do admin ArgoCD:"
     run "kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d && echo"
@@ -331,12 +336,20 @@ discover_disks() {
 
         if [[ "$size_gb" -ge 45 && "$size_gb" -le 55 ]]; then
             count_50=$(( count_50 + 1 ))
-            DISK_VAULT="/dev/$name"
-            printf "  %-8s %-12s %s\n" "/dev/$name" "${size_gb}GB" "vault"
+            if [[ "$count_50" -eq 1 ]]; then
+                DISK_VAULT="/dev/$name"
+                printf "  %-8s %-12s %s\n" "/dev/$name" "${size_gb}GB" "vault"
+            else
+                printf "  %-8s %-12s %s\n" "/dev/$name" "${size_gb}GB" "50GB EXTRA — topologia inválida"
+            fi
         elif [[ "$size_gb" -ge 95 && "$size_gb" -le 105 ]]; then
             count_100=$(( count_100 + 1 ))
-            DISK_KAFKA="/dev/$name"
-            printf "  %-8s %-12s %s\n" "/dev/$name" "${size_gb}GB" "kafka"
+            if [[ "$count_100" -eq 1 ]]; then
+                DISK_KAFKA="/dev/$name"
+                printf "  %-8s %-12s %s\n" "/dev/$name" "${size_gb}GB" "kafka"
+            else
+                printf "  %-8s %-12s %s\n" "/dev/$name" "${size_gb}GB" "100GB EXTRA — topologia inválida"
+            fi
         elif [[ "$size_gb" -ge 190 && "$size_gb" -le 210 ]]; then
             count_200=$(( count_200 + 1 ))
             if [[ "$count_200" -eq 1 ]]; then
@@ -410,7 +423,7 @@ setup_lvm_volume() {
         run "echo '/dev/$vg_name/$lv_name $mount_point xfs defaults,nofail 0 2' | sudo tee -a /etc/fstab"
     fi
 
-    run "sudo chown ubuntu:ubuntu $mount_point"
+    run "sudo chown $USER:$USER $mount_point"
 
     log_success "$mount_point pronto."
 }
@@ -429,17 +442,11 @@ step_setup_lvm() {
 }
 
 step_create_placeholder_dirs() {
-    log_info "Criando estrutura de diretórios para serviços..."
-
-    for svc in postgres kafka minio vault redis; do
-        run "sudo mkdir -p $DATA_BASE/$svc"
-        run "sudo chown ubuntu:ubuntu $DATA_BASE/$svc 2>/dev/null || true"
-    done
-
-    # Redis usa disco local (sem block volume dedicado) — diretório no SO
-    log_info "  Redis: $DATA_BASE/redis (disco local, sem block volume dedicado)"
-
-    log_success "Diretórios prontos."
+    # postgres/kafka/minio/vault já criados por setup_lvm_volume; apenas redis precisa de mkdir
+    log_info "Criando diretório para Redis (disco local, sem block volume dedicado)..."
+    run "sudo mkdir -p $DATA_BASE/redis"
+    run "sudo chown $USER:$USER $DATA_BASE/redis"
+    log_success "$DATA_BASE/redis pronto."
 }
 
 summary_data() {
