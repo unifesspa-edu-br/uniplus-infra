@@ -54,9 +54,8 @@ Ambiente de homologação e produção inicial: um `k8s-host` (K3s + ArgoCD) e u
 ./scripts/bootstrap-standalone.sh --role=standalone-data --dry-run
 
 # Flags disponíveis
-#   --skip-k3s        Pula instalação do K3s (standalone-k8s)
-#   --skip-docker     Pula instalação do Docker (standalone-data)
-#   --enable-cloudflared  Inclui setup do Cloudflare Tunnel (standalone-k8s)
+#   --skip-k3s      Pula instalação do K3s (standalone-k8s)
+#   --skip-docker   Pula instalação do Docker (standalone-data)
 ```
 
 ### Variáveis de ambiente (standalone-data)
