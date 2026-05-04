@@ -107,10 +107,11 @@ vault:
 # auto-unseal Transit. Fonte única de verdade para IP/porta do endpoint Transit:
 # o template networkpolicy.yaml e o Secret vault-transit-endpoint derivam daqui.
 topology:
-  # IP ou hostname do host PA1 acessível pelos clusters SP1/SP2.
+  # IP (obrigatoriamente um endereço IPv4) do host PA1 acessível pelos clusters SP1/SP2.
+  # Usado como ipBlock.cidr/<host>/32 na NetworkPolicy — hostnames não são válidos aqui.
   # Vazio por default — torna o egress Transit e o Secret opcionais (helm lint OK).
   pa1HostIP: ""
-  # Porta do endpoint Transit em PA1 (NodePort em lab, 8200 em prod via ClusterIP+Ingress).
+  # Porta do endpoint Transit em PA1 (NodePort em lab, 443 em prod via IngressRoute HTTPS).
   transitNodePort: 8200
   # Esquema do endpoint Transit. https obrigatório após achado #37 (PR #70).
   transitScheme: https

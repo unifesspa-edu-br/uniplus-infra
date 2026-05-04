@@ -121,6 +121,7 @@ vault:
 
           service_registration "kubernetes" {}
 
+    # Apenas VAULT_TRANSIT_TOKEN: mesmo padrão de prod-sp1 (seal via FQDN).
     extraSecretEnvironmentVars:
       - envName: VAULT_TRANSIT_TOKEN
         secretName: vault-transit-token
@@ -149,13 +150,16 @@ vault:
 vaultTransit:
   enabled: false
 
+# Mesmo padrão de prod-sp1 — preencher pa1HostIP antes de habilitar Vault.
+topology:
+  pa1HostIP: ""          # TODO: IP do endpoint Transit em prod-pa1 (confirmar com DIRSI)
+  transitNodePort: 443
+  transitScheme: https
+
 networkPolicy:
   enabled: true
   externalSecretsNamespace: external-secrets
   traefikNamespace: traefik
-  transitEndpointCidrs: []  # TODO: preencher com CIDR do PA1 antes de habilitar Vault em prod
-  transitEndpointPorts:
-    - 443
 
 serviceMonitor:
   enabled: false
