@@ -33,6 +33,7 @@ Um cluster K3s em um host (`k8s-host`) + um host externo para componentes statef
 | Vault keys | Re-init pós-teardown re-gera Shamir 5/3 — standalone não é cofre durável |
 | Keycloak | Sem federação Gov.br no MVP — apenas validação OIDC/JWT local |
 | Storage | `reclaimPolicy: Delete` — re-bootstrap via Tofu apaga PVs |
+| Vault PVC | `kubectl delete pvc data-<release>-vault-0` destrói o estado Raft sem peer para recuperar — single-replica, único ambiente onde isso é destrutivo sem aviso (em SP1/SP2, 2 das 3 réplicas sobrevivem) |
 | Observabilidade | Stack único (Prometheus/Loki/Tempo single-replica), retenção curta |
 | Performance | Não modela latência cross-DC — race conditions geográficas ficam invisíveis aqui |
 
@@ -78,6 +79,17 @@ Procedimento detalhado: `docs/RUNBOOKS.md` §8 (Bootstrap e Teardown — Ambient
 4. `./scripts/validate-standalone.sh` para checagem de sanidade.
 5. Registrar cluster no ArgoCD conforme acima.
 6. Vault init + verificação de auto-unseal (ver `docs/RUNBOOKS.md` §8.4).
+
+## Pré-requisitos não-implementados
+
+Charts referenciados pelo overlay que ainda são placeholders (sem `Chart.yaml`/templates) e precisam aterrissar antes do bootstrap funcionar end-to-end:
+
+- `platform/cert-manager/` — `ingress.tls.issuer: letsencrypt` neste overlay assume `cert-manager` instalado e um `ClusterIssuer` chamado `letsencrypt` configurado para HTTP-01 (issue #15).
+- `platform/traefik/` — terminação TLS e roteamento por path no FQDN único de standalone.
+- `platform/external-secrets/` — sintetiza o Secret `vault-ocikms-config` consumido pelo Vault (issue #64).
+- `platform/cloudflared/`, `platform/observability/*` — completam o stack de borda e observabilidade.
+
+Standalone entrega o overlay GitOps; os charts acima são gap pré-existente do repositório, não bloqueio específico desta topologia.
 
 ## Charts `data/*` — fora do escopo
 
