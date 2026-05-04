@@ -34,14 +34,38 @@ vaultTransit:
   enabled: true
 
   global:
-    # cert-manager (#15) ainda placeholder — TLS interno desabilitado por enquanto.
-    # Habilitar quando #14 + #15 estiverem prontos.
-    tlsDisable: true
+    # TLS habilitado com cert self-signed gerado pelo bootstrap-lab.sh (achado #37).
+    # Secret `vault-transit-tls` criado em namespace `vault-transit` durante bootstrap.
+    # Quando cert-manager (#15) estiver pronto, substituir pelo cert gerenciado.
+    tlsDisable: false
 
   server:
     ha:
       enabled: false
       replicas: 1
+
+    # Monta o Secret TLS gerado pelo bootstrap em /vault/userconfig/vault-transit-tls/.
+    extraVolumes:
+      - type: secret
+        name: vault-transit-tls
+
+    # Config completa do listener com TLS habilitado.
+    standalone:
+      config: |
+        ui = true
+
+        listener "tcp" {
+          address         = "[::]:8200"
+          cluster_address = "[::]:8201"
+          tls_cert_file   = "/vault/userconfig/vault-transit-tls/tls.crt"
+          tls_key_file    = "/vault/userconfig/vault-transit-tls/tls.key"
+        }
+
+        storage "file" {
+          path = "/vault/data"
+        }
+
+        service_registration "kubernetes" {}
 
     dataStorage:
       size: 1Gi

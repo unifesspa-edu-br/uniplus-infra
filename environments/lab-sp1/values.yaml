@@ -110,8 +110,8 @@ vault:
         # o bloco `seal "transit"` apontando para o Vault Transit em lab-pa1.
         # O endpoint NodePort 192.168.0.20:30200 é exposto pelo cluster K3s
         # de lab-pa1 (rede plana 192.168.0.0/16 do laboratório).
-        # tls_skip_verify=true aceita cert self-signed enquanto cert-manager
-        # (#15) ainda é placeholder.
+        # tls_skip_verify=true aceita cert self-signed gerado pelo bootstrap
+        # (achado #37 — Transit agora serve HTTPS).
         config: |
           ui = true
 
@@ -126,7 +126,7 @@ vault:
           }
 
           seal "transit" {
-            address         = "http://192.168.0.20:30200"
+            address         = "https://192.168.0.20:30200"
             token           = "${VAULT_TRANSIT_TOKEN}"
             disable_renewal = "false"
             key_name        = "autounseal"
