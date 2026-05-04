@@ -141,23 +141,36 @@
         }
       }
     },
+    "topology": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Topologia de rede do ambiente. Obrigatório nos environments SP1/SP2 com auto-unseal Transit. additionalProperties=true permite chaves extras em PA1 (ex.: hostIP) sem invalidar o schema.",
+      "properties": {
+        "pa1HostIP": {
+          "type": "string",
+          "pattern": "^([0-9]{1,3}\\.){3}[0-9]{1,3}$|^$",
+          "description": "IPv4 do host PA1 acessível pelos clusters SP. Usado como ipBlock.cidr — deve ser IP, não hostname."
+        },
+        "transitNodePort": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "Porta do endpoint Transit (NodePort em lab, 443 em prod via IngressRoute)."
+        },
+        "transitScheme": {
+          "type": "string",
+          "enum": ["http", "https"],
+          "description": "Esquema do endpoint Transit. https obrigatório após achado #37."
+        }
+      }
+    },
     "networkPolicy": {
       "type": "object",
       "additionalProperties": true,
       "properties": {
         "enabled": { "type": "boolean" },
         "externalSecretsNamespace": { "type": "string" },
-        "traefikNamespace": { "type": "string" },
-        "transitEndpointCidrs": {
-          "type": "array",
-          "items": { "type": "string", "pattern": "^[0-9.]+/[0-9]+$" },
-          "description": "CIDRs autorizados como destino do egress Transit. Vazio bloqueia auto-unseal."
-        },
-        "transitEndpointPorts": {
-          "type": "array",
-          "items": { "type": "integer", "minimum": 1, "maximum": 65535 },
-          "description": "Portas do endpoint Transit. Lab=30200 (NodePort); prod=443 (HTTPS)."
-        }
+        "traefikNamespace": { "type": "string" }
       }
     },
     "vaultTransit": {

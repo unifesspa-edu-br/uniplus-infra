@@ -141,6 +141,10 @@ vault:
 
           service_registration "kubernetes" {}
 
+    # Apenas VAULT_TRANSIT_TOKEN: em prod o seal address usa FQDN para TLS
+    # (vault-transit.uniplus.unifesspa.edu.br) — sem ${VAULT_TRANSIT_ADDRESS}.
+    # O FQDN está hardcoded no raft.config acima; topology.pa1HostIP serve
+    # exclusivamente para a regra de egress da NetworkPolicy.
     extraSecretEnvironmentVars:
       - envName: VAULT_TRANSIT_TOKEN
         secretName: vault-transit-token
@@ -172,15 +176,20 @@ vault:
 vaultTransit:
   enabled: false
 
+# Topologia de prod-pa1 — preencher com IPs reais antes de habilitar Vault.
+# pa1HostIP é o IP do LoadBalancer/VIP do Transit em PA1 (para ipBlock.cidr na
+# NetworkPolicy). O endereço usado pelo seal "transit" é o FQDN no raft.config
+# acima — os dois diferem porque TLS requer o hostname, NetworkPolicy requer IP.
+# Confirmar IPs com a DIRSI antes da promoção para prod.
+topology:
+  pa1HostIP: ""          # TODO: IP do endpoint Transit em prod-pa1 (ex.: IP do LB EVEO PA1)
+  transitNodePort: 443   # HTTPS via IngressRoute Traefik
+  transitScheme: https
+
 networkPolicy:
   enabled: true
   externalSecretsNamespace: external-secrets
   traefikNamespace: traefik
-  # CIDR do PA1 real (Marabá) — confirmar com a DIRSI antes da promoção.
-  # Evitar 0.0.0.0/0 — usar bloco específico do datacenter UNIFESSPA.
-  transitEndpointCidrs: []  # TODO: preencher antes de habilitar Vault em prod
-  transitEndpointPorts:
-    - 443
 
 serviceMonitor:
   enabled: false
