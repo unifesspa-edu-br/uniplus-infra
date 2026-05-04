@@ -26,7 +26,8 @@ WARNINGS=0
 # data-host: subnet privada OCI — sobrepor via env se necessário
 DATA_HOST_IP="${DATA_HOST_IP:-10.0.2.87}"
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_ed25519}"
-SSH_OPTS="-i $SSH_KEY -o StrictHostKeyChecking=no -o ConnectTimeout=5 -o BatchMode=yes"
+# subnet privada OCI — fingerprint não disponível no primeiro boot; StrictHostKeyChecking aceitável
+ssh_data() { ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=5 -o BatchMode=yes ubuntu@"$DATA_HOST_IP" "$@"; }
 
 check() {
     local name=$1 cmd=$2
@@ -50,6 +51,14 @@ check_warn() {
     fi
 }
 
+kube_system_ok() {
+    local bad
+    bad=$(kubectl get pods -n kube-system --no-headers 2>/dev/null \
+          | awk '{print $3}' \
+          | grep -cvE '^(Running|Completed|Succeeded)$') || true
+    [[ "${bad:-0}" -eq 0 ]]
+}
+
 echo "============================================"
 echo "  Validação Standalone Uni+"
 echo "  data-host: $DATA_HOST_IP"
@@ -66,8 +75,8 @@ echo ""
 # ── K3s ───────────────────────────────────────────────────────────────────────
 echo "→ K3s:"
 check      "API server acessível"                  "kubectl cluster-info"
-check      "Node uniplus-standalone Ready"          "kubectl get nodes | grep -q 'uniplus-standalone.*Ready'"
-check      "kube-system pods Running"               "kubectl get pods -n kube-system --field-selector=status.phase=Running -o name | grep -q pod"
+check      "Node uniplus-standalone Ready"          "kubectl get node uniplus-standalone --no-headers | awk '{print \$2}' | grep -qx Ready"
+check      "kube-system pods Running"               "kube_system_ok"
 check_warn "Traefik rodando"                        "kubectl get pods -n kube-system -l app.kubernetes.io/name=traefik | grep -q Running"
 echo ""
 
@@ -99,12 +108,12 @@ echo ""
 
 # ── Volumes LVM no data-host (via SSH) ───────────────────────────────────────
 echo "→ Volumes LVM no data-host:"
-check      "SSH ao data-host disponível"     "ssh $SSH_OPTS ubuntu@$DATA_HOST_IP true"
-check_warn "postgres montado"                "ssh $SSH_OPTS ubuntu@$DATA_HOST_IP 'mountpoint -q /var/lib/uniplus/postgres'"
-check_warn "kafka montado"                   "ssh $SSH_OPTS ubuntu@$DATA_HOST_IP 'mountpoint -q /var/lib/uniplus/kafka'"
-check_warn "minio montado"                   "ssh $SSH_OPTS ubuntu@$DATA_HOST_IP 'mountpoint -q /var/lib/uniplus/minio'"
-check_warn "vault montado"                   "ssh $SSH_OPTS ubuntu@$DATA_HOST_IP 'mountpoint -q /var/lib/uniplus/vault'"
-check_warn "redis dir presente"              "ssh $SSH_OPTS ubuntu@$DATA_HOST_IP 'test -d /var/lib/uniplus/redis'"
+check      "SSH ao data-host disponível"     "ssh_data true"
+check_warn "postgres montado"                "ssh_data mountpoint -q /var/lib/uniplus/postgres"
+check_warn "kafka montado"                   "ssh_data mountpoint -q /var/lib/uniplus/kafka"
+check_warn "minio montado"                   "ssh_data mountpoint -q /var/lib/uniplus/minio"
+check_warn "vault montado"                   "ssh_data mountpoint -q /var/lib/uniplus/vault"
+check_warn "redis dir presente"              "ssh_data test -d /var/lib/uniplus/redis"
 echo ""
 
 # ── DNS e conectividade externa ───────────────────────────────────────────────
