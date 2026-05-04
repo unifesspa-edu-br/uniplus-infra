@@ -403,7 +403,13 @@ setup_lvm_volume() {
     log_info "Configurando LVM: $disk → $vg_name/$lv_name → $mount_point"
 
     if sudo lvs "$vg_name/$lv_name" &>/dev/null; then
-        log_success "$vg_name/$lv_name já existe. Pulando provisionamento LVM."
+        if sudo blkid "/dev/$vg_name/$lv_name" &>/dev/null; then
+            log_success "$vg_name/$lv_name já existe com filesystem. Pulando provisionamento LVM."
+        else
+            # LV existe mas sem filesystem: lvcreate concluiu, mkfs foi interrompido
+            log_warn "$vg_name/$lv_name sem filesystem detectado. Executando mkfs.xfs."
+            run "sudo mkfs.xfs /dev/$vg_name/$lv_name"
+        fi
     else
         if ! sudo vgs "$vg_name" &>/dev/null; then
             run "sudo pvcreate $disk"
