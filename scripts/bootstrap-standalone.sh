@@ -321,7 +321,7 @@ discover_disks() {
     DISK_KAFKA=""
     DISK_MINIO=""
     DISK_VAULT=""
-    local two_hundred_gb_count=0
+    local count_50=0 count_100=0 count_200=0
 
     for entry in "${raw_disks[@]}"; do
         local name size_bytes size_gb
@@ -330,19 +330,23 @@ discover_disks() {
         size_gb=$(( size_bytes / 1024 / 1024 / 1024 ))
 
         if [[ "$size_gb" -ge 45 && "$size_gb" -le 55 ]]; then
+            count_50=$(( count_50 + 1 ))
             DISK_VAULT="/dev/$name"
             printf "  %-8s %-12s %s\n" "/dev/$name" "${size_gb}GB" "vault"
         elif [[ "$size_gb" -ge 95 && "$size_gb" -le 105 ]]; then
+            count_100=$(( count_100 + 1 ))
             DISK_KAFKA="/dev/$name"
             printf "  %-8s %-12s %s\n" "/dev/$name" "${size_gb}GB" "kafka"
         elif [[ "$size_gb" -ge 190 && "$size_gb" -le 210 ]]; then
-            two_hundred_gb_count=$(( two_hundred_gb_count + 1 ))
-            if [[ "$two_hundred_gb_count" -eq 1 ]]; then
+            count_200=$(( count_200 + 1 ))
+            if [[ "$count_200" -eq 1 ]]; then
                 DISK_POSTGRES="/dev/$name"
                 printf "  %-8s %-12s %s\n" "/dev/$name" "${size_gb}GB" "postgres (1º de 200GB)"
-            else
+            elif [[ "$count_200" -eq 2 ]]; then
                 DISK_MINIO="/dev/$name"
                 printf "  %-8s %-12s %s\n" "/dev/$name" "${size_gb}GB" "minio (2º de 200GB)"
+            else
+                printf "  %-8s %-12s %s\n" "/dev/$name" "${size_gb}GB" "200GB EXTRA — topologia inválida"
             fi
         else
             printf "  %-8s %-12s %s\n" "/dev/$name" "${size_gb}GB" "DESCONHECIDO — ignorado"
@@ -351,12 +355,28 @@ discover_disks() {
 
     echo ""
 
-    for var_name in DISK_POSTGRES DISK_KAFKA DISK_MINIO DISK_VAULT; do
-        if [[ -z "${!var_name}" ]]; then
-            log_error "$var_name não detectado. Verifique os block volumes OCI e re-execute."
+    # Validar cardinalidade exata: 1x~50GB, 1x~100GB, 2x~200GB
+    local topology_ok=true
+    if [[ "$count_50" -ne 1 ]]; then
+        log_error "Esperado 1 disco ~50GB (vault), encontrado $count_50. Verifique os attachments OCI."
+        topology_ok=false
+    fi
+    if [[ "$count_100" -ne 1 ]]; then
+        log_error "Esperado 1 disco ~100GB (kafka), encontrado $count_100. Verifique os attachments OCI."
+        topology_ok=false
+    fi
+    if [[ "$count_200" -ne 2 ]]; then
+        log_error "Esperado 2 discos ~200GB (postgres + minio), encontrado $count_200. Verifique os attachments OCI."
+        topology_ok=false
+    fi
+
+    if ! $topology_ok; then
+        if ! $DRY_RUN; then
+            log_error "Topologia de discos inválida. Corrija os attachments antes de continuar."
             exit 1
         fi
-    done
+        log_warn "Topologia inválida detectada (dry-run — continuando mesmo assim)."
+    fi
 
     log_warn "Confirme o mapeamento acima antes de prosseguir (--dry-run para revisar sem modificar)."
 }
