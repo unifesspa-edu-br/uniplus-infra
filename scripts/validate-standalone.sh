@@ -52,10 +52,11 @@ check_warn() {
 }
 
 kube_system_ok() {
-    local output bad
+    local output bad running
     output=$(kubectl get pods -n kube-system --no-headers 2>/dev/null) || return 1
-    bad=$(echo "$output" | awk '{print $3}' | grep -cvE '^(Running|Completed|Succeeded)$') || true
-    [[ "${bad:-0}" -eq 0 ]]
+    bad=$(echo "$output"     | awk '{print $3}' | grep -cvE '^(Running|Completed|Succeeded)$') || true
+    running=$(echo "$output" | awk '{print $3}' | grep -c  '^Running$') || true
+    [[ "${bad:-0}" -eq 0 && "${running:-0}" -gt 0 ]]
 }
 
 echo "============================================"
