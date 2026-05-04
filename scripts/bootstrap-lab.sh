@@ -249,7 +249,9 @@ step_install_helm() {
     local helm_sha="/tmp/helm-${HELM_VERSION}-linux-amd64.tar.gz.sha256sum"
     run "curl -fsSL https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz -o $helm_tar"
     run "curl -fsSL https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz.sha256sum -o $helm_sha"
-    run "sha256sum -c $helm_sha"
+    # O arquivo sha256sum contém o basename sem path — extrair só o hash e
+    # construir a linha com o path completo para sha256sum -c funcionar.
+    run "echo \"\$(awk '{print \$1}' $helm_sha)  $helm_tar\" | sha256sum -c"
     run "tar -xzf $helm_tar -C /tmp linux-amd64/helm"
     run "sudo install /tmp/linux-amd64/helm /usr/local/bin/helm"
     run "rm -rf $helm_tar $helm_sha /tmp/linux-amd64"
@@ -304,7 +306,7 @@ step_setup_vault_transit_tls() {
     run "openssl req -x509 -newkey rsa:4096 \
         -keyout $cert_dir/tls.key \
         -out $cert_dir/tls.crt \
-        -days 3650 -nodes \
+        -days 3650 -noenc \
         -subj '/CN=vault-transit.uniplus.lab/O=UniPlus Lab' \
         -addext 'subjectAltName=IP:192.168.0.20,DNS:vault-transit'"
 
