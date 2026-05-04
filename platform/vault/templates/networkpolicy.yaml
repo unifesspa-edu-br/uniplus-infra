@@ -77,10 +77,18 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
-    # Kubernetes API (service registration).
-    - ports:
+    # Kubernetes API (service registration). Restrito ao service CIDR do cluster
+    # para impedir egress livre a *:443/*:6443 na internet (achado de segurança).
+    {{- with .Values.networkPolicy.kubeApiCidrs }}
+    - to:
+        {{- range . }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
         - protocol: TCP
           port: 6443
         - protocol: TCP
           port: 443
+    {{- end }}
 {{- end }}

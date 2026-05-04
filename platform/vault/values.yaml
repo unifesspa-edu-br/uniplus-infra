@@ -115,6 +115,12 @@ networkPolicy:
   transitEndpointCidrs: []
   transitEndpointPorts:
     - 8200
+  # CIDRs restritos para egress ao Kubernetes API server (service registration).
+  # Padrão: service CIDR do K3s (10.43.0.0/16) — cobre o ClusterIP do
+  # serviço `kubernetes` em `default` sem permitir destinos externos em 443/6443.
+  # Ajustar em environments/ se o service CIDR do cluster for diferente.
+  kubeApiCidrs:
+    - 10.43.0.0/16
 
 # ServiceMonitor para Prometheus (Vault expõe métricas em /v1/sys/metrics).
 # Desligado por default — ligar quando #26 (Prometheus chart) estiver pronto.
