@@ -151,8 +151,17 @@ step_install_k3s() {
     local node_name="uniplus-standalone"
 
     if command -v k3s &>/dev/null; then
-        local existing
-        existing=$(sudo k3s kubectl get nodes -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+        # API pode demorar alguns segundos após boot da instância — retry com backoff
+        local existing attempts=0
+        until existing=$(sudo k3s kubectl get nodes -o jsonpath='{.items[0].metadata.name}' 2>/dev/null) && [[ -n "$existing" ]]; do
+            attempts=$(( attempts + 1 ))
+            if [[ "$attempts" -ge 6 ]]; then
+                log_error "API K3s não respondeu após 30s. Verifique: sudo systemctl status k3s"
+                exit 1
+            fi
+            log_warn "API K3s ainda inicializando, aguardando 5s... ($attempts/6)"
+            sleep 5
+        done
         if [[ "$existing" == "$node_name" ]]; then
             log_success "K3s já instalado: $(k3s --version | head -1)"
         else
@@ -447,9 +456,13 @@ setup_lvm_volume() {
 }
 
 step_setup_lvm() {
-    log_info "Instalando LVM2..."
-    run "sudo apt-get update -qq"
-    run "sudo apt-get install -y lvm2 xfsprogs"
+    if ! command -v lvcreate &>/dev/null || ! command -v mkfs.xfs &>/dev/null; then
+        log_info "Instalando LVM2..."
+        run "sudo apt-get update -qq"
+        run "sudo apt-get install -y lvm2 xfsprogs"
+    else
+        log_success "LVM2 já instalado. Pulando apt."
+    fi
 
     setup_lvm_volume "$DISK_POSTGRES" "vg-postgres" "lv-postgres" "$DATA_BASE/postgres"
     setup_lvm_volume "$DISK_KAFKA"   "vg-kafka"    "lv-kafka"    "$DATA_BASE/kafka"
