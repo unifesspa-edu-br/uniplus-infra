@@ -10,10 +10,13 @@ PVCs dos charts de plataforma (Vault, Vault Transit, Postgres-on-K8s, Prometheus
 |------|------|-------------|------|
 | Lab | `lab-local-nvme` | `rancher.io/local-path` (K3s default) | NVMe local nas máquinas Ryzen 9950X e i7 |
 | Sanidade | `san-local-nvme` | `rancher.io/local-path` | NVMe local no DC institucional UNIFESSPA |
+| Standalone | `standalone-local-nvme` | `rancher.io/local-path` | NVMe local na VM `k8s-host` (single-DC, ADR-008) |
 | HML | `hml-local-nvme` | TBD (DIRSI) | Hardware EVEO/Unifesspa |
 | Produção | `prod-local-nvme` | TBD (DIRSI) | Hardware EVEO/Unifesspa |
 
 Em hml/prod, a escolha final do provisioner (local-path vs CSI driver dedicado — NetApp, Longhorn, etc.) é decisão da DIRSI durante a fase de promoção. O nome da StorageClass permanece estável (`prod-local-nvme`) para minimizar churn nos values dos demais charts.
+
+O tier **standalone** (ADR-008) usa `reclaimPolicy: Delete` em vez do default `Retain` — o ambiente é monolocal e descartável (re-bootstrap via Tofu re-cria os PVs), e o `Retain` acumularia PVs órfãos. O override é injetado pelo overlay [`environments/standalone/values.yaml`](../../environments/standalone/values.yaml), introduzido em #95.
 
 ## Por que nome explícito por tier?
 
@@ -29,8 +32,8 @@ Nomes alinhados ao tier (`<tier>-local-nvme`) deixam claro de longe qual SC espe
 | Caminho | Default | Descrição |
 |---------|---------|-----------|
 | `storage.enabled` | `true` | Liga/desliga a criação da SC. |
-| `storage.storageClass.name` | `local-nvme` | **Override obrigatório por environment** com `lab-local-nvme`, `san-local-nvme`, etc. |
-| `storage.storageClass.isDefault` | `true` | Marca a SC como default do cluster (`storageclass.kubernetes.io/is-default-class`). |
+| `storage.storageClass.name` | `local-nvme` | **Override obrigatório por environment** com `lab-local-nvme`, `san-local-nvme`, `standalone-local-nvme`, `hml-local-nvme` ou `prod-local-nvme`. |
+| `storage.storageClass.isDefault` | `false` | Marca a SC como default do cluster (`storageclass.kubernetes.io/is-default-class`). Mantido `false` para não competir com a SC default do K3s (`local-path`); override para `true` apenas em clusters sem SC default pré-existente. |
 | `storage.storageClass.provisioner` | `rancher.io/local-path` | Provisioner. Override em hml/prod conforme decisão da DIRSI. |
 | `storage.storageClass.volumeBindingMode` | `WaitForFirstConsumer` | Evita binding prematuro do PVC a um nó. |
 | `storage.storageClass.reclaimPolicy` | `Retain` | Preserva dados ao deletar PVC (importante para Vault, Postgres). |

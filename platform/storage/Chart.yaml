@@ -3,9 +3,9 @@ name: storage
 description: |
   StorageClass nomeada por ambiente para a plataforma Uni+. Cria uma
   StorageClass com nome alinhado ao tier do environment (lab-local-nvme,
-  san-local-nvme, hml-local-nvme, prod-local-nvme), referenciada
-  explicitamente pelos PVCs de Vault, Postgres-on-K8s, observability
-  (#26-30) e demais cargas de plataforma.
+  san-local-nvme, hml-local-nvme, prod-local-nvme, standalone-local-nvme),
+  referenciada explicitamente pelos PVCs de Vault, Postgres-on-K8s,
+  observability (#26-30) e demais cargas de plataforma.
 type: application
 
 version: 0.1.0

@@ -3,12 +3,15 @@
 # Cria uma StorageClass nomeada explicitamente, referenciada pelos PVCs dos
 # demais charts (Vault, Postgres-on-K8s, observability). Nome alinhado ao tier
 # de ambiente: `lab-local-nvme`, `san-local-nvme`, `hml-local-nvme`,
-# `prod-local-nvme`. Override obrigatório em cada environment para garantir
-# que cada cluster aplique a SC com o nome correto.
+# `prod-local-nvme`, `standalone-local-nvme`. Override obrigatório em cada
+# environment para garantir que cada cluster aplique a SC com o nome correto.
 #
-# Em lab/sanidade: provisioner `rancher.io/local-path` (já incluído no K3s).
-# Em hml/prod: a decisão final fica com a DIRSI — local NVMe direto ou
-# CSI driver dedicado (NetApp, Longhorn, etc.). Override por environment.
+# Em lab/sanidade/standalone: provisioner `rancher.io/local-path` (já incluído
+# no K3s). Em hml/prod: a decisão final fica com a DIRSI — local NVMe direto
+# ou CSI driver dedicado (NetApp, Longhorn, etc.). Override por environment.
+#
+# Standalone (ADR-008) override `reclaimPolicy: Delete` (ambiente descartável,
+# re-bootstrap via Tofu); demais tiers mantêm o default `Retain`.
 #
 # Issue: #31 (sub de #3).
 
