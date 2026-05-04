@@ -841,7 +841,7 @@ cd uniplus-infra
 
 ### 8.3 Registro do cluster no ArgoCD
 
-> Detalhado no runbook [#85 — argocd cluster add](../scripts/README.md). Resumo:
+> Procedimento detalhado a ser documentado em #85. Resumo:
 
 ```bash
 # No k8s-host, autenticar no ArgoCD e registrar o cluster local
@@ -855,7 +855,7 @@ Após o registro, o ApplicationSet em `argocd/applicationset.yaml` detecta o clu
 
 ### 8.4 Init e verificação do Vault (OCI KMS auto-unseal)
 
-> Detalhado no runbook [#87 — Vault init e auto-unseal](RUNBOOKS.md#87). Resumo:
+> Procedimento detalhado a ser documentado em #87. Resumo:
 
 O Vault standalone usa **OCI Vault KMS** para auto-unseal (diferente do lab, que usa Transit em PA1). O pod sobe selado e desvela automaticamente ao encontrar o KMS configurado.
 
@@ -921,8 +921,9 @@ Avisos são esperados enquanto serviços da Epic `data/*` ainda não estiverem p
 **Quando:** encerrar o ambiente de dados ou preparar re-provisionamento.
 
 ```bash
-# Executar no data-host
-./scripts/teardown-lab.sh --role=standalone-data
+# A partir do k8s-host — SSH no data-host e executar teardown
+ssh -i ~/.ssh/id_ed25519 ubuntu@10.0.2.87 \
+  "cd uniplus-infra && ./scripts/teardown-lab.sh --role=standalone-data"
 ```
 
 **O que é removido:**
