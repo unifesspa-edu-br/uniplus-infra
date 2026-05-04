@@ -81,6 +81,11 @@ teardown_standalone_k8s() {
         sudo systemctl disable cloudflared
     fi
 
+    if command -v helm &>/dev/null; then
+        echo "→ Removendo Helm..."
+        sudo rm -f /usr/local/bin/helm
+    fi
+
     echo ""
     echo -e "${GREEN}Teardown standalone-k8s concluído.${NC}"
     echo "Re-bootstrap: ./scripts/bootstrap-standalone.sh --role=standalone-k8s"
@@ -102,12 +107,15 @@ teardown_standalone_data() {
     echo ""
     confirm
 
-    echo "→ Parando containers Docker..."
-    docker ps -aq | xargs -r docker stop || true
-    docker ps -aq | xargs -r docker rm  || true
-
-    echo "→ Removendo volumes Docker..."
-    docker volume prune -f || true
+    if command -v docker &>/dev/null; then
+        echo "→ Parando containers Docker..."
+        docker ps -aq | xargs -r docker stop || true
+        docker ps -aq | xargs -r docker rm  || true
+        echo "→ Removendo volumes Docker..."
+        docker volume prune -f || true
+    else
+        echo "  Docker não encontrado. Pulando remoção de containers."
+    fi
 
     echo "→ Desmontando volumes LVM..."
     for svc in postgres kafka minio vault; do
