@@ -1,0 +1,472 @@
+#!/usr/bin/env bash
+# ============================================================================
+# bootstrap-standalone.sh
+#
+# Provisiona o ambiente standalone Uni+ em dois hosts OCI separados.
+#
+# Uso:
+#   ./bootstrap-standalone.sh --role=standalone-k8s   # k8s-host: K3s + Helm + ArgoCD
+#   ./bootstrap-standalone.sh --role=standalone-data   # data-host: Docker + LVM + mounts
+#
+# Roles originais (sp1/sp2/pa1) continuam no bootstrap-lab.sh.
+# Este script é exclusivo para o ambiente standalone OCI (Ubuntu 24.04 LTS).
+#
+# Pré-requisitos:
+#   - Ubuntu 24.04 LTS
+#   - Não executar como root (usa sudo internamente)
+#   - standalone-data: 4 block volumes OCI anexados (postgres 200GB, kafka 100GB,
+#                      minio 200GB, vault 50GB) — rodar lsblk antes para confirmar
+# ============================================================================
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# ============== Versões pinadas ==============
+K3S_VERSION="v1.31.4+k3s1"
+HELM_VERSION="v3.16.4"
+
+# ============== Defaults ==============
+ROLE=""
+DRY_RUN=false
+SKIP_K3S=false
+SKIP_DOCKER=false
+
+# TLS SANs para o k8s-host — ajustar se o IP ou domínio mudar
+K8S_PUBLIC_IP="164.152.53.29"
+K8S_DOMAIN="standalone.portaluni.com.br"
+
+# Mount base para os volumes de dados
+DATA_BASE="/var/lib/uniplus"
+
+# ============== Logging ==============
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+log_info()    { echo -e "${BLUE}[INFO]${NC} $*"; }
+log_success() { echo -e "${GREEN}[ OK ]${NC} $*"; }
+log_warn()    { echo -e "${YELLOW}[WARN]${NC} $*"; }
+log_error()   { echo -e "${RED}[ERROR]${NC} $*" >&2; }
+
+usage() {
+    cat <<EOF
+Uso: $0 --role={standalone-k8s|standalone-data} [opções]
+
+Roles:
+  standalone-k8s   Instala K3s + Helm + ArgoCD no k8s-host (subnet pública OCI).
+  standalone-data  Instala Docker, configura LVM nos block volumes e cria mount
+                   points em $DATA_BASE/{postgres,kafka,minio,vault} no data-host
+                   (subnet privada OCI).
+
+Opções:
+  --skip-k3s      (standalone-k8s) Pula instalação do K3s
+  --skip-docker   (standalone-data) Pula instalação do Docker
+  --dry-run       Apenas mostra o que seria feito, sem executar
+  -h, --help      Esta mensagem
+
+Exemplos:
+  $0 --role=standalone-k8s --dry-run
+  $0 --role=standalone-k8s
+  $0 --role=standalone-data --dry-run
+  $0 --role=standalone-data
+EOF
+    exit 0
+}
+
+# ============== Parse args ==============
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --role=*)        ROLE="${1#*=}"; shift ;;
+        --dry-run)       DRY_RUN=true; shift ;;
+        --skip-k3s)      SKIP_K3S=true; shift ;;
+        --skip-docker)   SKIP_DOCKER=true; shift ;;
+        -h|--help)       usage ;;
+        *) log_error "Opção inválida: $1"; usage ;;
+    esac
+done
+
+if [[ -z "$ROLE" ]]; then
+    log_error "Role obrigatório. Use --role=standalone-k8s ou --role=standalone-data"
+    usage
+fi
+
+if [[ "$ROLE" != "standalone-k8s" && "$ROLE" != "standalone-data" ]]; then
+    log_error "Role inválido: '$ROLE'. Use standalone-k8s ou standalone-data."
+    usage
+fi
+
+# ============== Helpers ==============
+run() {
+    if $DRY_RUN; then
+        echo "[DRY-RUN] $*"
+    else
+        eval "$*"
+    fi
+}
+
+check_ubuntu() {
+    if ! grep -qi ubuntu /etc/os-release 2>/dev/null; then
+        log_error "Este script requer Ubuntu. Sistema detectado: $(grep PRETTY_NAME /etc/os-release | cut -d= -f2)"
+        exit 1
+    fi
+}
+
+check_not_root() {
+    if [[ $EUID -eq 0 ]]; then
+        log_error "Não execute como root. O script usa sudo internamente."
+        exit 1
+    fi
+}
+
+# ============================================================================
+# ROLE: standalone-k8s
+# ============================================================================
+
+step_k8s_check_prerequisites() {
+    log_info "Verificando pré-requisitos (standalone-k8s)..."
+    check_ubuntu
+    check_not_root
+
+    for cmd in curl git; do
+        if ! command -v "$cmd" &>/dev/null; then
+            log_error "Comando '$cmd' não encontrado."
+            exit 1
+        fi
+    done
+
+    log_success "Pré-requisitos OK."
+}
+
+step_install_k3s() {
+    if $SKIP_K3S; then
+        log_warn "Pulando K3s (--skip-k3s)"
+        return
+    fi
+
+    local node_name="uniplus-standalone"
+
+    if command -v k3s &>/dev/null; then
+        local existing
+        existing=$(sudo k3s kubectl get nodes -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || true)
+        if [[ "$existing" == "$node_name" ]]; then
+            log_success "K3s já instalado: $(k3s --version | head -1)"
+            return
+        fi
+        log_error "K3s instalado com node '$existing' (esperado '$node_name'). Use host limpo ou remova o cluster."
+        exit 1
+    fi
+
+    local node_ip
+    node_ip=$(hostname -I | awk '{print $1}')
+
+    log_info "Instalando K3s $K3S_VERSION (node: $node_name, IP: $node_ip)..."
+
+    run "curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=$K3S_VERSION sh -s - \
+        --node-name $node_name \
+        --cluster-init \
+        --tls-san $node_name \
+        --tls-san $node_ip \
+        --tls-san $K8S_PUBLIC_IP \
+        --tls-san $K8S_DOMAIN \
+        --disable servicelb \
+        --write-kubeconfig-mode 644"
+
+    run "mkdir -p $HOME/.kube"
+    run "sudo cp /etc/rancher/k3s/k3s.yaml $HOME/.kube/config"
+    run "sudo chown $(id -u):$(id -g) $HOME/.kube/config"
+
+    log_success "K3s instalado."
+}
+
+step_install_helm() {
+    if command -v helm &>/dev/null; then
+        log_success "Helm já instalado: $(helm version --short)"
+        return
+    fi
+
+    log_info "Instalando Helm $HELM_VERSION..."
+    local helm_tar="/tmp/helm-${HELM_VERSION}-linux-amd64.tar.gz"
+    local helm_sha="/tmp/helm-${HELM_VERSION}-linux-amd64.tar.gz.sha256sum"
+    run "curl -fsSL https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz -o $helm_tar"
+    run "curl -fsSL https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz.sha256sum -o $helm_sha"
+    run "echo \"\$(awk '{print \$1}' $helm_sha)  $helm_tar\" | sha256sum -c"
+    run "tar -xzf $helm_tar -C /tmp linux-amd64/helm"
+    run "sudo install /tmp/linux-amd64/helm /usr/local/bin/helm"
+    run "rm -rf $helm_tar $helm_sha /tmp/linux-amd64"
+    log_success "Helm $HELM_VERSION instalado."
+}
+
+step_install_argocd() {
+    log_info "Instalando ArgoCD..."
+
+    run "kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -"
+    run "kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml"
+
+    log_info "Aguardando ArgoCD ficar disponível (até 5 min)..."
+    run "kubectl wait --for=condition=available --timeout=300s deployment/argocd-server -n argocd"
+
+    log_info "Senha inicial do admin ArgoCD:"
+    run "kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d && echo"
+
+    log_success "ArgoCD instalado."
+}
+
+summary_k8s() {
+    echo ""
+    echo "============================================"
+    log_success "Bootstrap standalone-k8s concluído"
+    echo "============================================"
+    echo ""
+    echo "Próximos passos:"
+    echo "  1. Verificar cluster:"
+    echo "       kubectl get nodes"
+    echo ""
+    echo "  2. Registrar cluster no ArgoCD:"
+    echo "       argocd cluster add <context> --label uniplus.io/managed=true --label environment=standalone"
+    echo ""
+    echo "  3. Aplicar manifests GitOps:"
+    echo "       kubectl apply -f $REPO_ROOT/argocd/project.yaml"
+    echo "       kubectl apply -f $REPO_ROOT/argocd/applicationset.yaml"
+    echo ""
+    echo "  4. Acessar ArgoCD:"
+    echo "       kubectl port-forward -n argocd svc/argocd-server 8080:443"
+    echo "       https://localhost:8080  (admin / senha mostrada acima)"
+    echo ""
+    echo "  5. Validar:"
+    echo "       $REPO_ROOT/scripts/validate-standalone.sh"
+}
+
+# ============================================================================
+# ROLE: standalone-data
+# ============================================================================
+
+step_data_check_prerequisites() {
+    log_info "Verificando pré-requisitos (standalone-data)..."
+    check_ubuntu
+    check_not_root
+
+    for cmd in curl lsblk; do
+        if ! command -v "$cmd" &>/dev/null; then
+            log_error "Comando '$cmd' não encontrado."
+            exit 1
+        fi
+    done
+
+    # Verificar se há discos raw para LVM
+    local raw_count
+    raw_count=$(lsblk -b -d -o NAME,TYPE,FSTYPE | awk '$2=="disk" && $3=="" && $1!~/^loop/' | wc -l)
+    # subtrai 1 pelo boot disk (sda sem fs no header, mas sda tem partições — lsblk -d mostra só o disk)
+    # Filtra sda explicitamente
+    raw_count=$(lsblk -b -d -o NAME,TYPE,FSTYPE | awk '$2=="disk" && $3=="" && $1!="sda" && $1!~/^loop/' | wc -l)
+
+    if [[ "$raw_count" -lt 4 ]]; then
+        log_warn "Encontrado $raw_count disco(s) raw sem filesystem (esperado 4)."
+        log_warn "Verifique se os block volumes OCI estão anexados: lsblk -o NAME,SIZE,FSTYPE"
+        if ! $DRY_RUN; then
+            log_error "Pré-requisito não atendido. Corrija antes de continuar."
+            exit 1
+        fi
+    fi
+
+    log_success "Pré-requisitos OK ($raw_count discos raw detectados)."
+}
+
+step_install_docker() {
+    if $SKIP_DOCKER; then
+        log_warn "Pulando Docker (--skip-docker)"
+        return
+    fi
+
+    if command -v docker &>/dev/null; then
+        log_success "Docker já instalado: $(docker --version)"
+        return
+    fi
+
+    log_info "Instalando Docker..."
+    run "sudo apt-get update -qq"
+    run "sudo apt-get install -y docker.io docker-compose-v2"
+    run "sudo systemctl enable --now docker"
+    run "sudo usermod -aG docker $USER"
+    log_warn "Logout/login necessário para aplicar o grupo 'docker'."
+    log_success "Docker instalado."
+}
+
+# Descoberta de discos raw por tamanho (em bytes)
+# OCI paravirtualized: sda=boot, sdb/sdc/sdd/sde=block volumes
+# Tamanhos esperados: postgres=200GB, kafka=100GB, minio=200GB, vault=50GB
+# Para os dois discos de 200GB, usa ordem alfabética: primeiro=postgres, segundo=minio
+discover_disks() {
+    log_info "Descobrindo mapeamento de discos..."
+
+    mapfile -t raw_disks < <(
+        lsblk -b -d -o NAME,SIZE,FSTYPE |
+        awk '$1!="NAME" && $1!~/^loop/ && $1!="sda" && $3==""' |
+        sort -k1
+    )
+
+    if [[ ${#raw_disks[@]} -eq 0 ]]; then
+        log_error "Nenhum disco raw encontrado. Verifique os attachments OCI."
+        exit 1
+    fi
+
+    echo ""
+    log_info "Discos raw detectados:"
+    printf "  %-8s %-12s %s\n" "DEVICE" "TAMANHO" "PROPÓSITO"
+
+    DISK_POSTGRES=""
+    DISK_KAFKA=""
+    DISK_MINIO=""
+    DISK_VAULT=""
+    local two_hundred_gb_count=0
+
+    for entry in "${raw_disks[@]}"; do
+        local name size_bytes size_gb
+        name=$(echo "$entry" | awk '{print $1}')
+        size_bytes=$(echo "$entry" | awk '{print $2}')
+        size_gb=$(( size_bytes / 1024 / 1024 / 1024 ))
+
+        if [[ "$size_gb" -ge 45 && "$size_gb" -le 55 ]]; then
+            DISK_VAULT="/dev/$name"
+            printf "  %-8s %-12s %s\n" "/dev/$name" "${size_gb}GB" "vault"
+        elif [[ "$size_gb" -ge 95 && "$size_gb" -le 105 ]]; then
+            DISK_KAFKA="/dev/$name"
+            printf "  %-8s %-12s %s\n" "/dev/$name" "${size_gb}GB" "kafka"
+        elif [[ "$size_gb" -ge 190 && "$size_gb" -le 210 ]]; then
+            two_hundred_gb_count=$(( two_hundred_gb_count + 1 ))
+            if [[ "$two_hundred_gb_count" -eq 1 ]]; then
+                DISK_POSTGRES="/dev/$name"
+                printf "  %-8s %-12s %s\n" "/dev/$name" "${size_gb}GB" "postgres (1º de 200GB)"
+            else
+                DISK_MINIO="/dev/$name"
+                printf "  %-8s %-12s %s\n" "/dev/$name" "${size_gb}GB" "minio (2º de 200GB)"
+            fi
+        else
+            printf "  %-8s %-12s %s\n" "/dev/$name" "${size_gb}GB" "DESCONHECIDO — ignorado"
+        fi
+    done
+
+    echo ""
+
+    for var_name in DISK_POSTGRES DISK_KAFKA DISK_MINIO DISK_VAULT; do
+        if [[ -z "${!var_name}" ]]; then
+            log_error "$var_name não detectado. Verifique os block volumes OCI e re-execute."
+            exit 1
+        fi
+    done
+
+    log_warn "Confirme o mapeamento acima antes de prosseguir (--dry-run para revisar sem modificar)."
+}
+
+setup_lvm_volume() {
+    local disk="$1"
+    local vg_name="$2"
+    local lv_name="$3"
+    local mount_point="$4"
+
+    log_info "Configurando LVM: $disk → $vg_name/$lv_name → $mount_point"
+
+    # PV
+    run "sudo pvcreate $disk"
+    # VG
+    run "sudo vgcreate $vg_name $disk"
+    # LV — usa 100% do VG
+    run "sudo lvcreate -l 100%FREE -n $lv_name $vg_name"
+    # Filesystem XFS
+    run "sudo mkfs.xfs /dev/$vg_name/$lv_name"
+    # Mount point
+    run "sudo mkdir -p $mount_point"
+    run "sudo mount /dev/$vg_name/$lv_name $mount_point"
+    # fstab para persistência
+    run "echo '/dev/$vg_name/$lv_name $mount_point xfs defaults,nofail 0 2' | sudo tee -a /etc/fstab"
+    # Permissão para o usuário ubuntu gerenciar o diretório
+    run "sudo chown ubuntu:ubuntu $mount_point"
+
+    log_success "$mount_point pronto."
+}
+
+step_setup_lvm() {
+    log_info "Instalando LVM2..."
+    run "sudo apt-get update -qq"
+    run "sudo apt-get install -y lvm2 xfsprogs"
+
+    # Verifica se LVM já foi configurado (idempotência)
+    if sudo vgs 2>/dev/null | grep -q "vg-postgres"; then
+        log_success "LVM já configurado. Pulando."
+        return
+    fi
+
+    setup_lvm_volume "$DISK_POSTGRES" "vg-postgres" "lv-postgres" "$DATA_BASE/postgres"
+    setup_lvm_volume "$DISK_KAFKA"   "vg-kafka"    "lv-kafka"    "$DATA_BASE/kafka"
+    setup_lvm_volume "$DISK_MINIO"   "vg-minio"    "lv-minio"    "$DATA_BASE/minio"
+    setup_lvm_volume "$DISK_VAULT"   "vg-vault"    "lv-vault"    "$DATA_BASE/vault"
+
+    log_success "LVM configurado. Volumes montados em $DATA_BASE/."
+}
+
+step_create_placeholder_dirs() {
+    log_info "Criando estrutura de diretórios para serviços..."
+
+    for svc in postgres kafka minio vault redis; do
+        run "sudo mkdir -p $DATA_BASE/$svc"
+        run "sudo chown ubuntu:ubuntu $DATA_BASE/$svc 2>/dev/null || true"
+    done
+
+    # Redis usa disco local (sem block volume dedicado) — diretório no SO
+    log_info "  Redis: $DATA_BASE/redis (disco local, sem block volume dedicado)"
+
+    log_success "Diretórios prontos."
+}
+
+summary_data() {
+    echo ""
+    echo "============================================"
+    log_success "Bootstrap standalone-data concluído"
+    echo "============================================"
+    echo ""
+    echo "Volumes montados:"
+    echo "  $DATA_BASE/postgres  ← $DISK_POSTGRES (LVM vg-postgres)"
+    echo "  $DATA_BASE/kafka     ← $DISK_KAFKA    (LVM vg-kafka)"
+    echo "  $DATA_BASE/minio     ← $DISK_MINIO    (LVM vg-minio)"
+    echo "  $DATA_BASE/vault     ← $DISK_VAULT    (LVM vg-vault)"
+    echo "  $DATA_BASE/redis     (disco local)"
+    echo ""
+    echo "Próximos passos (Epic data/*):"
+    echo "  Os serviços (Postgres, Kafka, MinIO, Vault, Redis) serão provisionados"
+    echo "  via docker-compose pelo Epic data/* usando esses mount points."
+    echo ""
+    echo "Validar:"
+    echo "  df -h $DATA_BASE/*"
+    echo "  sudo vgs && sudo lvs"
+}
+
+# ============================================================================
+# Main
+# ============================================================================
+echo "============================================"
+echo "  Uni+ Standalone Bootstrap"
+echo "  Role:    $ROLE"
+echo "  Dry-run: $DRY_RUN"
+echo "============================================"
+echo ""
+
+case "$ROLE" in
+    standalone-k8s)
+        step_k8s_check_prerequisites
+        step_install_k3s
+        step_install_helm
+        step_install_argocd
+        summary_k8s
+        ;;
+    standalone-data)
+        step_data_check_prerequisites
+        step_install_docker
+        discover_disks
+        step_setup_lvm
+        step_create_placeholder_dirs
+        summary_data
+        ;;
+esac
