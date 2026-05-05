@@ -99,20 +99,36 @@ Standalone entrega GitOps + provisioning + bootstrap K8s completos. A matriz de 
 
 Resultado da validação executada em 2026-05-05 contra o cluster `uniplus-standalone` (issue #86), aplicando `argocd/project.yaml` + `argocd/applicationset.yaml` após registrar o cluster com labels `uniplus.io/managed=true` + `environment=standalone`. Esta seção é o "estado da arte" que o standalone entrega hoje — fixa a expectativa de quem registra um novo cluster e impede falsos positivos em futuras sessões de validação.
 
-| Application | Sync | Health | Diagnóstico |
-|---|---|---|---|
-| `platform-storage-uniplus-standalone` | Synced | Healthy | StorageClass `standalone-local-nvme` criada e em uso pelos PVCs do Vault. |
-| `platform-vault-uniplus-standalone` | Synced | Progressing | Recursos aterrissam (StatefulSet, Services, RBAC, NetworkPolicy, Webhook). PVCs Bound. Pod-0 fica em `CreateContainerConfigError` com `Error: secret "vault-ocikms-config" not found` — comportamento esperado até que **#64** (Vault init + auto-unseal OCI KMS) sintetize o Secret via External Secrets. |
-| `platform-vault-transit-uniplus-standalone` | Synced | Healthy | `vaultTransit.enabled: false` no overlay → render vazio. Correto: standalone usa OCI KMS, não Transit em PA1. |
-| `platform-cert-manager-uniplus-standalone` | Unknown | Healthy | Chart placeholder sem `Chart.yaml` (gap pré-existente — issue #15). `ComparisonError`: `no such file or directory ... platform/cert-manager/Chart.yaml`. |
-| `platform-traefik-uniplus-standalone` | Unknown | Healthy | Idem placeholder. |
-| `platform-external-secrets-uniplus-standalone` | Unknown | Healthy | Idem placeholder — bloqueia #64 (sem ESO não há como sintetizar `vault-ocikms-config`). |
-| `platform-cloudflared-uniplus-standalone` | Unknown | Healthy | Idem placeholder. |
-| `platform-observability-{prometheus,grafana,loki,tempo,otel-collector}-uniplus-standalone` | Unknown | Healthy | Idem placeholder. |
-| `uniplus-web-uniplus-standalone` | Synced | Healthy | Chart sem templates → render vazio. "Healthy" reflete zero recursos, não app rodando. |
-| `uniplus-api-{portal,selecao,ingresso}-uniplus-standalone` | Synced | Healthy | Idem render vazio. Endpoints de Postgres/Redis/Kafka/MinIO chegariam via External Secrets a partir do data-host quando o Epic `data/*` aterrissar. |
-| `clamav-scanner-uniplus-standalone` | Synced | Healthy | Idem render vazio. |
-| `keycloak-replica-uniplus-standalone` | Synced | Healthy | Idem render vazio. |
+Todos os Unknown abaixo são charts placeholder (apenas `README.md` com aviso `Status: placeholder inicial`, sem `Chart.yaml`). São sub-issues da Feature **#3** (`feat(platform): criar Helm charts dos 10 componentes em platform/`) — gap pré-existente, não específico do standalone.
+
+| Application | Sync | Health | Issue | Diagnóstico |
+|---|---|---|---|---|
+| `platform-storage-uniplus-standalone` | Synced | Healthy | — | StorageClass `standalone-local-nvme` criada e em uso pelos PVCs do Vault. |
+| `platform-vault-uniplus-standalone` | Synced | Progressing | #64 | Recursos aterrissam (StatefulSet, Services, RBAC, NetworkPolicy, Webhook). PVCs Bound. Pod-0 fica em `CreateContainerConfigError` com `Error: secret "vault-ocikms-config" not found` — comportamento esperado até que #64 (Vault init + auto-unseal OCI KMS) sintetize o Secret via External Secrets. |
+| `platform-vault-transit-uniplus-standalone` | Synced | Healthy | — | `vaultTransit.enabled: false` no overlay → render vazio. Correto: standalone usa OCI KMS, não Transit em PA1. |
+| `platform-cert-manager-uniplus-standalone` | Unknown | Healthy | [#15][i15] | Placeholder. `ComparisonError`: `no such file or directory ... platform/cert-manager/Chart.yaml`. |
+| `platform-traefik-uniplus-standalone` | Unknown | Healthy | [#14][i14] | Placeholder. |
+| `platform-external-secrets-uniplus-standalone` | Unknown | Healthy | [#24][i24] | Placeholder — também bloqueia #64 (sem ESO não há como sintetizar `vault-ocikms-config`). |
+| `platform-cloudflared-uniplus-standalone` | Unknown | Healthy | [#25][i25] | Placeholder. |
+| `platform-observability-prometheus-uniplus-standalone` | Unknown | Healthy | [#26][i26] | Placeholder. |
+| `platform-observability-grafana-uniplus-standalone` | Unknown | Healthy | [#27][i27] | Placeholder. |
+| `platform-observability-loki-uniplus-standalone` | Unknown | Healthy | [#28][i28] | Placeholder. |
+| `platform-observability-tempo-uniplus-standalone` | Unknown | Healthy | [#29][i29] | Placeholder. |
+| `platform-observability-otel-collector-uniplus-standalone` | Unknown | Healthy | [#30][i30] | Placeholder. |
+| `uniplus-web-uniplus-standalone` | Synced | Healthy | — | Chart sem templates → render vazio. "Healthy" reflete zero recursos, não app rodando. |
+| `uniplus-api-{portal,selecao,ingresso}-uniplus-standalone` | Synced | Healthy | — | Idem render vazio. Endpoints de Postgres/Redis/Kafka/MinIO chegariam via External Secrets a partir do data-host quando o Epic `data/*` aterrissar. |
+| `clamav-scanner-uniplus-standalone` | Synced | Healthy | — | Idem render vazio. |
+| `keycloak-replica-uniplus-standalone` | Synced | Healthy | — | Idem render vazio. |
+
+[i14]: https://github.com/unifesspa-edu-br/uniplus-infra/issues/14
+[i15]: https://github.com/unifesspa-edu-br/uniplus-infra/issues/15
+[i24]: https://github.com/unifesspa-edu-br/uniplus-infra/issues/24
+[i25]: https://github.com/unifesspa-edu-br/uniplus-infra/issues/25
+[i26]: https://github.com/unifesspa-edu-br/uniplus-infra/issues/26
+[i27]: https://github.com/unifesspa-edu-br/uniplus-infra/issues/27
+[i28]: https://github.com/unifesspa-edu-br/uniplus-infra/issues/28
+[i29]: https://github.com/unifesspa-edu-br/uniplus-infra/issues/29
+[i30]: https://github.com/unifesspa-edu-br/uniplus-infra/issues/30
 
 **Ajustes de values descobertos:** nenhum específico ao overlay standalone. O `values.yaml` deste diretório cobre os charts reais (`platform/storage`, `platform/vault`, `platform/vault-transit`) sem necessidade de override adicional.
 
