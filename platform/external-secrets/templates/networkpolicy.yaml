@@ -1,0 +1,53 @@
+{{- if and .Values.networkPolicy.enabled .Values.externalSecrets.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-external-secrets
+  labels:
+    app.kubernetes.io/name: external-secrets
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: uniplus
+spec:
+  # Chart upstream sem alias — Pods recebem app.kubernetes.io/name: external-secrets.
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: external-secrets
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes:
+    - Egress
+  egress:
+    # ESO consome Secrets do Vault de aplicação local (8200/tcp).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.vaultNamespace | quote }}
+      ports:
+        - protocol: TCP
+          port: 8200
+    # DNS (kube-dns).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Kubernetes API (TokenReview para auth/kubernetes do Vault, manage de
+    # Secrets sintetizados, leitura de ServiceAccount tokens). Restrito ao
+    # service CIDR para impedir egress livre na internet.
+    {{- with .Values.networkPolicy.kubeApiCidrs }}
+    - to:
+        {{- range . }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: 6443
+        - protocol: TCP
+          port: 443
+    {{- end }}
+{{- end }}

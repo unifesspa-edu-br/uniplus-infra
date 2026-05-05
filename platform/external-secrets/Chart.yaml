@@ -1,0 +1,38 @@
+apiVersion: v2
+name: external-secrets
+description: |
+  External Secrets Operator (ESO) — sincroniza Secrets do Vault (e outros
+  backends) para Secrets nativos do K8s. Empacotado como chart wrapper
+  sobre external-secrets/external-secrets.
+type: application
+
+# Versão do chart wrapper Uni+.
+version: 0.1.0
+
+# Versão do ESO upstream empacotado (mantida em sincronia com a dependência).
+appVersion: "v2.4.1"
+
+home: https://github.com/unifesspa-edu-br/uniplus-infra
+sources:
+  - https://github.com/unifesspa-edu-br/uniplus-infra
+  - https://github.com/external-secrets/external-secrets
+
+maintainers:
+  - name: CTIC Unifesspa
+    url: https://github.com/unifesspa-edu-br
+
+keywords:
+  - external-secrets
+  - secrets
+  - vault
+  - uniplus
+
+# Dependência do chart upstream oficial.
+# Sem alias — values ficam sob `externalSecrets.*`, alinhado ao nome natural
+# do chart upstream (release name external-secrets).
+dependencies:
+  - name: external-secrets
+    version: 2.4.1
+    repository: https://charts.external-secrets.io
+    # Permite desligar o subchart por environment se necessário.
+    condition: externalSecrets.enabled
