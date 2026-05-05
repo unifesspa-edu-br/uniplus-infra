@@ -68,16 +68,31 @@ Após o ApplicationSet sincronizar:
 
 ## Como emitir um certificado
 
-Anotar um IngressRoute (Traefik CRD) ou Service para emissão automática:
+Importante: o `ingress-shim` do cert-manager só auto-gera `Certificate` a partir de `Ingress` (networking.k8s.io/v1) ou Gateway API — **não** de `IngressRoute` (CRD do Traefik). A annotation `cert-manager.io/cluster-issuer` é ignorada em IngressRoutes. Há duas opções:
+
+**Opção A — Certificate explícito + IngressRoute referenciando o Secret** (recomendado quando o stack usa Traefik IngressRoute):
 
 ```yaml
+# 1. Certificate explícito — cert-manager solicita e renova
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: portal-tls
+  namespace: uniplus
+spec:
+  secretName: portal-tls           # Secret que cert-manager cria/atualiza
+  issuerRef:
+    name: letsencrypt-prod         # ou letsencrypt-staging para validação
+    kind: ClusterIssuer
+  dnsNames:
+    - standalone.portaluni.com.br
+---
+# 2. IngressRoute consome o Secret pronto
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:
   name: portal
   namespace: uniplus
-  annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod  # ou letsencrypt-staging para teste
 spec:
   entryPoints: [websecure]
   routes:
@@ -87,10 +102,37 @@ spec:
         - name: uniplus-web
           port: 80
   tls:
-    secretName: portal-tls  # cert-manager preenche
+    secretName: portal-tls         # mesmo nome do Certificate.spec.secretName
 ```
 
-Para ambiente de testes, sempre começar com `letsencrypt-staging` (cert não confiável mas sem rate limit).
+**Opção B — Ingress nativo + ingress-shim** (caminho automático):
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: portal
+  namespace: uniplus
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts: [standalone.portaluni.com.br]
+      secretName: portal-tls
+  rules:
+    - host: standalone.portaluni.com.br
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: uniplus-web
+                port: { number: 80 }
+```
+
+Para validação inicial, sempre começar com `letsencrypt-staging` (cert não confiável pelo browser mas sem rate limit). Após confirmar o fluxo, trocar para `letsencrypt-prod`.
 
 ## Renovação
 
