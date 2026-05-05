@@ -98,6 +98,25 @@ kubePrometheusStack:
           spec:
             storageClassName: lab-local-nvme
 
+# Wiring real do chart platform/observability/grafana/ — força tier
+# `lab-local-nvme` no PVC e datasource Prometheus apontando para o
+# Service real do release deste cluster.
+grafana:
+  persistence:
+    storageClassName: lab-local-nvme
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: Prometheus
+          type: prometheus
+          uid: prometheus
+          access: proxy
+          url: http://platform-observability-prometheus-lab-sp1-prometheus.observability-prometheus.svc.cluster.local:9090
+          isDefault: true
+          jsonData:
+            timeInterval: 30s
+
 # Cluster identification
 cluster:
   name: lab-sp1
