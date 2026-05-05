@@ -6,19 +6,36 @@ metadata:
   labels:
     app.kubernetes.io/name: cert-manager
     app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
     app.kubernetes.io/managed-by: {{ .Release.Service }}
     app.kubernetes.io/part-of: uniplus
 spec:
-  # Subchart upstream cria 3 Deployments com app.kubernetes.io/name distintos
-  # (`cert-manager`, `webhook`, `cainjector`). Selecionar por `name` exigiria
-  # listar os 3 nomes. `app.kubernetes.io/component: cert-manager` (de
-  # `global.commonLabels` em values.yaml) está nos 3 e é mais específico que
-  # os nomes genéricos `webhook`/`cainjector` (que poderiam colidir com outros
-  # charts). Combinado com instance, isola exatamente este release.
+  # Subchart upstream cria 3 Deployments + 1 startup Job com nomes distintos:
+  #   - cert-manager     (controller)
+  #   - webhook          (validating webhook)
+  #   - cainjector       (CA bundle injector)
+  #   - startupapicheck  (post-install Job, hook helm.sh/hook=post-install)
+  #
+  # `commonLabels` NÃO pode adicionar `app.kubernetes.io/component` porque
+  # o subchart hardcoda esse label nos selectors das Deployments com valores
+  # diferentes (`controller`/`webhook`/`cainjector`); sobrescrever quebra a
+  # API admission. Selecionamos os 3 Pods longos por `name` + `instance`.
+  # startupapicheck é Job de execução curta (post-install) e fica fora —
+  # se for bloqueado pela default-deny do CNI, falha o helm hook mas não
+  # impede o controller de rodar (workaround: adicionar `startupapicheck`
+  # ao In: caso CNI default-deny seja restritivo).
   podSelector:
-    matchLabels:
-      app.kubernetes.io/component: cert-manager
-      app.kubernetes.io/instance: {{ .Release.Name }}
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values:
+          - cert-manager
+          - webhook
+          - cainjector
+      - key: app.kubernetes.io/instance
+        operator: In
+        values:
+          - {{ .Release.Name }}
   policyTypes:
     - Egress
   egress:

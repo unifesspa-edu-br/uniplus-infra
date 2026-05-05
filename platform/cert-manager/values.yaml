@@ -71,10 +71,17 @@ certManager:
   # Labels padrão Uni+ aplicados em todos os recursos do subchart.
   # No cert-manager v1.20+, `commonLabels` vive sob `global` (não no root
   # como em external-secrets). Schema upstream rejeita root.commonLabels.
+  #
+  # NÃO incluir `app.kubernetes.io/component` aqui — o chart upstream
+  # hardcoda esse label nos pod templates de cada Deployment como
+  # `controller`/`webhook`/`cainjector`, mas as Deployment selectors
+  # mantêm o valor hardcoded. Sobrescrever via commonLabels causa
+  # selector/template label mismatch e a API rejeita as Deployments.
+  # Manter só `part-of: uniplus` que é seguro porque o subchart não tem
+  # `part-of` em selectors.
   global:
     commonLabels:
       app.kubernetes.io/part-of: uniplus
-      app.kubernetes.io/component: cert-manager
 
 # ============================================================================
 # ClusterIssuers Let's Encrypt — HTTP-01 via Traefik.
