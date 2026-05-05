@@ -1,0 +1,37 @@
+apiVersion: v2
+name: traefik
+description: |
+  Traefik IngressController v3 — entrypoints HTTP/HTTPS, IngressRoute CRDs,
+  middlewares (redirect-https, security headers). Empacotado como chart
+  wrapper sobre traefik/traefik.
+type: application
+
+# Versão do chart wrapper Uni+.
+version: 0.1.0
+
+# Versão do Traefik upstream empacotado.
+appVersion: "v3.6.15"
+
+home: https://github.com/unifesspa-edu-br/uniplus-infra
+sources:
+  - https://github.com/unifesspa-edu-br/uniplus-infra
+  - https://github.com/traefik/traefik-helm-chart
+
+maintainers:
+  - name: CTIC Unifesspa
+    url: https://github.com/unifesspa-edu-br
+
+keywords:
+  - traefik
+  - ingress
+  - reverse-proxy
+  - uniplus
+
+# Dependência do chart upstream oficial.
+# alias=traefik mantém o nome natural do subchart (não há colisão).
+dependencies:
+  - name: traefik
+    version: 39.0.9
+    repository: https://traefik.github.io/charts
+    # Permite desligar o subchart por environment se necessário.
+    condition: traefik.enabled

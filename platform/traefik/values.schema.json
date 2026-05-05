@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/unifesspa-edu-br/uniplus-infra/platform/traefik/values.schema.json",
+  "title": "traefik chart values",
+  "description": "Schema dos values do chart platform/traefik/. Subchart traefik/traefik tem seu próprio schema — additionalProperties=true permite passar overrides que serão validados pelo upstream.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "traefik": {
+      "type": "object",
+      "description": "Bloco do subchart traefik/traefik.",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Liga/desliga o subchart. False em PA1."
+        },
+        "deployment": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "replicas": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "resources": { "$ref": "#/$defs/k8sResources" },
+        "ingressClass": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "isDefaultClass": { "type": "boolean" },
+            "name": { "type": "string" }
+          }
+        },
+        "service": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "type": {
+              "type": "string",
+              "enum": ["LoadBalancer", "NodePort", "ClusterIP"]
+            }
+          }
+        },
+        "commonLabels": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "middlewares": {
+      "type": "object",
+      "description": "Middlewares globais Uni+ (headers de segurança, compress).",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "headersSecurity": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "hsts": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "seconds": { "type": "integer", "minimum": 0 },
+                "includeSubdomains": { "type": "boolean" },
+                "preload": { "type": "boolean" }
+              }
+            },
+            "frameDeny": { "type": "boolean" },
+            "contentTypeNosniff": { "type": "boolean" },
+            "referrerPolicy": { "type": "string" }
+          }
+        },
+        "compress": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "appNamespaces": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "kubeApiCidrs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "k8sResources": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "requests": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "cpu": { "type": "string", "pattern": "^[0-9]+(m|)?$" },
+            "memory": { "type": "string", "pattern": "^[0-9]+(Mi|Gi)$" }
+          }
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "cpu": { "type": "string", "pattern": "^[0-9]+(m|)?$" },
+            "memory": { "type": "string", "pattern": "^[0-9]+(Mi|Gi)$" }
+          }
+        }
+      }
+    }
+  }
+}

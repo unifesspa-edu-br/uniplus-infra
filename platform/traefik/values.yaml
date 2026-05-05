@@ -1,0 +1,165 @@
+# Defaults para o Traefik IngressController no cluster Uni+.
+#
+# Topologia: roda em cada cluster (lab-{sp1,sp2}, prod-{sp1,sp2}, standalone).
+# Em PA1 pode ficar desligado (sem ingress público lá). Em standalone usa
+# NodePort 80/443 no único host com IP público; em prod 3-DC usa
+# LoadBalancer (típico dos providers OCI/EKS/etc.) — override por
+# environments/<env>/values.yaml.
+#
+# IngressClass: `traefik` — referenciado pelos ClusterIssuers do
+# platform/cert-manager/ no `solvers.http01.ingress.ingressClassName` e
+# pelas IngressRoutes/Ingress dos apps Uni+.
+
+traefik:
+  enabled: true
+
+  # Padrão Uni+: kebab-case nos labels do subchart.
+  commonLabels:
+    app.kubernetes.io/part-of: uniplus
+    app.kubernetes.io/component: traefik
+
+  # 1 réplica em standalone/lab; prod-{sp1,sp2} elevam para 2+ via
+  # environments/prod-*/values.yaml conforme Tabela 10.1.
+  deployment:
+    replicas: 1
+
+  # Recursos lab — Tabela 10.1 (200m→1000m / 256MB→512MB).
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+
+  # IngressClass `traefik` instalado e marcado como default. ClusterIssuer
+  # do cert-manager referencia esse nome literalmente.
+  ingressClass:
+    enabled: true
+    isDefaultClass: true
+    name: traefik
+
+  # CRDs IngressRoute, Middleware, etc. — gerenciadas pelo subchart.
+  # `ServersTransport`, `ServersTransportTCP`, `TLSStore`, `TraefikService`
+  # também ficam disponíveis.
+  providers:
+    kubernetesIngress:
+      enabled: true
+      publishedService:
+        enabled: true
+    kubernetesCRD:
+      enabled: true
+
+  # Logs em JSON para integração com Loki (#28).
+  logs:
+    general:
+      format: json
+      level: INFO
+    access:
+      enabled: true
+      format: json
+
+  # Service: standalone usa NodePort (single-host com IP público); prod
+  # eleva para LoadBalancer via environments/prod-*/values.yaml.
+  service:
+    type: NodePort
+    annotations: {}
+
+  # Ports: 80 (HTTP, redireciona para HTTPS) + 443 (HTTPS).
+  # hostPort: bind 0.0.0.0:80/443 direto na VM com IP público (standalone
+  # single-host) — sem precisar NodePort range > 30000. Em prod 3-DC,
+  # `service.type: LoadBalancer` recebe o tráfego e proxy para o Pod.
+  ports:
+    web:
+      port: 8000
+      expose:
+        default: true
+      exposedPort: 80
+      hostPort: 80
+      http:
+        redirections:
+          entryPoint:
+            to: websecure
+            scheme: https
+            permanent: true
+    websecure:
+      port: 8443
+      expose:
+        default: true
+      exposedPort: 443
+      hostPort: 443
+      http:
+        tls:
+          enabled: true
+
+  # Métricas Prometheus do Traefik. ServiceMonitor vem do subchart
+  # quando habilitado — wrapper não emite SM próprio (mesmo padrão dos
+  # outros wrappers do projeto). Ligar quando #26 (Prometheus) chegar.
+  metrics:
+    prometheus:
+      service:
+        enabled: false
+      serviceMonitor:
+        enabled: false
+
+  # Dashboard interno do Traefik. Default DESLIGADO — quando ligado deve
+  # ficar atrás de OIDC (Keycloak) + IP allowlist UNIFESSPA. Configurar
+  # via IngressRoute separada com middlewares de auth.
+  ingressRoute:
+    dashboard:
+      enabled: false
+
+  # Segurança: rodar como non-root + readOnlyRootFilesystem (já default
+  # do chart upstream em versões recentes — explicitar).
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    fsGroup: 65532
+  securityContext:
+    capabilities:
+      drop: [ALL]
+      add: [NET_BIND_SERVICE]
+    readOnlyRootFilesystem: true
+    runAsNonRoot: true
+
+# ============================================================================
+# Middlewares globais — distribuídos como Middleware CRDs no namespace do
+# Traefik. Apps consomem via `traefik.ingress.kubernetes.io/router.middlewares:
+# traefik-headers-security@kubernetescrd`.
+# ============================================================================
+middlewares:
+  enabled: true
+
+  # HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy.
+  # Defaults conservadores; apps podem desligar por anotação se precisarem.
+  headersSecurity:
+    enabled: true
+    hsts:
+      enabled: true
+      seconds: 31536000  # 1 ano
+      includeSubdomains: true
+      preload: false  # Ligar só quando institucional confirmar inclusão
+    frameDeny: true
+    contentTypeNosniff: true
+    referrerPolicy: strict-origin-when-cross-origin
+
+  # Compress respostas HTTP automaticamente (gzip/br).
+  compress:
+    enabled: true
+
+# ============================================================================
+# NetworkPolicy — ingress de 80/443 da internet (NodePort/LoadBalancer);
+# egress para os namespaces das apps (uniplus, vault, etc.).
+# ============================================================================
+networkPolicy:
+  enabled: true
+
+  # Namespaces de destino dos backends. Ajustar por environment.
+  appNamespaces:
+    - uniplus
+    - vault
+    - keycloak
+
+  # CIDRs autorizados para egress ao Kubernetes API server.
+  kubeApiCidrs:
+    - 10.43.0.0/16

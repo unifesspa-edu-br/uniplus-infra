@@ -1,0 +1,20 @@
+{{- if and .Values.middlewares.enabled .Values.middlewares.compress.enabled .Values.traefik.enabled }}
+# Middleware Uni+ — compressão automática (gzip/br) de respostas HTTP.
+# Aplicar nos IngressRoutes via:
+#   middlewares:
+#     - name: {{ .Release.Name }}-compress
+#       namespace: {{ .Release.Namespace }}
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ .Release.Name }}-compress
+  labels:
+    app.kubernetes.io/name: traefik
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: uniplus
+    app.kubernetes.io/component: traefik
+spec:
+  compress: {}
+{{- end }}
