@@ -243,10 +243,26 @@ vaultTransit:
   enabled: false
 
 # NetworkPolicy do chart vault/ — sem egress Transit (vaultTransit.enabled=false).
+#
+# `kubeApiCidrs` consumido pelos charts platform/external-secrets/ e
+# platform/cert-manager/ — egress permitido para o K8s API server. Inclui
+# o CIDR do host K8s (10.0.1.0/24) além do service CIDR (10.43.0.0/16):
+# em K3s, o API server roda como processo no host (não como Pod K8s) e o
+# kube-proxy faz DNAT do Service IP 10.43.0.1:443 para <node-ip>:6443. O
+# kube-router (default NP enforcer do K3s) avalia a regra de egress
+# *após* o DNAT, então o ipBlock 10.43.0.0/16 sozinho não basta — bloqueia
+# o pacote já reescrito para o IP do nó. Sem o CIDR do host, ESO controller,
+# ESO cert-controller e cert-manager-cainjector ficam em CrashLoopBackOff
+# com `dial tcp 10.43.0.1:443: connect: connection refused` no init().
+# Em prod 3-DC com IPs de control plane em ranges diferentes, override
+# por env reflete a rede real (ex.: 10.20.0.0/16 em prod-sp1).
 networkPolicy:
   enabled: true
   externalSecretsNamespace: external-secrets
   traefikNamespace: traefik
+  kubeApiCidrs:
+    - 10.43.0.0/16
+    - 10.0.1.0/24
 
 # ----------------------------------------------------------------------------
 # External Secrets (chart platform/external-secrets/) — endpoint do Vault.
