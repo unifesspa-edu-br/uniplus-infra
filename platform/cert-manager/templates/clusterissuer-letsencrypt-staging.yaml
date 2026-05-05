@@ -13,6 +13,7 @@ metadata:
   labels:
     app.kubernetes.io/name: cert-manager
     app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
     app.kubernetes.io/managed-by: {{ .Release.Service }}
     app.kubernetes.io/part-of: uniplus
     app.kubernetes.io/component: cert-manager
@@ -23,7 +24,10 @@ spec:
     privateKeySecretRef:
       name: {{ .Values.clusterIssuers.staging.privateKeySecretRef | quote }}
     solvers:
+      # ingressClassName é o caminho moderno (campo nativo do Ingress v1).
+      # `class` (legacy) controla a annotation kubernetes.io/ingress.class
+      # do v1beta1 — Traefik v3 lê ingressClassName.
       - http01:
           ingress:
-            class: {{ .Values.clusterIssuers.ingressClass | quote }}
+            ingressClassName: {{ .Values.clusterIssuers.ingressClass | quote }}
 {{- end }}
