@@ -13,10 +13,12 @@
 traefik:
   enabled: true
 
-  # Padrão Uni+: kebab-case nos labels do subchart.
+  # Labels padrão Uni+. NÃO incluir `app.kubernetes.io/component` aqui —
+  # mesma lição da cert-manager: subcharts hardcodam component nos
+  # selectors das Deployments e sobrescrever via commonLabels pode quebrar
+  # a admission. Manter só `part-of: uniplus`.
   commonLabels:
     app.kubernetes.io/part-of: uniplus
-    app.kubernetes.io/component: traefik
 
   # 1 réplica em standalone/lab; prod-{sp1,sp2} elevam para 2+ via
   # environments/prod-*/values.yaml conforme Tabela 10.1.
@@ -59,23 +61,25 @@ traefik:
       enabled: true
       format: json
 
-  # Service: standalone usa NodePort (single-host com IP público); prod
-  # eleva para LoadBalancer via environments/prod-*/values.yaml.
+  # Service: defaults seguros (ClusterIP, sem hostPort). Cada environment
+  # sobrescreve para o que faz sentido na sua topologia:
+  #  - standalone (single-host com IP público): NodePort + hostPort 80/443
+  #    (binda direto na VM, sem precisar NodePort range > 30000)
+  #  - prod 3-DC: LoadBalancer + annotations do provider (OCI shape, etc.)
   service:
-    type: NodePort
+    type: ClusterIP
     annotations: {}
 
   # Ports: 80 (HTTP, redireciona para HTTPS) + 443 (HTTPS).
-  # hostPort: bind 0.0.0.0:80/443 direto na VM com IP público (standalone
-  # single-host) — sem precisar NodePort range > 30000. Em prod 3-DC,
-  # `service.type: LoadBalancer` recebe o tráfego e proxy para o Pod.
+  # hostPort fica null por default — environments adicionam quando precisam
+  # bindar diretamente na VM (caso standalone) ou deixam vazio quando o
+  # tráfego entra via LoadBalancer (caso prod 3-DC).
   ports:
     web:
       port: 8000
       expose:
         default: true
       exposedPort: 80
-      hostPort: 80
       http:
         redirections:
           entryPoint:
@@ -87,7 +91,6 @@ traefik:
       expose:
         default: true
       exposedPort: 443
-      hostPort: 443
       http:
         tls:
           enabled: true

@@ -188,6 +188,12 @@ step_install_k3s() {
 
         log_info "Instalando K3s $K3S_VERSION (node: $node_name, IP: $node_ip)..."
 
+        # --disable traefik: o chart platform/traefik/ instala o IngressController
+        # do projeto (v3.6.15 com middlewares Uni+ e IngressClass `traefik`).
+        # Sem --disable, o Traefik bundled do K3s competiria pelo bind 80/443
+        # e pela IngressClass de mesmo nome.
+        # --disable servicelb: usamos NodePort+hostPort em standalone (single
+        # host com IP público) — ServiceLB do K3s não acrescenta nada aqui.
         run "curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=$K3S_VERSION sh -s - \
             --node-name $node_name \
             --cluster-init \
@@ -196,6 +202,7 @@ step_install_k3s() {
             --tls-san $K8S_PUBLIC_IP \
             --tls-san $K8S_DOMAIN \
             --disable servicelb \
+            --disable traefik \
             --write-kubeconfig-mode 644"
     fi
 
