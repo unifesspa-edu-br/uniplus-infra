@@ -194,6 +194,18 @@ networkPolicy:
   traefikNamespace: traefik
 
 # ----------------------------------------------------------------------------
+# External Secrets (chart platform/external-secrets/) — endpoint do Vault.
+# Standalone usa Application name `platform-vault-uniplus-standalone` no
+# ApplicationSet, então o Vault Service ClusterIP leva esse mesmo nome.
+# Sem fullnameOverride no chart vault/, é necessário apontar explicitamente
+# aqui. Habilitar `clusterSecretStore.enabled` só após Vault init (#64) e
+# provisionamento da policy + role no Vault.
+# ----------------------------------------------------------------------------
+clusterSecretStore:
+  enabled: false  # ligar quando #64 fechar
+  vaultServer: http://platform-vault-uniplus-standalone.vault.svc.cluster.local:8200
+
+# ----------------------------------------------------------------------------
 # Keycloak local (apps/keycloak-replica) — sem federação Gov.br no MVP.
 # 1 réplica, valida apenas o contrato OIDC/JWT entre frontends e APIs.
 # Federação Gov.br fica fora do escopo standalone (depende de cadastro
