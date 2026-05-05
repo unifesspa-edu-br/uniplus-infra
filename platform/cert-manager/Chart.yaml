@@ -29,12 +29,19 @@ keywords:
   - uniplus
 
 # Dependência do chart upstream oficial.
-# `alias: certManager` mantém consistência com o padrão do platform/external-secrets/
-# (alias camelCase para acessar valores via `.Values.certManager.*` em Go templates).
+# SEM ALIAS: o template `templates/deployment.yaml` do upstream usa
+# `{{ .Chart.Name }}` (e similares) literalmente como nome do container.
+# Com `alias: certManager` os containers ficavam `certManager-controller/
+# webhook/cainjector` (camelCase) — K8s API rejeita por RFC 1123. Sem alias,
+# Chart.Name=`cert-manager` (kebab-case) e os containers validam.
+#
+# Custo: values acessados por `(index .Values "cert-manager" ...)` em Go
+# templates (hífen quebra dot syntax). Restrito ao único campo que o wrapper
+# consulta: `enabled` em ClusterIssuers + networkpolicy.yaml.
 dependencies:
   - name: cert-manager
-    alias: certManager
     version: v1.20.2
     repository: https://charts.jetstack.io
     # Permite desligar o subchart por environment se necessário.
-    condition: certManager.enabled
+    # Helm aceita key com hífen na string de condition.
+    condition: cert-manager.enabled

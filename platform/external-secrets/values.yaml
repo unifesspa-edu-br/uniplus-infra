@@ -10,15 +10,12 @@
 # de ligar o store. Habilitar via override em environments/<env>/values.yaml
 # após Vault init (issue #64) e provisionamento da policy + role.
 
-externalSecrets:
+# Sem alias no Chart.yaml — key tem que ser literal `external-secrets`
+# (com hífen). Acesso em templates Go via `(index .Values "external-secrets" "x")`.
+# Sem alias o `nameOverride` também é desnecessário: Chart.Name = nome da dep =
+# `external-secrets` (kebab-case) → container name e labels ficam corretos.
+external-secrets:
   enabled: true
-
-  # `alias: externalSecrets` no Chart.yaml faz o subchart enxergar
-  # `Chart.Name == "externalSecrets"` (camelCase). Sem nameOverride os
-  # labels ficam `app.kubernetes.io/name: externalSecrets` (camelCase),
-  # quebrando o podSelector da NetworkPolicy (que usa kebab-case) e a
-  # convenção do projeto (CLAUDE.md: kebab-case em todos os nomes).
-  nameOverride: external-secrets
 
   # Operator core. Mantido enxuto — em prod elevar conforme Tabela 10.1.
   replicaCount: 1

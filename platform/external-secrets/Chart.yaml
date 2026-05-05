@@ -28,15 +28,20 @@ keywords:
   - uniplus
 
 # Dependência do chart upstream oficial.
-# `alias: externalSecrets` é necessário: sem ele, Helm só forwarda valores
-# da key `external-secrets:` (com hífen) — incompatível com a sintaxe
-# `.Values.externalSecrets.x` em Go templates. O alias renomeia o scope
-# de valores para `externalSecrets:` (camelCase), permitindo override
-# limpo de replicas, resources, commonLabels, serviceAccount.name etc.
+# SEM ALIAS: o template `templates/deployment.yaml` do upstream usa
+# `{{ .Chart.Name }}` literalmente como nome do container (linha
+# `containers: - name: {{ .Chart.Name }}`). Com `alias: externalSecrets`
+# o container ficava `externalSecrets` (camelCase) — K8s API rejeita
+# por RFC 1123 (lowercase + dash apenas). Sem alias, Chart.Name fica
+# `external-secrets` (kebab-case) e o container valida.
+#
+# Custo: values acessados por `(index .Values "external-secrets" ...)`
+# em Go templates (hífen quebra dot syntax). Restrito ao único campo
+# que o wrapper consulta: `enabled` em networkpolicy.yaml + servicemonitor.yaml.
 dependencies:
   - name: external-secrets
-    alias: externalSecrets
     version: 2.4.1
     repository: https://charts.external-secrets.io
     # Permite desligar o subchart por environment se necessário.
-    condition: externalSecrets.enabled
+    # Helm aceita o key com hífen na string de condition.
+    condition: external-secrets.enabled

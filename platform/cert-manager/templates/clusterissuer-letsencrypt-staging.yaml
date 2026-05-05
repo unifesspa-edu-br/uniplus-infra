@@ -1,4 +1,5 @@
-{{- if and .Values.certManager.enabled .Values.clusterIssuers.enabled .Values.clusterIssuers.staging.enabled }}
+{{- $cm := index .Values "cert-manager" -}}
+{{- if and $cm.enabled .Values.clusterIssuers.enabled .Values.clusterIssuers.staging.enabled }}
 {{- if not .Values.clusterIssuers.email -}}
 {{- fail "clusterIssuers.enabled=true exige clusterIssuers.email não vazio (registro ACME)." -}}
 {{- end }}
