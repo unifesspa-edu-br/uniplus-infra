@@ -1,0 +1,144 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/unifesspa-edu-br/uniplus-infra/platform/external-secrets/values.schema.json",
+  "title": "external-secrets chart values",
+  "description": "Schema dos values do chart platform/external-secrets/. Valida overrides em environments/<env>/values.yaml. Subchart external-secrets/external-secrets tem seu próprio schema — additionalProperties=true permite passar overrides que serão validados pelo upstream.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "externalSecrets": {
+      "type": "object",
+      "description": "Bloco do subchart external-secrets/external-secrets.",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Liga/desliga o subchart. False em PA1 (que só hospeda Vault Transit, não consome ESO)."
+        },
+        "replicaCount": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Réplicas do controller principal. 1 em lab/standalone, 2+ em prod."
+        },
+        "resources": { "$ref": "#/$defs/k8sResources" },
+        "webhook": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "replicaCount": { "type": "integer", "minimum": 1 },
+            "resources": { "$ref": "#/$defs/k8sResources" }
+          }
+        },
+        "certController": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "replicaCount": { "type": "integer", "minimum": 1 },
+            "resources": { "$ref": "#/$defs/k8sResources" }
+          }
+        },
+        "serviceMonitor": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "ServiceMonitor para Prometheus. Default false até #26 (Prometheus chart)."
+            }
+          }
+        },
+        "commonLabels": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "clusterSecretStore": {
+      "type": "object",
+      "description": "ClusterSecretStore default apontando para o Vault de aplicação local.",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Liga o ClusterSecretStore. Manter false até Vault inicializado e role external-secrets configurado (#64)."
+        },
+        "name": {
+          "type": "string",
+          "description": "Nome do recurso ClusterSecretStore criado."
+        },
+        "vaultServer": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL do Vault no cluster local (Service ClusterIP)."
+        },
+        "vaultPath": {
+          "type": "string",
+          "description": "Path do KV v2 no Vault (default: secret)."
+        },
+        "vaultAuth": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["role", "serviceAccount"],
+          "properties": {
+            "role": {
+              "type": "string",
+              "description": "Nome do role no Vault auth/kubernetes vinculado à policy external-secrets-read."
+            },
+            "serviceAccount": {
+              "type": "object",
+              "additionalProperties": true,
+              "required": ["name", "namespace"],
+              "properties": {
+                "name": { "type": "string" },
+                "namespace": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "vaultNamespace": {
+          "type": "string",
+          "description": "Namespace onde o chart platform/vault/ está instalado."
+        },
+        "kubeApiCidrs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+/[0-9]+$"
+          },
+          "description": "CIDRs autorizados para egress ao Kubernetes API server."
+        }
+      }
+    }
+  },
+  "$defs": {
+    "k8sResources": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "requests": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "cpu": { "type": "string", "pattern": "^[0-9]+(m|)?$" },
+            "memory": { "type": "string", "pattern": "^[0-9]+(Mi|Gi)$" }
+          }
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "cpu": { "type": "string", "pattern": "^[0-9]+(m|)?$" },
+            "memory": { "type": "string", "pattern": "^[0-9]+(Mi|Gi)$" }
+          }
+        }
+      }
+    }
+  }
+}

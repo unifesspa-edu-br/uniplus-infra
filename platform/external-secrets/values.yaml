@@ -1,0 +1,103 @@
+# Defaults para o External Secrets Operator (ESO) no cluster Uni+.
+#
+# Topologia: ESO roda em cada cluster (lab-{sp1,sp2}, prod-{sp1,sp2},
+# standalone) e consome Secrets do Vault de aplicação local (chart
+# `platform/vault/`). Nos clusters PA1, ESO pode permanecer desligado
+# (PA1 só hospeda Vault Transit).
+#
+# IMPORTANTE: o ClusterSecretStore não é habilitado por default — o Vault
+# precisa estar inicializado e o role `external-secrets` configurado antes
+# de ligar o store. Habilitar via override em environments/<env>/values.yaml
+# após Vault init (issue #64) e provisionamento da policy + role.
+
+externalSecrets:
+  enabled: true
+
+  # Operator core. Mantido enxuto — em prod elevar conforme Tabela 10.1.
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+  # Webhook de validação (validating admission webhook).
+  webhook:
+    replicaCount: 1
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+
+  # Cert controller (gerencia o certificado interno do webhook).
+  # Em ambientes com cert-manager (#15) ativo, é possível trocar por
+  # cert-manager via override; default usa o cert controller interno.
+  certController:
+    replicaCount: 1
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+
+  # Métricas Prometheus do operator. ESO expõe na porta 8080 por default.
+  serviceMonitor:
+    enabled: false  # Ligar quando #26 (Prometheus chart) estiver pronto.
+
+  # Labels padrão Uni+ aplicados em todos os recursos do subchart.
+  commonLabels:
+    app.kubernetes.io/part-of: uniplus
+    app.kubernetes.io/component: external-secrets
+
+# ============================================================================
+# ClusterSecretStore — backend default (Vault de aplicação local).
+# Desligado por default (Vault precisa estar inicializado primeiro — #64).
+# Habilitar via override em environments/<env>/values.yaml após:
+#   1. `vault operator init` executado (recovery keys guardadas)
+#   2. Vault unsealed (auto via Transit em SP1/SP2 ou OCI KMS em standalone)
+#   3. Policy `external-secrets-read` criada no Vault
+#   4. Role `external-secrets` (auth k8s) vinculada à policy
+# Procedimento detalhado em docs/RUNBOOKS.md §1.4 (e §8.4 para standalone).
+# ============================================================================
+clusterSecretStore:
+  enabled: false
+  # Nome do ClusterSecretStore criado (referenciado por ExternalSecret consumers).
+  name: vault-default
+
+  # Endpoint do Vault no cluster local (Service ClusterIP do chart platform/vault).
+  # Default segue o pattern de release name `vault` no namespace `vault`.
+  vaultServer: http://vault.vault.svc.cluster.local:8200
+
+  # Path do KV v2 no Vault onde os secrets vivem.
+  vaultPath: secret
+
+  # Auth method Kubernetes (ServiceAccount JWT do Pod do operator).
+  # ESO precisa de uma ServiceAccount autorizada no Vault auth/kubernetes
+  # com a policy `external-secrets-read`.
+  vaultAuth:
+    role: external-secrets
+    serviceAccount:
+      name: external-secrets
+      namespace: external-secrets
+
+# ============================================================================
+# NetworkPolicy — egress controlado para Vault local + DNS + Kubernetes API.
+# ============================================================================
+networkPolicy:
+  enabled: true
+
+  # Namespace onde o chart platform/vault/ está instalado (default: vault).
+  vaultNamespace: vault
+
+  # CIDRs restritos para egress ao Kubernetes API server (validating webhook
+  # talvez precise; ESO consome ServiceAccount tokens via API).
+  # Padrão: service CIDR do K3s (10.43.0.0/16).
+  kubeApiCidrs:
+    - 10.43.0.0/16
