@@ -24,7 +24,7 @@ ingress:
   host: standalone.example
   tls:
     enabled: true
-    issuer: letsencrypt  # cert-manager emite via HTTP-01 (single-host simplifica DNS-01)
+    issuer: letsencrypt-prod  # cert-manager emite via HTTP-01 (single-host simplifica DNS-01); chart cria letsencrypt-{staging,prod}
 
 # Postgres single-primary por banco — sem replica (data-host é único).
 # Patroni é dispensado nesta topologia; chart consumidor deve interpretar
