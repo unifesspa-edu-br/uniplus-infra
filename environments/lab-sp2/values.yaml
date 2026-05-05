@@ -66,6 +66,9 @@ observability:
   loki:
     retention: 3d
     storage: 15Gi
+  tempo:
+    retention: 1d
+    storage: 5Gi
 
 # Wiring real do chart platform/observability/prometheus/ — retenção 3d
 # (i7 com menos RAM/disco) e storage 10Gi.
@@ -89,9 +92,6 @@ kubePrometheusStack:
         volumeClaimTemplate:
           spec:
             storageClassName: lab-local-nvme
-  tempo:
-    retention: 1d
-    storage: 5Gi
 
 cluster:
   name: lab-sp2

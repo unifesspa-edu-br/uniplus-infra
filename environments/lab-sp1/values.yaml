@@ -70,6 +70,9 @@ observability:
   loki:
     retention: 7d
     storage: 30Gi
+  tempo:
+    retention: 3d
+    storage: 10Gi
 
 # Wiring real do chart platform/observability/prometheus/ — força StorageClass
 # `lab-local-nvme` (default-class do K3s seria `local-path`), retenção 7d
@@ -94,9 +97,6 @@ kubePrometheusStack:
         volumeClaimTemplate:
           spec:
             storageClassName: lab-local-nvme
-  tempo:
-    retention: 3d
-    storage: 10Gi
 
 # Cluster identification
 cluster:
