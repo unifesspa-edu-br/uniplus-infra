@@ -55,7 +55,10 @@ replicas:
   keycloak: 1
   redis: 1
 
-# Observabilidade reduzida (i7 tem menos RAM)
+# Observabilidade reduzida (i7 tem menos RAM).
+#
+# NOTA: bloco `observability:` é DOCUMENTAÇÃO; charts consomem suas
+# próprias values. Wiring real abaixo.
 observability:
   prometheus:
     retention: 3d  # menor que SP1
@@ -63,6 +66,29 @@ observability:
   loki:
     retention: 3d
     storage: 15Gi
+
+# Wiring real do chart platform/observability/prometheus/ — retenção 3d
+# (i7 com menos RAM/disco) e storage 10Gi.
+kubePrometheusStack:
+  prometheus:
+    prometheusSpec:
+      retention: 3d
+      retentionSize: 8GiB
+      storageSpec:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: lab-local-nvme
+            resources:
+              requests:
+                storage: 10Gi
+      externalLabels:
+        cluster: lab-sp2
+  alertmanager:
+    alertmanagerSpec:
+      storage:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: lab-local-nvme
   tempo:
     retention: 1d
     storage: 5Gi

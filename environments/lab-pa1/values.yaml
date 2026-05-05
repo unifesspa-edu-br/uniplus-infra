@@ -36,6 +36,14 @@ storage:
 vault:
   enabled: false
 
+# Stack Prometheus (chart platform/observability/prometheus/) NÃO roda em PA1.
+# PA1 hospeda agregação de longa retenção via mecanismo separado (Thanos ou
+# remote_write para um Prometheus dedicado de retenção longa) — fora do escopo
+# do chart wrapper único. Sem este override, o ApplicationSet deployaria o
+# stack completo aqui também, duplicando coleta com SP1/SP2.
+kubePrometheusStack:
+  enabled: false
+
 # Vault Transit — chart platform/vault-transit/.
 # 1 réplica em lab/sanidade (recursos reduzidos); 3 réplicas Raft em hml/prod.
 vaultTransit:

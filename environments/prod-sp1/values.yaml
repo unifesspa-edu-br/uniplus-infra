@@ -54,6 +54,35 @@ observability:
   loki:
     retention: 30d
     storage: 100Gi
+
+# NOTA: bloco `observability:` acima é DOCUMENTAÇÃO de intenção; os charts
+# wrapper consomem suas próprias values. Wiring real abaixo.
+#
+# Prometheus em prod-sp1: retenção 15d (Tabela 10.1), storage 50Gi. Stack
+# elevado para 2 réplicas para HA; pesquisa cross-cluster fica via Thanos
+# em PA1 (chart separado, fora deste wrapper).
+kubePrometheusStack:
+  prometheus:
+    prometheusSpec:
+      replicas: 2
+      retention: 15d
+      retentionSize: 40GiB
+      storageSpec:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: prod-local-nvme
+            resources:
+              requests:
+                storage: 50Gi
+      externalLabels:
+        cluster: prod-sp1
+  alertmanager:
+    alertmanagerSpec:
+      replicas: 2
+      storage:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: prod-local-nvme
   tempo:
     retention: 7d
     storage: 50Gi

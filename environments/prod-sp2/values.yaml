@@ -53,6 +53,31 @@ observability:
   loki:
     retention: 30d
     storage: 100Gi
+
+# NOTA: bloco `observability:` acima é DOCUMENTAÇÃO; charts consomem
+# suas próprias values. Wiring real abaixo (espelha prod-sp1).
+kubePrometheusStack:
+  prometheus:
+    prometheusSpec:
+      replicas: 2
+      retention: 15d
+      retentionSize: 40GiB
+      storageSpec:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: prod-local-nvme
+            resources:
+              requests:
+                storage: 50Gi
+      externalLabels:
+        cluster: prod-sp2
+  alertmanager:
+    alertmanagerSpec:
+      replicas: 2
+      storage:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: prod-local-nvme
   tempo:
     retention: 7d
     storage: 50Gi
