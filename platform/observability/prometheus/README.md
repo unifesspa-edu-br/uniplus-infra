@@ -46,8 +46,8 @@ Após o ApplicationSet sincronizar:
 | `kubePrometheusStack.crds.upgradeJob.enabled` | `false` | ArgoCD gerencia upgrades |
 | `kubePrometheusStack.kubeControllerManager.enabled` | `false` | K3s embute no kubelet |
 | `kubePrometheusStack.kubeScheduler.enabled` | `false` | Idem |
-| `kubePrometheusStack.kubeProxy.enabled` | `false` | K3s usa flannel sem kube-proxy |
-| `kubePrometheusStack.kubeEtcd.enabled` | `false` | K3s embarca etcd sem endpoint scrape |
+| `kubePrometheusStack.kubeProxy.enabled` | `false` | K3s roda kube-proxy mas binda métricas em 127.0.0.1 — SM padrão não scrapeia |
+| `kubePrometheusStack.kubeEtcd.enabled` | `false` | K3s embarca etcd sem endpoint client-cert separado |
 
 ## Como expor métricas de outros charts
 
@@ -96,7 +96,7 @@ kubePrometheusStack:
 
 ## Componentes K3s
 
-Por default o subchart upstream tenta scrape kube-controller-manager, kube-scheduler, kube-proxy e etcd. Em K3s todos rodam embutidos no `kubelet` (ou, no caso do flannel, sem kube-proxy), sem endpoints HTTP separados — desligamos esses ServiceMonitors no chart wrapper para evitar alertas falsos `*Down` desde a primeira sincronização.
+Por default o subchart upstream tenta scrape kube-controller-manager, kube-scheduler, kube-proxy e etcd. Em K3s controller-manager e scheduler rodam dentro do binário único do K3s (sem endpoint HTTP separado), kube-proxy roda mas binda as métricas em `127.0.0.1` por default (SM padrão não consegue scrape sem mudar `metricsBindAddress: 0.0.0.0`), e etcd está embarcado sem endpoint client-cert separado. Desligamos esses 4 ServiceMonitors no chart wrapper para evitar alertas falsos `*Down` desde a primeira sincronização. Em distribuições K8s upstream (não-K3s) reabilitar via env override.
 
 ## Network
 
