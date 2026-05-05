@@ -149,10 +149,34 @@ storage:
     reclaimPolicy: Delete
 
 # ============================================================================
-# Vault HA Raft single-replica com auto-unseal via OCI KMS.
+# Vault HA Raft single-replica em standalone — SEAL SHAMIR (manual unseal).
+#
 # Replicas=1 na topologia single-host (StatefulSet 3-réplica ficaria Pending).
 # Mantém Raft como storage backend para preservar fidelidade arquitetural
 # com lab/prod 3-DC — só o número de peers difere.
+#
+# DECISÃO TEMPORÁRIA: usar Shamir seal (unseal manual) em vez de OCI KMS
+# auto-unseal. Tentamos OCI KMS auto-unseal (Resource Principal e API Key)
+# e Vault 1.20.4/1.21.2/1.21.4 panicam consistentemente em
+# `go-kms-wrapping@v2.0.9/ocikms.go:290` (`getRequestMetadata.func1`
+# durante OCI SDK Retry) na pre-flight encrypt validation. OCI CLI direto
+# funciona perfeitamente — o bug está no Vault, não na infra OCI.
+#
+# OCI KMS provisionado e pronto pra uso quando Vault 1.22+ chegar com
+# go-kms-wrapping atualizado:
+# - Vault: ocid1.vault.oc1.sa-saopaulo-1.ffu7qdsmaacrc.abtxeljrt474vzf6foogf6ynpk2pjns5sitgpqka3sayivj6bnnbeaindt5q
+# - Master Key: ocid1.key.oc1.sa-saopaulo-1.ffu7qdsmaacrc.abtxeljrla5jj43336ws3ft64utong33y4qdh3jquenq7id3yzl6mcvvssta
+# - Dynamic Group + Policy criados, prontos pra Resource Principal
+# - Para reativar: adicionar bloco `seal "ocikms"` no config + restaurar
+#   extraSecretEnvironmentVars + atualizar Secret vault-ocikms-config
+#
+# Implicações operacionais do Shamir em standalone:
+# - Cada restart do Pod (e.g., upgrade do K3s, manutenção da VM) exige
+#   unseal manual via 3 das 5 recovery shares
+# - Procedimento documentado em docs/RUNBOOKS.md §8.4
+# - 5 shares custodiadas em gestor institucional (ver Apêndice A)
+# - Aceitável para standalone (validação/demo); inaceitável para prod 3-DC
+#   onde o Transit auto-unseal é a solução (não afetada pelo bug acima).
 # ============================================================================
 vault:
   enabled: true
@@ -175,14 +199,8 @@ vault:
       raft:
         enabled: true
         setNodeId: true
-        # Substitui o config default do chart `platform/vault/` para incluir
-        # o bloco `seal "ocikms"`. OCID do Key, endpoints crypto/management
-        # e auth_type vêm via env vars injetados a partir de Secret
-        # `vault-ocikms-config` (External Secret consumindo OCI Vault — #64).
-        #
-        # auth_type_api_key="false" força autenticação por Resource Principal
-        # (Dynamic Group + IAM Policy) — instance principal da VM k8s-host.
-        # Nenhum OCID literal entra aqui (regra ADR-008).
+        # Config Raft sem bloco `seal` — Vault usa Shamir por default.
+        # `vault operator init -key-shares=5 -key-threshold=3` na inicialização.
         config: |
           ui = true
 
@@ -196,30 +214,7 @@ vault:
             path = "/vault/data"
           }
 
-          seal "ocikms" {
-            key_id              = "${VAULT_SEAL_OCIKMS_KEY_ID}"
-            crypto_endpoint     = "${VAULT_SEAL_OCIKMS_CRYPTO_ENDPOINT}"
-            management_endpoint = "${VAULT_SEAL_OCIKMS_MANAGEMENT_ENDPOINT}"
-            auth_type_api_key   = "false"
-          }
-
           service_registration "kubernetes" {}
-
-    # Env vars injetados via Secret vault-ocikms-config (criado por External
-    # Secrets a partir do OCI Vault — sub-issue #64). Estrutura esperada:
-    #   data.key_id              → OCID da chave master no OCI KMS
-    #   data.crypto_endpoint     → https://<vault-id>-crypto.kms.<region>.oci.oraclecloud.com
-    #   data.management_endpoint → https://<vault-id>-management.kms.<region>.oci.oraclecloud.com
-    extraSecretEnvironmentVars:
-      - envName: VAULT_SEAL_OCIKMS_KEY_ID
-        secretName: vault-ocikms-config
-        secretKey: key_id
-      - envName: VAULT_SEAL_OCIKMS_CRYPTO_ENDPOINT
-        secretName: vault-ocikms-config
-        secretKey: crypto_endpoint
-      - envName: VAULT_SEAL_OCIKMS_MANAGEMENT_ENDPOINT
-        secretName: vault-ocikms-config
-        secretKey: management_endpoint
 
     dataStorage:
       size: 5Gi
