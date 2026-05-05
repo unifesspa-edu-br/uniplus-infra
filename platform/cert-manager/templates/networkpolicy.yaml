@@ -1,0 +1,63 @@
+{{- if and .Values.networkPolicy.enabled .Values.certManager.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-cert-manager
+  labels:
+    app.kubernetes.io/name: cert-manager
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: uniplus
+spec:
+  # Subchart upstream cria 3 Deployments com app.kubernetes.io/name distintos
+  # (`cert-manager`, `webhook`, `cainjector`). Selecionar por `name` exigiria
+  # listar os 3 nomes. `app.kubernetes.io/component: cert-manager` (de
+  # `global.commonLabels` em values.yaml) está nos 3 e é mais específico que
+  # os nomes genéricos `webhook`/`cainjector` (que poderiam colidir com outros
+  # charts). Combinado com instance, isola exatamente este release.
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/component: cert-manager
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes:
+    - Egress
+  egress:
+    # ACME server (Let's Encrypt) — HTTPS na internet pública.
+    # Não há como restringir por IP estável (Let's Encrypt usa CDN/anycast),
+    # então o controle é por porta 443 + DNS only. Aceitável: cert-manager
+    # só fala com endpoints ACME (RFC 8555) na porta 443.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              # Bloquear egress para CIDRs internos (já cobertos por outras regras).
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+    # DNS (kube-dns).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Kubernetes API (CRD operations, SAR/TokenReview, ingress lookup).
+    {{- with .Values.networkPolicy.kubeApiCidrs }}
+    - to:
+        {{- range . }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: 6443
+        - protocol: TCP
+          port: 443
+    {{- end }}
+{{- end }}
