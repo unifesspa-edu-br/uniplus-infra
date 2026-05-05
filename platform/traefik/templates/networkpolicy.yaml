@@ -10,12 +10,15 @@ metadata:
     app.kubernetes.io/managed-by: {{ .Release.Service }}
     app.kubernetes.io/part-of: uniplus
 spec:
-  # Subchart upstream emite Pods com app.kubernetes.io/name: traefik
-  # e instance == release name. commonLabels adiciona part-of e component.
+  # Subchart upstream emite Pods com `app.kubernetes.io/name: traefik` e
+  # `app.kubernetes.io/instance: <release>-traefik` (subchart fullname,
+  # NÃO o release name puro). commonLabels adiciona `part-of: uniplus`.
+  # Selecionamos por name+part-of (estáveis e únicos por instalação Uni+),
+  # evitando depender do template fullname do upstream.
   podSelector:
     matchLabels:
       app.kubernetes.io/name: traefik
-      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/part-of: uniplus
   policyTypes:
     - Ingress
     - Egress

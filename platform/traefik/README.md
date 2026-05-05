@@ -9,7 +9,7 @@ Wrapper do chart oficial [traefik/traefik-helm-chart](https://github.com/traefik
 **Upstream:** https://github.com/traefik/traefik-helm-chart
 **Versão upstream empacotada:** v3.6.15 (chart 39.0.9)
 
-K3s vem com Traefik pré-instalado por default; o `bootstrap-standalone.sh` desabilita esse Traefik default (`--disable=traefik`) para que este chart wrapper seja a única instância no cluster (sem conflito de IngressClass).
+K3s vem com Traefik pré-instalado por default. O `scripts/bootstrap-standalone.sh` desabilita explicitamente esse Traefik default (`--disable traefik`) para que este chart wrapper seja a única instância no cluster — sem conflito de IngressClass nem de bind 80/443. Re-executar o bootstrap após mudanças nesse script aplica o reset (K3s recria os manifests de bundled apps em cada start sem `--disable`).
 
 ## Estrutura
 
@@ -68,12 +68,12 @@ metadata:
 spec:
   entryPoints: [websecure]
   routes:
-    - match: Host(`standalone.portaluni.com.br`)
+    - match: Host(`<env-fqdn>`)              # ex.: standalone.portaluni.com.br
       kind: Rule
       middlewares:
-        - name: <release-name>-headers-security  # ex.: traefik-headers-security
+        - name: uniplus-headers-security     # nome FIXO do middleware Uni+
           namespace: traefik
-        - name: <release-name>-compress
+        - name: uniplus-compress
           namespace: traefik
       services:
         - name: uniplus-web
@@ -82,7 +82,7 @@ spec:
     secretName: portal-tls  # preenchido por cert-manager (ver platform/cert-manager/README.md)
 ```
 
-Os middlewares vivem no namespace do release do Traefik (geralmente `traefik`). Substituir `<release-name>` pelo nome do release (em standalone: `platform-traefik-uniplus-standalone`).
+Os middlewares têm **nomes fixos** (`uniplus-headers-security`, `uniplus-compress`) e vivem no namespace onde o Traefik está instalado (geralmente `traefik`) — independente do release name dinâmico do ApplicationSet. Substituir `<env-fqdn>` pelo FQDN do environment (definido em `environments/<env>/values.yaml` sob `ingress.host`).
 
 ## Pathing standalone
 

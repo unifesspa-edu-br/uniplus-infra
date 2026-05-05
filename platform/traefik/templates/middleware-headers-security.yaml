@@ -1,13 +1,16 @@
 {{- if and .Values.middlewares.enabled .Values.middlewares.headersSecurity.enabled .Values.traefik.enabled }}
 # Middleware Uni+ — headers de segurança HTTP padrão.
-# Aplicar nos IngressRoutes via:
+# Nome FIXO `uniplus-headers-security` (sem prefixo de release) para que
+# IngressRoutes em outros namespaces possam referenciar diretamente sem
+# precisar conhecer o release name dinâmico do ApplicationSet
+# (`platform-traefik-<cluster>`). Aplicar nos IngressRoutes via:
 #   middlewares:
-#     - name: {{ .Release.Name }}-headers-security
+#     - name: uniplus-headers-security
 #       namespace: {{ .Release.Namespace }}
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
-  name: {{ .Release.Name }}-headers-security
+  name: uniplus-headers-security
   labels:
     app.kubernetes.io/name: traefik
     app.kubernetes.io/instance: {{ .Release.Name }}
@@ -18,7 +21,10 @@ metadata:
 spec:
   headers:
     {{- if .Values.middlewares.headersSecurity.hsts.enabled }}
-    stsSeconds: {{ .Values.middlewares.headersSecurity.hsts.seconds }}
+    # `| int` força inteiro — sem ele Helm renderiza valores grandes em
+    # notação científica (ex.: 31536000 → 3.1536e+07) que a CRD do Traefik
+    # rejeita por esperar integer puro.
+    stsSeconds: {{ .Values.middlewares.headersSecurity.hsts.seconds | int }}
     stsIncludeSubdomains: {{ .Values.middlewares.headersSecurity.hsts.includeSubdomains }}
     stsPreload: {{ .Values.middlewares.headersSecurity.hsts.preload }}
     forceSTSHeader: true
@@ -26,7 +32,7 @@ spec:
     frameDeny: {{ .Values.middlewares.headersSecurity.frameDeny }}
     contentTypeNosniff: {{ .Values.middlewares.headersSecurity.contentTypeNosniff }}
     referrerPolicy: {{ .Values.middlewares.headersSecurity.referrerPolicy | quote }}
-    # X-Powered-By removido por segurança (não revela stack).
+    # X-Powered-By e Server removidos por segurança (não revelam stack).
     customResponseHeaders:
       X-Powered-By: ""
       Server: ""

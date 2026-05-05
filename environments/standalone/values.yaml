@@ -206,6 +206,22 @@ clusterSecretStore:
   vaultServer: http://platform-vault-uniplus-standalone.vault.svc.cluster.local:8200
 
 # ----------------------------------------------------------------------------
+# Traefik (chart platform/traefik/) — exposição externa em standalone.
+# Single-host com IP público bindando hostPort 80/443 direto na VM,
+# evitando dependência de NodePort range > 30000 e LoadBalancer (provider
+# OCI cobraria por LB). NodePort dá fallback de descoberta interna.
+# Em prod 3-DC, override seria service.type: LoadBalancer + remover hostPort.
+# ----------------------------------------------------------------------------
+traefik:
+  service:
+    type: NodePort
+  ports:
+    web:
+      hostPort: 80
+    websecure:
+      hostPort: 443
+
+# ----------------------------------------------------------------------------
 # Keycloak local (apps/keycloak-replica) — sem federação Gov.br no MVP.
 # 1 réplica, valida apenas o contrato OIDC/JWT entre frontends e APIs.
 # Federação Gov.br fica fora do escopo standalone (depende de cadastro
