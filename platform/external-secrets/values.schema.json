@@ -6,9 +6,9 @@
   "type": "object",
   "additionalProperties": true,
   "properties": {
-    "externalSecrets": {
+    "external-secrets": {
       "type": "object",
-      "description": "Bloco do subchart external-secrets/external-secrets.",
+      "description": "Bloco do subchart external-secrets/external-secrets (sem alias — Chart.Name=external-secrets pra K8s container name validar RFC 1123).",
       "additionalProperties": true,
       "properties": {
         "enabled": {

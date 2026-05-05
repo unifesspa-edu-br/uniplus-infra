@@ -6,9 +6,9 @@
   "type": "object",
   "additionalProperties": true,
   "properties": {
-    "certManager": {
+    "cert-manager": {
       "type": "object",
-      "description": "Bloco do subchart jetstack/cert-manager (alias certManager).",
+      "description": "Bloco do subchart jetstack/cert-manager (sem alias — Chart.Name=cert-manager pra K8s container name validar RFC 1123).",
       "additionalProperties": true,
       "properties": {
         "enabled": {

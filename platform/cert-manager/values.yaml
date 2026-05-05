@@ -11,13 +11,12 @@
 # Let's Encrypt — sujeito a rate limits (50 certs/domain/week). Para testes
 # usar letsencrypt-staging (sem rate limit relevante; certs não confiáveis).
 
-certManager:
+# Sem alias no Chart.yaml — key tem que ser literal `cert-manager`
+# (com hífen). Acesso em templates Go via `(index .Values "cert-manager" "x")`.
+# Sem alias o `nameOverride` também é desnecessário: Chart.Name = nome da dep =
+# `cert-manager` (kebab-case) → container name e labels ficam corretos.
+cert-manager:
   enabled: true
-
-  # `nameOverride: cert-manager` força o subchart a usar kebab-case nos
-  # labels e nomes de recursos, restaurando a convenção apesar do alias
-  # camelCase no Chart.yaml. Mesmo padrão de platform/external-secrets/.
-  nameOverride: cert-manager
 
   # Instalar CRDs automaticamente. ArgoCD reconhece e sincroniza.
   # Em prod pode-se mover para gerenciamento separado, mas no Uni+ optamos
