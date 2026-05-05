@@ -9,11 +9,24 @@ metadata:
     app.kubernetes.io/managed-by: {{ .Release.Service }}
     app.kubernetes.io/part-of: uniplus
 spec:
-  # Chart upstream sem alias — Pods recebem app.kubernetes.io/name: external-secrets.
+  # Subchart upstream cria 3 Deployments com app.kubernetes.io/name distintos:
+  #   - external-secrets             (controller)
+  #   - external-secrets-webhook     (validating webhook)
+  #   - external-secrets-cert-controller (cert lifecycle do webhook)
+  # Selecionar só `external-secrets` deixaria webhook e cert-controller sem
+  # restrição de egress. matchExpressions com In: [...] cobre os três.
   podSelector:
-    matchLabels:
-      app.kubernetes.io/name: external-secrets
-      app.kubernetes.io/instance: {{ .Release.Name }}
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values:
+          - external-secrets
+          - external-secrets-webhook
+          - external-secrets-cert-controller
+      - key: app.kubernetes.io/instance
+        operator: In
+        values:
+          - {{ .Release.Name }}
   policyTypes:
     - Egress
   egress:
