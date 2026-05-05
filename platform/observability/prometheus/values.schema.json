@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/unifesspa-edu-br/uniplus-infra/platform/observability/prometheus/values.schema.json",
+  "title": "prometheus chart values",
+  "description": "Schema mínimo dos values do chart wrapper. Subchart kube-prometheus-stack tem seu próprio schema (extenso); additionalProperties=true em todos os blocos permite passar overrides que serão validados pelo upstream.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "kubePrometheusStack": {
+      "type": "object",
+      "description": "Bloco do subchart prometheus-community/kube-prometheus-stack (alias).",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Liga/desliga o subchart. False em PA1 (que hospeda agregação separada)."
+        },
+        "nameOverride": {
+          "type": "string",
+          "description": "Força kebab-case no Chart.Name (alias=kubePrometheusStack vira camelCase nos labels sem este override)."
+        },
+        "commonLabels": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Labels Uni+ aplicados em todos recursos. NÃO incluir component (vide platform/cert-manager para a lição)."
+        },
+        "crds": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": { "type": "boolean" }
+          }
+        },
+        "grafana": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Default false aqui — Grafana vai pro chart platform/observability/grafana/ (#27)."
+            }
+          }
+        }
+      }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": { "type": "boolean" }
+      }
+    }
+  }
+}

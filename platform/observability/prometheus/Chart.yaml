@@ -1,0 +1,39 @@
+apiVersion: v2
+name: prometheus
+description: |
+  Prometheus + Prometheus Operator (CRDs ServiceMonitor/PodMonitor),
+  Alertmanager placeholder, node-exporter e kube-state-metrics. Empacotado
+  como chart wrapper sobre prometheus-community/kube-prometheus-stack.
+  Grafana fica fora deste chart (chart separado em platform/observability/grafana/).
+type: application
+
+# Versão do chart wrapper Uni+.
+version: 0.1.0
+
+# Versão upstream empacotada (kube-prometheus-stack).
+appVersion: "v0.90.1"
+
+home: https://github.com/unifesspa-edu-br/uniplus-infra
+sources:
+  - https://github.com/unifesspa-edu-br/uniplus-infra
+  - https://github.com/prometheus-community/helm-charts
+
+maintainers:
+  - name: CTIC Unifesspa
+    url: https://github.com/unifesspa-edu-br
+
+keywords:
+  - prometheus
+  - alertmanager
+  - observability
+  - uniplus
+
+# Dependência do chart upstream oficial (umbrella kube-prometheus-stack).
+# alias=kubePrometheusStack para acessar valores via .Values.kubePrometheusStack.*
+# (sem alias o nome com hífens não funcionaria em Go templates).
+dependencies:
+  - name: kube-prometheus-stack
+    alias: kubePrometheusStack
+    version: 84.5.0
+    repository: https://prometheus-community.github.io/helm-charts
+    condition: kubePrometheusStack.enabled
