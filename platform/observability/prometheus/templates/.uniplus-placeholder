@@ -1,0 +1,5 @@
+# Templates Uni+ específicos do wrapper (NetworkPolicy custom, IngressRoutes
+# OIDC-gated, etc.) ficam aqui. Atualmente o chart delega tudo para o
+# subchart upstream kube-prometheus-stack, então este diretório fica vazio
+# mas precisa existir para que helm lint --strict aceite o chart como
+# completo.

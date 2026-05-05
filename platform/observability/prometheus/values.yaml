@@ -1,0 +1,185 @@
+# Defaults para o stack Prometheus no cluster Uni+.
+#
+# Topologia (ADR-007 + ADR-008):
+# - lab/prod-{sp1,sp2}: Prometheus local com retenção curta (7-15d);
+#   PA1 agrega retenção longa (separado, fora deste chart)
+# - standalone: Prometheus single-replica, retenção 7d (suficiente pra
+#   validação, alinhado a `environments/standalone/values.yaml:77-79`)
+# - PA1: stack desligado por default (PA1 hospeda agregação separada)
+#
+# IMPORTANTE: este chart wrapper NÃO inclui Grafana (vai pro chart
+# platform/observability/grafana/, sub-issue #27). O subchart upstream
+# kube-prometheus-stack vem com Grafana habilitado por default — desliga
+# explicitamente aqui.
+
+kubePrometheusStack:
+  enabled: true
+
+  # `nameOverride` força kebab-case no Chart.Name (alias=kubePrometheusStack
+  # iria virar `kubePrometheusStack` nos labels). Mesma lição da
+  # platform/external-secrets/ e platform/cert-manager/.
+  nameOverride: kube-prometheus-stack
+
+  # Labels padrão Uni+ aplicados em todos os recursos do subchart.
+  # NÃO incluir `app.kubernetes.io/component` aqui (pode quebrar selectors).
+  commonLabels:
+    app.kubernetes.io/part-of: uniplus
+
+  # Instalar CRDs (ServiceMonitor, PodMonitor, PrometheusRule, etc.)
+  # ArgoCD reconcilia. KEEP em uninstall pra preservar configurações
+  # de monitoring de outros charts.
+  crds:
+    enabled: true
+    upgradeJob:
+      enabled: false  # ArgoCD gerencia upgrades via sync
+
+  # ============================================================================
+  # Grafana — DESLIGADO neste chart (vai pro platform/observability/grafana/).
+  # ============================================================================
+  grafana:
+    enabled: false
+
+  # ============================================================================
+  # Prometheus Operator (rola os CRDs ServiceMonitor/PodMonitor/etc.).
+  # ============================================================================
+  prometheusOperator:
+    enabled: true
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+  # ============================================================================
+  # Prometheus server (TSDB + scrape) + IngressRoute para a UI.
+  # ============================================================================
+  prometheus:
+    enabled: true
+    # IngressRoute (Traefik) para a UI do Prometheus.
+    # DESLIGADO por default — habilitar atrás de OIDC + IP allowlist via
+    # IngressRoute separada (sub-issue futura, similar ao Vault UI).
+    ingress:
+      enabled: false
+    prometheusSpec:
+      # 1 réplica em standalone/lab; prod-{sp1,sp2} elevam para 2 via env.
+      replicas: 1
+
+      # Retenção 7d (alinha com environments/standalone/values.yaml:77-79).
+      # Prod elevará para 15d via override; PA1 hospeda retenção longa.
+      retention: 7d
+      retentionSize: 8GiB  # storage 10Gi com folga pra WAL
+
+      # Recursos lab — Tabela 10.1.
+      resources:
+        requests:
+          cpu: 200m
+          memory: 512Mi
+        limits:
+          cpu: 1000m
+          memory: 2Gi
+
+      # Storage PVC. StorageClass nomeada pelo environment.
+      # standalone-local-nvme em standalone (override por env).
+      storageSpec:
+        volumeClaimTemplate:
+          spec:
+            accessModes: ["ReadWriteOnce"]
+            # storageClassName: <definido por environment>
+            resources:
+              requests:
+                storage: 10Gi
+
+      # Selecionar TODOS os ServiceMonitors do cluster, não só os com
+      # release matching. Permite que charts independentes (vault,
+      # external-secrets, cert-manager, traefik) tenham seus SMs scrapeados
+      # sem precisar sincronizar release labels.
+      serviceMonitorSelectorNilUsesHelmValues: false
+      podMonitorSelectorNilUsesHelmValues: false
+      probeSelectorNilUsesHelmValues: false
+      ruleSelectorNilUsesHelmValues: false
+
+      # Identificação institucional nos external_labels (carregadas em
+      # alertas e federation). Override por env (cluster name).
+      externalLabels:
+        institution: unifesspa
+        platform: uniplus
+        # cluster: <definido por environment>
+
+  # ============================================================================
+  # Alertmanager — placeholder (sem receivers reais).
+  # Receivers de email/Slack/etc. serão adicionados em sub-issue separada.
+  # ============================================================================
+  alertmanager:
+    enabled: true
+    alertmanagerSpec:
+      replicas: 1
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 200m
+          memory: 256Mi
+      retention: 120h
+      storage:
+        volumeClaimTemplate:
+          spec:
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: 2Gi
+
+    # Configuração inicial: receiver "null" que descarta os alertas (apenas
+    # registra no log do Alertmanager). Substituir quando a integração de
+    # notificações for definida.
+    config:
+      global:
+        resolve_timeout: 5m
+      route:
+        group_by: [alertname, cluster, service]
+        group_wait: 30s
+        group_interval: 5m
+        repeat_interval: 12h
+        receiver: "null"
+      receivers:
+        - name: "null"
+      inhibit_rules: []
+
+  # ============================================================================
+  # Node exporter (DaemonSet — métricas de host) e kube-state-metrics.
+  # ============================================================================
+  nodeExporter:
+    enabled: true
+
+  kube-state-metrics:
+    enabled: true
+
+  # ============================================================================
+  # Componentes opcionais — desligar ServiceMonitors duplicados em K3s.
+  # Em K3s control-plane components rodam como processos no host (não como
+  # Pods K8s separados), então os SMs default não conseguem scrape.
+  # ============================================================================
+  kubeApiServer:
+    enabled: true
+  kubelet:
+    enabled: true
+  kubeControllerManager:
+    enabled: false  # K3s embute no kubelet
+  kubeScheduler:
+    enabled: false  # K3s embute no kubelet
+  kubeProxy:
+    enabled: false  # K3s usa flannel sem kube-proxy
+  kubeEtcd:
+    enabled: false  # K3s embarca etcd sem endpoint scrape
+
+# ============================================================================
+# NetworkPolicy custom Uni+. O subchart upstream tem suas próprias NPs
+# (gateadas por `prometheus.networkPolicy.enabled`); nosso chart não duplica.
+# Override por env caso seja necessário ajustar.
+# ============================================================================
+networkPolicy:
+  # Wrapper deixa pro subchart gerenciar NetworkPolicies. Habilitar via
+  # `kubePrometheusStack.prometheus.networkPolicy.enabled: true` em env values.
+  enabled: false
