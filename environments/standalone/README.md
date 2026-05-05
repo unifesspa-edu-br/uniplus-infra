@@ -84,7 +84,7 @@ Procedimento detalhado: `docs/RUNBOOKS.md` §8 (Bootstrap e Teardown — Ambient
 
 Charts referenciados pelo overlay que ainda são placeholders (sem `Chart.yaml`/templates) e precisam aterrissar antes do bootstrap funcionar end-to-end:
 
-- `platform/cert-manager/` — `ingress.tls.issuer: letsencrypt` neste overlay assume `cert-manager` instalado e um `ClusterIssuer` chamado `letsencrypt` configurado para HTTP-01 (issue #15).
+- `platform/cert-manager/` — `ingress.tls.issuer: letsencrypt-prod` neste overlay assume `cert-manager` instalado e o `ClusterIssuer` `letsencrypt-prod` configurado para HTTP-01 (issue #15; chart cria também `letsencrypt-staging`).
 - `platform/traefik/` — terminação TLS e roteamento por path no FQDN único de standalone.
 - `platform/external-secrets/` — sintetiza o Secret `vault-ocikms-config` consumido pelo Vault (issue #64).
 - `platform/cloudflared/`, `platform/observability/*` — completam o stack de borda e observabilidade.
