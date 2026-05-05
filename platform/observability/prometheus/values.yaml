@@ -20,10 +20,17 @@ kubePrometheusStack:
   # platform/external-secrets/ e platform/cert-manager/.
   nameOverride: kube-prometheus-stack
 
-  # Labels padrão Uni+ aplicados em todos os recursos do subchart.
+  # Labels Uni+ aplicados em todos os recursos do subchart.
   # NÃO incluir `app.kubernetes.io/component` aqui (pode quebrar selectors).
+  # NÃO incluir `app.kubernetes.io/part-of: uniplus` aqui — o subchart
+  # kube-prometheus-stack já adiciona `app.kubernetes.io/part-of:
+  # kube-prometheus-stack` em cada recurso. Sobrescrever via commonLabels
+  # produz YAML com chave duplicada (kubeconform falha; K8s API aceita
+  # com last-wins mas é tecnicamente malformado). Para tracking Uni+,
+  # usar `uniplus.io/managed: "true"` (label de domínio próprio, não
+  # colide com convenções de chart).
   commonLabels:
-    app.kubernetes.io/part-of: uniplus
+    uniplus.io/managed: "true"
 
   # Instalar CRDs (ServiceMonitor, PodMonitor, PrometheusRule, etc.)
   # ArgoCD reconcilia. O subchart upstream já aplica `helm.sh/resource-policy:

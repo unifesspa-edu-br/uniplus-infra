@@ -89,3 +89,4 @@ dumps/
 # Configs locais geradas durante setup
 local-config/
 .local/
+__pycache__/

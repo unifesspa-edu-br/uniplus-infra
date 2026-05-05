@@ -100,6 +100,75 @@ jobs:
             exit 1
           fi
 
+  manifest-validate:
+    name: Manifest Validate (kubeconform + RFC 1123)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: 'v3.14.0'
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install PyYAML for RFC 1123 validator
+        run: pip install --quiet pyyaml
+
+      - name: Install kubeconform
+        run: |
+          curl -sL \
+            https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz \
+            | tar xz
+          sudo mv kubeconform /usr/local/bin/
+          kubeconform -v
+
+      - name: Render and validate charts
+        run: |
+          set -euo pipefail
+          K8S_VERSION="1.31.0"
+          FAILS=0
+          for chart in apps/*/ platform/*/ platform/observability/*/; do
+            [ -f "$chart/Chart.yaml" ] || continue
+            chart_name=$(basename "$chart")
+            echo "=== Validating $chart ==="
+            if grep -q '^dependencies:' "$chart/Chart.yaml"; then
+              helm dependency update "$chart" >/dev/null 2>&1
+            fi
+            if ! helm template "$chart_name" "$chart" > /tmp/render.yaml 2>/tmp/render.err; then
+              echo "✗ helm template failed for $chart"
+              cat /tmp/render.err
+              FAILS=$((FAILS+1))
+              continue
+            fi
+            # kubeconform: estrutura/OpenAPI (campos obrigatórios, tipos, kinds).
+            # -ignore-missing-schemas: pula CRDs (ServiceMonitor, IngressRoute,
+            # etc.) cujos schemas não vêm com kubeconform — endereçar em PR
+            # separado via -schema-location se necessário.
+            if ! kubeconform -strict -summary -kubernetes-version "$K8S_VERSION" \
+                -ignore-missing-schemas /tmp/render.yaml; then
+              echo "✗ kubeconform failed for $chart"
+              FAILS=$((FAILS+1))
+            fi
+            # RFC 1123: container names em workloads (Deployment/StatefulSet/
+            # DaemonSet/Job/CronJob/Pod). Captura bug de chart wrapper com
+            # `alias` que vira `Chart.Name` camelCase e produz container name
+            # inválido — kubeconform NÃO pega esse caso (regra de RFC 1123 não
+            # está no OpenAPI schema do K8s, só na admission do API server).
+            if ! python3 scripts/validate-rfc1123.py /tmp/render.yaml; then
+              echo "✗ RFC 1123 validation failed for $chart"
+              FAILS=$((FAILS+1))
+            fi
+          done
+          if [ "$FAILS" -gt 0 ]; then
+            echo "✗ $FAILS validação(ões) falharam"
+            exit 1
+          fi
+
   markdown-lint:
     name: Markdown Lint
     runs-on: ubuntu-latest
