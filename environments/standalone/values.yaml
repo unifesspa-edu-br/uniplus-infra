@@ -72,6 +72,12 @@ replicas:
 
 # Observabilidade single-stack com retenção curta — standalone não substitui
 # a observabilidade do lab/prod 3-DC, serve apenas para validação local.
+#
+# NOTA: o bloco `observability:` abaixo é DOCUMENTAÇÃO de intenção (alinha
+# com ADR-008) e NÃO é consumido por nenhum chart. Os charts wrapper
+# (`platform/observability/prometheus/`, `loki/`, `tempo/`) consomem suas
+# values próprias (ex.: `kubePrometheusStack.*`). Os defaults dos wrappers
+# já refletem esses números — overrides reais ficam nos blocos abaixo.
 observability:
   prometheus:
     retention: 7d
@@ -82,6 +88,27 @@ observability:
   tempo:
     retention: 3d
     storage: 5Gi
+
+# Wiring real do chart platform/observability/prometheus/ — força a
+# StorageClass standalone-local-nvme nos PVCs do Prometheus + Alertmanager
+# (default-class do cluster é local-path do K3s, não a tier do projeto)
+# e adiciona o cluster name no external_labels para identificação em
+# alertas e federation.
+kubePrometheusStack:
+  prometheus:
+    prometheusSpec:
+      storageSpec:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: standalone-local-nvme
+      externalLabels:
+        cluster: standalone
+  alertmanager:
+    alertmanagerSpec:
+      storage:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: standalone-local-nvme
 
 # ============================================================================
 # StorageClass do tier standalone (#74, ADR-008).

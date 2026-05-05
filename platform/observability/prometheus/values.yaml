@@ -26,8 +26,8 @@ kubePrometheusStack:
     app.kubernetes.io/part-of: uniplus
 
   # Instalar CRDs (ServiceMonitor, PodMonitor, PrometheusRule, etc.)
-  # ArgoCD reconcilia. KEEP em uninstall pra preservar configurações
-  # de monitoring de outros charts.
+  # ArgoCD reconcilia. O subchart upstream já aplica `helm.sh/resource-policy:
+  # keep` nas CRDs, então uninstall preserva — não precisa flag adicional.
   crds:
     enabled: true
     upgradeJob:
@@ -166,13 +166,13 @@ kubePrometheusStack:
   kubelet:
     enabled: true
   kubeControllerManager:
-    enabled: false  # K3s embute no kubelet
+    enabled: false  # K3s roda controller-manager via processo único do K3s, sem endpoint HTTP separado
   kubeScheduler:
-    enabled: false  # K3s embute no kubelet
+    enabled: false  # idem (mesmo binário K3s)
   kubeProxy:
-    enabled: false  # K3s usa flannel sem kube-proxy
+    enabled: false  # K3s roda kube-proxy mas binda métricas em 127.0.0.1 por default — SM padrão não scrapeia
   kubeEtcd:
-    enabled: false  # K3s embarca etcd sem endpoint scrape
+    enabled: false  # K3s embarca etcd sem endpoint client-cert separado pra scrape
 
 # ============================================================================
 # NetworkPolicy custom Uni+. O subchart upstream tem suas próprias NPs
