@@ -110,6 +110,29 @@ kubePrometheusStack:
           spec:
             storageClassName: standalone-local-nvme
 
+# Wiring real do chart platform/observability/grafana/ — força StorageClass
+# `standalone-local-nvme` no PVC (sem isso fica no `local-path` default do
+# K3s) e sobrescreve a URL do Prometheus datasource com o nome real do
+# Service (release name dinâmico do ApplicationSet).
+grafana:
+  persistence:
+    storageClassName: standalone-local-nvme
+  grafana.ini:
+    server:
+      root_url: https://standalone.portaluni.com.br/grafana/
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: Prometheus
+          type: prometheus
+          uid: prometheus
+          access: proxy
+          url: http://platform-observability-prometheus-uniplus-standalone-prometheus.observability-prometheus.svc.cluster.local:9090
+          isDefault: true
+          jsonData:
+            timeInterval: 30s
+
 # ============================================================================
 # StorageClass do tier standalone (#74, ADR-008).
 # rancher.io/local-path mapeado para /var/lib/uniplus/* no NVMe local da VM.

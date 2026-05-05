@@ -44,6 +44,12 @@ vault:
 kubePrometheusStack:
   enabled: false
 
+# Grafana (chart platform/observability/grafana/) NÃO roda em PA1 também.
+# PA1 hospeda agregação separada; o Grafana de visualização vive nos
+# clusters SP1/SP2 que servem a UI institucional.
+grafana:
+  enabled: false
+
 # Vault Transit — chart platform/vault-transit/.
 # 1 réplica em lab/sanidade (recursos reduzidos); 3 réplicas Raft em hml/prod.
 vaultTransit:

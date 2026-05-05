@@ -17,9 +17,11 @@
 grafana:
   enabled: true
 
-  # Padrão Uni+: kebab-case no Chart.Name (sem alias necessário, mas
-  # explicito por consistência com outros wrappers).
-  commonLabels:
+  # Labels Uni+ aplicados aos resources do subchart. ATENÇÃO: o chart
+  # grafana/grafana usa `extraLabels` (NÃO `commonLabels` como prometheus
+  # ou external-secrets). Setar `commonLabels` aqui seria silenciosamente
+  # ignorado e `app.kubernetes.io/part-of: uniplus` não propagaria.
+  extraLabels:
     app.kubernetes.io/part-of: uniplus
 
   # 1 réplica em standalone/lab; prod-{sp1,sp2} elevam para 2.
