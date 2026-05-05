@@ -63,9 +63,14 @@ externalSecrets:
         cpu: 200m
         memory: 128Mi
 
-  # Métricas Prometheus do operator. ESO expõe na porta 8080 por default.
+  # Métricas Prometheus do operator. ESO 2.4.1 já traz 3 ServiceMonitors
+  # próprios (controller, webhook, cert-controller) gateados por
+  # `serviceMonitor.enabled` + helper `shouldRenderServiceMonitor` (que
+  # checa se a CRD do Prometheus Operator existe). Wrapper NÃO emite SM
+  # próprio para evitar scrape duplicado do endpoint /metrics no controller.
+  # Ligar `enabled: true` quando #26 (Prometheus chart) estiver pronto.
   serviceMonitor:
-    enabled: false  # Ligar quando #26 (Prometheus chart) estiver pronto.
+    enabled: false
 
   # Labels padrão Uni+ aplicados em todos os recursos do subchart.
   commonLabels:

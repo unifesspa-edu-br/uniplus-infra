@@ -43,7 +43,7 @@
           "properties": {
             "enabled": {
               "type": "boolean",
-              "description": "ServiceMonitor para Prometheus. Default false até #26 (Prometheus chart)."
+              "description": "Habilita os 3 ServiceMonitors do subchart upstream (controller, webhook, cert-controller). Wrapper não emite SM próprio. Default false até #26 (Prometheus chart)."
             }
           }
         },
