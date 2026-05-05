@@ -30,7 +30,10 @@ from pathlib import Path
 
 import yaml
 
+# RFC 1123 label: regex de caracteres + start/end alphanumeric.
 RFC1123_LABEL = re.compile(r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$")
+# RFC 1123 também limita comprimento a 63 caracteres (DNS label limit).
+RFC1123_MAX_LEN = 63
 
 # Kinds que carregam Pod template embedded.
 WORKLOAD_KINDS = {"Deployment", "StatefulSet", "DaemonSet", "ReplicaSet", "Pod", "Job"}
@@ -69,6 +72,11 @@ def validate_doc(doc: dict, source: str) -> list[str]:
                     f"{source}: {kind}/{name} {container_field}[].name=\"{cname}\" "
                     "fails RFC 1123 label "
                     "(lowercase alphanumeric + '-', start/end alphanumeric)"
+                )
+            elif len(cname) > RFC1123_MAX_LEN:
+                issues.append(
+                    f"{source}: {kind}/{name} {container_field}[].name=\"{cname}\" "
+                    f"exceeds RFC 1123 length cap ({len(cname)} > {RFC1123_MAX_LEN})"
                 )
     return issues
 
