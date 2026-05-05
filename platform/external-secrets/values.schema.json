@@ -69,7 +69,7 @@
         "vaultServer": {
           "type": "string",
           "format": "uri",
-          "description": "URL do Vault no cluster local (Service ClusterIP)."
+          "description": "URL do Vault no cluster local (Service ClusterIP). http:// casa com lab/standalone (tlsDisable=true). Em prod (#15 fechado), sobrescrever para https:// e adicionar caProvider/caBundle."
         },
         "vaultPath": {
           "type": "string",
