@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/unifesspa-edu-br/uniplus-infra/platform/observability/grafana/values.schema.json",
+  "title": "grafana chart values",
+  "description": "Schema mínimo dos values do chart wrapper. Subchart grafana/grafana tem seu próprio schema; additionalProperties=true em todos os blocos permite passar overrides validados pelo upstream.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "grafana": {
+      "type": "object",
+      "description": "Bloco do subchart grafana/grafana.",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Liga/desliga o subchart. False em PA1 (que hospeda agregação separada)."
+        },
+        "replicas": { "type": "integer", "minimum": 1 },
+        "adminUser": { "type": "string" },
+        "adminPassword": {
+          "type": "string",
+          "description": "PLACEHOLDER no chart. Sobrescrever via ESO em prod/standalone."
+        },
+        "commonLabels": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": { "type": "boolean" }
+      }
+    }
+  }
+}

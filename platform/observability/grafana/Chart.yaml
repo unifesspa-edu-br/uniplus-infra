@@ -1,0 +1,37 @@
+apiVersion: v2
+name: grafana
+description: |
+  Grafana — UI para visualização de métricas (Prometheus), logs (Loki) e
+  traces (Tempo). Empacotado como chart wrapper sobre grafana/grafana com
+  datasources pré-configurados.
+type: application
+
+# Versão do chart wrapper Uni+.
+version: 0.1.0
+
+# Versão do Grafana upstream empacotado.
+appVersion: "12.3.1"
+
+home: https://github.com/unifesspa-edu-br/uniplus-infra
+sources:
+  - https://github.com/unifesspa-edu-br/uniplus-infra
+  - https://github.com/grafana/helm-charts
+
+maintainers:
+  - name: CTIC Unifesspa
+    url: https://github.com/unifesspa-edu-br
+
+keywords:
+  - grafana
+  - observability
+  - dashboards
+  - uniplus
+
+# Dependência do chart upstream oficial.
+# Sem alias — `grafana` é nome válido como Go identifier, valores acessíveis
+# via .Values.grafana.x diretamente.
+dependencies:
+  - name: grafana
+    version: 10.5.15
+    repository: https://grafana.github.io/helm-charts
+    condition: grafana.enabled

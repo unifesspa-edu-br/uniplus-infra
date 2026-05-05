@@ -1,0 +1,4 @@
+# Templates Uni+ específicos do wrapper (NetworkPolicy custom, IngressRoutes
+# OIDC-gated, dashboards provisionados via ConfigMap, etc.) ficam aqui.
+# Atualmente o chart delega tudo para o subchart upstream grafana/grafana
+# — este .gitkeep só mantém o diretório `templates/` rastreado pelo git.
