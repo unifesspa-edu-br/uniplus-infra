@@ -39,10 +39,12 @@ spec:
   policyTypes:
     - Egress
   egress:
-    # ACME server (Let's Encrypt) — HTTPS na internet pública.
-    # Não há como restringir por IP estável (Let's Encrypt usa CDN/anycast),
-    # então o controle é por porta 443 + DNS only. Aceitável: cert-manager
-    # só fala com endpoints ACME (RFC 8555) na porta 443.
+    # ACME server (Let's Encrypt) na porta 443 + self-check HTTP-01 na 80.
+    # Não há como restringir por IP estável (Let's Encrypt usa CDN/anycast).
+    # cert-manager faz GET http://<host>/.well-known/acme-challenge/<token>
+    # ANTES de pedir validação ao Let's Encrypt — sem 80 liberado, a
+    # autovalidação trava em CNIs com egress default-deny e o certificado
+    # nunca sai do estado pending.
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
@@ -54,6 +56,8 @@ spec:
       ports:
         - protocol: TCP
           port: 443
+        - protocol: TCP
+          port: 80
     # DNS (kube-dns).
     - to:
         - namespaceSelector:
