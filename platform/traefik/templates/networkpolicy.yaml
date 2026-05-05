@@ -1,0 +1,76 @@
+{{- if and .Values.networkPolicy.enabled .Values.traefik.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-traefik
+  labels:
+    app.kubernetes.io/name: traefik
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: uniplus
+spec:
+  # Subchart upstream emite Pods com app.kubernetes.io/name: traefik
+  # e instance == release name. commonLabels adiciona part-of e component.
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: traefik
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Tráfego externo entra via NodePort/LoadBalancer (depende do environment).
+    # Sem from selector — qualquer origem pode bater nas portas 8000/8443
+    # do Pod (firewall/NodePort range já controla acesso na borda do cluster).
+    - ports:
+        - protocol: TCP
+          port: 8000  # web (HTTP) — entryPoint redireciona para HTTPS
+        - protocol: TCP
+          port: 8443  # websecure (HTTPS)
+    # Métricas Prometheus (quando habilitado).
+    - from:
+        - namespaceSelector: {}
+      ports:
+        - protocol: TCP
+          port: 9100
+  egress:
+    # Tráfego para os Services dos backends nos namespaces das apps.
+    {{- with .Values.networkPolicy.appNamespaces }}
+    - to:
+        {{- range . }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ . | quote }}
+        {{- end }}
+    {{- end }}
+    # cert-manager solver Pods (HTTP-01 challenge) — namespace cert-manager
+    # pode hospedar challenge solver pods com label específico.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cert-manager
+    # DNS (kube-dns).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Kubernetes API (descoberta de Services e Endpoints, leitura de CRDs).
+    {{- with .Values.networkPolicy.kubeApiCidrs }}
+    - to:
+        {{- range . }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: 6443
+        - protocol: TCP
+          port: 443
+    {{- end }}
+{{- end }}
