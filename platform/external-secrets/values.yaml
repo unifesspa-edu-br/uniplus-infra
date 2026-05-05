@@ -87,15 +87,21 @@ clusterSecretStore:
   # Nome do ClusterSecretStore criado (referenciado por ExternalSecret consumers).
   name: vault-default
 
-  # Endpoint do Vault no cluster local (Service ClusterIP do chart platform/vault).
-  # Default segue o pattern de release name `vault` no namespace `vault`.
+  # Endpoint do Vault no cluster local. NÃO HÁ DEFAULT UTILIZÁVEL — cada
+  # environment DEVE sobrescrever explicitamente, porque o chart `platform/vault/`
+  # não força `fullnameOverride`, então o Service do Vault leva o release name
+  # do ApplicationSet (`platform-vault-<cluster>`), não `vault`.
   #
-  # ATENÇÃO TLS (#15): default `http://` casa com `vault.global.tlsDisable: true`
-  # de lab/standalone. Em prod (lab/prod-{sp1,sp2,pa1} já com `tlsDisable: false`),
-  # cada environment DEVE sobrescrever `vaultServer: https://...:8200` E injetar
-  # `caProvider`/`caBundle` (campos a adicionar abaixo) — caso contrário o handshake
-  # falha. Quando #15 (cert-manager + ClusterIssuer) aterrissar, refletir aqui.
-  vaultServer: http://vault.vault.svc.cluster.local:8200
+  # Pattern por environment (ApplicationSet usa release name = Application name):
+  #   environments/standalone:  http://platform-vault-uniplus-standalone.vault.svc.cluster.local:8200
+  #   environments/lab-sp1:     http://platform-vault-lab-sp1.vault.svc.cluster.local:8200
+  #   environments/prod-sp1:    https://platform-vault-prod-sp1.vault.svc.cluster.local:8200  (TLS — ver abaixo)
+  #
+  # ATENÇÃO TLS (#15): em prod (lab/prod-{sp1,sp2,pa1} já com `tlsDisable: false`)
+  # o esquema é `https://`. Cada environment DEVE injetar `caProvider`/`caBundle`
+  # (campos a adicionar abaixo) — caso contrário o handshake falha. Quando #15
+  # (cert-manager + ClusterIssuer) aterrissar, refletir aqui.
+  vaultServer: ""
 
   # Path do KV v2 no Vault onde os secrets vivem.
   vaultPath: secret

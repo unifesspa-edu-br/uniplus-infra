@@ -68,8 +68,7 @@
         },
         "vaultServer": {
           "type": "string",
-          "format": "uri",
-          "description": "URL do Vault no cluster local (Service ClusterIP). http:// casa com lab/standalone (tlsDisable=true). Em prod (#15 fechado), sobrescrever para https:// e adicionar caProvider/caBundle."
+          "description": "URL do Vault no cluster local. Sem default utilizável — cada environment sobrescreve com http(s)://platform-vault-<cluster>.vault.svc.cluster.local:8200 (vault chart não força fullnameOverride, então Service leva o release name do ApplicationSet). Empty string permitido apenas quando clusterSecretStore.enabled=false."
         },
         "vaultPath": {
           "type": "string",
