@@ -52,6 +52,8 @@ E injeta **2 valueFiles**:
 - `values.yaml` (defaults do chart)
 - `environments/<environment>/values.yaml` (overrides do cluster)
 
+Os dois ApplicationSets declaram `spec.goTemplate: true` + `goTemplateOptions: [missingkey=error]`. Sem isso o controller cai em fasttemplate e renderiza literais como `{{.app}}`, `{{.metadata.labels.environment}}` e a função Sprig `replace` — todos os Applications gerados colidem no mesmo nome e o AppSet falha com `ApplicationValidationError`. Manter ao adicionar generators ou trocar a sintaxe dos templates.
+
 ## Aplicação
 
 Após o ArgoCD estar instalado:

@@ -14,6 +14,13 @@ metadata:
   name: uniplus-apps
   namespace: argocd
 spec:
+  # Templates usam Go text/template + Sprig (acesso a nested maps como
+  # {{.metadata.labels.environment}}). Sem goTemplate=true o controller
+  # cai no modo fasttemplate e renderiza tudo literal — todos os Applications
+  # colidem no mesmo nome e o AppSet entra em ApplicationValidationError.
+  goTemplate: true
+  goTemplateOptions:
+    - missingkey=error
   generators:
     - matrix:
         generators:
@@ -74,6 +81,10 @@ metadata:
   name: uniplus-platform
   namespace: argocd
 spec:
+  # Ver comentário em uniplus-apps — função `replace` é Sprig, exige goTemplate.
+  goTemplate: true
+  goTemplateOptions:
+    - missingkey=error
   generators:
     - matrix:
         generators:
