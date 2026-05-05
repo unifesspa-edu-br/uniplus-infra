@@ -201,20 +201,30 @@ vault:
         setNodeId: true
         # Config Raft sem bloco `seal` — Vault usa Shamir por default.
         # `vault operator init -key-shares=5 -key-threshold=3` na inicialização.
+        #
+        # `service_registration "kubernetes"` REMOVIDO em standalone:
+        # K3s/flannel + service-account auth gera `nil response` no GET
+        # do Pod, e Vault BLOQUEIA a resposta HTTP de qualquer request
+        # síncrono enquanto retry-loop service_registration está ativo.
+        # Sintoma: `vault operator init` retorna `context deadline exceeded`
+        # após 60s mesmo com keys já geradas — keys perdidas. Service
+        # registration é nice-to-have (atualiza labels active/standby),
+        # não-essencial para single-replica standalone. Em prod 3-DC
+        # manter habilitado (Patroni-like leader election).
+        # Override para listener IPv4 explícito porque Vault CLI default
+        # usa http://127.0.0.1:8200 e [::]:8200 com bindv6only=1 não atende.
         config: |
           ui = true
 
           listener "tcp" {
             tls_disable     = 1
-            address         = "[::]:8200"
-            cluster_address = "[::]:8201"
+            address         = "0.0.0.0:8200"
+            cluster_address = "0.0.0.0:8201"
           }
 
           storage "raft" {
             path = "/vault/data"
           }
-
-          service_registration "kubernetes" {}
 
     dataStorage:
       size: 5Gi
