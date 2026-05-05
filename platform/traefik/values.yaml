@@ -51,6 +51,12 @@ traefik:
         enabled: true
     kubernetesCRD:
       enabled: true
+      # Sem `allowCrossNamespace: true`, IngressRoutes em ns das apps
+      # (uniplus, vault, keycloak) NÃO podem referenciar Middlewares no
+      # ns do Traefik — e os middlewares Uni+ (`uniplus-headers-security`,
+      # `uniplus-compress`) vivem aqui no `traefik` ns. Sem isso o
+      # exemplo do README falha silenciosamente.
+      allowCrossNamespace: true
 
   # Logs em JSON para integração com Loki (#28).
   logs:
