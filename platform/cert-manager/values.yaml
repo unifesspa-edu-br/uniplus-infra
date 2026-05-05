@@ -1,0 +1,118 @@
+# Defaults para o cert-manager no cluster Uni+.
+#
+# Topologia: cert-manager roda em cada cluster (lab-{sp1,sp2}, prod-{sp1,sp2},
+# standalone). Em PA1 pode permanecer desligado (não há ingress público em PA1).
+#
+# Estratégia de emissão (ADR-008 + #15):
+# - HTTP-01 via Traefik (chart platform/traefik/) para hosts simples
+# - DNS-01 wildcard fica fora de escopo até decisão DIRSI sobre borda (ADR-004)
+#
+# IMPORTANTE: o ClusterIssuer letsencrypt-prod usa o servidor real do
+# Let's Encrypt — sujeito a rate limits (50 certs/domain/week). Para testes
+# usar letsencrypt-staging (sem rate limit relevante; certs não confiáveis).
+
+certManager:
+  enabled: true
+
+  # `nameOverride: cert-manager` força o subchart a usar kebab-case nos
+  # labels e nomes de recursos, restaurando a convenção apesar do alias
+  # camelCase no Chart.yaml. Mesmo padrão de platform/external-secrets/.
+  nameOverride: cert-manager
+
+  # Instalar CRDs automaticamente. ArgoCD reconhece e sincroniza.
+  # Em prod pode-se mover para gerenciamento separado, mas no Uni+ optamos
+  # por consolidar no chart (menos pontos móveis).
+  crds:
+    enabled: true
+    keep: true  # Não remover CRDs em uninstall — preserva CertificateRequests/Orders existentes.
+
+  # Controller principal. Recursos modestos — cert-manager é leve.
+  replicaCount: 1
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+  # Webhook (validating admission). Necessário para validar Issuer/Certificate.
+  webhook:
+    replicaCount: 1
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+
+  # Cainjector (injeta CA bundles em webhooks/APIServices anotados).
+  cainjector:
+    enabled: true
+    replicaCount: 1
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 256Mi
+
+  # Métricas Prometheus do controller. Subchart tem sua própria definição
+  # de ServiceMonitor — gateado por `serviceMonitor.enabled` + helper
+  # interno (skipIfMissing default). Wrapper NÃO emite SM próprio para
+  # evitar scrape duplicado (mesmo padrão de platform/external-secrets/).
+  prometheus:
+    enabled: false  # Ligar quando #26 (Prometheus chart) estiver pronto.
+    servicemonitor:
+      enabled: false
+
+  # Labels padrão Uni+ aplicados em todos os recursos do subchart.
+  # No cert-manager v1.20+, `commonLabels` vive sob `global` (não no root
+  # como em external-secrets). Schema upstream rejeita root.commonLabels.
+  global:
+    commonLabels:
+      app.kubernetes.io/part-of: uniplus
+      app.kubernetes.io/component: cert-manager
+
+# ============================================================================
+# ClusterIssuers Let's Encrypt — HTTP-01 via Traefik.
+# Requer chart platform/traefik/ instalado e IngressClass `traefik` disponível.
+# Habilitar apenas após Traefik estar Synced/Healthy.
+# ============================================================================
+clusterIssuers:
+  enabled: false  # Habilitar via override em environments/<env>/values.yaml
+
+  # Email para registro ACME (notificações de expiração e termos de uso).
+  # Padrão: canal oficial CTIC. Override por environment se desejado.
+  email: ctic@unifesspa.edu.br
+
+  # IngressClass que resolve os HTTP-01 challenges. Coincide com Traefik
+  # (chart platform/traefik/). Override se outro ingress controller for usado.
+  ingressClass: traefik
+
+  staging:
+    enabled: true
+    server: https://acme-staging-v02.api.letsencrypt.org/directory
+    privateKeySecretRef: letsencrypt-staging-account-key
+
+  production:
+    enabled: true
+    server: https://acme-v02.api.letsencrypt.org/directory
+    privateKeySecretRef: letsencrypt-prod-account-key
+
+# ============================================================================
+# NetworkPolicy — egress controlado.
+# cert-manager precisa alcançar:
+#   - ACME servers (Let's Encrypt) via HTTPS na internet
+#   - Kubernetes API (CRD operations, SAR/TokenReview)
+#   - DNS (kube-dns)
+# ============================================================================
+networkPolicy:
+  enabled: true
+
+  # CIDRs restritos para egress ao Kubernetes API server.
+  # Padrão: service CIDR do K3s (10.43.0.0/16).
+  kubeApiCidrs:
+    - 10.43.0.0/16

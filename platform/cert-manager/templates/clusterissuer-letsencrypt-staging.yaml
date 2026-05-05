@@ -1,0 +1,29 @@
+{{- if and .Values.clusterIssuers.enabled .Values.clusterIssuers.staging.enabled }}
+{{- if not .Values.clusterIssuers.email -}}
+{{- fail "clusterIssuers.enabled=true exige clusterIssuers.email não vazio (registro ACME)." -}}
+{{- end }}
+# ClusterIssuer Let's Encrypt STAGING — HTTP-01 via Traefik.
+# Servidor de testes (sem rate limit relevante; certificados não confiáveis
+# por browsers). Use para validar o caminho de emissão antes de promover ao
+# `letsencrypt-prod` (rate limit 50 certs/domain/week).
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: letsencrypt-staging
+  labels:
+    app.kubernetes.io/name: cert-manager
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: uniplus
+    app.kubernetes.io/component: cert-manager
+spec:
+  acme:
+    email: {{ .Values.clusterIssuers.email | quote }}
+    server: {{ .Values.clusterIssuers.staging.server | quote }}
+    privateKeySecretRef:
+      name: {{ .Values.clusterIssuers.staging.privateKeySecretRef | quote }}
+    solvers:
+      - http01:
+          ingress:
+            class: {{ .Values.clusterIssuers.ingressClass | quote }}
+{{- end }}

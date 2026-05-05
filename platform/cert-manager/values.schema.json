@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/unifesspa-edu-br/uniplus-infra/platform/cert-manager/values.schema.json",
+  "title": "cert-manager chart values",
+  "description": "Schema dos values do chart platform/cert-manager/. Subchart jetstack/cert-manager tem seu próprio schema — additionalProperties=true permite passar overrides que serão validados pelo upstream.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "certManager": {
+      "type": "object",
+      "description": "Bloco do subchart jetstack/cert-manager (alias certManager).",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Liga/desliga o subchart. False em PA1 (não há ingress público)."
+        },
+        "nameOverride": {
+          "type": "string",
+          "description": "Força o subchart a usar este nome (kebab-case Uni+) em labels e nomes de recursos, restaurando convenção apesar do alias camelCase."
+        },
+        "crds": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "keep": { "type": "boolean" }
+          }
+        },
+        "replicaCount": { "type": "integer", "minimum": 1 },
+        "resources": { "$ref": "#/$defs/k8sResources" },
+        "webhook": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "replicaCount": { "type": "integer", "minimum": 1 },
+            "resources": { "$ref": "#/$defs/k8sResources" }
+          }
+        },
+        "cainjector": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "replicaCount": { "type": "integer", "minimum": 1 },
+            "resources": { "$ref": "#/$defs/k8sResources" }
+          }
+        },
+        "prometheus": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "servicemonitor": {
+              "type": "object",
+              "additionalProperties": true,
+              "properties": {
+                "enabled": {
+                  "type": "boolean",
+                  "description": "ServiceMonitor do subchart upstream. Wrapper não emite SM próprio. Default false até #26."
+                }
+              }
+            }
+          }
+        },
+        "global": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "commonLabels": {
+              "type": "object",
+              "additionalProperties": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "clusterIssuers": {
+      "type": "object",
+      "description": "ClusterIssuers Let's Encrypt — HTTP-01 via Traefik.",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "description": "Habilitar apenas após Traefik (#14) estar Synced/Healthy."
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Email para registro ACME — recebe avisos de expiração."
+        },
+        "ingressClass": {
+          "type": "string",
+          "description": "IngressClass que resolve HTTP-01 challenges (default: traefik)."
+        },
+        "staging": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "server": { "type": "string", "format": "uri" },
+            "privateKeySecretRef": { "type": "string" }
+          }
+        },
+        "production": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "server": { "type": "string", "format": "uri" },
+            "privateKeySecretRef": { "type": "string" }
+          }
+        }
+      }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "kubeApiCidrs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$"
+          },
+          "description": "CIDRs autorizados para egress ao Kubernetes API server."
+        }
+      }
+    }
+  },
+  "$defs": {
+    "k8sResources": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "requests": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "cpu": { "type": "string", "pattern": "^[0-9]+(m|)?$" },
+            "memory": { "type": "string", "pattern": "^[0-9]+(Mi|Gi)$" }
+          }
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "cpu": { "type": "string", "pattern": "^[0-9]+(m|)?$" },
+            "memory": { "type": "string", "pattern": "^[0-9]+(Mi|Gi)$" }
+          }
+        }
+      }
+    }
+  }
+}

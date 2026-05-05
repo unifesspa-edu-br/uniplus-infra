@@ -1,0 +1,40 @@
+apiVersion: v2
+name: cert-manager
+description: |
+  cert-manager — emissão e renovação automática de certificados X.509 no
+  cluster. Empacotado como chart wrapper sobre jetstack/cert-manager
+  com ClusterIssuers Let's Encrypt (staging + prod) via HTTP-01 + Traefik.
+type: application
+
+# Versão do chart wrapper Uni+.
+version: 0.1.0
+
+# Versão do cert-manager upstream empacotado.
+appVersion: "v1.20.2"
+
+home: https://github.com/unifesspa-edu-br/uniplus-infra
+sources:
+  - https://github.com/unifesspa-edu-br/uniplus-infra
+  - https://github.com/cert-manager/cert-manager
+
+maintainers:
+  - name: CTIC Unifesspa
+    url: https://github.com/unifesspa-edu-br
+
+keywords:
+  - cert-manager
+  - tls
+  - letsencrypt
+  - acme
+  - uniplus
+
+# Dependência do chart upstream oficial.
+# `alias: certManager` mantém consistência com o padrão do platform/external-secrets/
+# (alias camelCase para acessar valores via `.Values.certManager.*` em Go templates).
+dependencies:
+  - name: cert-manager
+    alias: certManager
+    version: v1.20.2
+    repository: https://charts.jetstack.io
+    # Permite desligar o subchart por environment se necessário.
+    condition: certManager.enabled
