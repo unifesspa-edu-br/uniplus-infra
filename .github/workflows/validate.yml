@@ -127,45 +127,51 @@ jobs:
           sudo mv kubeconform /usr/local/bin/
           kubeconform -v
 
-      - name: Render and validate charts
+      - name: Render and validate charts × environments
         run: |
           set -euo pipefail
           K8S_VERSION="1.31.0"
+          ENVS="lab-sp1 lab-sp2 lab-pa1 prod-sp1 prod-sp2 prod-pa1 standalone"
           FAILS=0
           for chart in apps/*/ platform/*/ platform/observability/*/; do
             [ -f "$chart/Chart.yaml" ] || continue
             chart_name=$(basename "$chart")
-            echo "=== Validating $chart ==="
             if grep -q '^dependencies:' "$chart/Chart.yaml"; then
               helm dependency update "$chart" >/dev/null 2>&1
             fi
-            if ! helm template "$chart_name" "$chart" > /tmp/render.yaml 2>/tmp/render.err; then
-              echo "✗ helm template failed for $chart"
-              cat /tmp/render.err
-              FAILS=$((FAILS+1))
-              continue
-            fi
-            # kubeconform: estrutura/OpenAPI (campos obrigatórios, tipos, kinds).
-            # -ignore-missing-schemas: pula CRDs (ServiceMonitor, IngressRoute,
-            # etc.) cujos schemas não vêm com kubeconform — endereçar em PR
-            # separado via -schema-location se necessário.
-            if ! kubeconform -strict -summary -kubernetes-version "$K8S_VERSION" \
-                -ignore-missing-schemas /tmp/render.yaml; then
-              echo "✗ kubeconform failed for $chart"
-              FAILS=$((FAILS+1))
-            fi
-            # RFC 1123: container names em workloads (Deployment/StatefulSet/
-            # DaemonSet/Job/CronJob/Pod). Captura bug de chart wrapper com
-            # `alias` que vira `Chart.Name` camelCase e produz container name
-            # inválido — kubeconform NÃO pega esse caso (regra de RFC 1123 não
-            # está no OpenAPI schema do K8s, só na admission do API server).
-            if ! python3 scripts/validate-rfc1123.py /tmp/render.yaml; then
-              echo "✗ RFC 1123 validation failed for $chart"
-              FAILS=$((FAILS+1))
-            fi
+            for env in $ENVS; do
+              env_values="environments/$env/values.yaml"
+              [ -f "$env_values" ] || continue
+              echo "=== $chart × $env ==="
+              if ! helm template "$chart_name" "$chart" \
+                  -f "$env_values" > /tmp/render.yaml 2>/tmp/render.err; then
+                echo "✗ helm template failed"
+                cat /tmp/render.err
+                FAILS=$((FAILS+1))
+                continue
+              fi
+              # Charts desabilitados em env (ex.: vault em PA1, grafana em PA1)
+              # produzem render vazio — kubeconform/RFC 1123 passam trivialmente.
+              # kubeconform: estrutura/OpenAPI (campos obrigatórios, tipos,
+              # kinds, YAML duplicate-key). -ignore-missing-schemas pula CRDs
+              # (ServiceMonitor, IngressRoute, etc.) sem schema disponível.
+              if ! kubeconform -strict -summary \
+                  -kubernetes-version "$K8S_VERSION" \
+                  -ignore-missing-schemas /tmp/render.yaml; then
+                echo "✗ kubeconform failed for $chart × $env"
+                FAILS=$((FAILS+1))
+              fi
+              # RFC 1123: container names em workloads. Captura bug de chart
+              # wrapper com `alias` virando Chart.Name camelCase + bug de
+              # nomes longos > 63 chars que K8s API rejeita.
+              if ! python3 scripts/validate-rfc1123.py /tmp/render.yaml; then
+                echo "✗ RFC 1123 validation failed for $chart × $env"
+                FAILS=$((FAILS+1))
+              fi
+            done
           done
           if [ "$FAILS" -gt 0 ]; then
-            echo "✗ $FAILS validação(ões) falharam"
+            echo "✗ $FAILS combinação(ões) chart × env falharam"
             exit 1
           fi
 
