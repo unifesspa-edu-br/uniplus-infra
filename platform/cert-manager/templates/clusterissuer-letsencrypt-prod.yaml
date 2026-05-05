@@ -1,4 +1,4 @@
-{{- if and .Values.clusterIssuers.enabled .Values.clusterIssuers.production.enabled }}
+{{- if and .Values.certManager.enabled .Values.clusterIssuers.enabled .Values.clusterIssuers.production.enabled }}
 {{- if not .Values.clusterIssuers.email -}}
 {{- fail "clusterIssuers.enabled=true exige clusterIssuers.email não vazio (registro ACME)." -}}
 {{- end }}
