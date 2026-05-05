@@ -28,10 +28,14 @@ keywords:
   - uniplus
 
 # Dependência do chart upstream oficial.
-# Sem alias — values ficam sob `externalSecrets.*`, alinhado ao nome natural
-# do chart upstream (release name external-secrets).
+# `alias: externalSecrets` é necessário: sem ele, Helm só forwarda valores
+# da key `external-secrets:` (com hífen) — incompatível com a sintaxe
+# `.Values.externalSecrets.x` em Go templates. O alias renomeia o scope
+# de valores para `externalSecrets:` (camelCase), permitindo override
+# limpo de replicas, resources, commonLabels, serviceAccount.name etc.
 dependencies:
   - name: external-secrets
+    alias: externalSecrets
     version: 2.4.1
     repository: https://charts.external-secrets.io
     # Permite desligar o subchart por environment se necessário.

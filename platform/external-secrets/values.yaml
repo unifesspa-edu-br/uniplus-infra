@@ -13,6 +13,13 @@
 externalSecrets:
   enabled: true
 
+  # `alias: externalSecrets` no Chart.yaml faz o subchart enxergar
+  # `Chart.Name == "externalSecrets"` (camelCase). Sem nameOverride os
+  # labels ficam `app.kubernetes.io/name: externalSecrets` (camelCase),
+  # quebrando o podSelector da NetworkPolicy (que usa kebab-case) e a
+  # convenção do projeto (CLAUDE.md: kebab-case em todos os nomes).
+  nameOverride: external-secrets
+
   # Operator core. Mantido enxuto — em prod elevar conforme Tabela 10.1.
   replicaCount: 1
   resources:
@@ -22,6 +29,15 @@ externalSecrets:
     limits:
       cpu: 200m
       memory: 256Mi
+
+  # ServiceAccount do controller. Nome FIXO (`external-secrets`) para que
+  # o ClusterSecretStore.vaultAuth.serviceAccount.name (abaixo) referencie
+  # a SA correta independente do release name gerado pelo ApplicationSet
+  # (`platform-external-secrets-<cluster>`). Sem isso, o upstream cria a SA
+  # como `<release>` e o Vault Kubernetes auth role não encontra a SA.
+  serviceAccount:
+    create: true
+    name: external-secrets
 
   # Webhook de validação (validating admission webhook).
   webhook:
@@ -73,6 +89,12 @@ clusterSecretStore:
 
   # Endpoint do Vault no cluster local (Service ClusterIP do chart platform/vault).
   # Default segue o pattern de release name `vault` no namespace `vault`.
+  #
+  # ATENÇÃO TLS (#15): default `http://` casa com `vault.global.tlsDisable: true`
+  # de lab/standalone. Em prod (lab/prod-{sp1,sp2,pa1} já com `tlsDisable: false`),
+  # cada environment DEVE sobrescrever `vaultServer: https://...:8200` E injetar
+  # `caProvider`/`caBundle` (campos a adicionar abaixo) — caso contrário o handshake
+  # falha. Quando #15 (cert-manager + ClusterIssuer) aterrissar, refletir aqui.
   vaultServer: http://vault.vault.svc.cluster.local:8200
 
   # Path do KV v2 no Vault onde os secrets vivem.
