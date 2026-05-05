@@ -15,15 +15,16 @@ Em clusters PA1, ESO permanece desligado por default — PA1 só hospeda Vault T
 
 ```
 platform/external-secrets/
-├── Chart.yaml                              # subchart upstream
+├── Chart.yaml                              # subchart upstream (alias=externalSecrets)
 ├── values.yaml                             # defaults Uni+
 ├── values.schema.json                      # validação dos overrides
 ├── README.md                               # este arquivo
 └── templates/
     ├── clustersecretstore-vault.yaml       # CSS default (gated)
-    ├── networkpolicy.yaml                  # egress controlado
-    └── servicemonitor.yaml                 # métricas Prometheus (gated)
+    └── networkpolicy.yaml                  # egress controlado
 ```
+
+ServiceMonitors vêm do subchart upstream (3 — controller/webhook/cert-controller), gateados por `externalSecrets.serviceMonitor.enabled`. Wrapper não emite SM próprio para evitar scrape duplicado.
 
 ## Bootstrap
 
@@ -101,7 +102,7 @@ A Secret `portal-postgres-creds` aparece no namespace `uniplus` e é consumida p
 
 ## Observabilidade
 
-ESO expõe métricas Prometheus na porta `8080` (default do upstream chart). O `ServiceMonitor` é gerado quando `externalSecrets.serviceMonitor.enabled: true` — manter desligado até o stack Prometheus (#26) estar no ar.
+ESO expõe métricas Prometheus na porta `8080` (default do upstream chart). Os ServiceMonitors são gerados pelo próprio subchart (3 SMs: controller, webhook, cert-controller) quando `externalSecrets.serviceMonitor.enabled: true` — manter desligado até o stack Prometheus (#26) estar no ar. O wrapper não emite SM próprio para evitar scrape duplicado do endpoint `/metrics`.
 
 ## Network
 
