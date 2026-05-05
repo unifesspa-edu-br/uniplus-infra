@@ -47,14 +47,23 @@ spec:
         environment: '{{.metadata.labels.environment}}'
     spec:
       project: uniplus
-      source:
-        repoURL: https://github.com/unifesspa-edu-br/uniplus-infra
-        targetRevision: main
-        path: 'apps/{{.app}}'
-        helm:
-          valueFiles:
-            - values.yaml
-            - '../../environments/{{.metadata.labels.environment}}/values.yaml'
+      # Multi-source apps (ArgoCD ≥ 2.6) — usar `$values` para referenciar
+      # arquivos de valores via path absoluto a partir do repo root,
+      # eliminando a fragilidade de `../../` relativo (que quebra para
+      # paths de profundidade variável). Todos os apps usam apps/<app>
+      # (2 segmentos), mas mantemos o pattern consistente com o
+      # uniplus-platform AppSet para evitar drift.
+      sources:
+        - repoURL: https://github.com/unifesspa-edu-br/uniplus-infra
+          targetRevision: main
+          path: 'apps/{{.app}}'
+          helm:
+            valueFiles:
+              - values.yaml
+              - '$values/environments/{{.metadata.labels.environment}}/values.yaml'
+        - repoURL: https://github.com/unifesspa-edu-br/uniplus-infra
+          targetRevision: main
+          ref: values
       destination:
         server: '{{.server}}'
         namespace: uniplus
@@ -115,14 +124,23 @@ spec:
         environment: '{{.metadata.labels.environment}}'
     spec:
       project: uniplus
-      source:
-        repoURL: https://github.com/unifesspa-edu-br/uniplus-infra
-        targetRevision: main
-        path: 'platform/{{.component}}'
-        helm:
-          valueFiles:
-            - values.yaml
-            - '../../environments/{{.metadata.labels.environment}}/values.yaml'
+      # Multi-source apps — `$values` usa path absoluto a partir do repo
+      # root, evitando o bug de `../../` relativo que renderizava
+      # `platform/environments/...` para components com profundidade 3
+      # (observability/prometheus, observability/grafana, etc.). Components
+      # de profundidade 2 (storage, traefik, ...) também passam a usar
+      # path absoluto pra consistência.
+      sources:
+        - repoURL: https://github.com/unifesspa-edu-br/uniplus-infra
+          targetRevision: main
+          path: 'platform/{{.component}}'
+          helm:
+            valueFiles:
+              - values.yaml
+              - '$values/environments/{{.metadata.labels.environment}}/values.yaml'
+        - repoURL: https://github.com/unifesspa-edu-br/uniplus-infra
+          targetRevision: main
+          ref: values
       destination:
         server: '{{.server}}'
         namespace: '{{.component | replace "/" "-"}}'
