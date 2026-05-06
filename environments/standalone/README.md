@@ -58,6 +58,36 @@ Para usar outro provider:
 
 Tudo o mais (Postgres single-primary, Keycloak sem Gov.br, observabilidade single-stack, `StorageClass: standalone-local-nvme`, ingress single-host) é universal.
 
+### Host CIDR no `kubeApiCidrs` (provider-/cluster-specific)
+
+`networkPolicy.kubeApiCidrs` em `values.yaml` inclui dois CIDRs:
+
+| CIDR | Significado | Portátil? |
+|---|---|---|
+| `10.43.0.0/16` | Service CIDR default do K3s | Sim |
+| `10.0.1.0/24` | Subnet OCI VCN da VM standalone de referência (Epic #40, sa-saopaulo-1) | **Não** — substituir por cluster |
+
+Por que dois CIDRs: K3s embedded kube-router avalia regras de egress NetworkPolicy *após* o DNAT do kube-proxy. Quando um Pod conecta `10.43.0.1:443` (Service IP do K8s API), kube-proxy reescreve o destino para `<node-ip>:6443` (em K3s o API server é processo no host, não Pod). Sem o CIDR do nó na lista, ESO controller, ESO cert-controller e cert-manager-cainjector ficam em CrashLoopBackOff com `dial tcp 10.43.0.1:443: connect: connection refused` no `init()` — webhook ESO não é afetado por não consumir K8s API no startup. PR #111 e issue #110 documentam o achado.
+
+Para registrar um cluster standalone em **outro** ambiente:
+
+1. Identificar o CIDR real do nó K8s no host:
+   ```bash
+   ip -4 addr show | awk '/inet 10\./ || /inet 172\./ || /inet 192\./ {print $2}'
+   ```
+2. Substituir `10.0.1.0/24` em `environments/standalone/values.yaml` pelo CIDR observado (geralmente `/24` da subnet, não o `/32` do nó — cobre re-provisionamento futuro).
+3. Em provisioning Tofu (quando aterrissar — Stories #75–#80), expor o CIDR como output da network e referenciar por convenção em vez de hardcode.
+
+Exemplos por provider de referência:
+
+| Provider | CIDR típico de subnet privada |
+|---|---|
+| OCI VCN default | `10.0.0.0/16` (subnet `10.0.1.0/24` deste cluster) |
+| AWS VPC default | `172.31.0.0/16` |
+| Azure VNet default | `10.0.0.0/16` |
+| GCP VPC default (auto mode) | `10.128.0.0/9` (uma sub-faixa por região) |
+| Bare-metal/lab corporativo | depende do range corporativo (consultar redes) |
+
 ## Como o ApplicationSet aplica
 
 `argocd/applicationset.yaml` é genérico via label `environment: <env>`. Para o ArgoCD reconciliar este overlay basta registrar o cluster com:

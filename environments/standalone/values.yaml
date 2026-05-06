@@ -246,7 +246,7 @@ vaultTransit:
 #
 # `kubeApiCidrs` consumido pelos charts platform/external-secrets/ e
 # platform/cert-manager/ — egress permitido para o K8s API server. Inclui
-# o CIDR do host K8s (10.0.1.0/24) além do service CIDR (10.43.0.0/16):
+# o CIDR do host K8s além do service CIDR (10.43.0.0/16):
 # em K3s, o API server roda como processo no host (não como Pod K8s) e o
 # kube-proxy faz DNAT do Service IP 10.43.0.1:443 para <node-ip>:6443. O
 # kube-router (default NP enforcer do K3s) avalia a regra de egress
@@ -254,6 +254,16 @@ vaultTransit:
 # o pacote já reescrito para o IP do nó. Sem o CIDR do host, ESO controller,
 # ESO cert-controller e cert-manager-cainjector ficam em CrashLoopBackOff
 # com `dial tcp 10.43.0.1:443: connect: connection refused` no init().
+#
+# IMPORTANTE — host CIDR é provider-/cluster-specific:
+# O CIDR `10.0.1.0/24` abaixo corresponde à subnet OCI VCN do cluster
+# standalone de referência (Epic #40, VM em sa-saopaulo-1). Para QUALQUER
+# outro cluster standalone (outra VCN/subnet, outra região, outro provider
+# como AWS/Azure/bare-metal) o operator DEVE substituir esse CIDR pelo
+# range real do nó K8s antes de registrar o cluster no ArgoCD. Inspecionar
+# com `ip -4 addr` no host ou conferir o output Tofu da rede provisionada
+# (ver provisioning/<provider>/standalone/network.tf quando disponível).
+# Procedimento e exemplos por provider em environments/standalone/README.md.
 # Em prod 3-DC com IPs de control plane em ranges diferentes, override
 # por env reflete a rede real (ex.: 10.20.0.0/16 em prod-sp1).
 networkPolicy:
@@ -262,7 +272,7 @@ networkPolicy:
   traefikNamespace: traefik
   kubeApiCidrs:
     - 10.43.0.0/16
-    - 10.0.1.0/24
+    - 10.0.1.0/24  # ajustar por cluster — ver bloco acima
 
 # ----------------------------------------------------------------------------
 # External Secrets (chart platform/external-secrets/) — endpoint do Vault.
