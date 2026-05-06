@@ -283,7 +283,7 @@ networkPolicy:
 # provisionamento da policy + role no Vault.
 # ----------------------------------------------------------------------------
 clusterSecretStore:
-  enabled: false  # ligar quando #64 fechar
+  enabled: true
   vaultServer: http://platform-vault-uniplus-standalone.vault.svc.cluster.local:8200
 
 # ----------------------------------------------------------------------------
