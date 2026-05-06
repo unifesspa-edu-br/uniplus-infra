@@ -1102,7 +1102,7 @@ Em standalone, os componentes stateful rodam **fora do K8s** — containers Dock
 
 A função `step_data_setup_postgres` em `scripts/bootstrap-standalone.sh` provisiona, na ordem:
 
-1. Diretórios `/var/lib/uniplus/postgres/{data,init}` com ownership `999:999` (uid `postgres` no container `postgres:18-alpine`).
+1. Diretórios `/var/lib/uniplus/postgres/{data,init}` com ownership `70:70` (uid `postgres` no container `postgres:18-alpine` — Alpine usa uid 70, distinto do uid 999 das imagens Debian-based).
 2. `.bootstrap-creds` (root:root 600) em `/var/lib/uniplus/postgres/.bootstrap-creds` com `super_pw` + `keycloak_pw` (256 bits cada via `openssl rand -hex 32`) — gerado **somente na primeira execução**.
 3. Init SQL `/var/lib/uniplus/postgres/init/00-keycloak.sql` que cria role `keycloak` + database `keycloak` na primeira inicialização do cluster Postgres (entrypoint do `postgres:18-alpine` ignora o script silenciosamente em re-execuções com data dir já populado).
 4. EnvironmentFile `/etc/uniplus-postgres.env` (root:root 600) com `POSTGRES_PASSWORD=<super_pw>` lido do `.bootstrap-creds`. `docker run` recebe a senha via `-e POSTGRES_PASSWORD` (sem `=value`) — evita exposure em `/proc/<pid>/cmdline`.
@@ -1202,10 +1202,18 @@ if [ -z "$KEYCLOAK_PW" ]; then
   return 1 2>/dev/null || exit 1
 fi
 
-# 3) Pod ad-hoc com psql (sem hostNetwork — usa flannel)
+# 3) Pod ad-hoc com psql (sem hostNetwork — usa flannel).
+#    Senha vai via stdin (here-string + `read -r` no pod), NÃO em argv:
+#    - `<<<` é processada pelo bash sem fork → senha não cruza argv do shell
+#      local nem aparece em /proc/<pid>/cmdline do k8s-host.
+#    - `kubectl run -i` conecta o stdin do bash ao stdin do container.
+#    - Dentro do pod, `read -r PW` consome a linha; `PGPASSWORD="$PW"` fica
+#      apenas no env do processo psql, NUNCA na spec do Pod salva no apiserver.
+#    Mesmo padrão de higiene de §8.4.2 (unseal keys via stdin do vault CLI).
 sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml run pg-validation \
   --image=postgres:18-alpine --restart=Never --rm -i --command -- \
-  sh -c "PGPASSWORD=$KEYCLOAK_PW psql -h 10.0.2.87 -U keycloak -d keycloak -c 'SELECT 1 AS ok;'"
+  sh -c 'read -r PW; PGPASSWORD="$PW" psql -h 10.0.2.87 -U keycloak -d keycloak -c "SELECT 1 AS ok;"' \
+  <<<"$KEYCLOAK_PW"
 # Esperado: 1 (uma linha)
 unset KEYCLOAK_PW
 ```
