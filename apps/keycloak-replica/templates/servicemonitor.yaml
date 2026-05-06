@@ -1,0 +1,20 @@
+{{- if and .Values.keycloak.enabled .Values.keycloak.serviceMonitor.enabled .Values.keycloak.metrics.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "keycloak-replica.fullname" . }}
+  labels:
+    {{- include "keycloak-replica.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "keycloak-replica.selectorLabels" . | nindent 6 }}
+  endpoints:
+    # /metrics em 26.x mora na management port (default 9000) quando
+    # KC_METRICS_ENABLED=true e management interface ligado (ambos default
+    # com KC_HEALTH_ENABLED=true também ligado).
+    - port: management
+      path: /metrics
+      interval: {{ .Values.keycloak.serviceMonitor.interval | quote }}
+      scheme: http
+{{- end }}

@@ -1,0 +1,27 @@
+{{- if and .Values.keycloak.enabled .Values.keycloak.ingress.enabled .Values.keycloak.ingress.tls.enabled .Values.keycloak.ingress.tls.certManager.enabled }}
+{{- $tls := .Values.keycloak.ingress.tls -}}
+{{- if not $tls.certManager.clusterIssuer -}}
+{{- fail "keycloak.ingress.tls.certManager.enabled=true exige keycloak.ingress.tls.certManager.clusterIssuer não vazio (ex.: letsencrypt-staging, letsencrypt-prod)." -}}
+{{- end -}}
+{{- if not $tls.secretName -}}
+{{- fail "keycloak.ingress.tls.certManager.enabled=true exige keycloak.ingress.tls.secretName não vazio — esse Secret recebe o cert emitido pelo cert-manager e é referenciado pelo IngressRoute." -}}
+{{- end -}}
+# Certificate cert-manager.io/v1 — emite o Secret TLS consumido pelo
+# IngressRoute. cert-manager faz HTTP-01 challenge via Traefik (single-host
+# em standalone) ou DNS-01 (multi-DC quando aterrissar). Renova
+# automaticamente 30 dias antes do expiry.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "keycloak-replica.fullname" . }}
+  labels:
+    {{- include "keycloak-replica.labels" . | nindent 4 }}
+spec:
+  secretName: {{ $tls.secretName | quote }}
+  issuerRef:
+    name: {{ $tls.certManager.clusterIssuer | quote }}
+    kind: ClusterIssuer
+    group: cert-manager.io
+  dnsNames:
+    - {{ .Values.keycloak.ingress.host | quote }}
+{{- end }}
