@@ -1267,6 +1267,222 @@ EOF
 > - **Backup:** `pg_dump --format=custom keycloak` rodado periodicamente via systemd timer no data-host, output enviado para bucket MinIO (`s3://backups/postgres/<timestamp>.dump`).
 > - **Restore:** `pg_restore --clean --if-exists --no-owner --dbname=keycloak <dump>` em data-host com volume LVM intacto.
 
+## 10. Keycloak (standalone)
+
+Operações do serviço OIDC local em standalone — chart `apps/keycloak-replica/`. Pré-requisito: §9 Postgres systemd ativo no data-host + Vault unsealed + ESO `ClusterSecretStore vault-default` STATUS=Valid+Ready.
+
+### 10.1 Pré-flight: secrets no Vault
+
+Antes do ArgoCD reconciliar o chart, persistir as 3 credenciais consumidas via ExternalSecret. O Postgres já está coberto pela §9.2; falta o admin do Keycloak e o client secret do `uniplus-portal`:
+
+```bash
+# No k8s-host — port-forward + autenticação (mesmo pattern §9.2)
+sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml \
+  -n vault port-forward platform-vault-uniplus-standalone-0 8200:8200 \
+  > /tmp/vault-pf.log 2>&1 &
+PF_PID=$!
+trap 'kill "$PF_PID" 2>/dev/null; unset VAULT_TOKEN VAULT_ADDR ADMIN_PW CLIENT_SECRET' EXIT
+export VAULT_ADDR=http://127.0.0.1:8200
+until curl -s --max-time 1 "$VAULT_ADDR/v1/sys/health" >/dev/null 2>&1; do sleep 1; done
+
+read -rsp "Root token: " VAULT_TOKEN; echo
+export VAULT_TOKEN
+
+# 1) Bootstrap admin — gera senha aleatória (32 bytes hex), persiste e custodia
+ADMIN_PW=$(openssl rand -hex 32)
+vault kv put secret/standalone/keycloak/admin \
+  username=admin password="$ADMIN_PW"
+echo "Admin password (salvar no gestor institucional): $ADMIN_PW"
+
+# 2) Client secret do uniplus-portal — também aleatório (será setado no realm
+#    via ${VAR} substitution; rotação posterior via kcadm.sh, ver §10.4)
+CLIENT_SECRET=$(openssl rand -hex 32)
+vault kv put secret/standalone/keycloak/clients/uniplus-portal \
+  client_id=uniplus-portal client_secret="$CLIENT_SECRET"
+echo "Client secret (salvar no gestor institucional): $CLIENT_SECRET"
+
+# trap EXIT cuida de kill + unset ao sair do shell
+```
+
+> ⚠️ **Custódia:** salvar `ADMIN_PW` e `CLIENT_SECRET` em gestor institucional (Bitwarden, 1Password, Vault corporativo). Standalone não é cofre durável — re-bootstrap via Tofu pode regenerar Shamir keys e perder estes secrets. Rotacionar via §10.4 antes de promover para hml/prod.
+
+### 10.2 Verificar pod e ESO
+
+```bash
+kc() { sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml "$@"; }
+
+# 1) ExternalSecrets sintetizaram os Secrets K8s
+kc get externalsecret -n uniplus
+# Esperado: 3 ESOs com STATUS=SecretSynced READY=True
+#   - keycloak-replica-uniplus-standalone-db
+#   - keycloak-replica-uniplus-standalone-bootstrap-admin
+#   - keycloak-replica-uniplus-standalone-client-uniplus-portal
+
+# 2) Pod Running 1/1
+kc get pod -n uniplus -l app.kubernetes.io/name=keycloak-replica
+# Esperado: keycloak-replica-uniplus-standalone-<hash>  1/1  Running
+
+# 3) Logs limpos (sem erros DB connection, sem realm-import error)
+kc logs -n uniplus -l app.kubernetes.io/name=keycloak-replica --tail=200
+
+# 4) Probes na management port (9000) respondem
+kc exec -n uniplus -l app.kubernetes.io/name=keycloak-replica -- \
+  curl -sf http://localhost:9000/health/ready
+# Esperado: {"status": "UP", "checks": [...]}
+```
+
+### 10.3 Smoke test end-to-end
+
+Do laptop (sem precisar de SSH):
+
+```bash
+# 1) Discovery OIDC
+curl -sk https://standalone.portaluni.com.br/auth/realms/uniplus/.well-known/openid-configuration \
+  | jq '.issuer, .authorization_endpoint, .token_endpoint'
+# Esperado: issuer = "https://standalone.portaluni.com.br/auth/realms/uniplus"
+
+# 2) Admin console (UI) — aceitar warning de cert (Let's Encrypt staging)
+xdg-open https://standalone.portaluni.com.br/auth/admin/
+
+# 3) Login com admin user lido do Vault (§10.1) — realm `uniplus` deve
+#    aparecer no dropdown superior esquerdo + client `uniplus-portal`
+#    visível em "Clients" com Authorization Code + PKCE habilitado
+```
+
+### 10.4 Rotacionar client secret do `uniplus-portal`
+
+Quando necessário (comprometimento, política de rotação periódica):
+
+```bash
+# 1) Gerar novo secret e atualizar Vault primeiro
+NEW_SECRET=$(openssl rand -hex 32)
+vault kv put secret/standalone/keycloak/clients/uniplus-portal \
+  client_id=uniplus-portal client_secret="$NEW_SECRET"
+
+# 2) Forçar refresh do ExternalSecret (espera até refreshInterval=1h ou refresh imediato)
+kc annotate externalsecret -n uniplus \
+  keycloak-replica-uniplus-standalone-client-uniplus-portal \
+  force-sync="$(date +%s)" --overwrite
+
+# 3) Aplicar no Keycloak via kcadm.sh (realm-import só cria; rotação é via API).
+#    NEW_SECRET vai via stdin (here-string + `read -r` no pod) — NUNCA em argv,
+#    evitando exposure em /proc/<pid>/cmdline e a armadilha clássica de
+#    quoting (single vs. double quotes em `bash -c`). O password de admin
+#    vem do env var KC_BOOTSTRAP_ADMIN_PASSWORD que já existe no Pod
+#    (envFrom da ExternalSecret keycloak-bootstrap-admin).
+kc exec -n uniplus -i deploy/keycloak-replica-uniplus-standalone -- bash -c '
+  read -r NEW_SECRET
+  /opt/keycloak/bin/kcadm.sh config credentials \
+    --server http://localhost:8080/auth --realm master \
+    --user "$KC_BOOTSTRAP_ADMIN_USERNAME" --password "$KC_BOOTSTRAP_ADMIN_PASSWORD"
+  CLIENT_UUID=$(/opt/keycloak/bin/kcadm.sh get clients -r uniplus \
+    -q clientId=uniplus-portal --fields id --format csv --noquotes | tail -1)
+  /opt/keycloak/bin/kcadm.sh update "clients/$CLIENT_UUID" -r uniplus \
+    -s "secret=$NEW_SECRET"
+' <<<"$NEW_SECRET"
+unset NEW_SECRET
+
+# 4) Atualizar configuração dos consumers (apps que usam o client) — via redeploy
+#    quando os apps reais aterrissarem (Fase 5)
+```
+
+### 10.5 Re-importar realm (forçar replace)
+
+Por padrão o `--import-realm` em 26.x **pula** se o realm já existir, preservando mudanças via Admin UI. Para forçar reimport (perde mudanças não commitadas no `uniplus-realm.json`):
+
+> ⚠️ **Pré-requisito: Keycloak parado.** `kc.sh import --override` exige que **nenhum nó esteja rodando** (doc oficial Keycloak 26.x — port conflicts e state inconsistente se executado contra server live). Procedimento abaixo escala o Deployment para 0, roda um Job descartável de import, depois escala de volta.
+
+```bash
+# 1) Scale-down do Deployment + aguardar pods sumirem
+kc scale deployment -n uniplus keycloak-replica-uniplus-standalone --replicas=0
+kc wait pod -n uniplus -l app.kubernetes.io/name=keycloak-replica \
+  --for=delete --timeout=120s
+
+# 2) Job ad-hoc rodando `kc.sh import --override` offline. Mesma imagem do
+#    Deployment + envFrom dos Secrets de DB (gerados pelas ExternalSecrets)
+#    + volume com o ConfigMap do realm.
+kc apply -f - <<'EOF'
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: keycloak-import-override
+  namespace: uniplus
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: kc-import
+          image: quay.io/keycloak/keycloak:26.6.1
+          args:
+            - import
+            - --override=true
+            - --file
+            - /opt/keycloak/data/import/uniplus-realm.json
+          envFrom:
+            # DB credentials (KC_DB_USERNAME, KC_DB_PASSWORD) — Postgres no data-host.
+            - secretRef: { name: keycloak-replica-uniplus-standalone-db }
+            # client_secret do uniplus-portal — UNIPLUS_PORTAL_CLIENT_SECRET é
+            # referenciado como ${VAR} no realm JSON. Sem este envFrom, o
+            # `kc.sh import --override` substituiria o placeholder por string
+            # vazia/literal, quebrando OIDC do client após restore.
+            - secretRef: { name: keycloak-replica-uniplus-standalone-client-uniplus-portal }
+          env:
+            - { name: KC_DB, value: postgres }
+            - { name: KC_DB_URL_HOST, value: 10.0.2.87 }
+            - { name: KC_DB_URL_PORT, value: "5432" }
+            - { name: KC_DB_URL_DATABASE, value: keycloak }
+          volumeMounts:
+            - { name: realm, mountPath: /opt/keycloak/data/import, readOnly: true }
+      volumes:
+        - name: realm
+          configMap:
+            name: keycloak-replica-uniplus-standalone-realm-uniplus
+EOF
+
+# 3) Aguardar conclusão e conferir logs
+kc wait job -n uniplus keycloak-import-override \
+  --for=condition=complete --timeout=300s
+kc logs -n uniplus job/keycloak-import-override
+
+# 4) Scale-up de volta (Job é GC-removido por ttlSecondsAfterFinished=300s)
+kc scale deployment -n uniplus keycloak-replica-uniplus-standalone --replicas=1
+```
+
+### 10.6 Promover cert para Let's Encrypt prod
+
+Standalone usa `letsencrypt-staging` durante a Fase 4–6 (90d, browser warning aceitável para validação). Após smoke test completo (Fase 6 — login real do portal), promover para certificado válido:
+
+1. Em `environments/standalone/values.yaml`, alterar a key real consumida pelo chart:
+
+   ```yaml
+   keycloak:
+     ingress:
+       tls:
+         certManager:
+           clusterIssuer: letsencrypt-prod   # antes: letsencrypt-staging
+   ```
+
+2. Commit + PR. O ArgoCD reconcilia o Certificate; cert-manager renova o Secret apontado por `keycloak.ingress.tls.secretName` automaticamente (HTTP-01 via Traefik).
+3. Confirmar no cluster:
+
+   ```bash
+   kc get certificate -n uniplus keycloak-replica-uniplus-standalone -o yaml \
+     | grep -E "issuerRef|status:"
+   # Esperado: issuerRef.name=letsencrypt-prod e status.conditions.Ready=True
+   ```
+
+### 10.7 Troubleshooting
+
+| Sintoma | Diagnóstico | Fix |
+|---|---|---|
+| Pod em `CreateContainerConfigError: secret X not found` | ESO ainda não sincronizou | `kc describe externalsecret -n uniplus`; conferir Vault unsealed e `vault-default` Ready |
+| Pod Running mas `curl /auth/...` retorna 404 | `KC_HTTP_RELATIVE_PATH=/auth` faltando ou `KC_HOSTNAME` sem `/auth` no final | Validar env vars no Pod; ajustar `keycloak.hostname.url` e `keycloak.http.relativePath` no values |
+| Login redireciona pra HTTP em vez de HTTPS | `KC_PROXY_HEADERS=xforwarded` faltando ou `KC_HTTP_ENABLED=false` | Conferir env vars; Traefik deve passar `X-Forwarded-{Proto,Host,Port,Prefix}` (default em IngressRoute) |
+| Realm import falha com `Could not parse JSON` | Erro de sintaxe no `uniplus-realm.json` ou `${VAR}` referenciando env var não setada | Validar JSON localmente (`jq . files/uniplus-realm.json`); conferir se todos os `UNIPLUS_PORTAL_*` env vars existem no Pod |
+| Pod startupProbe falha após 10min | Postgres lento na 1ª conexão (cold start) ou DB inacessível | `kc logs ... --previous`; conferir `nc -zv 10.0.2.87 5432` do Pod (sem hostNetwork) |
+
 ---
 
 *Documento mantido pelo CTIC/UNIFESSPA. Atualizações via Pull Request.*
