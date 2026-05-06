@@ -916,56 +916,68 @@ sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml \
 
 Executar **uma vez** após o init, com o root token recém-emitido. Após esse setup, External Secrets passa a autenticar no Vault via ServiceAccount JWT — sem precisar de root token nas Apps.
 
+> **Nota de higiene de credenciais.** Os blocos abaixo evitam expandir o root token em argv de comandos (`kubectl exec ... sh -c "...$TOKEN..."` colocaria o token em `/proc/<pid>/cmdline`, visível em `ps`/auditoria). Em vez disso, abrimos um port-forward local e exportamos `VAULT_TOKEN` apenas no shell do operador — o token fica na memória do shell + processo `vault`, sem cruzar argv de outros processos.
+
 ```bash
-# Ler root token interativamente (sem echo, sem history) — mesmo
-# raciocínio das unseal keys.
-read -rsp "Root token: " ROOT; echo
-
+# 1) Port-forward local do Vault (background; trap para cleanup)
 sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml \
-  -n vault exec platform-vault-uniplus-standalone-0 -- sh -c "
-export VAULT_TOKEN=$ROOT
+  -n vault port-forward platform-vault-uniplus-standalone-0 8200:8200 \
+  > /tmp/vault-pf.log 2>&1 &
+PF_PID=$!
+trap 'kill "$PF_PID" 2>/dev/null; unset VAULT_TOKEN VAULT_ADDR' EXIT
 
-# 1) Habilitar Kubernetes auth method
+# 2) Apontar a CLI vault para o port-forward
+export VAULT_ADDR=http://127.0.0.1:8200
+
+# Aguardar port-forward subir
+until curl -s --max-time 1 "$VAULT_ADDR/v1/sys/health" >/dev/null 2>&1; do sleep 1; done
+
+# 3) Ler root token interativamente (sem echo, sem history)
+read -rsp "Root token: " VAULT_TOKEN; echo
+export VAULT_TOKEN
+
+# 4) Habilitar Kubernetes auth method
 vault auth enable kubernetes
 
-# 2) Apontar para o API server local (token reviewer usa SA do próprio Pod)
+# 5) Apontar para o API server interno (token reviewer usa SA do próprio Pod)
 vault write auth/kubernetes/config \
   kubernetes_host=https://kubernetes.default.svc.cluster.local
 
-# 3) Policy de leitura no KV v2 (path 'secret/')
-vault policy write external-secrets-read - <<POLICY
-path \"secret/data/*\" { capabilities = [\"read\"] }
-path \"secret/metadata/*\" { capabilities = [\"read\"] }
+# 6) Policy de leitura no KV v2 (path `secret/`)
+vault policy write external-secrets-read - <<'POLICY'
+path "secret/data/*" { capabilities = ["read"] }
+path "secret/metadata/*" { capabilities = ["read"] }
 POLICY
 
-# 4) Role vinculando ServiceAccount external-secrets/external-secrets à policy
+# 7) Role vinculando ServiceAccount external-secrets/external-secrets à policy
 vault write auth/kubernetes/role/external-secrets \
   bound_service_account_names=external-secrets \
   bound_service_account_namespaces=external-secrets \
   policies=external-secrets-read \
   ttl=24h
 
-# 5) Habilitar KV v2 em 'secret/' (não vem montado por default em HA Raft)
+# 8) Habilitar KV v2 em `secret/` (não vem montado por default em HA Raft)
 vault secrets enable -path=secret -version=2 kv
-"
+
+# trap EXIT cuida do unset + kill — sair do shell encerra a sessão
 ```
 
 #### 8.4.4 Validação end-to-end (ClusterSecretStore + ExternalSecret)
+
+> Mesmo padrão de higiene da §8.4.3: port-forward + `VAULT_TOKEN` em env do shell local. O `trap EXIT` definido na §8.4.3 já cuida do cleanup; se você abriu uma nova sessão para esta validação, refazer os passos 1-3 da §8.4.3 antes.
 
 ```bash
 # 1) Confirmar ClusterSecretStore Valid + Ready:
 sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml get clustersecretstore vault-default
 # Esperado: STATUS=Valid, READY=True
 
-# 2) PUT secret de teste no Vault:
-sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml \
-  -n vault exec platform-vault-uniplus-standalone-0 -- sh -c "
-export VAULT_TOKEN=$ROOT
-vault kv put secret/test/eso-validation message=hello timestamp=\$(date -u +%FT%TZ)
-"
+# 2) PUT secret de teste no Vault (token vem do env, não do argv):
+vault kv put secret/test/eso-validation \
+  message=hello \
+  timestamp="$(date -u +%FT%TZ)"
 
 # 3) Criar ExternalSecret consumer (default ns, refresh 1m):
-cat <<EOF | sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml apply -f -
+cat <<'EOF' | sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml apply -f -
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
@@ -992,13 +1004,9 @@ sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml \
 # 5) Cleanup:
 sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml \
   -n default delete externalsecret eso-validation
-sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml \
-  -n vault exec platform-vault-uniplus-standalone-0 -- sh -c "
-export VAULT_TOKEN=$ROOT
 vault kv metadata delete secret/test/eso-validation
-"
-unset ROOT
-history -c 2>/dev/null || true
+# Sair do shell (ou explicitamente):
+exit  # dispara o trap EXIT da §8.4.3 → kill port-forward + unset VAULT_TOKEN VAULT_ADDR
 ```
 
 #### 8.4.5 Migração futura para OCI KMS auto-unseal
