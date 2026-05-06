@@ -329,10 +329,92 @@ traefik:
 # 1 réplica, valida apenas o contrato OIDC/JWT entre frontends e APIs.
 # Federação Gov.br fica fora do escopo standalone (depende de cadastro
 # institucional do client OIDC; demos podem usar usuários locais).
+#
+# DB persiste no Postgres systemd do data-host (10.0.2.87:5432, base
+# `keycloak`, role `keycloak`) — empacotado pelo PR #127 em
+# scripts/bootstrap-standalone.sh::step_data_setup_postgres. Senha em
+# Vault `secret/standalone/postgres/keycloak`. Bootstrap admin do
+# Keycloak e client_secret do uniplus-portal também em Vault.
+#
+# Exposição: `https://standalone.portaluni.com.br/auth/*` via Traefik
+# IngressRoute (cert TLS emitido pelo cert-manager — issuer staging por
+# enquanto; trocar para `letsencrypt-prod` após smoke test pós-Fase 6).
 # ----------------------------------------------------------------------------
 keycloak:
   enabled: true
   govbr:
+    enabled: false
+
+  hostname:
+    url: https://standalone.portaluni.com.br/auth
+    strict: true
+
+  database:
+    vendor: postgres
+    host: 10.0.2.87
+    port: 5432
+    name: keycloak
+
+  realmImport:
+    enabled: true
+    realmName: uniplus
+    portalClient:
+      clientId: uniplus-portal
+      rootUrl: https://standalone.portaluni.com.br
+      redirectUris:
+        - https://standalone.portaluni.com.br/*
+      webOrigins:
+        - "+"
+
+  externalSecrets:
+    enabled: true
+    refreshInterval: "1h"
+    secretStoreRef:
+      kind: ClusterSecretStore
+      name: vault-default
+    db:
+      vaultPath: secret/standalone/postgres/keycloak
+      usernameKey: username
+      passwordKey: password
+    bootstrapAdmin:
+      vaultPath: secret/standalone/keycloak/admin
+      usernameKey: username
+      passwordKey: password
+    portalClientSecret:
+      vaultPath: secret/standalone/keycloak/clients/uniplus-portal
+      secretKey: client_secret
+
+  ingress:
+    enabled: true
+    entryPoint: websecure
+    host: standalone.portaluni.com.br
+    pathPrefix: /auth
+    tls:
+      enabled: true
+      # Secret TLS emitido pelo cert-manager via Certificate criado pelo
+      # próprio chart (template certificate.yaml). cert-manager preenche o
+      # Secret automaticamente após HTTP-01 challenge contra o Traefik.
+      secretName: keycloak-replica-tls
+      certManager:
+        enabled: true
+        # Em standalone usamos LE staging durante validação (Fase 4-6).
+        # Promover para `letsencrypt-prod` após smoke test completo
+        # (procedimento em docs/RUNBOOKS.md §10.6).
+        clusterIssuer: letsencrypt-staging
+
+  networkPolicy:
+    enabled: true
+    traefikNamespace: traefik
+    monitoringNamespace: observability-prometheus
+    vaultNamespace: vault
+    # CIDR /32 do data-host. Cluster-specific — em outro standalone OCI
+    # com data-host em outro IP/subnet, ajustar este valor (ver
+    # environments/standalone/README.md, seção provider-specifics).
+    dataHostCIDR: 10.0.2.87/32
+    dataHostPort: 5432
+
+  # ServiceMonitor desligado até platform/observability/prometheus/ subir.
+  serviceMonitor:
     enabled: false
 
 # ----------------------------------------------------------------------------
