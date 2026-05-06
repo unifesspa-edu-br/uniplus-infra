@@ -309,6 +309,18 @@ traefik:
   ports:
     web:
       hostPort: 80
+      # Desligar redirect global HTTP→HTTPS no entryPoint `web` em standalone.
+      # O default do chart wrapper redireciona toda request HTTP, o que quebra
+      # o ACME HTTP-01 challenge (Let's Encrypt requer GET HTTP em
+      # `/.well-known/acme-challenge/*` SEM redirect — antes do cert existir
+      # não há HTTPS válido para servir). Em standalone, IngressRoutes
+      # individuais aplicam Middleware redirect-https quando precisarem
+      # (apps reais quando aterrissarem; Vault UI já é exposto só em
+      # `websecure`). Em prod 3-DC, redirect global é mantido (LE via
+      # DNS-01 com cert-manager-webhook OCI/AWS/Azure quando aterrissar,
+      # ou cert manual — sem dependência de HTTP-01).
+      http:
+        redirections: null
     websecure:
       hostPort: 443
 
