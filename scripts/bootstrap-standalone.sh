@@ -614,6 +614,159 @@ step_data_configure_iptables() {
     log_success "iptables INPUT configurado e persistido."
 }
 
+# Configura Postgres 18 como container Docker gerenciado por systemd no data-host.
+#
+# Idempotência:
+#   - Se .bootstrap-creds já existe, senhas e init SQL são preservados (não
+#     regenera). Garante que role/db já criados na primeira inicialização do
+#     cluster permanecem consistentes em re-runs.
+#   - EnvironmentFile e systemd unit são sempre re-aplicados (cheap, corrige
+#     drift sem afetar state do cluster).
+#   - Se o serviço já está ativo, não reinicia (evita downtime em re-runs).
+#
+# Pós-condições para o operador (ver runbook §9.2):
+#   1. Copiar keycloak_pw de .bootstrap-creds para gestor institucional
+#   2. Salvar em secret/standalone/postgres/keycloak no Vault
+#   3. shred -u .bootstrap-creds
+step_data_setup_postgres() {
+    log_info "Configurando Postgres 18 systemd..."
+
+    local creds_file="$DATA_BASE/postgres/.bootstrap-creds"
+    local init_sql="$DATA_BASE/postgres/init/00-keycloak.sql"
+    local env_file="/etc/uniplus-postgres.env"
+    local unit_file="/etc/systemd/system/uniplus-postgres.service"
+
+    # Diretórios + ownership: ambos pertencem ao uid 999 (postgres no container
+    # alpine). O entrypoint do postgres:18-alpine roda os scripts de init
+    # /docker-entrypoint-initdb.d/*.sql AS the postgres user, então precisa de
+    # acesso de leitura — chown evita o erro "Permission denied" ao traverse.
+    run "sudo mkdir -p $DATA_BASE/postgres/data $DATA_BASE/postgres/init"
+    run "sudo chown 999:999 $DATA_BASE/postgres/data $DATA_BASE/postgres/init"
+    run "sudo chmod 700 $DATA_BASE/postgres/init"
+
+    if sudo test -f "$creds_file" 2>/dev/null; then
+        log_success "Bootstrap creds já existentes — preservando senhas e init SQL."
+    elif $DRY_RUN; then
+        log_warn "Dry-run: senhas iniciais seriam geradas em $creds_file"
+        log_warn "Dry-run: init SQL seria gerado em $init_sql"
+    else
+        log_info "Gerando senhas iniciais (256 bits cada)..."
+        local super_pw keycloak_pw
+        super_pw=$(openssl rand -hex 32)
+        keycloak_pw=$(openssl rand -hex 32)
+
+        # .bootstrap-creds: rastro para operador exportar senhas para gestor
+        # institucional + Vault. Após custódia, deve ser removido com `shred -u`
+        # (procedimento documentado em docs/RUNBOOKS.md §9.2).
+        sudo tee "$creds_file" >/dev/null <<EOF
+super_pw=$super_pw
+keycloak_pw=$keycloak_pw
+EOF
+        sudo chown root:root "$creds_file"
+        sudo chmod 600 "$creds_file"
+
+        # Init SQL: executado pelo entrypoint do postgres:18-alpine APENAS na
+        # primeira inicialização do cluster (data dir vazio). Re-execuções com
+        # cluster já inicializado ignoram o script silenciosamente. Heredoc
+        # unquoted permite expansão de $keycloak_pw. A senha é hex-only
+        # (openssl rand -hex), sem metacaracteres SQL — segura em
+        # single-quoted string.
+        sudo tee "$init_sql" >/dev/null <<EOF
+CREATE ROLE keycloak WITH LOGIN PASSWORD '$keycloak_pw' NOSUPERUSER NOCREATEDB NOCREATEROLE;
+CREATE DATABASE keycloak OWNER keycloak ENCODING 'UTF8' LC_COLLATE 'C' LC_CTYPE 'C' TEMPLATE template0;
+GRANT ALL PRIVILEGES ON DATABASE keycloak TO keycloak;
+EOF
+        sudo chown 999:999 "$init_sql"
+        sudo chmod 600 "$init_sql"
+
+        log_warn "Senhas geradas em $creds_file. Custódia obrigatória — ver runbook §9.2."
+    fi
+
+    # EnvironmentFile: sempre re-aplicado (super_pw lido do creds file). Usar
+    # `docker run -e POSTGRES_PASSWORD` (sem `=value`) evita exposure da senha
+    # em /proc/<pid>/cmdline — docker puxa do env do systemd, populado via
+    # EnvironmentFile.
+    if $DRY_RUN; then
+        echo "[DRY-RUN] Escreveria $env_file (POSTGRES_PASSWORD lido de $creds_file)"
+    else
+        local super_pw_current
+        super_pw_current=$(sudo grep '^super_pw=' "$creds_file" | cut -d= -f2)
+        if [[ -z "$super_pw_current" ]]; then
+            log_error "Não consegui ler super_pw de $creds_file. Abortando."
+            exit 1
+        fi
+        sudo tee "$env_file" >/dev/null <<EOF
+POSTGRES_PASSWORD=$super_pw_current
+POSTGRES_INITDB_ARGS=--encoding=UTF8
+EOF
+        sudo chown root:root "$env_file"
+        sudo chmod 600 "$env_file"
+    fi
+
+    # systemd unit: sempre re-aplicado. Heredoc single-quoted preserva o
+    # conteúdo literal — paths são hardcoded para alinhar com $DATA_BASE
+    # (/var/lib/uniplus). A unit em si não usa variáveis de shell; o systemd
+    # injeta POSTGRES_PASSWORD via EnvironmentFile no env do docker run.
+    if $DRY_RUN; then
+        echo "[DRY-RUN] Escreveria $unit_file"
+    else
+        sudo tee "$unit_file" >/dev/null <<'UNIT'
+[Unit]
+Description=Uni+ Postgres 18 (standalone data-host)
+Documentation=https://github.com/unifesspa-edu-br/uniplus-infra/blob/main/docs/RUNBOOKS.md
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=10
+TimeoutStartSec=120
+EnvironmentFile=/etc/uniplus-postgres.env
+
+ExecStartPre=-/usr/bin/docker rm -f uniplus-postgres
+ExecStart=/usr/bin/docker run --rm --name uniplus-postgres \
+  --network host \
+  -e POSTGRES_PASSWORD \
+  -e POSTGRES_INITDB_ARGS \
+  -v /var/lib/uniplus/postgres/data:/var/lib/postgresql \
+  -v /var/lib/uniplus/postgres/init:/docker-entrypoint-initdb.d:ro \
+  postgres:18-alpine \
+  -c listen_addresses=0.0.0.0 \
+  -c max_connections=200 \
+  -c shared_buffers=512MB
+
+ExecStop=/usr/bin/docker stop -t 30 uniplus-postgres
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+    fi
+
+    run "sudo systemctl daemon-reload"
+    run "sudo systemctl enable uniplus-postgres"
+
+    if $DRY_RUN; then
+        echo "[DRY-RUN] systemctl start uniplus-postgres + aguardaria pg_isready (60s)"
+    elif sudo systemctl is-active --quiet uniplus-postgres; then
+        log_success "uniplus-postgres já ativo — preservando state (sem restart)."
+    else
+        sudo systemctl start uniplus-postgres
+        log_info "Aguardando Postgres aceitar conexões..."
+        local attempts=0
+        until sudo docker exec uniplus-postgres pg_isready -U postgres &>/dev/null; do
+            attempts=$(( attempts + 1 ))
+            if (( attempts >= 12 )); then
+                log_error "Postgres não ficou ready em 60s. Ver: sudo journalctl -u uniplus-postgres -n 50"
+                exit 1
+            fi
+            sleep 5
+        done
+        log_success "uniplus-postgres ativo + pg_isready OK."
+    fi
+}
+
 summary_data() {
     echo ""
     echo "============================================"
@@ -627,13 +780,23 @@ summary_data() {
     echo "  $DATA_BASE/vault     ← $DISK_VAULT    (LVM vg-vault)"
     echo "  $DATA_BASE/redis     (disco local)"
     echo ""
+    echo "Postgres 18 systemd:"
+    echo "  systemctl status uniplus-postgres"
+    echo ""
+    echo "Custódia das senhas iniciais (PRIMEIRA EXECUÇÃO — ver runbook §9.2):"
+    echo "  1. Ler senhas:    sudo cat $DATA_BASE/postgres/.bootstrap-creds"
+    echo "  2. Salvar no gestor institucional + Vault standalone"
+    echo "     (kubectl exec no k8s-host → vault kv put secret/standalone/postgres/keycloak)"
+    echo "  3. Após custódia: sudo shred -u $DATA_BASE/postgres/.bootstrap-creds"
+    echo ""
     echo "Próximos passos (Epic data/*):"
-    echo "  Os serviços (Postgres, Kafka, MinIO, Vault, Redis) serão provisionados"
-    echo "  via docker-compose pelo Epic data/* usando esses mount points."
+    echo "  Os serviços Kafka, MinIO e Redis serão provisionados em sub-tasks futuras"
+    echo "  (mesmo padrão do Postgres: container Docker via systemd nos mounts dedicados)."
     echo ""
     echo "Validar:"
     echo "  df -h $DATA_BASE/*"
     echo "  sudo vgs && sudo lvs"
+    echo "  sudo docker exec uniplus-postgres pg_isready -U postgres"
 }
 
 # ============================================================================
@@ -662,6 +825,7 @@ case "$ROLE" in
         discover_disks
         step_setup_lvm
         step_create_placeholder_dirs
+        step_data_setup_postgres
         summary_data
         ;;
 esac
