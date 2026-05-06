@@ -1,0 +1,72 @@
+{
+  "realm": {{ .Values.keycloak.realmImport.realmName | quote }},
+  "displayName": "Uni+ — Sistema Unificado Unifesspa",
+  "displayNameHtml": "<b>Uni+</b> · Unifesspa",
+  "enabled": true,
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "rememberMe": true,
+  "verifyEmail": false,
+  "internationalizationEnabled": true,
+  "supportedLocales": ["pt-BR", "en"],
+  "defaultLocale": "pt-BR",
+  "sslRequired": "external",
+  "accessTokenLifespan": 300,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "browserSecurityHeaders": {
+    "contentSecurityPolicy": "frame-src 'self'; frame-ancestors 'self'; object-src 'none';",
+    "xContentTypeOptions": "nosniff",
+    "xFrameOptions": "SAMEORIGIN",
+    "xRobotsTag": "none",
+    "xXSSProtection": "1; mode=block",
+    "strictTransportSecurity": "max-age=31536000; includeSubDomains"
+  },
+  "clients": [
+    {
+      "clientId": {{ .Values.keycloak.realmImport.portalClient.clientId | quote }},
+      "name": "Uni+ Portal (frontend Angular)",
+      "description": "Cliente OIDC do portal institucional Uni+. Authorization Code + PKCE.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "frontchannelLogout": true,
+      "rootUrl": {{ .Values.keycloak.realmImport.portalClient.rootUrl | quote }},
+      "redirectUris": {{ .Values.keycloak.realmImport.portalClient.redirectUris | toJson }},
+      "webOrigins": {{ .Values.keycloak.realmImport.portalClient.webOrigins | toJson }},
+      "secret": "${UNIPLUS_PORTAL_CLIENT_SECRET}",
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "+"
+      },
+      "defaultClientScopes": [
+        "web-origins",
+        "acr",
+        "profile",
+        "roles",
+        "email"
+      ],
+      "optionalClientScopes": [
+        "address",
+        "phone",
+        "offline_access"
+      ]
+    }
+  ],
+  "roles": {
+    "realm": [
+      { "name": "uniplus-user", "description": "Usuário autenticado básico do Uni+" },
+      { "name": "uniplus-staff", "description": "Servidor/colaborador da Unifesspa" },
+      { "name": "uniplus-admin", "description": "Administrador da plataforma Uni+" }
+    ]
+  },
+  "requiredCredentials": ["password"],
+  "passwordPolicy": "length(8)"
+}

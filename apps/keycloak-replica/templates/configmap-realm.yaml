@@ -1,0 +1,21 @@
+{{- if and .Values.keycloak.enabled .Values.keycloak.realmImport.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "keycloak-replica.realmConfigMapName" . }}
+  labels:
+    {{- include "keycloak-replica.labels" . | nindent 4 }}
+data:
+  # Filename derivado de realmImport.realmName ({{ .Values.keycloak.realmImport.realmName }}-realm.json).
+  # Mantém consistência se o operador trocar o realm name — o ConfigMap-as-volume
+  # mount monta as keys como arquivos no diretório, então o filename observado
+  # pelo Keycloak segue a key do ConfigMap automaticamente.
+  #
+  # `tpl` expande sintaxe Helm dentro do arquivo (clientId/rootUrl/redirectUris/
+  # webOrigins vêm de .Values; o client_secret continua como ${VAR} resolvido
+  # no parse do Keycloak a partir do env var injetado pelo ExternalSecret).
+  # O arquivo NÃO é JSON puro durante a edição — render via `helm template`
+  # produz o JSON final que vai pro ConfigMap.
+  {{ .Values.keycloak.realmImport.realmName }}-realm.json: |-
+{{ tpl (.Files.Get "files/uniplus-realm.json") . | indent 4 }}
+{{- end }}

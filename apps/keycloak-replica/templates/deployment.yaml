@@ -1,0 +1,181 @@
+{{- if .Values.keycloak.enabled }}
+{{- $kc := .Values.keycloak -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "keycloak-replica.fullname" . }}
+  labels:
+    {{- include "keycloak-replica.labels" . | nindent 4 }}
+spec:
+  replicas: {{ $kc.replicas }}
+  # Single-node em standalone — Recreate evita 2 pods escrevendo no mesmo
+  # Postgres durante rolling update. Em multi-DC isso seria substituído
+  # por RollingUpdate quando o chart suportar HA (fora do escopo deste PR).
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "keycloak-replica.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "keycloak-replica.labels" . | nindent 8 }}
+      annotations:
+        # Re-cria pod quando o realm JSON muda (ConfigMap update). O checksum
+        # precisa bater com o conteúdo renderizado pelo `tpl` no ConfigMap —
+        # caso contrário, mudanças em values (clientId, redirectUris, etc.)
+        # atualizam o ConfigMap mas o annotation não muda, e o pod fica com
+        # realm staling até restart manual.
+        checksum/realm: {{ tpl (.Files.Get "files/uniplus-realm.json") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "keycloak-replica.serviceAccountName" . }}
+      {{- with $kc.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      hostNetwork: {{ $kc.hostNetwork }}
+      {{- if $kc.hostNetwork }}
+      dnsPolicy: ClusterFirstWithHostNet
+      {{- end }}
+      securityContext:
+        {{- toYaml $kc.podSecurityContext | nindent 8 }}
+      containers:
+        - name: keycloak
+          image: "{{ $kc.image.registry }}/{{ $kc.image.repository }}:{{ $kc.image.tag }}"
+          imagePullPolicy: {{ $kc.image.pullPolicy }}
+          securityContext:
+            {{- toYaml $kc.containerSecurityContext | nindent 12 }}
+          # `start --import-realm`: comando recomendado para imagem stock
+          # 26.x. `start` (sem --optimized) faz auto-build na 1ª inicialização
+          # — o startupProbe absorve a janela. `--import-realm` é idempotente:
+          # pula se realm já existir, preservando mudanças via Admin UI.
+          args:
+            - "start"
+            - "--import-realm"
+          env:
+            # Database
+            - name: KC_DB
+              value: {{ $kc.database.vendor | quote }}
+            - name: KC_DB_URL_HOST
+              value: {{ $kc.database.host | quote }}
+            - name: KC_DB_URL_PORT
+              value: {{ $kc.database.port | quote }}
+            - name: KC_DB_URL_DATABASE
+              value: {{ $kc.database.name | quote }}
+            # Hostname / proxy
+            {{- if $kc.hostname.url }}
+            - name: KC_HOSTNAME
+              value: {{ $kc.hostname.url | quote }}
+            {{- end }}
+            - name: KC_HOSTNAME_STRICT
+              value: {{ $kc.hostname.strict | quote }}
+            # Hardcoded true: chart só suporta HTTP-to-Traefik (TLS termina
+            # no proxy). Setar false faria Keycloak servir só HTTPS em 8443
+            # e o IngressRoute (hardcoded httpPort/HTTP scheme) quebraria.
+            - name: KC_HTTP_ENABLED
+              value: "true"
+            - name: KC_HTTP_PORT
+              value: {{ $kc.http.httpPort | quote }}
+            {{- if $kc.http.relativePath }}
+            - name: KC_HTTP_RELATIVE_PATH
+              value: {{ $kc.http.relativePath | quote }}
+            {{- end }}
+            # Management interface (port 9000) HERDA `KC_HTTP_RELATIVE_PATH`
+            # por default em 26.x — sem este override explícito, com
+            # KC_HTTP_RELATIVE_PATH=/auth os endpoints viram /auth/health/*
+            # e /auth/metrics, quebrando os probes do Pod (que apontam
+            # /health/*) e o scrape do ServiceMonitor (que aponta /metrics).
+            # Forçando `/` mantém management isolado do path da aplicação.
+            - name: KC_HTTP_MANAGEMENT_RELATIVE_PATH
+              value: "/"
+            {{- if $kc.http.proxyHeaders }}
+            - name: KC_PROXY_HEADERS
+              value: {{ $kc.http.proxyHeaders | quote }}
+            {{- end }}
+            # Health & metrics — endpoints expostos na management port (9000).
+            - name: KC_HEALTH_ENABLED
+              value: {{ $kc.health.enabled | quote }}
+            - name: KC_METRICS_ENABLED
+              value: {{ $kc.metrics.enabled | quote }}
+            # client_secret do uniplus-portal: a única substituição
+            # `${VAR}` no realm JSON é o secret. clientId/rootUrl/redirectUris
+            # já chegam renderizados pelo tpl no ConfigMap (suporta arrays
+            # completos, sem truncar para o primeiro elemento). O env
+            # UNIPLUS_PORTAL_CLIENT_SECRET vem do envFrom do ExternalSecret
+            # `keycloak-replica.portalClientSecretName` abaixo.
+            {{- with $kc.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          envFrom:
+            # DB credentials (KC_DB_USERNAME, KC_DB_PASSWORD).
+            - secretRef:
+                name: {{ include "keycloak-replica.dbSecretName" . }}
+            # Bootstrap admin (KC_BOOTSTRAP_ADMIN_USERNAME, _PASSWORD).
+            - secretRef:
+                name: {{ include "keycloak-replica.adminSecretName" . }}
+            # Client secret (UNIPLUS_PORTAL_CLIENT_SECRET).
+            - secretRef:
+                name: {{ include "keycloak-replica.portalClientSecretName" . }}
+          ports:
+            - name: http
+              containerPort: {{ $kc.http.httpPort }}
+              protocol: TCP
+            - name: management
+              containerPort: {{ $kc.managementPort }}
+              protocol: TCP
+          # Probes: quando `keycloak.health.enabled=true` (default), batem em
+          # /health/{started,live,ready} na management port (9000) — endpoints
+          # nativos de 26.x. Se o operador desligar o flag, fallback para
+          # `tcpSocket` na port HTTP (8080) — menos informativo mas mantém o
+          # pod funcional (sem isso, probes falhariam continuamente já que os
+          # endpoints /health não existem com KC_HEALTH_ENABLED=false).
+          startupProbe:
+            {{- if $kc.health.enabled }}
+            httpGet:
+              path: /health/started
+              port: management
+            {{- else }}
+            tcpSocket:
+              port: http
+            {{- end }}
+            failureThreshold: {{ $kc.startupProbe.failureThreshold }}
+            periodSeconds: {{ $kc.startupProbe.periodSeconds }}
+          livenessProbe:
+            {{- if $kc.health.enabled }}
+            httpGet:
+              path: /health/live
+              port: management
+            {{- else }}
+            tcpSocket:
+              port: http
+            {{- end }}
+            periodSeconds: {{ $kc.livenessProbe.periodSeconds }}
+          readinessProbe:
+            {{- if $kc.health.enabled }}
+            httpGet:
+              path: /health/ready
+              port: management
+            {{- else }}
+            tcpSocket:
+              port: http
+            {{- end }}
+            periodSeconds: {{ $kc.readinessProbe.periodSeconds }}
+          resources:
+            {{- toYaml $kc.resources | nindent 12 }}
+          volumeMounts:
+            {{- if $kc.realmImport.enabled }}
+            - name: realm-import
+              mountPath: /opt/keycloak/data/import
+              readOnly: true
+            {{- end }}
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        {{- if $kc.realmImport.enabled }}
+        - name: realm-import
+          configMap:
+            name: {{ include "keycloak-replica.realmConfigMapName" . }}
+        {{- end }}
+        - name: tmp
+          emptyDir: {}
+{{- end }}
