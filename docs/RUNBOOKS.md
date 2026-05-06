@@ -12,6 +12,7 @@
 - [6. Operações de Banco](#6-operações-de-banco)
 - [7. Diagnóstico](#7-diagnóstico)
 - [8. Bootstrap e Teardown — Ambiente Standalone OCI](#8-bootstrap-e-teardown--ambiente-standalone-oci)
+- [9. Data services no data-host (standalone)](#9-data-services-no-data-host-standalone)
 
 ## 1. Procedimentos Rotineiros
 
@@ -808,7 +809,7 @@ kubectl get pods -n argocd
 
 ### 8.2 Bootstrap do data-host
 
-> ⚠️ **Bloqueado** até a Epic `data/*` estar implementada (Postgres, Kafka, MinIO, Redis via Docker Compose). Os volumes LVM já são provisionados pelo bootstrap; os containers precisam dos charts/compose em `data/`.
+> **Postgres 18:** codificado no bootstrap (ver §9.1). Kafka, MinIO e Redis ainda dependem de sub-tasks da Epic `data/*` — volumes LVM já são provisionados, containers + systemd units serão adicionados conforme o mesmo padrão do Postgres.
 
 **Executar no data-host (via SSH do k8s-host):**
 
@@ -1092,6 +1093,156 @@ ssh -t -i ~/.ssh/id_ed25519 ubuntu@10.0.2.87 \
 **O que é preservado:** dados nos block volumes OCI — o LVM fica intacto, apenas desmontado. Re-montagem pelo bootstrap recupera os dados.
 
 **Pós-teardown:** re-bootstrap via `./scripts/bootstrap-standalone.sh --role=standalone-data`.
+
+## 9. Data services no data-host (standalone)
+
+Em standalone, os componentes stateful rodam **fora do K8s** — containers Docker gerenciados por `systemd` no data-host. A primeira entrega da Epic `data/*` codifica o Postgres 18; Kafka, MinIO e Redis seguirão o mesmo padrão.
+
+### 9.1 Postgres 18 — bootstrap automatizado
+
+A função `step_data_setup_postgres` em `scripts/bootstrap-standalone.sh` provisiona, na ordem:
+
+1. Diretórios `/var/lib/uniplus/postgres/{data,init}` com ownership `999:999` (uid `postgres` no container `postgres:18-alpine`).
+2. `.bootstrap-creds` (root:root 600) em `/var/lib/uniplus/postgres/.bootstrap-creds` com `super_pw` + `keycloak_pw` (256 bits cada via `openssl rand -hex 32`) — gerado **somente na primeira execução**.
+3. Init SQL `/var/lib/uniplus/postgres/init/00-keycloak.sql` que cria role `keycloak` + database `keycloak` na primeira inicialização do cluster Postgres (entrypoint do `postgres:18-alpine` ignora o script silenciosamente em re-execuções com data dir já populado).
+4. EnvironmentFile `/etc/uniplus-postgres.env` (root:root 600) com `POSTGRES_PASSWORD=<super_pw>` lido do `.bootstrap-creds`. `docker run` recebe a senha via `-e POSTGRES_PASSWORD` (sem `=value`) — evita exposure em `/proc/<pid>/cmdline`.
+5. `systemd` unit `/etc/systemd/system/uniplus-postgres.service` com `Restart=always`, `Type=simple`, container em `--network host` (Postgres listen em `10.0.2.87:5432`).
+
+**Idempotência:** re-runs preservam senhas e init SQL se `.bootstrap-creds` já existe; EnvironmentFile + systemd unit são sempre re-aplicados (cheap, corrige drift). Se o serviço já estiver `active`, o bootstrap não reinicia (evita downtime).
+
+**Verificação imediata pós-bootstrap:**
+
+```bash
+sudo systemctl status uniplus-postgres
+sudo docker exec uniplus-postgres pg_isready -U postgres
+sudo docker exec uniplus-postgres psql -U keycloak -d keycloak -c 'SELECT current_user, current_database();'
+# Esperado: keycloak | keycloak
+```
+
+### 9.2 Custódia das senhas iniciais
+
+> ⚠️ **CRÍTICO.** O `.bootstrap-creds` é o **único rastro em disco** das senhas geradas. Custodiar imediatamente em gestor institucional + Vault standalone, depois `shred -u` o arquivo.
+
+**Passo 1 — Ler senhas no data-host:**
+
+```bash
+ssh -i ~/.ssh/id_ed25519 ubuntu@10.0.2.87
+sudo cat /var/lib/uniplus/postgres/.bootstrap-creds
+# super_pw=<64 hex>
+# keycloak_pw=<64 hex>
+```
+
+Salvar `keycloak_pw` no gestor institucional (Bitwarden, 1Password ou Vault corporativo separado). O `super_pw` pode ser descartado após o setup — é a senha do superuser `postgres`, usada apenas em break-glass; recuperável via re-bootstrap se necessário.
+
+**Passo 2 — Salvar `keycloak_pw` no Vault standalone (executar do k8s-host):**
+
+> Mesmo padrão de higiene da §8.4.3: port-forward + token via env do shell, não argv.
+
+```bash
+# 1) Ler keycloak_pw do data-host (ssh, sem cruzar argv local)
+read -rsp "Cole keycloak_pw (do passo 1): " KC_PW; echo
+
+# 2) Port-forward Vault
+sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml \
+  -n vault port-forward platform-vault-uniplus-standalone-0 8200:8200 \
+  > /tmp/vault-pf.log 2>&1 &
+PF_PID=$!
+trap 'kill "$PF_PID" 2>/dev/null; unset KC_PW VAULT_TOKEN VAULT_ADDR' EXIT
+export VAULT_ADDR=http://127.0.0.1:8200
+until curl -s --max-time 1 "$VAULT_ADDR/v1/sys/health" >/dev/null 2>&1; do sleep 1; done
+
+# 3) Root token (sem echo, sem history)
+read -rsp "Root token: " VAULT_TOKEN; echo
+export VAULT_TOKEN
+
+# 4) PUT em secret/standalone/postgres/keycloak (KV v2)
+vault kv put secret/standalone/postgres/keycloak \
+  host=10.0.2.87 \
+  port=5432 \
+  database=keycloak \
+  username=keycloak \
+  password="$KC_PW"
+
+# 5) Confirmar
+vault kv get secret/standalone/postgres/keycloak
+# Esperado: campos host/port/database/username/password presentes
+
+# trap EXIT cuida de kill + unset ao sair do shell
+```
+
+**Passo 3 — Limpar `.bootstrap-creds` no data-host:**
+
+```bash
+ssh -i ~/.ssh/id_ed25519 ubuntu@10.0.2.87
+sudo shred -u /var/lib/uniplus/postgres/.bootstrap-creds
+```
+
+> ⚠️ Após `shred -u`, re-execução do bootstrap **regeneraria** as senhas (não há outro rastro em disco). Se for necessário re-rodar o script com data dir já populado, restaurar o `.bootstrap-creds` antes a partir do gestor institucional (ver §9.4).
+
+### 9.3 Validação end-to-end (pod K8s → Postgres)
+
+Confirma que pods do cluster K3s alcançam o Postgres no data-host via TCP. Pré-requisito: PR #125 aplicado (iptables FORWARD ACCEPT entre flannel CIDR e VCN).
+
+**Executar no k8s-host:**
+
+```bash
+# 1) Conectividade TCP bruta
+nc -zv 10.0.2.87 5432
+# Esperado: succeeded
+
+# 2) Pod ad-hoc com psql (sem hostNetwork — usa flannel)
+KEYCLOAK_PW=$(ssh ubuntu@10.0.2.87 \
+  "sudo grep keycloak_pw= /var/lib/uniplus/postgres/.bootstrap-creds 2>/dev/null | cut -d= -f2" || \
+  echo "<recuperar do Vault — ver §9.4>")
+
+sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml run pg-validation \
+  --image=postgres:18-alpine --restart=Never --rm -i --command -- \
+  sh -c "PGPASSWORD=$KEYCLOAK_PW psql -h 10.0.2.87 -U keycloak -d keycloak -c 'SELECT 1 AS ok;'"
+# Esperado: 1 (uma linha)
+unset KEYCLOAK_PW
+```
+
+Se o pod fica preso em `Pending` ou retorna `Host is unreachable`: revisar §8.6/§8.7 do plano-pai (#123) e confirmar que `iptables -L FORWARD` no k8s-host mostra os ACCEPTs flannel↔VCN antes do `REJECT --reject-with icmp-host-prohibited`.
+
+### 9.4 Restore: re-criar `.bootstrap-creds` a partir do Vault
+
+Caso o operador tenha rodado `shred -u` e precise re-executar o bootstrap (ou recuperar a senha localmente para troubleshooting), recriar o arquivo a partir do Vault:
+
+```bash
+# No k8s-host — port-forward + leitura do secret (mesmo pattern §9.2)
+sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml \
+  -n vault port-forward platform-vault-uniplus-standalone-0 8200:8200 \
+  > /tmp/vault-pf.log 2>&1 &
+PF_PID=$!
+trap 'kill "$PF_PID" 2>/dev/null; unset KC_PW VAULT_TOKEN VAULT_ADDR' EXIT
+export VAULT_ADDR=http://127.0.0.1:8200
+until curl -s --max-time 1 "$VAULT_ADDR/v1/sys/health" >/dev/null 2>&1; do sleep 1; done
+
+read -rsp "Root token: " VAULT_TOKEN; echo
+export VAULT_TOKEN
+
+KC_PW=$(vault kv get -field=password secret/standalone/postgres/keycloak)
+
+# Transmitir para o data-host via stdin do ssh — não cruza argv
+ssh -i ~/.ssh/id_ed25519 ubuntu@10.0.2.87 \
+  "sudo tee /var/lib/uniplus/postgres/.bootstrap-creds > /dev/null && \
+   sudo chmod 600 /var/lib/uniplus/postgres/.bootstrap-creds && \
+   sudo chown root:root /var/lib/uniplus/postgres/.bootstrap-creds" <<EOF
+super_pw=<recuperar do gestor institucional, ou regenerar via ALTER USER postgres>
+keycloak_pw=$KC_PW
+EOF
+
+# Cleanup automático via trap
+```
+
+> O `super_pw` não é persistido no Vault (intencional — só é usado em break-glass do superuser). Se realmente necessário, recuperar do gestor institucional ou regenerar via `ALTER USER postgres WITH PASSWORD '...'` antes de re-rodar o bootstrap.
+
+### 9.5 Backup e Restore do cluster Postgres
+
+> Procedimento detalhado a ser codificado em sub-task da Epic `data/*` (paralelo à 3.4 MinIO). Resumo:
+>
+> - **Backup:** `pg_dump --format=custom keycloak` rodado periodicamente via systemd timer no data-host, output enviado para bucket MinIO (`s3://backups/postgres/<timestamp>.dump`).
+> - **Restore:** `pg_restore --clean --if-exists --no-owner --dbname=keycloak <dump>` em data-host com volume LVM intacto.
 
 ---
 
