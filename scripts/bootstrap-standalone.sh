@@ -616,13 +616,17 @@ step_data_configure_iptables() {
 
 # Configura Postgres 18 como container Docker gerenciado por systemd no data-host.
 #
-# Idempotência:
-#   - Se .bootstrap-creds já existe, senhas e init SQL são preservados (não
-#     regenera). Garante que role/db já criados na primeira inicialização do
-#     cluster permanecem consistentes em re-runs.
-#   - EnvironmentFile e systemd unit são sempre re-aplicados (cheap, corrige
-#     drift sem afetar state do cluster).
-#   - Se o serviço já está ativo, não reinicia (evita downtime em re-runs).
+# Idempotência (decisões independentes):
+#   - .bootstrap-creds: se já existe, preserva senhas. Caso contrário, gera
+#     novas (256 bits cada) — exceto se cluster já inicializado sem creds,
+#     onde aborta apontando §9.4 do runbook.
+#   - 00-keycloak.sql (init SQL): efêmero. Gerado sempre que o cluster ainda
+#     não foi inicializado (PG_VERSION ausente em data/), shredded após o
+#     primeiro pg_isready OK. Cobre o fluxo §9.4 (restore creds, data dir
+#     vazio → SQL recriado) e elimina cópia persistente do keycloak_pw em
+#     cleartext em $DATA_BASE/postgres/init/ (Codex P2 round 2).
+#   - EnvironmentFile + systemd unit: sempre re-aplicados (cheap, corrige drift).
+#   - Serviço já ativo: não reinicia (evita downtime em re-runs).
 #
 # Pós-condições para o operador (ver runbook §9.2):
 #   1. Copiar keycloak_pw de .bootstrap-creds para gestor institucional
@@ -648,26 +652,33 @@ step_data_setup_postgres() {
     run "sudo chown 70:70 $DATA_BASE/postgres/data $DATA_BASE/postgres/init"
     run "sudo chmod 700 $DATA_BASE/postgres/init"
 
+    # Detectar se o cluster Postgres já foi inicializado pelo entrypoint.
+    # PG_VERSION é canônico — escrito por initdb na primeira inicialização e
+    # presente em qualquer layout de PGDATA (postgres:18 entrypoint cria sob
+    # /var/lib/postgresql/data ou subdir vendor-specific). `find -print -quit`
+    # retorna na primeira ocorrência, robusto a variações de layout.
+    local cluster_initialized=false
+    if ! $DRY_RUN && \
+       sudo find "$DATA_BASE/postgres/data" -name PG_VERSION -print -quit 2>/dev/null | grep -q .; then
+        cluster_initialized=true
+    fi
+
+    # ---- Decisão 1: .bootstrap-creds (preservar / gerar / abortar) ----
     if sudo test -f "$creds_file" 2>/dev/null; then
-        log_success "Bootstrap creds já existentes — preservando senhas e init SQL."
+        log_success "Bootstrap creds já existentes — preservando senhas."
     elif $DRY_RUN; then
         log_warn "Dry-run: senhas iniciais seriam geradas em $creds_file"
-        log_warn "Dry-run: init SQL seria gerado em $init_sql"
+    elif $cluster_initialized; then
+        # Guard: cluster inicializado mas sem .bootstrap-creds. Acontece quando
+        # operador rodou `shred -u` (runbook §9.2) e re-executa o bootstrap.
+        # Regenerar agora produziria mismatch — novo super_pw no EnvironmentFile
+        # vs senha antiga persistida no cluster. Persistir o keycloak_pw novo
+        # no Vault quebraria ESO/Keycloak com auth error.
+        log_error "$creds_file ausente, mas cluster Postgres já existe em $DATA_BASE/postgres/data"
+        log_error "Regenerar senhas agora produziria mismatch entre EnvironmentFile e cluster."
+        log_error "Restaure $creds_file a partir do Vault — ver docs/RUNBOOKS.md §9.4."
+        exit 1
     else
-        # Guard: cluster Postgres já inicializado mas sem .bootstrap-creds.
-        # Acontece quando operador rodou `shred -u` (runbook §9.2) e re-executa
-        # o bootstrap. Regenerar agora produziria mismatch — novo super_pw entra
-        # no EnvironmentFile, mas o cluster persistido mantém a senha antiga; o
-        # init SQL é ignorado pelo entrypoint do postgres:18-alpine quando o
-        # data dir já tem PG_VERSION. Persistir o keycloak_pw regenerado no
-        # Vault quebraria ESO/Keycloak com auth error.
-        if sudo find "$DATA_BASE/postgres/data" -name PG_VERSION -print -quit 2>/dev/null | grep -q .; then
-            log_error "$creds_file ausente, mas cluster Postgres já existe em $DATA_BASE/postgres/data"
-            log_error "Regenerar senhas agora produziria mismatch entre EnvironmentFile e cluster."
-            log_error "Restaure $creds_file a partir do Vault — ver docs/RUNBOOKS.md §9.4."
-            exit 1
-        fi
-
         log_info "Gerando senhas iniciais (256 bits cada)..."
         local super_pw keycloak_pw
         super_pw=$(openssl rand -hex 32)
@@ -682,22 +693,45 @@ keycloak_pw=$keycloak_pw
 EOF
         sudo chown root:root "$creds_file"
         sudo chmod 600 "$creds_file"
+        log_warn "Senhas geradas em $creds_file. Custódia obrigatória — ver runbook §9.2."
+    fi
 
-        # Init SQL: executado pelo entrypoint do postgres:18-alpine APENAS na
-        # primeira inicialização do cluster (data dir vazio). Re-execuções com
-        # cluster já inicializado ignoram o script silenciosamente. Heredoc
-        # unquoted permite expansão de $keycloak_pw. A senha é hex-only
-        # (openssl rand -hex), sem metacaracteres SQL — segura em
-        # single-quoted string.
+    # ---- Decisão 2: 00-keycloak.sql (efêmero — só existe pré-init do cluster) ----
+    # Gerado SEMPRE que cluster não está inicializado e .bootstrap-creds existe
+    # (cobre fluxo §9.4: restore creds, data dir vazio → SQL re-criado a partir
+    # da senha persistida no Vault). Após primeiro pg_isready OK, é shredded
+    # mais abaixo nesta função — keycloak_pw em cleartext NÃO persiste em
+    # $DATA_BASE/postgres/init/ entre runs (Codex P2 round 2: backups/snapshots
+    # do data-host não capturam cópia extra do secret).
+    if $DRY_RUN; then
+        if ! $cluster_initialized; then
+            log_warn "Dry-run: init SQL seria (re)gerado em $init_sql"
+        fi
+    elif $cluster_initialized; then
+        # Cleanup defensivo: se SQL leftover de run anterior persiste após
+        # cluster já estar inicializado (ex.: falha entre tee e pg_isready
+        # antes do shred), remover agora — não tem mais função e seria leak.
+        if sudo test -f "$init_sql" 2>/dev/null; then
+            log_warn "Cluster já inicializado mas $init_sql ainda existe — shredding."
+            run "sudo shred -u $init_sql"
+        fi
+    elif sudo test -f "$creds_file" 2>/dev/null; then
+        local kc_pw
+        kc_pw=$(sudo grep '^keycloak_pw=' "$creds_file" | cut -d= -f2)
+        if [[ -z "$kc_pw" ]]; then
+            log_error "keycloak_pw vazio em $creds_file — não consigo (re)gerar init SQL."
+            exit 1
+        fi
+        # Heredoc unquoted permite expansão de $kc_pw. Senha hex-only (openssl
+        # rand -hex 32), sem metacaracteres SQL — segura em single-quoted string.
         sudo tee "$init_sql" >/dev/null <<EOF
-CREATE ROLE keycloak WITH LOGIN PASSWORD '$keycloak_pw' NOSUPERUSER NOCREATEDB NOCREATEROLE;
+CREATE ROLE keycloak WITH LOGIN PASSWORD '$kc_pw' NOSUPERUSER NOCREATEDB NOCREATEROLE;
 CREATE DATABASE keycloak OWNER keycloak ENCODING 'UTF8' LC_COLLATE 'C' LC_CTYPE 'C' TEMPLATE template0;
 GRANT ALL PRIVILEGES ON DATABASE keycloak TO keycloak;
 EOF
         sudo chown 70:70 "$init_sql"
         sudo chmod 600 "$init_sql"
-
-        log_warn "Senhas geradas em $creds_file. Custódia obrigatória — ver runbook §9.2."
+        log_info "Init SQL pronto em $init_sql (será shredded após pg_isready OK)."
     fi
 
     # EnvironmentFile: sempre re-aplicado (super_pw lido do creds file). Usar
@@ -769,6 +803,13 @@ UNIT
         echo "[DRY-RUN] systemctl start uniplus-postgres + aguardaria pg_isready (60s)"
     elif sudo systemctl is-active --quiet uniplus-postgres; then
         log_success "uniplus-postgres já ativo — preservando state (sem restart)."
+        # Cleanup ainda assim — caso o init SQL tenha sido recriado neste run
+        # (fluxo §9.4 com cluster já existente é tratado no guard, mas se o
+        # serviço estava ativo em run anterior e o SQL persiste, shred agora).
+        if sudo test -f "$init_sql" 2>/dev/null; then
+            sudo shred -u "$init_sql"
+            log_success "Init SQL leftover shredded."
+        fi
     else
         sudo systemctl start uniplus-postgres
         log_info "Aguardando Postgres aceitar conexões..."
@@ -782,6 +823,16 @@ UNIT
             sleep 5
         done
         log_success "uniplus-postgres ativo + pg_isready OK."
+
+        # Init SQL cumpriu sua função (entrypoint do postgres:18-alpine
+        # executou os scripts em /docker-entrypoint-initdb.d antes de aceitar
+        # conexões). Shred elimina cópia persistente do keycloak_pw em
+        # cleartext — secret continua vivo apenas em .bootstrap-creds (até o
+        # operador custodiar e shred-ar) e no Vault standalone.
+        if sudo test -f "$init_sql" 2>/dev/null; then
+            sudo shred -u "$init_sql"
+            log_success "Init SQL shredded (keycloak_pw não persiste em $DATA_BASE/postgres/init)."
+        fi
     fi
 }
 
