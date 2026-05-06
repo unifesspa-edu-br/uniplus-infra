@@ -47,12 +47,19 @@ spec:
               kubernetes.io/metadata.name: {{ . | quote }}
         {{- end }}
     {{- end }}
-    # cert-manager solver Pods (HTTP-01 challenge) — namespace cert-manager
-    # pode hospedar challenge solver pods com label específico.
+    # cert-manager solver Pods (HTTP-01 challenge) nascem no MESMO namespace
+    # da Certificate resource — não no namespace `cert-manager` (que hospeda
+    # apenas o controller). Para Certificates em namespaces de apps (uniplus,
+    # keycloak, etc.) o solver pod nasce ali. Permitir egress para qualquer
+    # Pod com o label `acme.cert-manager.io/http01-solver=true`, em qualquer
+    # namespace, é o pattern correto. Sem isso, Traefik dá `502 Bad Gateway`
+    # em `/.well-known/acme-challenge/*` para Certificates fora de namespaces
+    # explicitamente listados em `appNamespaces` — ACME validation falha.
     - to:
-        - namespaceSelector:
+        - namespaceSelector: {}
+          podSelector:
             matchLabels:
-              kubernetes.io/metadata.name: cert-manager
+              acme.cert-manager.io/http01-solver: "true"
     # DNS (kube-dns).
     - to:
         - namespaceSelector:
