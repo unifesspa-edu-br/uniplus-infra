@@ -650,6 +650,20 @@ step_data_setup_postgres() {
         log_warn "Dry-run: senhas iniciais seriam geradas em $creds_file"
         log_warn "Dry-run: init SQL seria gerado em $init_sql"
     else
+        # Guard: cluster Postgres já inicializado mas sem .bootstrap-creds.
+        # Acontece quando operador rodou `shred -u` (runbook §9.2) e re-executa
+        # o bootstrap. Regenerar agora produziria mismatch — novo super_pw entra
+        # no EnvironmentFile, mas o cluster persistido mantém a senha antiga; o
+        # init SQL é ignorado pelo entrypoint do postgres:18-alpine quando o
+        # data dir já tem PG_VERSION. Persistir o keycloak_pw regenerado no
+        # Vault quebraria ESO/Keycloak com auth error.
+        if sudo find "$DATA_BASE/postgres/data" -name PG_VERSION -print -quit 2>/dev/null | grep -q .; then
+            log_error "$creds_file ausente, mas cluster Postgres já existe em $DATA_BASE/postgres/data"
+            log_error "Regenerar senhas agora produziria mismatch entre EnvironmentFile e cluster."
+            log_error "Restaure $creds_file a partir do Vault — ver docs/RUNBOOKS.md §9.4."
+            exit 1
+        fi
+
         log_info "Gerando senhas iniciais (256 bits cada)..."
         local super_pw keycloak_pw
         super_pw=$(openssl rand -hex 32)
