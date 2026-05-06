@@ -1104,11 +1104,16 @@ A função `step_data_setup_postgres` em `scripts/bootstrap-standalone.sh` provi
 
 1. Diretórios `/var/lib/uniplus/postgres/{data,init}` com ownership `70:70` (uid `postgres` no container `postgres:18-alpine` — Alpine usa uid 70, distinto do uid 999 das imagens Debian-based).
 2. `.bootstrap-creds` (root:root 600) em `/var/lib/uniplus/postgres/.bootstrap-creds` com `super_pw` + `keycloak_pw` (256 bits cada via `openssl rand -hex 32`) — gerado **somente na primeira execução**.
-3. Init SQL `/var/lib/uniplus/postgres/init/00-keycloak.sql` que cria role `keycloak` + database `keycloak` na primeira inicialização do cluster Postgres (entrypoint do `postgres:18-alpine` ignora o script silenciosamente em re-execuções com data dir já populado).
+3. Init SQL **efêmero** `/var/lib/uniplus/postgres/init/00-keycloak.sql` (mode `600`, owner `70:70`) — gerado APENAS quando o cluster ainda não foi inicializado (sem `PG_VERSION` em `data/`). Cria role `keycloak` + database `keycloak` na primeira inicialização. Após `pg_isready` confirmar que o entrypoint executou o script, o arquivo é shredded (`shred -u`) — `keycloak_pw` em cleartext NÃO persiste no filesystem do data-host entre runs (snapshots/backups da LVM `vg-postgres` não capturam cópia extra do secret).
 4. EnvironmentFile `/etc/uniplus-postgres.env` (root:root 600) com `POSTGRES_PASSWORD=<super_pw>` lido do `.bootstrap-creds`. `docker run` recebe a senha via `-e POSTGRES_PASSWORD` (sem `=value`) — evita exposure em `/proc/<pid>/cmdline`.
 5. `systemd` unit `/etc/systemd/system/uniplus-postgres.service` com `Restart=always`, `Type=simple`, container em `--network host` (Postgres listen em `10.0.2.87:5432`).
 
-**Idempotência:** re-runs preservam senhas e init SQL se `.bootstrap-creds` já existe; EnvironmentFile + systemd unit são sempre re-aplicados (cheap, corrige drift). Se o serviço já estiver `active`, o bootstrap não reinicia (evita downtime).
+**Idempotência (decisões independentes):**
+
+- `.bootstrap-creds`: se já existe, preserva; se não existe e cluster já inicializado, aborta apontando §9.4; senão, gera novas senhas.
+- Init SQL: regenerado sempre que o cluster ainda não tem `PG_VERSION` (cobre o fluxo §9.4 — restore creds, data dir vazio → SQL recriado a partir do `keycloak_pw` persistido). Cleanup defensivo se leftover persiste após cluster já estar inicializado.
+- EnvironmentFile + systemd unit: sempre re-aplicados (cheap, corrige drift sem afetar state do cluster).
+- Serviço já ativo: bootstrap não reinicia (evita downtime).
 
 **Verificação imediata pós-bootstrap:**
 
@@ -1252,6 +1257,8 @@ EOF
 ```
 
 > O `super_pw` não é persistido no Vault (intencional — só é usado em break-glass do superuser). Se realmente necessário, recuperar do gestor institucional ou regenerar via `ALTER USER postgres WITH PASSWORD '...'` antes de re-rodar o bootstrap.
+
+**Após reconstituir `.bootstrap-creds`:** rodar `./scripts/bootstrap-standalone.sh --role=standalone-data` no data-host. Se o data dir do Postgres estiver vazio (ex.: re-provisionamento da LVM), o bootstrap detecta e regenera `00-keycloak.sql` a partir do `keycloak_pw` recém-restaurado, deixa o Postgres inicializar o cluster e shred o SQL após `pg_isready`. Se o cluster já estiver inicializado, o SQL não é gerado (cluster preserva role/db criados originalmente) — o bootstrap apenas re-aplica EnvironmentFile/systemd unit.
 
 ### 9.5 Backup e Restore do cluster Postgres
 
