@@ -865,15 +865,20 @@ sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml \
   -n vault exec platform-vault-uniplus-standalone-0 -- vault status
 # Esperado: Initialized=false, Sealed=true
 
-# 2) Inicializar com Shamir 5/3 (5 shares, threshold 3):
+# 2) Inicializar com Shamir 5/3 (5 shares, threshold 3).
+#    Criar o arquivo destino COM mode 0600 ANTES do redirect — evita
+#    janela de exposição em que o init output (com 5 unseal keys + root
+#    token) ficaria legível por outros usuários do host até o chmod rodar.
+INIT_FILE=$(mktemp -t vault-init.XXXXXX.json)
+chmod 600 "$INIT_FILE"
 sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml \
   -n vault exec platform-vault-uniplus-standalone-0 -- \
   vault operator init -format=json -key-shares=5 -key-threshold=3 \
-  > /tmp/vault-init.json
-chmod 600 /tmp/vault-init.json
+  > "$INIT_FILE"
+echo "Init output em $INIT_FILE — exportar para gestor institucional e shred."
 ```
 
-> ⚠️ **CRÍTICO — guarda das keys.** O comando acima imprime as 5 unseal keys e o root token **uma única vez**. Custodiar imediatamente em gestor institucional (Bitwarden, 1Password ou Vault corporativo separado). Após exportar, **deletar com `shred -u /tmp/vault-init.json`** — não deixar em disco do host.
+> ⚠️ **CRÍTICO — guarda das keys.** O comando acima imprime as 5 unseal keys e o root token **uma única vez**. Custodiar imediatamente em gestor institucional (Bitwarden, 1Password ou Vault corporativo separado). Após exportar, **deletar com `shred -u "$INIT_FILE"`** — não deixar em disco do host.
 >
 > Em caso de perda das 3 das 5 keys (threshold), o Vault fica selado permanentemente. Em standalone isso é recuperável re-bootstrappeando (perde os secrets do Vault — aceitável porque o overlay é descartável). Em prod 3-DC seria catastrófico — por isso prod usa Transit auto-unseal, não Shamir.
 
@@ -882,17 +887,24 @@ chmod 600 /tmp/vault-init.json
 Cada vez que o Pod do Vault reinicia (upgrade K3s, manutenção da VM, OOMKill etc.) o Vault sobe `Sealed=true` e exige 3 das 5 unseal keys para destravar. **Não é one-shot — é um procedimento operacional recorrente em standalone.**
 
 ```bash
-# 1) Recuperar 3 das 5 keys do gestor institucional. Atribuir a variáveis:
-K1="<unseal_key_1_b64>"
-K2="<unseal_key_2_b64>"
-K3="<unseal_key_3_b64>"
+# 1) Recuperar 3 das 5 keys do gestor institucional e ler interativamente
+#    com `read -rs` — o flag `-s` desabilita echo (chave não aparece no
+#    terminal) e a entrada NÃO vai para ~/.bash_history (vs colar
+#    literalmente em `K1="..."`, que persiste no histórico do shell).
+read -rsp "Unseal Key 1: " K1; echo
+read -rsp "Unseal Key 2: " K2; echo
+read -rsp "Unseal Key 3: " K3; echo
 
-# 2) Unseal sequencial (cada chamada destrava 1 share; após threshold, Sealed=false):
+# 2) Unseal sequencial (cada chamada destrava 1 share; após threshold, Sealed=false).
+#    `unset` + `history -c` ao final garantem que as variáveis e qualquer
+#    eco residual saiam da sessão antes do logout.
 for K in "$K1" "$K2" "$K3"; do
   sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml \
     -n vault exec platform-vault-uniplus-standalone-0 -- \
     vault operator unseal "$K"
 done
+unset K K1 K2 K3
+history -c 2>/dev/null || true
 
 # 3) Confirmar:
 sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml \
@@ -905,7 +917,9 @@ sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml \
 Executar **uma vez** após o init, com o root token recém-emitido. Após esse setup, External Secrets passa a autenticar no Vault via ServiceAccount JWT — sem precisar de root token nas Apps.
 
 ```bash
-ROOT="<root_token>"
+# Ler root token interativamente (sem echo, sem history) — mesmo
+# raciocínio das unseal keys.
+read -rsp "Root token: " ROOT; echo
 
 sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml \
   -n vault exec platform-vault-uniplus-standalone-0 -- sh -c "
@@ -983,6 +997,8 @@ sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml \
 export VAULT_TOKEN=$ROOT
 vault kv metadata delete secret/test/eso-validation
 "
+unset ROOT
+history -c 2>/dev/null || true
 ```
 
 #### 8.4.5 Migração futura para OCI KMS auto-unseal
