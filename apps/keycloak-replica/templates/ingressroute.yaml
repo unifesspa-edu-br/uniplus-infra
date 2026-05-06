@@ -1,0 +1,30 @@
+{{- if and .Values.keycloak.enabled .Values.keycloak.ingress.enabled }}
+{{- $ing := .Values.keycloak.ingress -}}
+{{- if not $ing.host -}}
+{{- fail "keycloak.ingress.enabled=true exige keycloak.ingress.host não vazio. Sobrescrever em environments/<env>/values.yaml com o FQDN público (ex.: standalone.portaluni.com.br)." -}}
+{{- end -}}
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ include "keycloak-replica.fullname" . }}
+  labels:
+    {{- include "keycloak-replica.labels" . | nindent 4 }}
+spec:
+  entryPoints:
+    - {{ $ing.entryPoint | quote }}
+  routes:
+    # Match exato do prefixo `/auth` — Keycloak serve tudo sob esse path
+    # quando KC_HTTP_RELATIVE_PATH=/auth está setado. Sem StripPrefix:
+    # Keycloak espera receber `/auth/...` no upstream.
+    - match: Host(`{{ $ing.host }}`) && PathPrefix(`{{ $ing.pathPrefix }}`)
+      kind: Rule
+      services:
+        - name: {{ include "keycloak-replica.fullname" . }}
+          port: {{ .Values.keycloak.http.httpPort }}
+  {{- if $ing.tls.enabled }}
+  tls:
+    {{- if $ing.tls.secretName }}
+    secretName: {{ $ing.tls.secretName | quote }}
+    {{- end }}
+  {{- end }}
+{{- end }}

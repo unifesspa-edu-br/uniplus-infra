@@ -130,9 +130,19 @@ keycloak:
     pathPrefix: /auth
     tls:
       enabled: true
-      # Quando preenchido, o Traefik usa o Secret TLS gerado pelo
-      # cert-manager (Certificate emitido com `dnsNames: [host]`).
+      # Nome do Secret TLS consumido pelo IngressRoute. Se
+      # `certManager.enabled: true`, o chart cria um `Certificate`
+      # cert-manager apontando este `secretName` para o `clusterIssuer`
+      # configurado, e o cert-manager preenche o Secret automaticamente.
+      # Se `certManager.enabled: false`, o operador deve garantir que o
+      # Secret já exista (ex.: cert manualmente emitido ou Certificate
+      # criado fora deste chart).
       secretName: ""
+      certManager:
+        # Quando true, o chart emite um `Certificate` cert-manager.io/v1
+        # com `dnsNames: [ingress.host]` apontando para `secretName`.
+        enabled: false
+        clusterIssuer: ""
 
   # NetworkPolicy. Egress liberado para data-host (Postgres), Vault e DNS.
   # Ingress permitido a partir de Traefik (HTTP) e Prometheus (management).

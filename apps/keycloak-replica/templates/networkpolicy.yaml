@@ -1,0 +1,67 @@
+{{- if and .Values.keycloak.enabled .Values.keycloak.networkPolicy.enabled }}
+{{- $np := .Values.keycloak.networkPolicy -}}
+{{- if not $np.dataHostCIDR -}}
+{{- fail "keycloak.networkPolicy.dataHostCIDR é obrigatório quando keycloak.networkPolicy.enabled=true. Sem ele, o egress para Postgres é bloqueado pelo default-deny do NetworkPolicy (policyTypes inclui Egress) e o Pod fica em CrashLoopBackOff sem conseguir conectar ao DB. Setar para <ip>/32 do data-host em environments/<env>/values.yaml (ex.: 10.0.2.87/32 em standalone). Para desabilitar a guarda, setar networkPolicy.enabled=false." -}}
+{{- end -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "keycloak-replica.fullname" . }}
+  labels:
+    {{- include "keycloak-replica.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "keycloak-replica.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Traefik consome o Service na port 8080 (HTTP).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $np.traefikNamespace | quote }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.keycloak.http.httpPort }}
+    # Prometheus scrape /metrics + /health na management port (9000).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $np.monitoringNamespace | quote }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.keycloak.managementPort }}
+  egress:
+    # Postgres no data-host. CIDR/porta vêm dos values do environment;
+    # ausência de dataHostCIDR é fail-fast no início do template (acima).
+    - to:
+        - ipBlock:
+            cidr: {{ $np.dataHostCIDR | quote }}
+      ports:
+        - protocol: TCP
+          port: {{ $np.dataHostPort }}
+    # Vault — ESO em standalone alimenta os Secrets, mas o Pod do Keycloak
+    # NÃO chama o Vault diretamente (ESO é quem fala). Mantemos egress aqui
+    # apenas para cenários futuros (ex.: provider customizado lendo Vault
+    # em runtime). Em standalone single-host o serviço Vault está em
+    # 10.43.0.0/16 (cluster IP), coberto pelo egress DNS+API abaixo.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $np.vaultNamespace | quote }}
+      ports:
+        - protocol: TCP
+          port: 8200
+    # DNS (kube-dns) — resolução de nomes de Service, externos.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+{{- end }}
