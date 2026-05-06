@@ -287,6 +287,16 @@ clusterSecretStore:
   vaultServer: http://platform-vault-uniplus-standalone.vault.svc.cluster.local:8200
 
 # ----------------------------------------------------------------------------
+# cert-manager ClusterIssuers — HTTP-01 via Traefik (chart platform/traefik/).
+# Standalone tem IP público + DNS A `standalone.portaluni.com.br → 164.152.53.29`
+# resolvendo. HTTP-01 é mais simples que DNS-01 (não precisa de credencial OCI
+# DNS / registrar). Defaults do chart (staging + production both enabled,
+# email `ctic@unifesspa.edu.br`, servers oficiais Let's Encrypt) são adequados.
+# ----------------------------------------------------------------------------
+clusterIssuers:
+  enabled: true
+
+# ----------------------------------------------------------------------------
 # Traefik (chart platform/traefik/) — exposição externa em standalone.
 # Single-host com IP público bindando hostPort 80/443 direto na VM,
 # evitando dependência de NodePort range > 30000 e LoadBalancer (provider
