@@ -1,19 +1,32 @@
 apiVersion: v2
 name: keycloak-replica
-description: Serviço OIDC local do Uni+; nome do chart mantido por compatibilidade
+description: |
+  Serviço OIDC local do Uni+ baseado em Keycloak 26.6.x. Nome do chart
+  preservado por compatibilidade com o ApplicationSet existente.
 type: application
-version: 0.1.0
-appVersion: "1.0.0"
-keywords:
-  - uniplus
-  - auth
-  - unifesspa
+
+# Versão do chart wrapper Uni+. Bump em qualquer mudança de template/values.
+version: 0.2.0
+
+# Versão do Keycloak upstream empacotada (sincronizar com image.tag).
+appVersion: "26.6.1"
+
 home: https://github.com/unifesspa-edu-br/uniplus-infra
 sources:
   - https://github.com/unifesspa-edu-br/uniplus-infra
+  - https://github.com/keycloak/keycloak
+
 maintainers:
   - name: CTIC UNIFESSPA
     email: jeferson.ferreira@unifesspa.edu.br
+
+keywords:
+  - uniplus
+  - auth
+  - keycloak
+  - oidc
+  - unifesspa
+
 annotations:
   category: auth
   licenses: MIT
