@@ -123,6 +123,37 @@ check_not_root() {
     fi
 }
 
+# Instala iptables-persistent (não-interativo) e persiste o ruleset corrente.
+# Idempotente — pacote `apt-get install` é noop se já instalado.
+install_iptables_persistent() {
+    if dpkg -s iptables-persistent &>/dev/null; then
+        log_success "iptables-persistent já instalado."
+    else
+        log_info "Instalando iptables-persistent..."
+        # debconf-set-selections suprime o prompt interativo "save current rules?"
+        run "echo iptables-persistent iptables-persistent/autosave_v4 boolean true | sudo debconf-set-selections"
+        run "echo iptables-persistent iptables-persistent/autosave_v6 boolean true | sudo debconf-set-selections"
+        run "sudo DEBIAN_FRONTEND=noninteractive apt-get install -y iptables-persistent"
+    fi
+    run "sudo netfilter-persistent save"
+}
+
+# Insere uma regra iptables apenas se ainda não existe (idempotente).
+# Uso: iptables_ensure <chain> <position> <-args para a regra>
+# Exemplo: iptables_ensure FORWARD 7 -s 10.42.0.0/16 -d 10.0.0.0/16 -j ACCEPT
+iptables_ensure() {
+    local chain="$1" pos="$2"
+    shift 2
+    if $DRY_RUN; then
+        echo "[DRY-RUN] iptables -C $chain $* 2>/dev/null || iptables -I $chain $pos $*"
+    elif sudo iptables -C "$chain" "$@" 2>/dev/null; then
+        log_success "iptables: regra já presente em $chain ($*)"
+    else
+        sudo iptables -I "$chain" "$pos" "$@"
+        log_success "iptables: regra inserida em $chain pos $pos ($*)"
+    fi
+}
+
 # ============================================================================
 # ROLE: standalone-k8s
 # ============================================================================
@@ -250,6 +281,26 @@ step_install_argocd() {
     run "kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d && echo"
 
     log_success "ArgoCD instalado."
+}
+
+step_k8s_configure_iptables() {
+    log_info "Configurando iptables (FORWARD chain) para tráfego pod K8s → VCN..."
+    # Default do Ubuntu OCI (instalado por iptables-persistent durante boot
+    # via cloud-init): regra `REJECT --reject-with icmp-host-prohibited` no
+    # chain FORWARD, posicionada ANTES da chain `FLANNEL-FWD`. Resultado:
+    # pacotes saindo de pods K8s (source 10.42.0.0/16, flannel pod CIDR) com
+    # destino na VCN OCI (10.0.0.0/16, ex.: data-host em 10.0.2.x) batem no
+    # REJECT antes de chegar nas regras de masquerade do flannel — Pod fica
+    # com `Host is unreachable`, mesmo com Security List OCI permitindo.
+    #
+    # Inserir ACCEPT em pos 7 (antes do REJECT) para os dois sentidos. Em
+    # standalone, 10.0.0.0/16 = VCN inteira (subnet pública 10.0.1.0/24
+    # do k8s-host + subnet privada 10.0.2.0/24 do data-host). Diagnóstico
+    # original em issue #123, tratado em #124.
+    iptables_ensure FORWARD 7 -s 10.42.0.0/16 -d 10.0.0.0/16 -j ACCEPT
+    iptables_ensure FORWARD 7 -d 10.42.0.0/16 -s 10.0.0.0/16 -j ACCEPT
+    install_iptables_persistent
+    log_success "iptables FORWARD configurado e persistido."
 }
 
 summary_k8s() {
@@ -502,6 +553,25 @@ step_create_placeholder_dirs() {
     log_success "$DATA_BASE/redis pronto."
 }
 
+step_data_configure_iptables() {
+    log_info "Configurando iptables (INPUT chain) para tráfego VCN → data services..."
+    # Default do Ubuntu OCI: regra `REJECT --reject-with icmp-host-prohibited`
+    # no chain INPUT, com ACCEPT explícito apenas para SSH (TCP 22). Os data
+    # services standalone (Postgres 5432, Redis 6379, Kafka 9092, MinIO
+    # 9000-9001) ficam inacessíveis externamente, mesmo com a OCI Security
+    # List permitindo. Conexão local (127.0.0.1) e SSH continuam OK.
+    #
+    # Inserir um ACCEPT abrangente para TCP from 10.0.0.0/16 (VCN inteira)
+    # antes do REJECT. Defesa em profundidade: Security List OCI já filtra
+    # antes do pacote chegar ao host, então abrir TCP/VCN aqui não é wide-open
+    # — é só remover o bloqueio "extra" do iptables que duplicava com a SL
+    # mas com whitelist por porta diferente. Histórico: descoberto durante
+    # bootstrap manual do Postgres em 2026-05-05, codificado por #124.
+    iptables_ensure INPUT 5 -s 10.0.0.0/16 -p tcp -j ACCEPT
+    install_iptables_persistent
+    log_success "iptables INPUT configurado e persistido."
+}
+
 summary_data() {
     echo ""
     echo "============================================"
@@ -538,6 +608,7 @@ case "$ROLE" in
     standalone-k8s)
         step_k8s_check_prerequisites
         step_install_k3s
+        step_k8s_configure_iptables
         step_install_helm
         step_install_argocd
         summary_k8s
@@ -545,6 +616,7 @@ case "$ROLE" in
     standalone-data)
         step_data_check_prerequisites
         step_install_docker
+        step_data_configure_iptables
         discover_disks
         step_setup_lvm
         step_create_placeholder_dirs
