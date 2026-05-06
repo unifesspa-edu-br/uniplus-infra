@@ -636,12 +636,16 @@ step_data_setup_postgres() {
     local env_file="/etc/uniplus-postgres.env"
     local unit_file="/etc/systemd/system/uniplus-postgres.service"
 
-    # Diretórios + ownership: ambos pertencem ao uid 999 (postgres no container
-    # alpine). O entrypoint do postgres:18-alpine roda os scripts de init
-    # /docker-entrypoint-initdb.d/*.sql AS the postgres user, então precisa de
-    # acesso de leitura — chown evita o erro "Permission denied" ao traverse.
+    # Diretórios + ownership: ambos pertencem ao uid 70 (postgres no container
+    # postgres:18-alpine — Alpine usa uid 70, NÃO 999 que é a convenção das
+    # imagens Debian-based). O entrypoint do postgres:18-alpine roda os scripts
+    # de init /docker-entrypoint-initdb.d/*.sql AS the postgres user (uid 70 +
+    # gosu drop após chown -R do PGDATA). Com init dir owned 70:70 + mode 700,
+    # o uid 70 consegue traverse e ler — chown errado bloqueia silenciosamente
+    # o script de init e o role/db `keycloak` nunca é criado (#127 Codex P1 +
+    # code review).
     run "sudo mkdir -p $DATA_BASE/postgres/data $DATA_BASE/postgres/init"
-    run "sudo chown 999:999 $DATA_BASE/postgres/data $DATA_BASE/postgres/init"
+    run "sudo chown 70:70 $DATA_BASE/postgres/data $DATA_BASE/postgres/init"
     run "sudo chmod 700 $DATA_BASE/postgres/init"
 
     if sudo test -f "$creds_file" 2>/dev/null; then
@@ -690,7 +694,7 @@ CREATE ROLE keycloak WITH LOGIN PASSWORD '$keycloak_pw' NOSUPERUSER NOCREATEDB N
 CREATE DATABASE keycloak OWNER keycloak ENCODING 'UTF8' LC_COLLATE 'C' LC_CTYPE 'C' TEMPLATE template0;
 GRANT ALL PRIVILEGES ON DATABASE keycloak TO keycloak;
 EOF
-        sudo chown 999:999 "$init_sql"
+        sudo chown 70:70 "$init_sql"
         sudo chmod 600 "$init_sql"
 
         log_warn "Senhas geradas em $creds_file. Custódia obrigatória — ver runbook §9.2."
