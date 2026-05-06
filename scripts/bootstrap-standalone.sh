@@ -633,6 +633,16 @@ step_data_configure_iptables() {
 #   2. Salvar em secret/standalone/postgres/keycloak no Vault
 #   3. shred -u .bootstrap-creds
 step_data_setup_postgres() {
+    # Honra --skip-docker: se Docker não está disponível e o usuário pediu
+    # explicitamente para pular instalação, pulamos também o setup do Postgres
+    # (que depende de docker run/exec). Sem este guard, --skip-docker mutaria
+    # iptables + LVM e falharia tarde aqui — comportamento inconsistente com
+    # a flag documentada (Codex P2 round 4).
+    if $SKIP_DOCKER && ! command -v docker &>/dev/null; then
+        log_warn "Docker indisponível e --skip-docker ativo — pulando setup do Postgres."
+        return
+    fi
+
     log_info "Configurando Postgres 18 systemd..."
 
     local creds_file="$DATA_BASE/postgres/.bootstrap-creds"
