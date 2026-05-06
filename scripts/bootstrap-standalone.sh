@@ -138,19 +138,56 @@ install_iptables_persistent() {
     run "sudo netfilter-persistent save"
 }
 
-# Insere uma regra iptables apenas se ainda não existe (idempotente).
-# Uso: iptables_ensure <chain> <position> <-args para a regra>
-# Exemplo: iptables_ensure FORWARD 7 -s 10.42.0.0/16 -d 10.0.0.0/16 -j ACCEPT
-iptables_ensure() {
-    local chain="$1" pos="$2"
-    shift 2
+# Insere uma regra iptables ANTES do REJECT default do Ubuntu OCI
+# (`reject-with icmp-host-prohibited`) no chain especificado. Idempotente
+# por reset+reinsert — se a regra já existe (em qualquer posição), é
+# removida e reinserida na posição correta. Isso lida com:
+#   - Re-runs do bootstrap (regra já presente em pos correta — drop+reinsert noop)
+#   - Mudança de ordem do chain entre runs (image atualizada, k3s/docker
+#     adicionando regras, hooks que reordenam) — recoloca antes do REJECT
+#   - Pacote ainda dropped pq ACCEPT caiu DEPOIS do REJECT — corrige
+# Sem o REJECT no chain (host customizado), insere na pos 1 com warning.
+#
+# Uso: iptables_ensure_before_reject <chain> <-args para a regra>
+# Exemplo: iptables_ensure_before_reject FORWARD -s 10.42.0.0/16 -d 10.0.0.0/16 -j ACCEPT
+iptables_ensure_before_reject() {
+    local chain="$1"
+    shift
+
     if $DRY_RUN; then
-        echo "[DRY-RUN] iptables -C $chain $* 2>/dev/null || iptables -I $chain $pos $*"
-    elif sudo iptables -C "$chain" "$@" 2>/dev/null; then
-        log_success "iptables: regra já presente em $chain ($*)"
+        echo "[DRY-RUN] iptables_ensure_before_reject $chain $*"
+        return
+    fi
+
+    # PASSO 1: Remover toda cópia da regra (em qualquer posição). Loop trata
+    # caso de múltiplas cópias acumuladas por re-runs de scripts pré-fix.
+    while sudo iptables -C "$chain" "$@" 2>/dev/null; do
+        sudo iptables -D "$chain" "$@"
+    done
+
+    # PASSO 2: AGORA localizar a linha do REJECT (icmp-host-prohibited) com
+    # o chain já limpo da regra. Calcular antes do delete dá posição stale —
+    # quando a regra original estava antes do REJECT, deletá-la move o REJECT
+    # para frente, e a posição calculada vira fora-do-fim do chain (insert
+    # vai pro append, depois do REJECT).
+    #
+    # `iptables -S` dá output canônico (uma regra por linha, prefixada com
+    # `-A`). Numeramos com `nl` e procuramos a primeira linha com REJECT
+    # + reject-with. A linha 1 do output é a definição da chain (`-P`/`-N`),
+    # então a posição da regra para `iptables -I` é (linha do REJECT - 1).
+    local reject_line
+    reject_line=$(sudo iptables -S "$chain" 2>/dev/null \
+        | nl -ba \
+        | awk '/-j REJECT.*reject-with icmp-host-prohibited/ {print $1; exit}')
+    [[ -n "$reject_line" ]] && reject_line=$(( reject_line - 1 ))
+
+    # PASSO 3: Inserir antes do REJECT, ou no topo se não houver REJECT.
+    if [[ -n "$reject_line" ]] && (( reject_line > 0 )); then
+        sudo iptables -I "$chain" "$reject_line" "$@"
+        log_success "iptables: regra (re)inserida em $chain pos $reject_line (antes do REJECT)"
     else
-        sudo iptables -I "$chain" "$pos" "$@"
-        log_success "iptables: regra inserida em $chain pos $pos ($*)"
+        sudo iptables -I "$chain" 1 "$@"
+        log_warn "iptables: nenhum REJECT default em $chain — regra inserida no topo (pos 1)"
     fi
 }
 
@@ -293,12 +330,15 @@ step_k8s_configure_iptables() {
     # REJECT antes de chegar nas regras de masquerade do flannel — Pod fica
     # com `Host is unreachable`, mesmo com Security List OCI permitindo.
     #
-    # Inserir ACCEPT em pos 7 (antes do REJECT) para os dois sentidos. Em
-    # standalone, 10.0.0.0/16 = VCN inteira (subnet pública 10.0.1.0/24
-    # do k8s-host + subnet privada 10.0.2.0/24 do data-host). Diagnóstico
-    # original em issue #123, tratado em #124.
-    iptables_ensure FORWARD 7 -s 10.42.0.0/16 -d 10.0.0.0/16 -j ACCEPT
-    iptables_ensure FORWARD 7 -d 10.42.0.0/16 -s 10.0.0.0/16 -j ACCEPT
+    # Inserir ACCEPT *antes do REJECT* para os dois sentidos. Em standalone,
+    # 10.0.0.0/16 = VCN inteira (subnet pública 10.0.1.0/24 do k8s-host +
+    # subnet privada 10.0.2.0/24 do data-host). Diagnóstico original em
+    # issue #123, tratado em #124.
+    #
+    # Posição é detectada dinamicamente — re-runs após reordenação de chain
+    # (image nova, hooks K3s/docker, regras manuais) reposicionam corretamente.
+    iptables_ensure_before_reject FORWARD -s 10.42.0.0/16 -d 10.0.0.0/16 -j ACCEPT
+    iptables_ensure_before_reject FORWARD -d 10.42.0.0/16 -s 10.0.0.0/16 -j ACCEPT
     install_iptables_persistent
     log_success "iptables FORWARD configurado e persistido."
 }
@@ -562,12 +602,14 @@ step_data_configure_iptables() {
     # List permitindo. Conexão local (127.0.0.1) e SSH continuam OK.
     #
     # Inserir um ACCEPT abrangente para TCP from 10.0.0.0/16 (VCN inteira)
-    # antes do REJECT. Defesa em profundidade: Security List OCI já filtra
+    # *antes do REJECT*. Defesa em profundidade: Security List OCI já filtra
     # antes do pacote chegar ao host, então abrir TCP/VCN aqui não é wide-open
     # — é só remover o bloqueio "extra" do iptables que duplicava com a SL
     # mas com whitelist por porta diferente. Histórico: descoberto durante
     # bootstrap manual do Postgres em 2026-05-05, codificado por #124.
-    iptables_ensure INPUT 5 -s 10.0.0.0/16 -p tcp -j ACCEPT
+    #
+    # Posição detectada dinamicamente; re-runs após reordenação reposicionam.
+    iptables_ensure_before_reject INPUT -s 10.0.0.0/16 -p tcp -j ACCEPT
     install_iptables_persistent
     log_success "iptables INPUT configurado e persistido."
 }
