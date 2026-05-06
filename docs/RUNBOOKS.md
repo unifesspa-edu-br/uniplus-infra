@@ -1190,11 +1190,19 @@ Confirma que pods do cluster K3s alcançam o Postgres no data-host via TCP. Pré
 nc -zv 10.0.2.87 5432
 # Esperado: succeeded
 
-# 2) Pod ad-hoc com psql (sem hostNetwork — usa flannel)
+# 2) Senha do keycloak — fail fast se não disponível.
+#    Após §9.2 shred, .bootstrap-creds não existe mais; restaure via §9.4
+#    antes de rodar este bloco (ou cole a senha à mão via read -rsp).
 KEYCLOAK_PW=$(ssh ubuntu@10.0.2.87 \
-  "sudo grep keycloak_pw= /var/lib/uniplus/postgres/.bootstrap-creds 2>/dev/null | cut -d= -f2" || \
-  echo "<recuperar do Vault — ver §9.4>")
+  "sudo grep keycloak_pw= /var/lib/uniplus/postgres/.bootstrap-creds 2>/dev/null | cut -d= -f2")
+if [ -z "$KEYCLOAK_PW" ]; then
+  echo "ERRO: keycloak_pw não encontrado em .bootstrap-creds no data-host." >&2
+  echo "  - Se .bootstrap-creds foi shredded (§9.2), restaure via §9.4 antes" >&2
+  echo "    OU cole a senha manualmente: read -rsp 'keycloak_pw: ' KEYCLOAK_PW; echo" >&2
+  return 1 2>/dev/null || exit 1
+fi
 
+# 3) Pod ad-hoc com psql (sem hostNetwork — usa flannel)
 sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml run pg-validation \
   --image=postgres:18-alpine --restart=Never --rm -i --command -- \
   sh -c "PGPASSWORD=$KEYCLOAK_PW psql -h 10.0.2.87 -U keycloak -d keycloak -c 'SELECT 1 AS ok;'"
