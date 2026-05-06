@@ -853,25 +853,148 @@ argocd cluster add default --name uniplus-standalone --in-cluster
 
 Após o registro, o ApplicationSet em `argocd/applicationset.yaml` detecta o cluster pelo label e inicia a sincronização.
 
-### 8.4 Init e verificação do Vault (OCI KMS auto-unseal)
+### 8.4 Init, unseal e configuração do Vault (Shamir manual)
 
-> Procedimento detalhado a ser documentado em #87. Resumo:
+> **Decisão arquitetural temporária (2026-05-05):** standalone usa **Shamir seal com unseal manual** em vez de OCI KMS auto-unseal. OCI KMS provisionado e pronto, mas Vault 1.20.x/1.21.x panicam consistentemente em `go-kms-wrapping@v2.0.9/ocikms.go:290` na pre-flight encrypt validation (Resource Principal *e* API Key falham; OCI CLI direto funciona — bug é no Vault, não na infra). Migração para `seal "ocikms"` quando Vault 1.22+ chegar com go-kms-wrapping atualizado. Detalhes do bloco `seal` provisional em `environments/standalone/values.yaml` (comentário no chart vault).
 
-O Vault standalone usa **OCI Vault KMS** para auto-unseal (diferente do lab, que usa Transit em PA1). O pod sobe selado e desvela automaticamente ao encontrar o KMS configurado.
+#### 8.4.1 Init na primeira vez
 
 ```bash
-# Verificar estado do Vault
-kubectl exec -n vault vault-0 -- vault status
+# 1) Verificar que o Vault está running mas não inicializado:
+sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml \
+  -n vault exec platform-vault-uniplus-standalone-0 -- vault status
+# Esperado: Initialized=false, Sealed=true
 
-# Se Initialized=false, inicializar:
-kubectl exec -n vault vault-0 -- vault operator init \
-    -recovery-shares=5 -recovery-threshold=3
-# Guardar recovery keys conforme procedimento institucional (Apêndice A)
+# 2) Inicializar com Shamir 5/3 (5 shares, threshold 3):
+sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml \
+  -n vault exec platform-vault-uniplus-standalone-0 -- \
+  vault operator init -format=json -key-shares=5 -key-threshold=3 \
+  > /tmp/vault-init.json
+chmod 600 /tmp/vault-init.json
+```
 
-# Validar auto-unseal ativo (Sealed=false sem intervenção manual):
-kubectl exec -n vault vault-0 -- vault status | grep Sealed
+> ⚠️ **CRÍTICO — guarda das keys.** O comando acima imprime as 5 unseal keys e o root token **uma única vez**. Custodiar imediatamente em gestor institucional (Bitwarden, 1Password ou Vault corporativo separado). Após exportar, **deletar com `shred -u /tmp/vault-init.json`** — não deixar em disco do host.
+>
+> Em caso de perda das 3 das 5 keys (threshold), o Vault fica selado permanentemente. Em standalone isso é recuperável re-bootstrappeando (perde os secrets do Vault — aceitável porque o overlay é descartável). Em prod 3-DC seria catastrófico — por isso prod usa Transit auto-unseal, não Shamir.
+
+#### 8.4.2 Unseal manual (após cada Pod restart)
+
+Cada vez que o Pod do Vault reinicia (upgrade K3s, manutenção da VM, OOMKill etc.) o Vault sobe `Sealed=true` e exige 3 das 5 unseal keys para destravar. **Não é one-shot — é um procedimento operacional recorrente em standalone.**
+
+```bash
+# 1) Recuperar 3 das 5 keys do gestor institucional. Atribuir a variáveis:
+K1="<unseal_key_1_b64>"
+K2="<unseal_key_2_b64>"
+K3="<unseal_key_3_b64>"
+
+# 2) Unseal sequencial (cada chamada destrava 1 share; após threshold, Sealed=false):
+for K in "$K1" "$K2" "$K3"; do
+  sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml \
+    -n vault exec platform-vault-uniplus-standalone-0 -- \
+    vault operator unseal "$K"
+done
+
+# 3) Confirmar:
+sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml \
+  -n vault exec platform-vault-uniplus-standalone-0 -- vault status | grep Sealed
 # Esperado: Sealed          false
 ```
+
+#### 8.4.3 Configuração inicial pós-unseal (Kubernetes auth + ESO role)
+
+Executar **uma vez** após o init, com o root token recém-emitido. Após esse setup, External Secrets passa a autenticar no Vault via ServiceAccount JWT — sem precisar de root token nas Apps.
+
+```bash
+ROOT="<root_token>"
+
+sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml \
+  -n vault exec platform-vault-uniplus-standalone-0 -- sh -c "
+export VAULT_TOKEN=$ROOT
+
+# 1) Habilitar Kubernetes auth method
+vault auth enable kubernetes
+
+# 2) Apontar para o API server local (token reviewer usa SA do próprio Pod)
+vault write auth/kubernetes/config \
+  kubernetes_host=https://kubernetes.default.svc.cluster.local
+
+# 3) Policy de leitura no KV v2 (path 'secret/')
+vault policy write external-secrets-read - <<POLICY
+path \"secret/data/*\" { capabilities = [\"read\"] }
+path \"secret/metadata/*\" { capabilities = [\"read\"] }
+POLICY
+
+# 4) Role vinculando ServiceAccount external-secrets/external-secrets à policy
+vault write auth/kubernetes/role/external-secrets \
+  bound_service_account_names=external-secrets \
+  bound_service_account_namespaces=external-secrets \
+  policies=external-secrets-read \
+  ttl=24h
+
+# 5) Habilitar KV v2 em 'secret/' (não vem montado por default em HA Raft)
+vault secrets enable -path=secret -version=2 kv
+"
+```
+
+#### 8.4.4 Validação end-to-end (ClusterSecretStore + ExternalSecret)
+
+```bash
+# 1) Confirmar ClusterSecretStore Valid + Ready:
+sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml get clustersecretstore vault-default
+# Esperado: STATUS=Valid, READY=True
+
+# 2) PUT secret de teste no Vault:
+sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml \
+  -n vault exec platform-vault-uniplus-standalone-0 -- sh -c "
+export VAULT_TOKEN=$ROOT
+vault kv put secret/test/eso-validation message=hello timestamp=\$(date -u +%FT%TZ)
+"
+
+# 3) Criar ExternalSecret consumer (default ns, refresh 1m):
+cat <<EOF | sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml apply -f -
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: eso-validation
+  namespace: default
+spec:
+  refreshInterval: 1m
+  secretStoreRef: { name: vault-default, kind: ClusterSecretStore }
+  target: { name: eso-validation, creationPolicy: Owner }
+  data:
+    - secretKey: message
+      remoteRef: { key: test/eso-validation, property: message }
+EOF
+
+# 4) Conferir Secret sintetizado em ~10-30s:
+sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml \
+  -n default get externalsecret eso-validation
+# Esperado: STATUS=SecretSynced, READY=True
+
+sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml \
+  -n default get secret eso-validation -o jsonpath='{.data.message}' | base64 -d
+# Esperado: hello
+
+# 5) Cleanup:
+sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml \
+  -n default delete externalsecret eso-validation
+sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml \
+  -n vault exec platform-vault-uniplus-standalone-0 -- sh -c "
+export VAULT_TOKEN=$ROOT
+vault kv metadata delete secret/test/eso-validation
+"
+```
+
+#### 8.4.5 Migração futura para OCI KMS auto-unseal
+
+Quando Vault 1.22+ aterrissar (go-kms-wrapping atualizado), a migração elimina o procedimento manual de unseal:
+
+1. Adicionar bloco `seal "ocikms"` em `vault.server.ha.raft.config` (override standalone), apontando para o OCI Vault + Master Key já provisionados (OCIDs em `environments/standalone/values.yaml` — comentário do chart vault).
+2. Provisionar Secret `vault-ocikms-config` via ESO/Vault (será emitido pelo próprio Vault standalone via `secret/data/standalone/ocikms`).
+3. `vault operator migrate` para converter Shamir → OCI KMS.
+4. Restart do StatefulSet — Pod sobe com `Sealed=false` automaticamente.
+
+Validar antes em ambiente de teste com `letsencrypt-staging` cert do Vault (qualquer regressão fica rasteada). Não migrar em prod sem validação no lab.
 
 ### 8.5 Validação completa do ambiente
 
