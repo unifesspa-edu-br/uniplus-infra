@@ -1,0 +1,239 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/unifesspa-edu-br/uniplus-infra/apps/keycloak-replica/values.schema.json",
+  "title": "keycloak-replica chart values",
+  "description": "Schema dos values do chart apps/keycloak-replica/. Valida overrides em environments/<env>/values.yaml. additionalProperties=true permite que blocos cross-chart (ex.: ingress, postgres) coexistam no mesmo values.yaml de environment sem falhar.",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "commonLabels": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "keycloak": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "image": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "registry": { "type": "string" },
+            "repository": { "type": "string" },
+            "tag": { "type": "string" },
+            "pullPolicy": {
+              "type": "string",
+              "enum": ["Always", "IfNotPresent", "Never"]
+            }
+          }
+        },
+        "imagePullSecrets": {
+          "type": "array",
+          "items": { "type": "object" }
+        },
+        "replicas": { "type": "integer", "minimum": 1 },
+        "resources": { "$ref": "#/$defs/k8sResources" },
+        "hostNetwork": { "type": "boolean" },
+        "serviceAccount": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "create": { "type": "boolean" },
+            "name": { "type": "string" }
+          }
+        },
+        "database": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "vendor": { "type": "string", "enum": ["postgres"] },
+            "host": { "type": "string" },
+            "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+            "name": { "type": "string" }
+          }
+        },
+        "hostname": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "url": { "type": "string" },
+            "strict": { "type": "boolean" }
+          }
+        },
+        "http": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "httpPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+            "relativePath": { "type": "string" },
+            "proxyHeaders": {
+              "type": "string",
+              "enum": ["forwarded", "xforwarded", ""]
+            }
+          }
+        },
+        "health": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "enabled": { "type": "boolean" } }
+        },
+        "metrics": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "enabled": { "type": "boolean" } }
+        },
+        "managementPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "govbr": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": { "enabled": { "type": "boolean" } }
+        },
+        "realmImport": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "realmName": { "type": "string" },
+            "portalClient": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "clientId": { "type": "string" },
+                "rootUrl": { "type": "string" },
+                "redirectUris": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                },
+                "webOrigins": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "externalSecrets": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "refreshInterval": { "type": "string" },
+            "secretStoreRef": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": ["ClusterSecretStore", "SecretStore"]
+                },
+                "name": { "type": "string" }
+              }
+            },
+            "db": { "$ref": "#/$defs/vaultUserPassRef" },
+            "bootstrapAdmin": { "$ref": "#/$defs/vaultUserPassRef" },
+            "portalClientSecret": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "vaultPath": { "type": "string" },
+                "secretKey": { "type": "string" }
+              }
+            }
+          }
+        },
+        "ingress": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "entryPoint": { "type": "string" },
+            "host": { "type": "string" },
+            "pathPrefix": { "type": "string" },
+            "tls": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "secretName": { "type": "string" }
+              }
+            }
+          }
+        },
+        "networkPolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "traefikNamespace": { "type": "string" },
+            "monitoringNamespace": { "type": "string" },
+            "vaultNamespace": { "type": "string" },
+            "dataHostCIDR": { "type": "string" },
+            "dataHostPort": { "type": "integer", "minimum": 1, "maximum": 65535 }
+          }
+        },
+        "serviceMonitor": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "interval": { "type": "string" }
+          }
+        },
+        "startupProbe": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "failureThreshold": { "type": "integer", "minimum": 1 },
+            "periodSeconds": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "livenessProbe": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "periodSeconds": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "readinessProbe": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "periodSeconds": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "podSecurityContext": { "type": "object", "additionalProperties": true },
+        "containerSecurityContext": { "type": "object", "additionalProperties": true },
+        "extraEnv": {
+          "type": "array",
+          "items": { "type": "object" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "k8sResources": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "requests": {
+          "type": "object",
+          "additionalProperties": { "type": ["string", "number"] }
+        },
+        "limits": {
+          "type": "object",
+          "additionalProperties": { "type": ["string", "number"] }
+        }
+      }
+    },
+    "vaultUserPassRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "vaultPath": { "type": "string" },
+        "usernameKey": { "type": "string" },
+        "passwordKey": { "type": "string" }
+      }
+    }
+  }
+}

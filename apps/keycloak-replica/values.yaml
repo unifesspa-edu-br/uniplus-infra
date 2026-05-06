@@ -1,22 +1,179 @@
-# Default values para o serviço OIDC local (chart legado keycloak-replica)
-# TODO: implementar conforme estrutura do uniplus-web
+# Defaults do chart apps/keycloak-replica/.
+# Cada environment (environments/<env>/values.yaml) sobrescreve apenas o
+# necessário. Por padrão o chart fica DESABILITADO — overlays que precisam
+# de Keycloak (ex.: standalone) ligam via `keycloak.enabled: true`.
 
-replicas: 2
-
-image:
-  registry: ghcr.io
-  repository: unifesspa-edu-br/keycloak-replica
-  pullPolicy: IfNotPresent
-  tag: ""
-
-resources:
-  requests:
-    cpu: 100m
-    memory: 128Mi
-  limits:
-    cpu: 500m
-    memory: 256Mi
-
+# Labels padrão Uni+ aplicados em todos os recursos.
 commonLabels:
   app.kubernetes.io/part-of: uniplus
   app.kubernetes.io/component: auth
+
+# ============================================================================
+# Bloco principal `keycloak.*`. O nome do bloco coincide com a key já em uso
+# em environments/standalone/values.yaml (`keycloak.enabled`, `keycloak.govbr`).
+# ============================================================================
+keycloak:
+  # Liga/desliga o chart inteiro. Default false — só os ambientes que
+  # precisam de Keycloak (ex.: standalone) ligam explicitamente. Em
+  # lab/prod-{sp1,sp2} a federação institucional usa o Keycloak central
+  # do CTIC (fora deste chart).
+  enabled: false
+
+  image:
+    registry: quay.io
+    repository: keycloak/keycloak
+    # Versão upstream estável validada para 26.x (mantém alinhamento com
+    # appVersion do Chart.yaml). Bumps de patch (26.6.x) são seguros;
+    # major/minor exige checagem de migration guide.
+    tag: "26.6.1"
+    pullPolicy: IfNotPresent
+
+  imagePullSecrets: []
+
+  replicas: 1
+
+  resources:
+    requests:
+      cpu: 200m
+      memory: 768Mi
+    limits:
+      cpu: 1000m
+      memory: 1536Mi
+
+  # `hostNetwork: true` é workaround do issue #123 (pods flannel não
+  # alcançam o data-host). Após PR #125 o caminho via flannel funciona
+  # — manter false por padrão e validar empiricamente em standalone.
+  hostNetwork: false
+
+  serviceAccount:
+    create: true
+    name: ""
+
+  # Banco de dados (Postgres). Credenciais (username/password) chegam
+  # via ExternalSecret — ver bloco `externalSecrets.db` abaixo.
+  database:
+    vendor: postgres
+    host: ""
+    port: 5432
+    name: keycloak
+
+  # Hostname público com que Keycloak se identifica em URIs OIDC. Em 26.x
+  # aceita URL completa com path (recomendado quando atrás de proxy
+  # servindo sob path — `KC_HOSTNAME=https://example.org/auth`).
+  hostname:
+    url: ""
+    strict: true
+
+  # HTTP listener interno. TLS termina no Traefik — Keycloak fala HTTP
+  # em cluster. KC_HTTP_ENABLED é hardcoded como true no deployment
+  # (chart só suporta HTTP-to-Traefik; cenário HTTPS-direto exigiria
+  # cert+TLS no Pod, fora do escopo dessa topologia).
+  http:
+    httpPort: 8080
+    relativePath: /auth
+    proxyHeaders: xforwarded
+
+  # Endpoints de health/metrics na management port (9000 default em 26.x).
+  health:
+    enabled: true
+  metrics:
+    enabled: true
+  managementPort: 9000
+
+  # Federação Gov.br (Login Único) — ADR-018. Não implementado no MVP
+  # standalone; conferir o flag para que overrides existentes (ex.:
+  # standalone setando `keycloak.govbr.enabled: false`) não quebrem schema.
+  govbr:
+    enabled: false
+
+  # Realm import declarativo via `--import-realm` (idempotente em 26.x:
+  # se realm existir, importação é pulada — mudanças via Admin UI são
+  # preservadas em re-starts).
+  realmImport:
+    enabled: true
+    realmName: uniplus
+    # Client OIDC do portal — secret real chega via env var
+    # `UNIPLUS_PORTAL_CLIENT_SECRET` (ExternalSecret), substituído no
+    # JSON via placeholder `${VAR}` suportado pelo Keycloak.
+    portalClient:
+      clientId: uniplus-portal
+      rootUrl: ""
+      redirectUris: []
+      webOrigins:
+        - "+"
+
+  # ExternalSecrets — todos os secrets vivem no Vault (`secret/...`).
+  # Manifests no Git contêm apenas referências.
+  externalSecrets:
+    enabled: true
+    refreshInterval: "1h"
+    secretStoreRef:
+      kind: ClusterSecretStore
+      name: vault-default
+    db:
+      vaultPath: secret/standalone/postgres/keycloak
+      usernameKey: username
+      passwordKey: password
+    bootstrapAdmin:
+      vaultPath: secret/standalone/keycloak/admin
+      usernameKey: username
+      passwordKey: password
+    portalClientSecret:
+      vaultPath: secret/standalone/keycloak/clients/uniplus-portal
+      secretKey: client_secret
+
+  # Exposição externa via Traefik IngressRoute — TLS via cert-manager.
+  ingress:
+    enabled: false
+    entryPoint: websecure
+    host: ""
+    pathPrefix: /auth
+    tls:
+      enabled: true
+      # Quando preenchido, o Traefik usa o Secret TLS gerado pelo
+      # cert-manager (Certificate emitido com `dnsNames: [host]`).
+      secretName: ""
+
+  # NetworkPolicy. Egress liberado para data-host (Postgres), Vault e DNS.
+  # Ingress permitido a partir de Traefik (HTTP) e Prometheus (management).
+  networkPolicy:
+    enabled: true
+    traefikNamespace: traefik
+    monitoringNamespace: observability-prometheus
+    vaultNamespace: vault
+    dataHostCIDR: ""
+    dataHostPort: 5432
+
+  # ServiceMonitor — desligado até platform/observability/prometheus/
+  # aterrissar (issue #26).
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+
+  # Probes. `startupProbe` com failureThreshold alto absorve a primeira
+  # inicialização (auto-build do Keycloak quando `start` sem --optimized).
+  startupProbe:
+    failureThreshold: 60
+    periodSeconds: 10
+  livenessProbe:
+    periodSeconds: 10
+  readinessProbe:
+    periodSeconds: 5
+
+  # SecurityContext do Pod e do container. Imagem oficial
+  # quay.io/keycloak/keycloak:26.6.1 roda como UID 1000.
+  podSecurityContext:
+    fsGroup: 1000
+  containerSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    # Keycloak escreve em /opt/keycloak/data (cache, themes); read-only
+    # rootfs exigiria mounts adicionais — out of scope deste PR.
+    readOnlyRootFilesystem: false
+
+  # Env vars adicionais (lista de `{name, value}` ou `{name, valueFrom}`).
+  extraEnv: []
