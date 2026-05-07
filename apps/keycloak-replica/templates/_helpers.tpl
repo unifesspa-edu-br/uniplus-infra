@@ -73,10 +73,6 @@ Mesmo nome serve para os outros (admin, client) com sufixo distinto.
 {{- printf "%s-bootstrap-admin" (include "keycloak-replica.fullname" .) }}
 {{- end }}
 
-{{- define "keycloak-replica.portalClientSecretName" -}}
-{{- printf "%s-client-uniplus-portal" (include "keycloak-replica.fullname" .) }}
-{{- end }}
-
 {{- define "keycloak-replica.realmConfigMapName" -}}
 {{- printf "%s-realm-uniplus" (include "keycloak-replica.fullname" .) }}
 {{- end }}

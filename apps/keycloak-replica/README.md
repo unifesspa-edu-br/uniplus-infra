@@ -17,8 +17,8 @@ Ver [docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md) para o contexto arquitetu
 - Vault de aplicação inicializado, ESO `ClusterSecretStore` `vault-default` com STATUS=Valid+Ready
 - Secrets no Vault:
   - `secret/standalone/postgres/keycloak` (fields: `host`, `port`, `database`, `username`, `password`)
-  - `secret/standalone/keycloak/admin` (fields: `username`, `password`) — bootstrap admin
-  - `secret/standalone/keycloak/clients/uniplus-portal` (field: `client_secret`)
+  - `secret/standalone/keycloak/admin` (fields: `username`, `password`) — bootstrap admin do master realm
+  - O client `uniplus-portal` é **public client** (SPA + PKCE) — não há `client_secret` para custodiar.
 - cert-manager + ClusterIssuer `letsencrypt-staging` ou `letsencrypt-prod` Ready
 - Traefik Running com hostPort 80/443 (single-host) ou Service LoadBalancer (multi-DC)
 
@@ -32,7 +32,7 @@ Por padrão o chart fica **desabilitado** (`keycloak.enabled: false`). Apenas en
 
 - `templates/deployment.yaml` — Deployment Keycloak 26.6.x com `start --import-realm`, env vars de DB/admin via secret refs, probes na management port 9000
 - `templates/service.yaml` — ClusterIP com port `http` (8080) + port `management` (9000)
-- `templates/externalsecret.yaml` — 3 ExternalSecrets (DB, bootstrap admin, client secret) consumindo `ClusterSecretStore vault-default`
+- `templates/externalsecret.yaml` — 2 ExternalSecrets (DB credentials + bootstrap admin) consumindo `ClusterSecretStore vault-default`
 - `templates/configmap-realm.yaml` — ConfigMap com `uniplus-realm.json` montado em `/opt/keycloak/data/import/`
 - `templates/ingressroute.yaml` — Traefik IngressRoute path `/auth/*` com TLS via cert-manager
 - `templates/networkpolicy.yaml` — egress: data-host:5432, vault, DNS; ingress: Traefik (8080), Prometheus (9000)
@@ -55,13 +55,13 @@ O chart codifica estas opções de configuração runtime do Keycloak 26.x:
 | `KC_PROXY_HEADERS=xforwarded` | values | Substitui `KC_PROXY=edge` (deprecado em 26.x) |
 | `KC_HEALTH_ENABLED=true` | values | `/health/{live,ready,started}` na port 9000 |
 | `KC_METRICS_ENABLED=true` | values | `/metrics` na port 9000 |
-| `UNIPLUS_PORTAL_CLIENT_SECRET` | ExternalSecret (Vault) | Substituído em `uniplus-realm.json` via `${VAR}` |
+| `KC_HTTP_MANAGEMENT_RELATIVE_PATH=/` | hardcoded | Isola management interface do `KC_HTTP_RELATIVE_PATH=/auth` (probes/scrape ficam em `:9000/health/*` e `:9000/metrics`) |
 
 ## Decisões de design
 
 - **Imagem stock + `start --import-realm`** (sem rebuild custom): a imagem `quay.io/keycloak/keycloak:26.6.1` traz health/metrics built-in. `start` (sem `--optimized`) deixa o Keycloak fazer auto-build na primeira inicialização — `startupProbe.failureThreshold: 60` (×10s = 10min) absorve a janela.
 - **Realm import idempotente**: `--import-realm` em 26.x **não re-importa** se o realm já existir, preservando mudanças via Admin UI. Para forçar reimport: `kc.sh import` explícito (não automático).
-- **Client secret via env substitution**: `uniplus-realm.json` declara `"secret": "${UNIPLUS_PORTAL_CLIENT_SECRET}"` — Keycloak substitui no parse com o env var setado pela ExternalSecret. Sem hardcode no Git.
+- **`uniplus-portal` é public client (SPA + PKCE)**: realm JSON declara `"publicClient": true` sem `client_secret`. Browsers não podem custodiar segredo; PKCE substitui o secret em fluxos de Authorization Code (`code_verifier` gerado pelo SPA garante a posse do code). Para futuros clients confidenciais (ex.: backend BFF, Vault UI integration #34), criar entradas separadas no realm com seus próprios secrets via Vault.
 - **Sem PV**: estado durável vive todo no Postgres. `/tmp` em emptyDir.
 - **`hostNetwork: false` por default**: workaround de #123 não é mais necessário após PR #125. Manter o flag para fallback se houver regressão.
 
@@ -69,7 +69,7 @@ O chart codifica estas opções de configuração runtime do Keycloak 26.x:
 
 - **Single-replica only neste chart**: standalone single-node = 1 réplica (correto). Para multi-DC ativo-ativo (lab/prod-{sp1,sp2}) o approach será diferente — issue separada.
 - **Federação Gov.br não implementada**: `keycloak.govbr.enabled: false` é flag inerte hoje. ADR-018 cobre o roadmap; depende deste chart estar de pé.
-- **Sem rotação automática do client secret**: rotacionar requer `kcadm.sh set-client-secret` + atualizar Vault — procedimento em `docs/RUNBOOKS.md §10`.
+- **Sem rotação automática do admin password**: procedimento manual em `docs/RUNBOOKS.md §10.4` (atualiza Vault → ESO refresh → `kcadm.sh set-password` → restart do Pod para refletir env do processo).
 
 ## Validação
 

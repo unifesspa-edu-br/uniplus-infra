@@ -380,9 +380,6 @@ keycloak:
       vaultPath: secret/standalone/keycloak/admin
       usernameKey: username
       passwordKey: password
-    portalClientSecret:
-      vaultPath: secret/standalone/keycloak/clients/uniplus-portal
-      secretKey: client_secret
 
   ingress:
     enabled: true
@@ -406,7 +403,6 @@ keycloak:
     enabled: true
     traefikNamespace: traefik
     monitoringNamespace: observability-prometheus
-    vaultNamespace: vault
     # CIDR /32 do data-host. Cluster-specific — em outro standalone OCI
     # com data-host em outro IP/subnet, ajustar este valor (ver
     # environments/standalone/README.md, seção provider-specifics).

@@ -42,18 +42,6 @@ spec:
       ports:
         - protocol: TCP
           port: {{ $np.dataHostPort }}
-    # Vault — ESO em standalone alimenta os Secrets, mas o Pod do Keycloak
-    # NÃO chama o Vault diretamente (ESO é quem fala). Mantemos egress aqui
-    # apenas para cenários futuros (ex.: provider customizado lendo Vault
-    # em runtime). Em standalone single-host o serviço Vault está em
-    # 10.43.0.0/16 (cluster IP), coberto pelo egress DNS+API abaixo.
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: {{ $np.vaultNamespace | quote }}
-      ports:
-        - protocol: TCP
-          port: 8200
     # DNS (kube-dns) — resolução de nomes de Service, externos.
     - to:
         - namespaceSelector:
