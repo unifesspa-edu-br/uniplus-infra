@@ -394,10 +394,14 @@ keycloak:
       secretName: keycloak-replica-tls
       certManager:
         enabled: true
-        # Em standalone usamos LE staging durante validação (Fase 4-6).
-        # Promover para `letsencrypt-prod` após smoke test completo
-        # (procedimento em docs/RUNBOOKS.md §10.6).
-        clusterIssuer: letsencrypt-staging
+        # Promovido para LE prod em 2026-05-07 após smoke test E2E completo
+        # (RUNBOOKS §10.6). Resolve issue #144: AKHQ JDK não confiava em LE
+        # staging CA (não está nos cacerts default do Java) — pod ficava em
+        # CrashLoopBackOff com `PKIX path building failed` durante OIDC
+        # discovery. LE prod CA (ISRG Root X1) é trustada por todos os
+        # clientes nativamente. Rate limit 50 certs/week por domain registrado
+        # — folga grande em standalone (1 cert Keycloak + 1 cert kafka-ui).
+        clusterIssuer: letsencrypt-prod
 
   networkPolicy:
     enabled: true
@@ -437,9 +441,10 @@ kafkaUi:
       secretName: kafka-ui-tls
       certManager:
         enabled: true
-        # Em standalone usamos LE staging durante validação. Promover pra
-        # letsencrypt-prod após smoke test (mesmo pattern do Keycloak §10.6).
-        clusterIssuer: letsencrypt-staging
+        # Promovido para LE prod em 2026-05-07 (mesmo PR que promoveu o
+        # Keycloak — coerência). Cert real é trustado por browsers ao acessar
+        # https://kafka-ui.standalone.portaluni.com.br sem warning.
+        clusterIssuer: letsencrypt-prod
 
   networkPolicy:
     enabled: true
