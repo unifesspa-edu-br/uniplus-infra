@@ -38,6 +38,7 @@ spec:
                 - app: uniplus-api-ingresso
                 - app: clamav-scanner
                 - app: keycloak-replica
+                - app: kafka-ui
 
   template:
     metadata:
