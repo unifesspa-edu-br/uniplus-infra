@@ -118,9 +118,9 @@ keycloak:
       vaultPath: secret/standalone/keycloak/admin
       usernameKey: username
       passwordKey: password
-    portalClientSecret:
-      vaultPath: secret/standalone/keycloak/clients/uniplus-portal
-      secretKey: client_secret
+      # uniplus-portal é public client (SPA + PKCE) — não há client_secret
+      # para custodiar. Ver apps/keycloak-replica/files/uniplus-realm.json
+      # (`publicClient: true`).
 
   # Exposição externa via Traefik IngressRoute — TLS via cert-manager.
   ingress:
@@ -144,13 +144,14 @@ keycloak:
         enabled: false
         clusterIssuer: ""
 
-  # NetworkPolicy. Egress liberado para data-host (Postgres), Vault e DNS.
+  # NetworkPolicy. Egress liberado para data-host (Postgres) + DNS.
   # Ingress permitido a partir de Traefik (HTTP) e Prometheus (management).
+  # Pod NÃO fala diretamente com Vault — ESO sintetiza os Secrets em
+  # nome do operator e o Keycloak consome via envFrom.
   networkPolicy:
     enabled: true
     traefikNamespace: traefik
     monitoringNamespace: observability-prometheus
-    vaultNamespace: vault
     dataHostCIDR: ""
     dataHostPort: 5432
 

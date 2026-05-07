@@ -97,12 +97,10 @@ spec:
               value: {{ $kc.health.enabled | quote }}
             - name: KC_METRICS_ENABLED
               value: {{ $kc.metrics.enabled | quote }}
-            # client_secret do uniplus-portal: a única substituição
-            # `${VAR}` no realm JSON é o secret. clientId/rootUrl/redirectUris
-            # já chegam renderizados pelo tpl no ConfigMap (suporta arrays
-            # completos, sem truncar para o primeiro elemento). O env
-            # UNIPLUS_PORTAL_CLIENT_SECRET vem do envFrom do ExternalSecret
-            # `keycloak-replica.portalClientSecretName` abaixo.
+            # uniplus-portal é PUBLIC client (SPA Angular) + Authorization
+            # Code com PKCE — sem client_secret. clientId/rootUrl/redirectUris
+            # chegam ao realm JSON via tpl render do ConfigMap; nada precisa
+            # vir de Vault aqui.
             {{- with $kc.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -113,9 +111,6 @@ spec:
             # Bootstrap admin (KC_BOOTSTRAP_ADMIN_USERNAME, _PASSWORD).
             - secretRef:
                 name: {{ include "keycloak-replica.adminSecretName" . }}
-            # Client secret (UNIPLUS_PORTAL_CLIENT_SECRET).
-            - secretRef:
-                name: {{ include "keycloak-replica.portalClientSecretName" . }}
           ports:
             - name: http
               containerPort: {{ $kc.http.httpPort }}

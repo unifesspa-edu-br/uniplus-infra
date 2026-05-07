@@ -1288,23 +1288,18 @@ until curl -s --max-time 1 "$VAULT_ADDR/v1/sys/health" >/dev/null 2>&1; do sleep
 read -rsp "Root token: " VAULT_TOKEN; echo
 export VAULT_TOKEN
 
-# 1) Bootstrap admin — gera senha aleatória (32 bytes hex), persiste e custodia
+# Bootstrap admin — gera senha aleatória (32 bytes hex), persiste e custodia
 ADMIN_PW=$(openssl rand -hex 32)
 vault kv put secret/standalone/keycloak/admin \
   username=admin password="$ADMIN_PW"
 echo "Admin password (salvar no gestor institucional): $ADMIN_PW"
 
-# 2) Client secret do uniplus-portal — também aleatório (será setado no realm
-#    via ${VAR} substitution; rotação posterior via kcadm.sh, ver §10.4)
-CLIENT_SECRET=$(openssl rand -hex 32)
-vault kv put secret/standalone/keycloak/clients/uniplus-portal \
-  client_id=uniplus-portal client_secret="$CLIENT_SECRET"
-echo "Client secret (salvar no gestor institucional): $CLIENT_SECRET"
-
 # trap EXIT cuida de kill + unset ao sair do shell
 ```
 
-> ⚠️ **Custódia:** salvar `ADMIN_PW` e `CLIENT_SECRET` em gestor institucional (Bitwarden, 1Password, Vault corporativo). Standalone não é cofre durável — re-bootstrap via Tofu pode regenerar Shamir keys e perder estes secrets. Rotacionar via §10.4 antes de promover para hml/prod.
+> ⚠️ **Custódia:** salvar `ADMIN_PW` em gestor institucional (Bitwarden, 1Password, Vault corporativo). Standalone não é cofre durável — re-bootstrap via Tofu pode regenerar Shamir keys e perder este secret.
+>
+> O client `uniplus-portal` é **public client** (SPA Angular + Authorization Code + PKCE) — não há `client_secret` para custodiar. PKCE substitui o secret em fluxos de browser; o `code_verifier` gerado pelo SPA garante que apenas o cliente que iniciou a authorization request consegue trocar o code por tokens.
 
 ### 10.2 Verificar pod e ESO
 
@@ -1313,10 +1308,9 @@ kc() { sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml "$@"; }
 
 # 1) ExternalSecrets sintetizaram os Secrets K8s
 kc get externalsecret -n uniplus
-# Esperado: 3 ESOs com STATUS=SecretSynced READY=True
+# Esperado: 2 ESOs com STATUS=SecretSynced READY=True
 #   - keycloak-replica-uniplus-standalone-db
 #   - keycloak-replica-uniplus-standalone-bootstrap-admin
-#   - keycloak-replica-uniplus-standalone-client-uniplus-portal
 
 # 2) Pod Running 1/1
 kc get pod -n uniplus -l app.kubernetes.io/name=keycloak-replica
@@ -1349,41 +1343,39 @@ xdg-open https://standalone.portaluni.com.br/auth/admin/
 #    visível em "Clients" com Authorization Code + PKCE habilitado
 ```
 
-### 10.4 Rotacionar client secret do `uniplus-portal`
+### 10.4 Rotacionar admin password (master realm)
 
-Quando necessário (comprometimento, política de rotação periódica):
+`uniplus-portal` é public client com PKCE — não tem secret pra rotacionar. Para o admin do master realm (única credencial Keycloak custodiada em Vault):
 
 ```bash
-# 1) Gerar novo secret e atualizar Vault primeiro
-NEW_SECRET=$(openssl rand -hex 32)
-vault kv put secret/standalone/keycloak/clients/uniplus-portal \
-  client_id=uniplus-portal client_secret="$NEW_SECRET"
+# 1) Gerar novo password e atualizar Vault
+NEW_ADMIN_PW=$(openssl rand -hex 32)
+vault kv put secret/standalone/keycloak/admin \
+  username=admin password="$NEW_ADMIN_PW"
 
-# 2) Forçar refresh do ExternalSecret (espera até refreshInterval=1h ou refresh imediato)
+# 2) Forçar refresh imediato do ExternalSecret (sem esperar refreshInterval=1h)
 kc annotate externalsecret -n uniplus \
-  keycloak-replica-uniplus-standalone-client-uniplus-portal \
+  keycloak-replica-uniplus-standalone-bootstrap-admin \
   force-sync="$(date +%s)" --overwrite
 
-# 3) Aplicar no Keycloak via kcadm.sh (realm-import só cria; rotação é via API).
-#    NEW_SECRET vai via stdin (here-string + `read -r` no pod) — NUNCA em argv,
-#    evitando exposure em /proc/<pid>/cmdline e a armadilha clássica de
-#    quoting (single vs. double quotes em `bash -c`). O password de admin
-#    vem do env var KC_BOOTSTRAP_ADMIN_PASSWORD que já existe no Pod
-#    (envFrom da ExternalSecret keycloak-bootstrap-admin).
+# 3) Aplicar no Keycloak via kcadm.sh — usa o admin antigo (que ainda está
+#    no env do pod via envFrom) pra autenticar e setar a nova senha. NEW_ADMIN_PW
+#    vai via stdin (here-string + read -r), nunca em argv.
 kc exec -n uniplus -i deploy/keycloak-replica-uniplus-standalone -- bash -c '
-  read -r NEW_SECRET
+  read -r NEW_PW
   /opt/keycloak/bin/kcadm.sh config credentials \
     --server http://localhost:8080/auth --realm master \
     --user "$KC_BOOTSTRAP_ADMIN_USERNAME" --password "$KC_BOOTSTRAP_ADMIN_PASSWORD"
-  CLIENT_UUID=$(/opt/keycloak/bin/kcadm.sh get clients -r uniplus \
-    -q clientId=uniplus-portal --fields id --format csv --noquotes | tail -1)
-  /opt/keycloak/bin/kcadm.sh update "clients/$CLIENT_UUID" -r uniplus \
-    -s "secret=$NEW_SECRET"
-' <<<"$NEW_SECRET"
-unset NEW_SECRET
+  /opt/keycloak/bin/kcadm.sh set-password -r master \
+    --username "$KC_BOOTSTRAP_ADMIN_USERNAME" --new-password "$NEW_PW"
+' <<<"$NEW_ADMIN_PW"
+unset NEW_ADMIN_PW
 
-# 4) Atualizar configuração dos consumers (apps que usam o client) — via redeploy
-#    quando os apps reais aterrissarem (Fase 5)
+# 4) Restart do Pod para que o env KC_BOOTSTRAP_ADMIN_PASSWORD reflita o
+#    novo valor (envFrom já trocou via ESO, mas o env do processo é
+#    capturado no startup — restart é necessário para próximas operações
+#    de kcadm.sh dentro do pod usarem a senha nova).
+kc rollout restart deployment -n uniplus keycloak-replica-uniplus-standalone
 ```
 
 ### 10.5 Re-importar realm (forçar replace)
@@ -1422,12 +1414,10 @@ spec:
             - /opt/keycloak/data/import/uniplus-realm.json
           envFrom:
             # DB credentials (KC_DB_USERNAME, KC_DB_PASSWORD) — Postgres no data-host.
+            # Único Secret necessário para offline import: o realm JSON foi
+            # renderizado pelo Helm no ConfigMap (clientId/rootUrl/redirectUris
+            # via tpl) e o uniplus-portal é public client (sem secret).
             - secretRef: { name: keycloak-replica-uniplus-standalone-db }
-            # client_secret do uniplus-portal — UNIPLUS_PORTAL_CLIENT_SECRET é
-            # referenciado como ${VAR} no realm JSON. Sem este envFrom, o
-            # `kc.sh import --override` substituiria o placeholder por string
-            # vazia/literal, quebrando OIDC do client após restore.
-            - secretRef: { name: keycloak-replica-uniplus-standalone-client-uniplus-portal }
           env:
             - { name: KC_DB, value: postgres }
             - { name: KC_DB_URL_HOST, value: 10.0.2.87 }

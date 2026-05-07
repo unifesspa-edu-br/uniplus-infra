@@ -29,10 +29,10 @@
     {
       "clientId": {{ .Values.keycloak.realmImport.portalClient.clientId | quote }},
       "name": "Uni+ Portal (frontend Angular)",
-      "description": "Cliente OIDC do portal institucional Uni+. Authorization Code + PKCE.",
+      "description": "Cliente OIDC do portal institucional Uni+. Public client + Authorization Code + PKCE (sem client_secret — SPAs em browser não podem custodiar segredo).",
       "enabled": true,
       "protocol": "openid-connect",
-      "publicClient": false,
+      "publicClient": true,
       "standardFlowEnabled": true,
       "implicitFlowEnabled": false,
       "directAccessGrantsEnabled": false,
@@ -41,7 +41,6 @@
       "rootUrl": {{ .Values.keycloak.realmImport.portalClient.rootUrl | quote }},
       "redirectUris": {{ .Values.keycloak.realmImport.portalClient.redirectUris | toJson }},
       "webOrigins": {{ .Values.keycloak.realmImport.portalClient.webOrigins | toJson }},
-      "secret": "${UNIPLUS_PORTAL_CLIENT_SECRET}",
       "attributes": {
         "pkce.code.challenge.method": "S256",
         "post.logout.redirect.uris": "+"

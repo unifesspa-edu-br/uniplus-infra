@@ -131,15 +131,7 @@
               }
             },
             "db": { "$ref": "#/$defs/vaultUserPassRef" },
-            "bootstrapAdmin": { "$ref": "#/$defs/vaultUserPassRef" },
-            "portalClientSecret": {
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "vaultPath": { "type": "string" },
-                "secretKey": { "type": "string" }
-              }
-            }
+            "bootstrapAdmin": { "$ref": "#/$defs/vaultUserPassRef" }
           }
         },
         "ingress": {
@@ -175,7 +167,6 @@
             "enabled": { "type": "boolean" },
             "traefikNamespace": { "type": "string" },
             "monitoringNamespace": { "type": "string" },
-            "vaultNamespace": { "type": "string" },
             "dataHostCIDR": { "type": "string" },
             "dataHostPort": { "type": "integer", "minimum": 1, "maximum": 65535 }
           }
