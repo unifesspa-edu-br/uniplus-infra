@@ -1907,6 +1907,222 @@ unset NEW_PW
 | `mc alias set` retorna `Unable to verify SSL certificate` | TLS-mismatch ou endpoint errado | Confirmar endpoint `http://` (NÃO `https://`) — standalone usa PLAINTEXT |
 | Disk full em `vg-minio` | Buckets crescem além do volume | `df -h /var/lib/uniplus/minio`; `mc admin info local` para uso por bucket; expandir LVM ou aplicar lifecycle/quota |
 
+## 13. Kafka KRaft (standalone)
+
+Mensageria — `apache/kafka:4.2.0` (KRaft only; ZooKeeper removido na 4.0 GA) em container Docker gerenciado por systemd no data-host (`10.0.2.87:9092` para clientes, `:9093` para controller). Single-node combined (`process.roles=broker,controller`) com static quorum.
+
+> ⚠️ **Auth em standalone:** PLAINTEXT — subnet privada VCN + iptables INPUT chain filtrando externos. Acceptable para validação. Para hml/prod migrar para SASL/SCRAM-SHA-512 (ver §13.6 — Pattern de migração).
+
+### 13.1 Kafka 4.2.0 — bootstrap automatizado
+
+A função `step_data_setup_kafka` em `scripts/bootstrap-standalone.sh` provisiona, na ordem:
+
+1. Diretório `/var/lib/uniplus/kafka/data` (mode `750`, owner `1000:1000` — uid `appuser` no container, default user da imagem `apache/kafka:4.2.0` sem drop de privs).
+2. `.bootstrap-creds` (root:root 600) em `/var/lib/uniplus/kafka/.bootstrap-creds` com `cluster_id` (UUID gerado via `kafka-storage.sh random-uuid` em container ad-hoc) — gerado **somente na primeira execução**.
+3. EnvironmentFile `/etc/uniplus-kafka.env` (root:root 600) com `CLUSTER_ID`, `KAFKA_PROCESS_ROLES=broker,controller`, `KAFKA_NODE_ID=1`, `KAFKA_LISTENERS`, `KAFKA_ADVERTISED_LISTENERS`, `KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER`, `KAFKA_CONTROLLER_QUORUM_VOTERS=1@10.0.2.87:9093` (static quorum), `KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT`, `KAFKA_LISTENER_SECURITY_PROTOCOL_MAP`, `KAFKA_LOG_DIRS=/var/lib/kafka/data` (override do default `/tmp/kraft-combined-logs`), `KAFKA_AUTO_CREATE_TOPICS_ENABLE=false`, replication factor 1 em internal topics, `KAFKA_HEAP_OPTS="-Xmx1g -Xms1g"` (aspas obrigatórias — systemd EnvironmentFile parser tokeniza por espaço sem quoting).
+4. `systemd` unit `/etc/systemd/system/uniplus-kafka.service` com `Restart=always`, `TimeoutStartSec=180` (cold start de JVM + KRaft metadata controller bootstrap), container em `--network host`, data dir mounted em `/var/lib/kafka/data` (default do entrypoint).
+
+**Format do storage é AUTOMÁTICO** via `KafkaDockerWrapper setup` no entrypoint do container — chamado em todo startup, mas o wrapper detecta `already formatted` e skip idempotentemente. NÃO há `kafka-storage.sh format` manual no script.
+
+**Idempotência:**
+
+- `.bootstrap-creds`: preserva se existe; gera se ausente; aborta se `data/meta.properties` já formatado sem creds (regenerar `cluster_id` produziria mismatch entre runtime config e storage).
+- EnvironmentFile + systemd unit: sempre re-aplicados.
+- Entrypoint do container: format skip se já formatado.
+- Serviço já ativo: bootstrap não reinicia.
+
+**Verificação imediata pós-bootstrap (no data-host):**
+
+```bash
+sudo systemctl status uniplus-kafka
+sudo docker exec uniplus-kafka /opt/kafka/bin/kafka-broker-api-versions.sh \
+  --bootstrap-server localhost:9092 | head -3
+# Esperado: lista de APIs (Produce, Fetch, ListOffsets, Metadata, ...)
+```
+
+### 13.2 Registrar `cluster_id` no Vault (auditoria)
+
+> O `cluster_id` **NÃO é segredo** — é apenas o identificador único do cluster (previne mistura entre brokers de clusters diferentes). Persistir em Vault é para documentação/auditoria; o arquivo `.bootstrap-creds` permanece no data-host indefinidamente (sem shred — não há cleartext de senha).
+
+```bash
+# Ler cluster_id no data-host
+ssh -i ~/.ssh/id_ed25519 ubuntu@10.0.2.87
+sudo cat /var/lib/uniplus/kafka/.bootstrap-creds
+# cluster_id=<UUID>
+```
+
+**Registrar no Vault (executar do k8s-host):**
+
+```bash
+read -rsp "Cole cluster_id (do passo anterior): " KAFKA_CID; echo
+
+sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml \
+  -n vault port-forward platform-vault-uniplus-standalone-0 8200:8200 \
+  > /tmp/vault-pf.log 2>&1 &
+PF_PID=$!
+trap 'kill "$PF_PID" 2>/dev/null; unset KAFKA_CID VAULT_TOKEN VAULT_ADDR' EXIT
+export VAULT_ADDR=http://127.0.0.1:8200
+until curl -s --max-time 1 "$VAULT_ADDR/v1/sys/health" >/dev/null 2>&1; do sleep 1; done
+
+read -rsp "Root token: " VAULT_TOKEN; echo
+export VAULT_TOKEN
+
+vault kv put secret/standalone/kafka/cluster \
+  bootstrap_servers=10.0.2.87:9092 \
+  cluster_id="$KAFKA_CID"
+
+vault kv get secret/standalone/kafka/cluster
+```
+
+### 13.3 Validação end-to-end (pod K8s → Kafka)
+
+Confirma que pods do cluster K3s alcançam Kafka no data-host via flannel→VCN. Pré-requisito: PR #125 aplicado (iptables FORWARD ACCEPT).
+
+**Executar no k8s-host:**
+
+```bash
+# 1) Conectividade TCP bruta
+nc -zv 10.0.2.87 9092
+# Esperado: succeeded
+
+# 2) Pod ad-hoc com cliente Kafka — produce + consume round-trip
+sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml run kafka-validation \
+  --image=apache/kafka:4.2.0 --restart=Never --rm -i --command -- bash -c '
+    set -euo pipefail
+    BS=10.0.2.87:9092
+
+    /opt/kafka/bin/kafka-topics.sh --bootstrap-server "$BS" \
+      --create --topic uniplus-smoke --partitions 1 --replication-factor 1
+
+    echo "hello-uniplus" | /opt/kafka/bin/kafka-console-producer.sh \
+      --bootstrap-server "$BS" --topic uniplus-smoke
+
+    /opt/kafka/bin/kafka-console-consumer.sh \
+      --bootstrap-server "$BS" --topic uniplus-smoke \
+      --from-beginning --max-messages 1 --timeout-ms 10000
+
+    /opt/kafka/bin/kafka-topics.sh --bootstrap-server "$BS" \
+      --delete --topic uniplus-smoke
+  '
+# Esperado: "hello-uniplus" no consumer; topic deletado
+```
+
+### 13.4 Restore: re-criar `.bootstrap-creds` a partir do meta.properties ou Vault
+
+Caso o `.bootstrap-creds` seja perdido mas `meta.properties` exista no data dir, o `cluster_id` está ali (escrito pelo entrypoint na primeira formatação):
+
+```bash
+ssh -i ~/.ssh/id_ed25519 ubuntu@10.0.2.87
+sudo grep '^cluster.id=' /var/lib/uniplus/kafka/data/meta.properties
+# cluster.id=<UUID>
+
+# Reconstituir .bootstrap-creds
+CID=$(sudo grep '^cluster.id=' /var/lib/uniplus/kafka/data/meta.properties | cut -d= -f2)
+echo "cluster_id=$CID" | sudo tee /var/lib/uniplus/kafka/.bootstrap-creds
+sudo chown root:root /var/lib/uniplus/kafka/.bootstrap-creds
+sudo chmod 600 /var/lib/uniplus/kafka/.bootstrap-creds
+```
+
+Se `meta.properties` também foi perdido (data dir resetado), recuperar do Vault:
+
+```bash
+# k8s-host — kubectl exec no pod Vault para ler o registro
+read -rsp "Root token: " VAULT_TOKEN; echo
+
+CID=$(sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml \
+  -n vault exec -i platform-vault-uniplus-standalone-0 -- \
+  sh -c 'read -r T; export VAULT_TOKEN="$T"; vault kv get -field=cluster_id secret/standalone/kafka/cluster' \
+  <<<"$VAULT_TOKEN")
+
+ssh -i ~/.ssh/id_ed25519 ubuntu@10.0.2.87 \
+  "sudo tee /var/lib/uniplus/kafka/.bootstrap-creds > /dev/null && \
+   sudo chmod 600 /var/lib/uniplus/kafka/.bootstrap-creds && \
+   sudo chown root:root /var/lib/uniplus/kafka/.bootstrap-creds" <<EOF
+cluster_id=$CID
+EOF
+unset VAULT_TOKEN CID
+```
+
+> ⚠️ Restaurar `cluster_id` SEM `meta.properties` correspondente significa que o cluster perdeu o storage. Re-rodar o bootstrap recriará `meta.properties` a partir do `cluster_id` restaurado, mas **todos os topics e mensagens são perdidos**. Em standalone, mensageria é volátil; produção exige replicação cross-DC.
+
+### 13.5 Operações comuns
+
+**Listar topics:**
+
+```bash
+sudo docker exec uniplus-kafka /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server localhost:9092 --list
+```
+
+**Criar topic com partições e retenção customizadas:**
+
+```bash
+sudo docker exec uniplus-kafka /opt/kafka/bin/kafka-topics.sh \
+  --bootstrap-server localhost:9092 \
+  --create --topic uniplus-events \
+  --partitions 3 --replication-factor 1 \
+  --config retention.ms=604800000  # 7 dias
+```
+
+**Inspecionar consumer groups:**
+
+```bash
+sudo docker exec uniplus-kafka /opt/kafka/bin/kafka-consumer-groups.sh \
+  --bootstrap-server localhost:9092 --list
+sudo docker exec uniplus-kafka /opt/kafka/bin/kafka-consumer-groups.sh \
+  --bootstrap-server localhost:9092 --describe --group <group-name>
+```
+
+### 13.6 Pattern de migração para SASL/SCRAM-SHA-512 (hml/prod)
+
+Em standalone PLAINTEXT é aceitável (subnet privada). Para hml/prod, a migração envolve:
+
+1. **Re-format do storage com SCRAM credentials embarcadas:**
+
+   ```bash
+   /opt/kafka/bin/kafka-storage.sh format \
+     --config /opt/kafka/config/server.properties \
+     --cluster-id <UUID> \
+     --add-scram 'SCRAM-SHA-512=[name=admin,password=<senha-forte>]' \
+     --ignore-formatted
+   ```
+
+2. **Atualizar EnvironmentFile** com:
+
+   ```
+   KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:SASL_PLAINTEXT,PLAINTEXT:SASL_PLAINTEXT
+   KAFKA_SASL_ENABLED_MECHANISMS=SCRAM-SHA-512
+   KAFKA_SASL_MECHANISM_INTER_BROKER_PROTOCOL=SCRAM-SHA-512
+   KAFKA_SASL_MECHANISM_CONTROLLER_PROTOCOL=SCRAM-SHA-512
+   KAFKA_SUPER_USERS=User:admin
+   ```
+
+3. **Custodiar admin password no Vault** em `secret/standalone/kafka/admin` (`username`+`password`); sub-usuários per-app via `kafka-configs.sh --add-config 'SCRAM-SHA-512=[password=...]'` na Fase 5.
+
+> Não implementar essa migração em standalone — apenas registrar como follow-up para Story de hml.
+
+### 13.7 Backup e Restore
+
+> Procedimento detalhado em sub-task da Story #118. Resumo:
+>
+> - **Backup:** snapshot LVM (`vg-kafka/lv-kafka`) ou cópia do data dir após `systemctl stop uniplus-kafka`. **Backup ao vivo de Kafka NÃO é confiável** — cópia inconsistente entre arquivos de log e índices. Sempre stop antes de copiar.
+> - **Restore:** parar `uniplus-kafka`, restaurar volume via LVM snapshot ou `tar -xz` do backup, ajustar ownership `1000:1000`, iniciar serviço. `cluster_id` em `meta.properties` deve ser preservado.
+>
+> **Em standalone, perda de Kafka afeta:** mensagens em-vôo (perda dependendo do consumer offset). Aceitável em validação; produção exige cluster multi-broker com replication factor ≥ 3.
+
+### 13.8 Troubleshooting
+
+| Sintoma | Diagnóstico | Fix |
+|---|---|---|
+| Container reinicia em loop com `Cluster ID mismatch` | `CLUSTER_ID` no env diferente do `cluster.id` em `meta.properties` | Restaurar `.bootstrap-creds` correto via §13.4; o env é gerado dele |
+| `Connection refused` ao chamar `kafka-broker-api-versions.sh` | Bootstrap ainda inicializando (~30-90s na primeira run) ou listener bind falhou | `sudo journalctl -u uniplus-kafka -n 100`; conferir `KAFKA_LISTENERS` no env |
+| `LEADER_NOT_AVAILABLE` ao produzir | Topic recém-criado; metadata refresh não propagou | Aguardar 1-2s e retry; em standalone com 1 broker, isso é raro mas possível em load alto |
+| `OutOfMemoryError: Java heap space` | `KAFKA_HEAP_OPTS=-Xmx1g` insuficiente para workload | Aumentar `-Xmx` no EnvironmentFile; restart |
+| `nc -zv 10.0.2.87 9092` succeeded mas pod retorna timeout | iptables FORWARD ainda dropping flannel→VCN | Mesma diagnose de §11.3/§12.3 — ver §8.6/§8.7 do plano #123 |
+| `auto.create.topics.enable` desligado mas app cria topic implicitamente | App configurado com `allow.auto.create.topics=true` (client-side) — Kafka 4.x ainda permite isso por default | App deve criar topics explicitamente via API; ou desabilitar client-side allow |
+| Disk full em `vg-kafka` | Logs cresceram além do volume | `df -h /var/lib/uniplus/kafka`; aplicar `retention.ms` ou `retention.bytes` por topic; expandir LVM |
+| `KRaft metadata controller is not yet ready` no startup | Cold start ainda em progresso ou storage corrupto | Aguardar até 180s; se persiste, conferir integridade de `meta.properties` e `__cluster_metadata-0/` |
+
 ---
 
 *Documento mantido pelo CTIC/UNIFESSPA. Atualizações via Pull Request.*
