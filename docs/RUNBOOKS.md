@@ -1666,6 +1666,247 @@ unset NEW_PW
 | AOF cresce indefinidamente | `auto-aof-rewrite-percentage 100` não dispara (default mas pode ter sido desligado em config customizada) | `redis-cli BGREWRITEAOF`; revisar `redis.conf` |
 | OOM kills do container | `maxmemory 2gb` excedido ou cgroup limit do host menor | `redis-cli INFO memory`; ajustar `maxmemory` em `redis.conf` ou liberar memória no host |
 
+## 12. MinIO (standalone)
+
+Object storage AGPL community release `RELEASE.2025-09-07T16-13-09Z` — container Docker gerenciado por systemd no data-host (`10.0.2.87:9000` API + `:9001` Console). Single-node single-drive (SNSD), única topologia suportada em standalone single-host. Pré-requisito: §9 Postgres + §11 Redis ativos no data-host (mesmo padrão systemd).
+
+> ⚠️ **Aviso community vs enterprise:** este é o **último release AGPL** antes do split MinIO/AIStor (2025-09). Security fixes pós-Setembro/2025 só estão disponíveis em AIStor enterprise. Aceitável em standalone (validação) mas decisão arquitetural pra hml/prod precisa avaliar alternativas (Garage, SeaweedFS, build próprio do source) — backlog Story futura.
+
+### 12.1 MinIO 2025-09 — bootstrap automatizado
+
+A função `step_data_setup_minio` em `scripts/bootstrap-standalone.sh` provisiona, na ordem:
+
+1. Diretório `/var/lib/uniplus/minio/data` (mode `750`, owner `1000:1000` — uid `minio` criado dinamicamente pelo entrypoint via `chroot --userspec`).
+2. `.bootstrap-creds` (root:root 600) em `/var/lib/uniplus/minio/.bootstrap-creds` com `root_user` (16 bytes hex via `openssl rand -hex 16`) + `root_pw` (32 bytes hex via `openssl rand -hex 32`) — gerado **somente na primeira execução**. **Username NÃO é literal `admin`/`minioadmin`** — randomização reduz tentativas de chute.
+3. EnvironmentFile `/etc/uniplus-minio.env` (root:root 600) com `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` (lidos do `.bootstrap-creds`), `MINIO_USERNAME=minio`, `MINIO_GROUPNAME=minio`, `MINIO_UID=1000`, `MINIO_GID=1000` (instruções para o entrypoint criar o user e fazer chroot).
+4. `systemd` unit `/etc/systemd/system/uniplus-minio.service` com `Restart=always`, container em `--network host`, server `--address 10.0.2.87:9000 --console-address 10.0.2.87:9001`, data dir `/data` mounted via volume.
+5. `step_data_bootstrap_minio_buckets` cria 4 buckets baseline idempotentemente via `mc mb --ignore-existing` em job one-shot (`quay.io/minio/mc:latest`):
+   - `keycloak-backups` — destino de pg_dump
+   - `loki-chunks` — chunks de log (observability)
+   - `tempo-traces` — traces (idem)
+   - `app-uploads` — bucket genérico para apps Uni+ (Fase 5)
+
+**Idempotência:**
+
+- `.bootstrap-creds`: preserva se existe; gera se ausente; aborta se `data/.minio.sys/` já formatado sem `.bootstrap-creds` (regenerar produziria mismatch entre MinIO runtime e Vault).
+- EnvironmentFile + systemd unit: sempre re-aplicados.
+- Buckets: `mc mb --ignore-existing` skip se já criados.
+- Serviço já ativo: bootstrap não reinicia (evita downtime).
+
+**Verificação imediata pós-bootstrap (no data-host):**
+
+```bash
+sudo systemctl status uniplus-minio
+curl -sf http://10.0.2.87:9000/minio/health/live -o /dev/null -w "%{http_code}\n"
+# Esperado: 200
+
+# Listar buckets via mc one-shot (lê creds do .bootstrap-creds via stdin)
+sudo docker run --rm -i --network host --entrypoint sh \
+  quay.io/minio/mc:latest -c '
+    read -r U; read -r P
+    mc --quiet alias set local http://10.0.2.87:9000 "$U" "$P"
+    mc ls local
+  ' <<EOF
+$(sudo grep ^root_user= /var/lib/uniplus/minio/.bootstrap-creds | cut -d= -f2)
+$(sudo grep ^root_pw= /var/lib/uniplus/minio/.bootstrap-creds | cut -d= -f2)
+EOF
+# Esperado: 4 buckets (app-uploads/, keycloak-backups/, loki-chunks/, tempo-traces/)
+```
+
+### 12.2 Custódia das credenciais iniciais
+
+> ⚠️ **CRÍTICO.** O `.bootstrap-creds` é o único rastro em disco do `root_user` + `root_pw`. Custodiar imediatamente em gestor institucional + Vault standalone, depois `shred -u`.
+
+**Passo 1 — Ler credenciais no data-host:**
+
+```bash
+ssh -i ~/.ssh/id_ed25519 ubuntu@10.0.2.87
+sudo cat /var/lib/uniplus/minio/.bootstrap-creds
+# root_user=<32 hex>
+# root_pw=<64 hex>
+```
+
+**Passo 2 — Salvar no Vault standalone (executar do k8s-host):**
+
+> Mesmo padrão de higiene das §9.2/§11.2 (port-forward + token via env, nunca argv).
+
+```bash
+read -rsp "Cole root_user (do passo 1): " MIN_USER; echo
+read -rsp "Cole root_pw (do passo 1): " MIN_PW; echo
+
+sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml \
+  -n vault port-forward platform-vault-uniplus-standalone-0 8200:8200 \
+  > /tmp/vault-pf.log 2>&1 &
+PF_PID=$!
+trap 'kill "$PF_PID" 2>/dev/null; unset MIN_USER MIN_PW VAULT_TOKEN VAULT_ADDR' EXIT
+export VAULT_ADDR=http://127.0.0.1:8200
+until curl -s --max-time 1 "$VAULT_ADDR/v1/sys/health" >/dev/null 2>&1; do sleep 1; done
+
+read -rsp "Root token: " VAULT_TOKEN; echo
+export VAULT_TOKEN
+
+vault kv put secret/standalone/minio/root \
+  endpoint=http://10.0.2.87:9000 \
+  region=us-east-1 \
+  username="$MIN_USER" \
+  password="$MIN_PW"
+
+vault kv get secret/standalone/minio/root
+# Esperado: campos endpoint/region/username/password presentes
+```
+
+**Passo 3 — Limpar `.bootstrap-creds` no data-host:**
+
+```bash
+ssh -i ~/.ssh/id_ed25519 ubuntu@10.0.2.87
+sudo shred -u /var/lib/uniplus/minio/.bootstrap-creds
+```
+
+> ⚠️ Após `shred -u`, re-execução do bootstrap **abortaria** com mensagem apontando §12.4 (data dir já formatado, sem fonte da senha em disco). Restaurar `.bootstrap-creds` a partir do Vault antes.
+
+### 12.3 Validação end-to-end (pod K8s → MinIO)
+
+Confirma que pods do cluster K3s alcançam MinIO no data-host via flannel→VCN. Pré-requisito: PR #125 aplicado (iptables FORWARD ACCEPT entre flannel CIDR e VCN).
+
+**Executar no k8s-host:**
+
+```bash
+# 1) Conectividade TCP bruta (host → data-host)
+nc -zv 10.0.2.87 9000   # API
+nc -zv 10.0.2.87 9001   # Console
+# Esperado: succeeded em ambas
+
+# 2) Ler credenciais — fail fast se não disponíveis
+MIN_USER=$(ssh ubuntu@10.0.2.87 \
+  "sudo grep ^root_user= /var/lib/uniplus/minio/.bootstrap-creds 2>/dev/null | cut -d= -f2")
+MIN_PW=$(ssh ubuntu@10.0.2.87 \
+  "sudo grep ^root_pw= /var/lib/uniplus/minio/.bootstrap-creds 2>/dev/null | cut -d= -f2")
+if [ -z "$MIN_USER" ] || [ -z "$MIN_PW" ]; then
+  echo "ERRO: creds não encontradas. Se shredded (§12.2), restaure via §12.4." >&2
+  return 1 2>/dev/null || exit 1
+fi
+
+# 3) Pod ad-hoc com mc (sem hostNetwork — usa flannel)
+sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml run minio-validation \
+  --image=quay.io/minio/mc:latest --restart=Never --rm -i --command -- \
+  sh -c '
+    read -r U; read -r P
+    mc --quiet alias set s http://10.0.2.87:9000 "$U" "$P"
+    mc ls s
+  ' <<EOF
+$MIN_USER
+$MIN_PW
+EOF
+# Esperado: app-uploads/ keycloak-backups/ loki-chunks/ tempo-traces/
+unset MIN_USER MIN_PW
+```
+
+### 12.4 Restore: re-criar `.bootstrap-creds` a partir do Vault
+
+```bash
+# k8s-host — port-forward Vault (mesmo pattern §11.4)
+sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml \
+  -n vault port-forward platform-vault-uniplus-standalone-0 8200:8200 \
+  > /tmp/vault-pf.log 2>&1 &
+PF_PID=$!
+trap 'kill "$PF_PID" 2>/dev/null; unset MIN_USER MIN_PW VAULT_TOKEN VAULT_ADDR' EXIT
+export VAULT_ADDR=http://127.0.0.1:8200
+until curl -s --max-time 1 "$VAULT_ADDR/v1/sys/health" >/dev/null 2>&1; do sleep 1; done
+
+read -rsp "Root token: " VAULT_TOKEN; echo
+export VAULT_TOKEN
+
+MIN_USER=$(vault kv get -field=username secret/standalone/minio/root)
+MIN_PW=$(vault kv get -field=password secret/standalone/minio/root)
+
+ssh -i ~/.ssh/id_ed25519 ubuntu@10.0.2.87 \
+  "sudo tee /var/lib/uniplus/minio/.bootstrap-creds > /dev/null && \
+   sudo chmod 600 /var/lib/uniplus/minio/.bootstrap-creds && \
+   sudo chown root:root /var/lib/uniplus/minio/.bootstrap-creds" <<EOF
+root_user=$MIN_USER
+root_pw=$MIN_PW
+EOF
+```
+
+### 12.5 Re-rodar bucket bootstrap manualmente
+
+Se quiser pré-criar buckets adicionais sem rerunnar todo o bootstrap, ou se `step_data_bootstrap_minio_buckets` pulou por `.bootstrap-creds` ausente:
+
+```bash
+ssh ubuntu@10.0.2.87
+# Substitua a lista de buckets conforme necessário
+sudo docker run --rm -i --network host --entrypoint sh \
+  quay.io/minio/mc:latest -c '
+    set -e
+    read -r U; read -r P
+    mc --quiet alias set local http://10.0.2.87:9000 "$U" "$P"
+    for b in keycloak-backups loki-chunks tempo-traces app-uploads; do
+      mc mb --ignore-existing "local/$b"
+    done
+    mc ls local
+  ' <<EOF
+$(sudo grep ^root_user= /var/lib/uniplus/minio/.bootstrap-creds | cut -d= -f2)
+$(sudo grep ^root_pw= /var/lib/uniplus/minio/.bootstrap-creds | cut -d= -f2)
+EOF
+```
+
+### 12.6 Acesso ao Console UI (porta 9001)
+
+Console NÃO está exposto externamente (sem IngressRoute em standalone). Acesso via SSH tunnel:
+
+```bash
+# Do laptop (cria tunnel local 9001 → k8s-host:9001 → data-host:9001 via VCN)
+ssh -L 9001:10.0.2.87:9001 ubuntu@164.152.53.29
+# Em outro terminal: xdg-open http://localhost:9001
+# Login com root_user / root_pw do Vault
+```
+
+### 12.7 Rotacionar `root_pw`
+
+```bash
+# 1) Gerar nova senha + atualizar Vault
+NEW_PW=$(openssl rand -hex 32)
+vault kv put secret/standalone/minio/root \
+  endpoint=http://10.0.2.87:9000 region=us-east-1 \
+  username="$(vault kv get -field=username secret/standalone/minio/root)" \
+  password="$NEW_PW"
+
+# 2) Reconstituir .bootstrap-creds via §12.4 com NEW_PW
+
+# 3) Re-rodar bootstrap (re-aplica EnvironmentFile com NEW_PW)
+ssh ubuntu@10.0.2.87 "cd ~/uniplus-infra && ./scripts/bootstrap-standalone.sh --role=standalone-data"
+
+# 4) Restart do MinIO para que MINIO_ROOT_PASSWORD reflita o novo valor
+ssh ubuntu@10.0.2.87 "sudo systemctl restart uniplus-minio"
+
+# 5) Validar — `mc admin info` deve aceitar a nova senha
+unset NEW_PW
+```
+
+> Apps consumidoras (Fase 5) que cacheiem credenciais em ConfigMap/env precisam restart após rotação. ESO refresh é assíncrono — forçar sync via annotation se aplicável.
+
+### 12.8 Backup e Restore
+
+> Procedimento detalhado em sub-task da Story #118. Resumo:
+>
+> - **Backup:** snapshot LVM (`vg-minio/lv-minio`) + cópia dos chunks via `mc mirror local/<bucket> remote/...` para destino externo (institucional UNIFESSPA quando rede chegar).
+> - **Restore:** parar `uniplus-minio`, restaurar volume via LVM snapshot ou re-importar via `mc mirror`, ajustar ownership `1000:1000`, iniciar serviço.
+>
+> **Em standalone, perda de MinIO afeta:** keycloak backups (recuperáveis via re-bootstrap do KC com data fresca), uploads de apps (perda de dados de usuário). Aceitável em validação; produção exige replicação cross-DC (não disponível em SNSD).
+
+### 12.9 Troubleshooting
+
+| Sintoma | Diagnóstico | Fix |
+|---|---|---|
+| `Access Denied` ao chamar `mc admin info` | `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD` no env do container desatualizados ou typo no creds | Conferir `.bootstrap-creds` vs Vault; re-rodar §12.7 |
+| Container falha startup com `Permission denied` em `/data` | Ownership do data dir ≠ `1000:1000` ou mode ≠ `750` | `sudo chown -R 1000:1000 /var/lib/uniplus/minio/data && sudo chmod 750 /var/lib/uniplus/minio/data` |
+| `/minio/health/live` retorna 503 | MinIO ainda inicializando (1ª run formata `.minio.sys/`) ou drive corrupto | `sudo journalctl -u uniplus-minio -n 100`; aguardar até 90s |
+| Console em `:9001` não responde | `--console-address 10.0.2.87:9001` não bind (porta em uso?) | `sudo ss -tlnp \| grep 9001`; se libre, restart `uniplus-minio` |
+| `mc mb` retorna `BucketAlreadyOwnedByYou` | Bucket já existe (idempotência funcionando) | Sem ação — `--ignore-existing` evita o erro; se aparecer fora do flag, é OK |
+| OOM kills do container | Workload excede heap default da JVM ausente (MinIO é Go, sem JVM); cgroup limit do host muito baixo | `docker stats uniplus-minio`; ajustar limits do systemd unit ou liberar memória |
+| `mc alias set` retorna `Unable to verify SSL certificate` | TLS-mismatch ou endpoint errado | Confirmar endpoint `http://` (NÃO `https://`) — standalone usa PLAINTEXT |
+| Disk full em `vg-minio` | Buckets crescem além do volume | `df -h /var/lib/uniplus/minio`; `mc admin info local` para uso por bucket; expandir LVM ou aplicar lifecycle/quota |
+
 ---
 
 *Documento mantido pelo CTIC/UNIFESSPA. Atualizações via Pull Request.*
