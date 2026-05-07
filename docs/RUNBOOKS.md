@@ -2339,6 +2339,230 @@ ADR-009 documenta os deltas previstos:
 | `KRaft metadata controller is not yet ready` | Cold start ou storage corrupto | Aguardar até 180s; se persiste, conferir `__cluster_metadata-0/` |
 | Disk full em `vg-kafka` | Logs cresceram além do volume | `df -h /var/lib/uniplus/kafka`; aplicar `retention.ms`/`retention.bytes` por topic; expandir LVM |
 
+## 14. AKHQ — Web UI do Kafka (standalone)
+
+Web UI de gerenciamento do cluster Kafka SASL_SSL — chart `apps/kafka-ui/` (issue #139). AKHQ 0.27.x, Micronaut OIDC integrado ao realm `uniplus` do Keycloak. Pré-requisitos: §13 Kafka SASL_SSL ativo (admin SCRAM em `secret/standalone/kafka/admin`) + §10 Keycloak ativo (realm `uniplus` importado).
+
+### 14.1 Pré-flight: client OIDC + JWT signing + custódia
+
+3 segredos precisam ser custodiados em Vault antes do ArgoCD reconciliar o chart kafka-ui:
+
+1. `secret/standalone/keycloak/clients/kafka-ui` — `client_secret` (gerado pelo realm import)
+2. `secret/standalone/kafka-ui/jwt` — `signing_secret` (gerado pelo operador, 32 bytes hex)
+3. `secret/standalone/kafka/admin` — admin SCRAM Kafka (já custodiado em §13.2)
+
+Sem (1) ou (2), os ESOs ficam em `SecretNotFound` e AKHQ trava em `CreateContainerConfigError`.
+
+```bash
+kc() { sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml "$@"; }
+```
+
+**Passo 1 — Garantir que o realm `uniplus` tem o client `kafka-ui` + grupos.**
+
+Realm já existente (deploy pré-PR #142) — Keycloak `start --import-realm` skip se realm existe. Adicionar via `kcadm.sh` (operação cirúrgica, sem perder customizações via Admin UI):
+
+```bash
+kc exec -n uniplus -i deploy/keycloak-replica-uniplus-standalone -- bash -c '
+  set -e
+  /opt/keycloak/bin/kcadm.sh config credentials \
+    --server http://localhost:8080/auth \
+    --realm master \
+    --user "$KC_BOOTSTRAP_ADMIN_USERNAME" \
+    --password "$KC_BOOTSTRAP_ADMIN_PASSWORD" >/dev/null
+
+  # 1.1 Criar grupos /admins/kafka e /users/uniplus (idempotente — ignora se existem)
+  for GP in "admins/kafka" "users/uniplus"; do
+    PARENT=${GP%/*}; CHILD=${GP##*/}
+    /opt/keycloak/bin/kcadm.sh create groups -r uniplus -s name="$PARENT" 2>/dev/null || true
+    PID=$(/opt/keycloak/bin/kcadm.sh get groups -r uniplus -q briefRepresentation=true --fields id,name --format csv --noquotes | awk -F, -v n="$PARENT" "\$2==n {print \$1}")
+    /opt/keycloak/bin/kcadm.sh create groups/$PID/children -r uniplus -s name="$CHILD" 2>/dev/null || true
+  done
+
+  # 1.2 Criar client kafka-ui confidential (idempotente)
+  EXISTING=$(/opt/keycloak/bin/kcadm.sh get clients -r uniplus -q clientId=kafka-ui --fields id --format csv --noquotes | tail -1)
+  if [ -z "$EXISTING" ]; then
+    /opt/keycloak/bin/kcadm.sh create clients -r uniplus -f - <<JSON
+{
+  "clientId": "kafka-ui",
+  "name": "AKHQ — Kafka Web UI (admin)",
+  "enabled": true, "protocol": "openid-connect",
+  "publicClient": false, "standardFlowEnabled": true,
+  "implicitFlowEnabled": false, "directAccessGrantsEnabled": false,
+  "serviceAccountsEnabled": false, "frontchannelLogout": true,
+  "redirectUris": ["https://kafka-ui.standalone.portaluni.com.br/oauth/callback/keycloak"],
+  "webOrigins": ["https://kafka-ui.standalone.portaluni.com.br"],
+  "attributes": { "post.logout.redirect.uris": "+" },
+  "defaultClientScopes": ["web-origins","acr","profile","roles","email"]
+}
+JSON
+    CID=$(/opt/keycloak/bin/kcadm.sh get clients -r uniplus -q clientId=kafka-ui --fields id --format csv --noquotes | tail -1)
+    # 1.3 Mapper groups (full path)
+    /opt/keycloak/bin/kcadm.sh create clients/$CID/protocol-mappers/models -r uniplus -f - <<JSON
+{
+  "name": "groups", "protocol": "openid-connect",
+  "protocolMapper": "oidc-group-membership-mapper",
+  "consentRequired": false,
+  "config": { "full.path": "true", "id.token.claim": "true",
+              "access.token.claim": "true", "userinfo.token.claim": "true",
+              "claim.name": "groups" }
+}
+JSON
+  fi
+'
+```
+
+> Em deploys novos (sem realm prévio), o realm import cobre tudo automaticamente via `apps/keycloak-replica/files/uniplus-realm.json` — esse passo 1 é noop. Para forçar re-import completo (perdendo mudanças via Admin UI), seguir §10.5.
+
+**Passo 2 — Recuperar o client_secret + custodiar:**
+
+```bash
+KAFKA_UI_SECRET=$(kc exec -n uniplus deploy/keycloak-replica-uniplus-standalone -- bash -c '
+  /opt/keycloak/bin/kcadm.sh config credentials \
+    --server http://localhost:8080/auth --realm master \
+    --user "$KC_BOOTSTRAP_ADMIN_USERNAME" --password "$KC_BOOTSTRAP_ADMIN_PASSWORD" >/dev/null
+  CID=$(/opt/keycloak/bin/kcadm.sh get clients -r uniplus -q clientId=kafka-ui --fields id --format csv --noquotes | tail -1)
+  /opt/keycloak/bin/kcadm.sh get clients/$CID/client-secret -r uniplus --fields value --format csv --noquotes | tail -1
+')
+echo "kafka-ui client_secret: ${KAFKA_UI_SECRET:0:8}...(redacted)"
+```
+
+**Passo 3 — Gerar JWT signing secret (32 bytes hex aleatório):**
+
+```bash
+JWT_SECRET=$(openssl rand -hex 32)
+```
+
+**Passo 4 — Custodiar ambos em Vault (k8s-host):**
+
+```bash
+read -rsp "Root token: " VAULT_TOKEN; echo
+
+# OIDC client_secret
+kc -n vault exec -i platform-vault-uniplus-standalone-0 -- \
+  sh -c 'read -r T; read -r S; export VAULT_TOKEN="$T"; vault kv put secret/standalone/keycloak/clients/kafka-ui client_secret="$S"' \
+  <<EOF
+$VAULT_TOKEN
+$KAFKA_UI_SECRET
+EOF
+
+# JWT signing secret
+kc -n vault exec -i platform-vault-uniplus-standalone-0 -- \
+  sh -c 'read -r T; read -r S; export VAULT_TOKEN="$T"; vault kv put secret/standalone/kafka-ui/jwt signing_secret="$S"' \
+  <<EOF
+$VAULT_TOKEN
+$JWT_SECRET
+EOF
+
+unset KAFKA_UI_SECRET JWT_SECRET VAULT_TOKEN
+```
+
+**Passo 5 — ArgoCD reconcilia o chart kafka-ui automaticamente** após os 3 ESOs sintetizarem os Secrets K8s (`<release>-kafka-admin`, `<release>-oidc-client`, `<release>-jwt`).
+
+### 14.2 Adicionar usuários aos grupos /admins/kafka e /users/uniplus
+
+Realm import já cria os grupos vazios. Adicionar membros:
+
+```bash
+# Via kcadm (CLI no pod Keycloak):
+kc exec -n uniplus -i deploy/keycloak-replica-uniplus-standalone -- bash -c '
+  /opt/keycloak/bin/kcadm.sh config credentials \
+    --server http://localhost:8080/auth --realm master \
+    --user "$KC_BOOTSTRAP_ADMIN_USERNAME" --password "$KC_BOOTSTRAP_ADMIN_PASSWORD" >/dev/null
+
+  # Criar usuário (ou pular se já existe via Gov.br federado)
+  /opt/keycloak/bin/kcadm.sh create users -r uniplus \
+    -s username=jeferson.ferreira -s email=jeferson.ferreira@unifesspa.edu.br \
+    -s firstName=Jeferson -s lastName="Ferreira da Silva" -s enabled=true || true
+
+  # Buscar IDs do user e do grupo /admins/kafka
+  USER_ID=$(/opt/keycloak/bin/kcadm.sh get users -r uniplus -q username=jeferson.ferreira \
+    --fields id --format csv --noquotes | tail -1)
+  GROUP_ID=$(/opt/keycloak/bin/kcadm.sh get groups -r uniplus \
+    --fields id,path --format csv --noquotes | grep "/admins/kafka" | cut -d, -f1)
+
+  # Adicionar
+  /opt/keycloak/bin/kcadm.sh update users/$USER_ID/groups/$GROUP_ID -r uniplus -s userId=$USER_ID -s groupId=$GROUP_ID
+'
+```
+
+Ou via Admin UI: `Users → <user> → Groups → Join /admins/kafka`.
+
+### 14.3 Smoke test end-to-end
+
+```bash
+# 1) ESOs sincronizaram
+kc get externalsecret -n uniplus | grep kafka-ui
+# Esperado: <release>-kafka-admin SecretSynced=True
+#           <release>-oidc-client  SecretSynced=True
+
+# 2) Pod Running 1/1
+kc get pod -n uniplus -l app.kubernetes.io/name=kafka-ui
+# Esperado: 1/1 Running
+
+# 3) Logs limpos (sem erros de kafka conn ou OIDC discovery)
+kc logs -n uniplus -l app.kubernetes.io/name=kafka-ui --tail=100 | \
+  grep -E "ERROR|Bound to|Started|OIDC"
+# Esperado: "Server Started" (Micronaut), bound em 0.0.0.0:8080
+
+# 4) Health endpoint
+kc exec -n uniplus -l app.kubernetes.io/name=kafka-ui -- \
+  curl -sf http://localhost:8080/health
+# Esperado: {"status":"UP"}
+
+# 5) Login real (do laptop):
+xdg-open https://kafka-ui.standalone.portaluni.com.br
+# - Aceitar warning de cert (LE staging)
+# - Click "Login Uni+" → redireciona para Keycloak
+# - Autenticar com user que tem membership /admins/kafka
+# - Após callback, ver dropdown "standalone" no canto superior + lista de tópicos
+```
+
+### 14.4 Rotacionar client_secret
+
+```bash
+# 1) Regenerar no Keycloak via Admin API
+NEW_SECRET=$(kc exec -n uniplus deploy/keycloak-replica-uniplus-standalone -- bash -c '
+  /opt/keycloak/bin/kcadm.sh config credentials \
+    --server http://localhost:8080/auth --realm master \
+    --user "$KC_BOOTSTRAP_ADMIN_USERNAME" --password "$KC_BOOTSTRAP_ADMIN_PASSWORD" >/dev/null
+  CID=$(/opt/keycloak/bin/kcadm.sh get clients -r uniplus -q clientId=kafka-ui --fields id --format csv --noquotes | tail -1)
+  /opt/keycloak/bin/kcadm.sh create clients/$CID/client-secret -r uniplus \
+    --fields value --format csv --noquotes | tail -1
+')
+
+# 2) Atualizar Vault
+read -rsp "Root token: " TKN; echo
+kc -n vault exec -i platform-vault-uniplus-standalone-0 -- \
+  sh -c 'read -r T; read -r S; export VAULT_TOKEN="$T"; vault kv put secret/standalone/keycloak/clients/kafka-ui client_secret="$S"' \
+  <<EOF
+$TKN
+$NEW_SECRET
+EOF
+
+# 3) Forçar refresh do ESO (default refreshInterval=1h)
+kc annotate externalsecret -n uniplus \
+  $(kc get externalsecret -n uniplus -o name | grep oidc-client) \
+  force-sync="$(date +%s)" --overwrite
+
+# 4) Restart do AKHQ pra reler env
+kc rollout restart deployment -n uniplus -l app.kubernetes.io/name=kafka-ui
+
+unset NEW_SECRET TKN
+```
+
+### 14.5 Troubleshooting
+
+| Sintoma | Diagnóstico | Fix |
+|---|---|---|
+| Pod `CreateContainerConfigError: secret <release>-oidc-client not found` | ESO `<release>-oidc-client` ainda não sincronizou — secret/standalone/keycloak/clients/kafka-ui ausente em Vault | Rodar §14.1 (custódia do client_secret) |
+| Pod `CreateContainerConfigError: secret <release>-jwt not found` | ESO JWT ainda não sintetizou — secret/standalone/kafka-ui/jwt ausente em Vault | Rodar §14.1 passo 3+4 (gerar + custodiar JWT signing secret) |
+| Pod `CreateContainerConfigError: secret <release>-kafka-admin not found` | ESO ainda não sintetizou — secret/standalone/kafka/admin ausente em Vault | Rodar §13.2 (custódia admin SCRAM Kafka) |
+| AKHQ logs: `org.apache.kafka.common.errors.SslAuthenticationException: SSL handshake failed` | CA cert PEM ausente no Secret kafka-admin (key `ca.crt` faltando) | `vault kv get secret/standalone/kafka/admin` confere se `ca_cert` está populado; rodar §13.2 step 2 incluindo `ca_cert=$(ssh ...sudo cat /etc/uniplus-kafka/certs/ca.crt)` |
+| Login redireciona pro Keycloak mas após callback retorna 401/Forbidden no AKHQ | Membership do user no grupo `/admins/kafka` ausente OU mapper `groups` no client kafka-ui ausente/quebrado | Confirmar grupo via Admin UI; verificar `kc get configmap -n uniplus <release>-config -o yaml` se `claim.name=groups` no protocolMapper |
+| AKHQ logs: `Connection to node -1 failed: Authentication failed: Invalid username or password` | Senha SCRAM em Vault desatualizada vs Kafka runtime | Rodar §13.6 (rotação admin Kafka) — sincroniza Vault + restart broker; depois forçar refresh ESO `kafka-admin` |
+| `redirect_uri did not match` no Keycloak | URI no realm ≠ `https://kafka-ui.standalone.portaluni.com.br/oauth/callback/keycloak` | Conferir `redirectUris` no client `kafka-ui` (Admin UI ou kcadm); ajustar se domínio do `ingress.host` mudou |
+| Browser warning permanente "Not secure" | Cert LE staging — esperado em validação | Promover para `letsencrypt-prod` (alterar `clusterIssuer` em `environments/standalone/values.yaml`) — mesmo procedimento §10.6 do Keycloak |
+
 ---
 
 *Documento mantido pelo CTIC/UNIFESSPA. Atualizações via Pull Request.*
