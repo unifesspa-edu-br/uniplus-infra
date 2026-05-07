@@ -20,3 +20,4 @@ Este diretório contém as decisões arquiteturais da infraestrutura da platafor
 | 006 | [GitOps com ArgoCD](ADR-006-gitops-com-argocd.md) | ✅ Aceito | 2026-04-20 | [#16](https://github.com/unifesspa-edu-br/uniplus-infra/issues/16) |
 | 007 | [Vault HA com auto-unseal Transit centralizado em PA1](ADR-007-vault-ha-storage-unseal.md) | ✅ Aceito | 2026-05-03 | [#13](https://github.com/unifesspa-edu-br/uniplus-infra/issues/13) |
 | 008 | [Topologia `standalone` como modelo paralelo provider-agnostic](ADR-008-topologia-standalone.md) | 🟡 Proposta | 2026-05-03 | [#47](https://github.com/unifesspa-edu-br/uniplus-infra/issues/47) |
+| 009 | [Kafka standalone com SASL_SSL + SCRAM-SHA-512 + StandardAuthorizer](ADR-009-kafka-sasl-ssl-scram-standalone.md) | 🟡 Proposta | 2026-05-07 | [#138](https://github.com/unifesspa-edu-br/uniplus-infra/issues/138) |
