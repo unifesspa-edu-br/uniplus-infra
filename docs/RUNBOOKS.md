@@ -2370,11 +2370,13 @@ kc exec -n uniplus -i deploy/keycloak-replica-uniplus-standalone -- bash -c '
     --user "$KC_BOOTSTRAP_ADMIN_USERNAME" \
     --password "$KC_BOOTSTRAP_ADMIN_PASSWORD" >/dev/null
 
-  # 1.1 Criar grupos /admins/kafka e /users/uniplus (idempotente — ignora se existem)
+  # 1.1 Criar grupos /admins/kafka e /users/uniplus (idempotente — ignora se existem).
+  # NOTA: container quay.io/keycloak/keycloak:26.6.1 é RHEL 9 minimal e NÃO tem
+  # awk/jq/python — usar grep+cut. Pattern para extrair ID por name no CSV.
   for GP in "admins/kafka" "users/uniplus"; do
     PARENT=${GP%/*}; CHILD=${GP##*/}
     /opt/keycloak/bin/kcadm.sh create groups -r uniplus -s name="$PARENT" 2>/dev/null || true
-    PID=$(/opt/keycloak/bin/kcadm.sh get groups -r uniplus -q briefRepresentation=true --fields id,name --format csv --noquotes | awk -F, -v n="$PARENT" "\$2==n {print \$1}")
+    PID=$(/opt/keycloak/bin/kcadm.sh get groups -r uniplus --fields id,name --format csv --noquotes | grep -E ",${PARENT}\$" | cut -d, -f1 | head -1)
     /opt/keycloak/bin/kcadm.sh create groups/$PID/children -r uniplus -s name="$CHILD" 2>/dev/null || true
   done
 
