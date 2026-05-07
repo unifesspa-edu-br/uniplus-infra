@@ -1,0 +1,182 @@
+# Defaults do chart apps/kafka-ui/.
+# Cada environment (environments/<env>/values.yaml) sobrescreve apenas o
+# necessário. Por padrão o chart fica DESABILITADO — só os ambientes que
+# precisam de UI Kafka (ex.: standalone) ligam via `kafkaUi.enabled: true`.
+
+commonLabels:
+  app.kubernetes.io/part-of: uniplus
+  app.kubernetes.io/component: data-admin
+
+kafkaUi:
+  # Liga/desliga o chart inteiro. Default false.
+  enabled: false
+
+  image:
+    registry: docker.io
+    repository: tchiotludo/akhq
+    # Versão estável validada (Mar/2026). Bumps de patch são seguros;
+    # major requer revisão da application.yml schema.
+    tag: "0.27.0"
+    pullPolicy: IfNotPresent
+
+  imagePullSecrets: []
+
+  # AKHQ é stateless (não persiste nada local); 1 réplica é suficiente.
+  # Multi-réplica não dá ganho — todas leem do mesmo Kafka.
+  replicas: 1
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+  serviceAccount:
+    create: true
+    name: ""
+
+  # === Conexão ao Kafka cluster ===
+  # AKHQ pode gerenciar múltiplos clusters; em standalone só temos 1.
+  kafka:
+    # Nome do cluster como aparecerá na UI. Mantido genérico para reuso
+    # quando platform/data/* (3-DC) aterrissar.
+    clusterName: standalone
+    bootstrapServers: ""  # ex.: 10.0.2.87:9092
+    # SASL_SSL + SCRAM-SHA-512 via creds sintetizadas pelo ESO.
+    # `ssl.endpoint.identification.algorithm=` vazio aceita SAN do
+    # self-signed que cobre IP da subnet privada.
+    securityProtocol: SASL_SSL
+    saslMechanism: SCRAM-SHA-512
+
+  # === OIDC (Keycloak realm uniplus) ===
+  # AKHQ usa Micronaut OIDC. Confidential client `kafka-ui` no realm —
+  # client_secret custodiado em Vault e injetado via ExternalSecret.
+  oidc:
+    enabled: true
+    providerName: keycloak
+    issuerUri: ""                  # ex.: https://standalone.portaluni.com.br/auth/realms/uniplus
+    clientId: kafka-ui
+    # Mapping de claim `groups` → roles AKHQ. Requer mapper
+    # `groups` no client `kafka-ui` do realm.
+    groupsClaim: groups
+    groups:
+      kafkaAdminsClaim: "/admins/kafka"
+      kafkaReadOnlyClaim: "/users/uniplus"
+
+  # === ExternalSecrets (Vault → K8s Secret) ===
+  externalSecrets:
+    enabled: true
+    refreshInterval: "1h"
+    secretStoreRef:
+      kind: ClusterSecretStore
+      name: vault-default
+
+    # SCRAM admin do Kafka + CA cert do broker self-signed.
+    # Gerados em `secret/standalone/kafka/admin` via §13.2 do RUNBOOKS
+    # após bootstrap. ca_cert é PEM completo do CA do broker (necessário
+    # para AKHQ validar o handshake TLS — broker usa self-signed sem
+    # cadeia institucional).
+    kafkaAdmin:
+      vaultPath: secret/standalone/kafka/admin
+      usernameKey: username
+      passwordKey: password
+      caCertKey: ca_cert
+
+    # client_secret OIDC do confidential client `kafka-ui` no realm
+    # uniplus. Gerado pelo operador (one-shot ou via Keycloak Admin API)
+    # e custodiado no Vault. AKHQ NÃO suporta public client/PKCE para
+    # provider customizado em 0.27.x.
+    oidcClient:
+      vaultPath: secret/standalone/keycloak/clients/kafka-ui
+      clientSecretKey: client_secret
+
+    # JWT signing secret — assina cookies/tokens internos do Micronaut
+    # security AKHQ. Sem isso, AKHQ 0.25+ NÃO enforce group restrictions
+    # no API layer (apenas UI), permitindo bypass via direct backend
+    # requests (Codex P1 round 2). Operador gera 32 bytes hex e custodia
+    # em Vault durante pré-flight (RUNBOOKS §14.1).
+    jwt:
+      vaultPath: secret/standalone/kafka-ui/jwt
+      signingSecretKey: signing_secret
+
+  # === Exposição externa via Traefik IngressRoute ===
+  ingress:
+    enabled: false
+    entryPoint: websecure
+    host: ""                     # ex.: kafka-ui.standalone.portaluni.com.br
+    tls:
+      enabled: true
+      secretName: ""             # criado pelo cert-manager se certManager.enabled
+      certManager:
+        enabled: false
+        clusterIssuer: ""        # ex.: letsencrypt-staging | letsencrypt-prod
+
+  # === NetworkPolicy ===
+  # Egress: Kafka data-host (10.0.2.87:9092) + DNS + Keycloak
+  # (cluster-internal) + OIDC issuer endpoint externo (HTTPS port 443).
+  # Ingress: somente Traefik.
+  networkPolicy:
+    enabled: true
+    traefikNamespace: traefik
+    monitoringNamespace: observability-prometheus
+    # CIDR da subnet privada VCN onde o Kafka data-host vive. Deve casar
+    # com `dataHostCIDR` do keycloak-replica para reuso de pattern.
+    dataHostCIDR: ""
+    dataHostPort: 9092
+    # Service do Keycloak local (in-cluster). Default casa com release name
+    # padrão do chart keycloak-replica em standalone.
+    keycloakService: keycloak-replica-uniplus-standalone
+    keycloakNamespace: uniplus
+    keycloakPort: 8080
+    # CIDR do endpoint público do OIDC issuer. AKHQ chama `.well-known/
+    # openid-configuration`, `/token`, `/userinfo` em HTTPS port 443 contra
+    # o issuer URL (ex.: standalone.portaluni.com.br resolve pra k8s-host
+    # public IP que entra via Traefik IngressRoute do Keycloak). Sem essa
+    # entrada, o pod resolve o DNS mas o handshake TLS é bloqueado pelo
+    # default-deny do egress. Codex P1 round 1.
+    #
+    # Em standalone OCI (k8s-host 164.152.53.29) → /32 é precise; em
+    # outros providers ajustar para o IP público real ou CIDR mais largo
+    # (NUNCA 0.0.0.0/0 — defesa em profundidade).
+    oidcIssuerCIDR: ""
+    oidcIssuerPort: 443
+
+  # === ServiceMonitor (Prometheus) ===
+  # AKHQ expõe /metrics em /prometheus (Micronaut). Gateado em
+  # `serviceMonitor.enabled AND metrics.enabled` (mesma estratégia
+  # do keycloak-replica para evitar scrape de endpoint inexistente).
+  metrics:
+    enabled: true
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+
+  # === Probes ===
+  # AKHQ tem startup ~10-30s; failureThreshold absorve cold start.
+  startupProbe:
+    failureThreshold: 30
+    periodSeconds: 5
+  livenessProbe:
+    periodSeconds: 10
+  readinessProbe:
+    periodSeconds: 5
+
+  # === SecurityContext ===
+  # tchiotludo/akhq:0.27.0 roda como uid 1001 (akhq).
+  podSecurityContext:
+    fsGroup: 1001
+  containerSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1001
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    # AKHQ escreve em /tmp; rootfs pode ser readOnly se montar /tmp
+    # como emptyDir. Out of scope deste PR (deploy em prod hardening).
+    readOnlyRootFilesystem: false
+
+  # Env vars adicionais (lista de `{name, value}` ou `{name, valueFrom}`).
+  extraEnv: []

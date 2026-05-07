@@ -1,0 +1,202 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "commonLabels": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "kafkaUi": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "image": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "registry": { "type": "string" },
+            "repository": { "type": "string" },
+            "tag": { "type": "string" },
+            "pullPolicy": { "enum": ["Always", "IfNotPresent", "Never"] }
+          },
+          "required": ["registry", "repository", "tag", "pullPolicy"]
+        },
+        "imagePullSecrets": { "type": "array" },
+        "fullnameOverride": { "type": "string" },
+        "nameOverride": { "type": "string" },
+        "replicas": { "type": "integer", "minimum": 1 },
+        "resources": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "serviceAccount": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "create": { "type": "boolean" },
+            "name": { "type": "string" }
+          }
+        },
+        "kafka": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "clusterName": { "type": "string", "minLength": 1 },
+            "bootstrapServers": { "type": "string" },
+            "securityProtocol": { "enum": ["PLAINTEXT", "SASL_PLAINTEXT", "SSL", "SASL_SSL"] },
+            "saslMechanism": { "enum": ["PLAIN", "SCRAM-SHA-256", "SCRAM-SHA-512", "GSSAPI", "OAUTHBEARER"] }
+          },
+          "required": ["clusterName", "securityProtocol", "saslMechanism"]
+        },
+        "oidc": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "providerName": { "type": "string", "minLength": 1 },
+            "issuerUri": { "type": "string" },
+            "clientId": { "type": "string", "minLength": 1 },
+            "groupsClaim": { "type": "string" },
+            "groups": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "kafkaAdminsClaim": { "type": "string" },
+                "kafkaReadOnlyClaim": { "type": "string" }
+              }
+            }
+          },
+          "required": ["enabled", "providerName", "clientId", "groupsClaim", "groups"]
+        },
+        "externalSecrets": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "refreshInterval": { "type": "string" },
+            "secretStoreRef": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "kind": { "enum": ["ClusterSecretStore", "SecretStore"] },
+                "name": { "type": "string" }
+              },
+              "required": ["kind", "name"]
+            },
+            "kafkaAdmin": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "vaultPath": { "type": "string" },
+                "usernameKey": { "type": "string" },
+                "passwordKey": { "type": "string" },
+                "caCertKey": { "type": "string" }
+              },
+              "required": ["vaultPath", "usernameKey", "passwordKey", "caCertKey"]
+            },
+            "oidcClient": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "vaultPath": { "type": "string" },
+                "clientSecretKey": { "type": "string" }
+              },
+              "required": ["vaultPath", "clientSecretKey"]
+            },
+            "jwt": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "vaultPath": { "type": "string" },
+                "signingSecretKey": { "type": "string" }
+              },
+              "required": ["vaultPath", "signingSecretKey"]
+            }
+          }
+        },
+        "ingress": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "entryPoint": { "type": "string" },
+            "host": { "type": "string" },
+            "tls": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "secretName": { "type": "string" },
+                "certManager": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": { "type": "boolean" },
+                    "clusterIssuer": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "networkPolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "traefikNamespace": { "type": "string" },
+            "monitoringNamespace": { "type": "string" },
+            "dataHostCIDR": { "type": "string" },
+            "dataHostPort": { "type": "integer" },
+            "keycloakService": { "type": "string" },
+            "keycloakNamespace": { "type": "string" },
+            "keycloakPort": { "type": "integer" },
+            "oidcIssuerCIDR": { "type": "string" },
+            "oidcIssuerPort": { "type": "integer" }
+          }
+        },
+        "metrics": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" }
+          }
+        },
+        "serviceMonitor": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "interval": { "type": "string" }
+          }
+        },
+        "startupProbe": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "livenessProbe": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "readinessProbe": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "podSecurityContext": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "containerSecurityContext": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "extraEnv": {
+          "type": "array"
+        }
+      },
+      "required": ["enabled", "image", "kafka", "oidc"]
+    }
+  }
+}

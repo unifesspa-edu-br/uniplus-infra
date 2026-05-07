@@ -1,0 +1,33 @@
+apiVersion: v2
+name: kafka-ui
+description: |
+  Web UI de gerenciamento do cluster Apache Kafka (AKHQ). Conecta ao
+  broker SASL_SSL no data-host (ADR-009) via SCRAM-SHA-512; autentica
+  usuários via OIDC do realm `uniplus` no Keycloak local.
+type: application
+
+# Versão do chart wrapper Uni+. Bump em qualquer mudança de template/values.
+version: 0.1.0
+
+# Versão do AKHQ upstream empacotado (sincronizar com image.tag).
+appVersion: "0.27.0"
+
+home: https://github.com/unifesspa-edu-br/uniplus-infra
+sources:
+  - https://github.com/unifesspa-edu-br/uniplus-infra
+  - https://github.com/tchiotludo/akhq
+
+maintainers:
+  - name: CTIC UNIFESSPA
+    email: jeferson.ferreira@unifesspa.edu.br
+
+keywords:
+  - uniplus
+  - kafka
+  - akhq
+  - admin
+  - unifesspa
+
+annotations:
+  category: data
+  licenses: Apache-2.0

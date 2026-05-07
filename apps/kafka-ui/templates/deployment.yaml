@@ -1,0 +1,132 @@
+{{- if .Values.kafkaUi.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kafkaUi.fullname" . }}
+  labels:
+    {{- include "kafkaUi.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.kafkaUi.replicas }}
+  # Stateless app — RollingUpdate sem maxSurge para forçar 1-at-a-time
+  # (cluster Kafka aceita múltiplos clients admin sem corrida; mas mantemos
+  # zero downtime trivial assim).
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      {{- include "kafkaUi.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "kafkaUi.labels" . | nindent 8 }}
+      annotations:
+        # Restart automático quando application.yml muda — sha do
+        # rendered template via tpl. Mesmo pattern da `checksum/realm`
+        # do keycloak-replica.
+        checksum/config: {{ tpl (.Files.Get "files/application.yml.tpl") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "kafkaUi.serviceAccountName" . }}
+      {{- with .Values.kafkaUi.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.kafkaUi.podSecurityContext | nindent 8 }}
+      containers:
+        - name: akhq
+          image: "{{ .Values.kafkaUi.image.registry }}/{{ .Values.kafkaUi.image.repository }}:{{ .Values.kafkaUi.image.tag }}"
+          imagePullPolicy: {{ .Values.kafkaUi.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.kafkaUi.containerSecurityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            # AKHQ_CONFIGURATION ou MICRONAUT_CONFIG_FILES — em 0.27.0
+            # o entrypoint procura /app/application.yml por default;
+            # mountamos via ConfigMap nessa path.
+            - name: MICRONAUT_CONFIG_FILES
+              value: /app/application.yml
+            # Kafka SCRAM creds explícitas via secretKeyRef — NÃO `envFrom`
+            # do Secret kafka-admin: ele tem 3 keys (KAFKA_USERNAME,
+            # KAFKA_PASSWORD, ca.crt) e `ca.crt` contém ponto, que é caractere
+            # inválido em env var name. Kubernetes emite Warning event
+            # `InvalidEnvironmentVariableNames` em cada (re)start poluindo o
+            # event stream. ca.crt é consumido apenas via projected volume
+            # (volumeMounts abaixo). Code-reviewer P1 round 1.
+            - name: KAFKA_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "kafkaUi.kafkaAdminSecretName" . }}
+                  key: KAFKA_USERNAME
+            - name: KAFKA_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "kafkaUi.kafkaAdminSecretName" . }}
+                  key: KAFKA_PASSWORD
+            {{- if .Values.kafkaUi.oidc.enabled }}
+            # JWT signing secret — Micronaut convention: env var name é a
+            # property dotted convertida em snake-case maiúsculo. Sem essa
+            # env, group restrictions do AKHQ ficam UI-only (Codex P1 round 2).
+            - name: MICRONAUT_SECURITY_TOKEN_JWT_SIGNATURES_SECRET_GENERATOR_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "kafkaUi.jwtSecretName" . }}
+                  key: MICRONAUT_SECURITY_TOKEN_JWT_SIGNATURES_SECRET_GENERATOR_SECRET
+            {{- end }}
+            {{- with .Values.kafkaUi.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- if .Values.kafkaUi.oidc.enabled }}
+          envFrom:
+            # OIDC_CLIENT_SECRET — interpolado em micronaut.security.oauth2.
+            # Único campo do Secret oidc-client (sem keys com ponto), envFrom
+            # é seguro aqui.
+            - secretRef:
+                name: {{ include "kafkaUi.oidcClientSecretName" . }}
+          {{- end }}
+          volumeMounts:
+            # application.yml renderizado no ConfigMap.
+            - name: config
+              mountPath: /app/application.yml
+              subPath: application.yml
+              readOnly: true
+            # CA cert PEM do broker Kafka (self-signed). Vem do Secret
+            # sintetizado pelo ESO `kafkaAdmin` na key `ca.crt`.
+            - name: kafka-ca
+              mountPath: /etc/akhq/certs/ca.crt
+              subPath: ca.crt
+              readOnly: true
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            failureThreshold: {{ .Values.kafkaUi.startupProbe.failureThreshold }}
+            periodSeconds: {{ .Values.kafkaUi.startupProbe.periodSeconds }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: {{ .Values.kafkaUi.livenessProbe.periodSeconds }}
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: {{ .Values.kafkaUi.readinessProbe.periodSeconds }}
+          resources:
+            {{- toYaml .Values.kafkaUi.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "kafkaUi.configMapName" . }}
+        - name: kafka-ca
+          secret:
+            secretName: {{ include "kafkaUi.kafkaAdminSecretName" . }}
+            items:
+              - key: ca.crt
+                path: ca.crt
+{{- end }}

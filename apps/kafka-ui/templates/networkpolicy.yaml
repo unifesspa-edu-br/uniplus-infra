@@ -1,0 +1,85 @@
+{{- if and .Values.kafkaUi.enabled .Values.kafkaUi.networkPolicy.enabled -}}
+{{- if not .Values.kafkaUi.networkPolicy.dataHostCIDR -}}
+{{- fail "kafkaUi.networkPolicy.dataHostCIDR é obrigatório quando networkPolicy.enabled=true (sem isso o egress para Kafka data-host fica em default-deny silencioso). Configurar em environments/<env>/values.yaml." -}}
+{{- end -}}
+{{- if and .Values.kafkaUi.oidc.enabled (not .Values.kafkaUi.networkPolicy.oidcIssuerCIDR) -}}
+{{- fail "kafkaUi.networkPolicy.oidcIssuerCIDR é obrigatório quando oidc.enabled=true (AKHQ chama OIDC discovery/token endpoints em HTTPS contra o issuer público; sem essa entrada o egress fica em default-deny e auth flows falham silenciosamente). Configurar para o IP público do k8s-host /32 em environments/<env>/values.yaml." -}}
+{{- end -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "kafkaUi.fullname" . }}
+  labels:
+    {{- include "kafkaUi.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "kafkaUi.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # HTTP do Traefik (apenas pods do namespace traefik)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.kafkaUi.networkPolicy.traefikNamespace }}
+      ports:
+        - protocol: TCP
+          port: 8080
+    {{- if and .Values.kafkaUi.metrics.enabled .Values.kafkaUi.serviceMonitor.enabled }}
+    # Prometheus scrape em /prometheus (via mesma porta 8080).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.kafkaUi.networkPolicy.monitoringNamespace }}
+      ports:
+        - protocol: TCP
+          port: 8080
+    {{- end }}
+  egress:
+    # DNS (CoreDNS)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Kafka data-host (subnet privada VCN)
+    - to:
+        - ipBlock:
+            cidr: {{ .Values.kafkaUi.networkPolicy.dataHostCIDR }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.kafkaUi.networkPolicy.dataHostPort }}
+    # Keycloak in-cluster (path interno se issuerUri usa Service DNS;
+    # mantido como fallback útil — apps na cluster mesh podem chamar
+    # diretamente em vez de via IngressRoute).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.kafkaUi.networkPolicy.keycloakNamespace }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: keycloak-replica
+      ports:
+        - protocol: TCP
+          port: {{ .Values.kafkaUi.networkPolicy.keycloakPort }}
+    {{- if .Values.kafkaUi.oidc.enabled }}
+    # OIDC issuer público (HTTPS). Em standalone, AKHQ usa
+    # `https://standalone.portaluni.com.br/auth/realms/uniplus` que
+    # resolve via DNS para o public IP do k8s-host (164.152.53.29) e
+    # entra via Traefik IngressRoute do Keycloak. Sem este egress, o
+    # OIDC discovery e token exchange falham silenciosamente em
+    # default-deny (TLS handshake never completes).
+    - to:
+        - ipBlock:
+            cidr: {{ .Values.kafkaUi.networkPolicy.oidcIssuerCIDR }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.kafkaUi.networkPolicy.oidcIssuerPort }}
+    {{- end }}
+{{- end }}
