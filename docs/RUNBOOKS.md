@@ -1934,7 +1934,7 @@ A função `step_data_setup_kafka` em `scripts/bootstrap-standalone.sh` provisio
    - SASL: `sasl.enabled.mechanisms=SCRAM-SHA-512`, JAAS inline para os 2 listeners
    - TLS: `ssl.keystore.type=PEM`, `ssl.keystore.location=/etc/kafka/secrets/server.pem` (bundle cert+key concatenados — Kafka 4.x não tem propriedade `*.key.location` separada), `ssl.truststore.type=PEM`, `ssl.truststore.location=/etc/kafka/secrets/ca.crt`, `ssl.client.auth=none`
    - AuthZ: `authorizer.class.name=org.apache.kafka.metadata.authorizer.StandardAuthorizer`, `super.users=User:admin`, `allow.everyone.if.no.acl.found=false` (fail-closed)
-6. `admin.properties` em `/var/lib/uniplus/kafka/admin.properties` (root:root 600) — client config para `kafka-topics.sh`/`kafka-acls.sh`/`kafka-configs.sh`/`kafka-broker-api-versions.sh` rodando como admin via `--command-config`.
+6. `admin.properties` em `/var/lib/uniplus/kafka/admin.properties` (mode `600`, owner `1000:1000` — uid do container precisa ler quando montado via `docker run -v`) — client config para `kafka-topics.sh`/`kafka-acls.sh`/`kafka-configs.sh`/`kafka-broker-api-versions.sh` rodando como admin via `--command-config`.
 7. EnvironmentFile minimizado `/etc/uniplus-kafka.env` (root:root 600) com `CLUSTER_ID` (entrypoint exige) + `KAFKA_HEAP_OPTS="-Xmx1g -Xms1g"` (aspas obrigatórias — systemd EnvironmentFile parser tokeniza por espaço sem quoting).
 8. `systemd` unit `/etc/systemd/system/uniplus-kafka.service` (`Restart=always`, `TimeoutStartSec=180`, `--network host`). Mount `config_dir → /mnt/shared/config:ro`; `KafkaDockerWrapper setup` do entrypoint pega o `server.properties` dali. Mount `certs_dir → /etc/kafka/secrets:ro`. Data dir → `/var/lib/kafka/data`.
 

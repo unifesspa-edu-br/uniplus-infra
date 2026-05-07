@@ -1519,6 +1519,9 @@ CNF
         # server.properties mínimo só pra format (validar topology). NÃO usar
         # o $server_props final — ele tem JAAS/SCRAM cleartext que ainda não
         # foi gerado neste ponto da função (geração logo abaixo).
+        # KafkaConfig.validateValues exige advertised.listeners + inter.broker.
+        # listener.name presentes mesmo em format-time (broker ainda não inicia,
+        # mas a config é parseada pra validar topologia).
         local fmt_props
         fmt_props=$(sudo mktemp)
         sudo tee "$fmt_props" >/dev/null <<EOF
@@ -1526,7 +1529,9 @@ process.roles=broker,controller
 node.id=1
 controller.quorum.voters=1@10.0.2.87:9093
 listeners=SASL_SSL://10.0.2.87:9092,CONTROLLER://10.0.2.87:9093
+advertised.listeners=SASL_SSL://10.0.2.87:9092
 controller.listener.names=CONTROLLER
+inter.broker.listener.name=SASL_SSL
 listener.security.protocol.map=CONTROLLER:SASL_SSL,SASL_SSL:SASL_SSL
 log.dirs=/var/lib/kafka/data
 EOF
@@ -1620,8 +1625,10 @@ EOF
     # ---- Decisão 5: admin.properties (CLI tools como admin) ----
     # Padrão para `kafka-topics.sh --command-config admin.properties`,
     # `kafka-acls.sh --command-config ...`, `kafka-configs.sh --command-config ...`.
-    # Mode 600 root:root; tools rodam via sudo no host data-host ou via
-    # docker run com mount.
+    # Mode 600 chown 1000:1000 — uid do container kafka tools precisa ler quando
+    # rodado via `docker run -v admin.properties:/tmp/...`. Mount preserva perms
+    # do host; sem chown 1000:1000 o probe falha com AccessDeniedException.
+    # Mesmo pattern do server.properties (que também tem SCRAM cleartext).
     if ! $DRY_RUN; then
         local admin_pw_props
         admin_pw_props=$(sudo grep '^admin_pw=' "$creds_file" | cut -d= -f2)
@@ -1633,7 +1640,7 @@ ssl.truststore.type=PEM
 ssl.truststore.location=$certs_dir/ca.crt
 ssl.endpoint.identification.algorithm=
 EOF
-        sudo chown root:root "$admin_props"
+        sudo chown 1000:1000 "$admin_props"
         sudo chmod 600 "$admin_props"
         unset admin_pw_props
     fi
