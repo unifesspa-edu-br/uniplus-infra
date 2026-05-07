@@ -414,6 +414,56 @@ keycloak:
     enabled: false
 
 # ----------------------------------------------------------------------------
+# kafka-ui (AKHQ) — Web UI de gerenciamento do cluster Kafka SASL_SSL.
+# Conecta ao broker no data-host (10.0.2.87:9092 SASL_SSL) e autentica
+# usuários via OIDC do realm `uniplus` no Keycloak local. Issue #139.
+# ----------------------------------------------------------------------------
+kafkaUi:
+  enabled: true
+
+  kafka:
+    bootstrapServers: 10.0.2.87:9092
+
+  oidc:
+    enabled: true
+    issuerUri: https://standalone.portaluni.com.br/auth/realms/uniplus
+
+  ingress:
+    enabled: true
+    entryPoint: websecure
+    host: kafka-ui.standalone.portaluni.com.br
+    tls:
+      enabled: true
+      secretName: kafka-ui-tls
+      certManager:
+        enabled: true
+        # Em standalone usamos LE staging durante validação. Promover pra
+        # letsencrypt-prod após smoke test (mesmo pattern do Keycloak §10.6).
+        clusterIssuer: letsencrypt-staging
+
+  networkPolicy:
+    enabled: true
+    traefikNamespace: traefik
+    monitoringNamespace: observability-prometheus
+    # /24 da subnet privada VCN onde o Kafka data-host vive (mais permissivo
+    # que o /32 do Keycloak porque AKHQ pode futuramente alcançar múltiplos
+    # brokers num cluster HA).
+    dataHostCIDR: 10.0.2.0/24
+    dataHostPort: 9092
+    keycloakService: keycloak-replica-uniplus-standalone
+    keycloakNamespace: uniplus
+    keycloakPort: 8080
+    # IP público do k8s-host OCI standalone (164.152.53.29) /32. AKHQ chama
+    # OIDC discovery + token endpoints contra `standalone.portaluni.com.br`
+    # que resolve para esse IP e entra via Traefik IngressRoute do Keycloak.
+    # Sem essa entrada o egress fica em default-deny (Codex P1 round 1).
+    oidcIssuerCIDR: 164.152.53.29/32
+    oidcIssuerPort: 443
+
+  serviceMonitor:
+    enabled: false
+
+# ----------------------------------------------------------------------------
 # Componentes stateful no data-host (Postgres, Kafka, MinIO, Redis) rodam
 # FORA do K8s, gerenciados por systemd em /var/lib/uniplus/* (ADR-002 +
 # ADR-005). Endpoints chegam às apps via External Secrets sintetizados a
