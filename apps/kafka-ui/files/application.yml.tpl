@@ -90,16 +90,29 @@ akhq:
 # após login OIDC bem-sucedido. Com cookie mode, AKHQ pode mapear claims
 # (groups, username) sem que Micronaut dependa do id_token preservado.
 #
+# Bloco token.jwt.signatures.secret.generator: declaração explícita do secret
+# generator necessária para Micronaut Security USAR a env var MICRONAUT_SECURITY_*
+# como secret estável (HS256). Sem esse bloco, Micronaut gera random secret
+# em-memória por request — cookie da sessão não valida em requests seguintes,
+# causando loop redirect /oauth/login → callback → login. Documentação oficial
+# Micronaut Security exige esse bloco mesmo quando env var "auto-binda".
+#
 # Micronaut faz auto-discovery do JWKS endpoint via .well-known/openid-configuration
-# do issuer — config explícita de jwks.* causa NonUniqueBeanException
-# (JwksSignatureConfigurationProperties vs JwksSignatureConfiguration) na
-# imagem AKHQ 0.27.0. Pattern recomendado: deixar Micronaut descobrir
-# automaticamente via OIDC issuer.
+# do issuer — config explícita de jwks.* causa NonUniqueBeanException na imagem
+# AKHQ 0.27.0. Pattern: deixar Micronaut descobrir automaticamente.
 {{- if .Values.kafkaUi.oidc.enabled }}
 micronaut:
   security:
     enabled: true
     authentication: cookie
+    token:
+      jwt:
+        signatures:
+          secret:
+            generator:
+              secret: ${MICRONAUT_SECURITY_TOKEN_JWT_SIGNATURES_SECRET_GENERATOR_SECRET}
+              base64: false
+              jws-algorithm: HS256
     oauth2:
       enabled: true
       clients:
