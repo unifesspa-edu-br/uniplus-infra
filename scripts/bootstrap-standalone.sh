@@ -1077,6 +1077,248 @@ UNIT
     fi
 }
 
+# Configura MinIO (RELEASE.2025-09-07T16-13-09Z) como container Docker
+# gerenciado por systemd no data-host. Single-node single-drive (SNSD) — única
+# topologia suportada em standalone single-host. Sem erasure coding (precisa
+# ≥4 drives) — zero proteção contra corrupção do drive; backup externo é
+# responsabilidade do operador (Story #118 sub-task).
+#
+# UID/GID do container: 1000:1000 via MINIO_USERNAME/MINIO_GROUPNAME +
+# MINIO_UID/MINIO_GID. O entrypoint cria o user dinamicamente em /etc/passwd
+# e usa `chroot --userspec` para drop de privs (image roda como root by default).
+#
+# Auth: MINIO_ROOT_USER (16 bytes hex aleatório, NÃO `admin`/`minioadmin`) +
+# MINIO_ROOT_PASSWORD (32 bytes hex). Per-app users criados via mc admin user
+# add na Fase 5.
+#
+# Idempotência (decisões independentes):
+#   - .bootstrap-creds: preserva se existe; gera se ausente; aborta se data
+#     dir já contém state (.minio.sys/) sem .bootstrap-creds.
+#   - EnvironmentFile + systemd unit: sempre re-aplicados (cheap, corrige drift).
+#   - Serviço já ativo: não reinicia (evita downtime em re-runs).
+#
+# AGPL community release (último em 2025-09): security fixes pós-Sep só em
+# AIStor enterprise. Aceitável em standalone (validação); decisão arquitetural
+# pra prod (alternativas: Garage, SeaweedFS) fica em backlog (Story futura).
+step_data_setup_minio() {
+    if $SKIP_DOCKER && ! command -v docker &>/dev/null; then
+        log_warn "Docker indisponível e --skip-docker ativo — pulando setup do MinIO."
+        return
+    fi
+
+    log_info "Configurando MinIO 2025-09 systemd..."
+
+    local creds_file="$DATA_BASE/minio/.bootstrap-creds"
+    local env_file="/etc/uniplus-minio.env"
+    local unit_file="/etc/systemd/system/uniplus-minio.service"
+
+    # Diretórios + ownership: $DATA_BASE/minio/data 1000:1000 mode 750.
+    # O entrypoint do MinIO roda como root inicialmente, faz chroot --userspec
+    # para uid 1000 antes de invocar `minio server`. Pré-set 1000:1000 evita
+    # erros "Permission denied" na primeira escrita do .minio.sys/.
+    run "sudo mkdir -p $DATA_BASE/minio/data"
+    run "sudo chown 1000:1000 $DATA_BASE/minio/data"
+    run "sudo chmod 750 $DATA_BASE/minio/data"
+
+    # Detectar inicialização prévia: presença de .minio.sys/ no data dir
+    # indica que MinIO já formatou o drive ao menos uma vez (config + format
+    # marker viram persistentes). Análogo a PG_VERSION em Postgres.
+    local already_initialized=false
+    if ! $DRY_RUN && \
+       sudo test -d "$DATA_BASE/minio/data/.minio.sys" 2>/dev/null; then
+        already_initialized=true
+    fi
+
+    # ---- Decisão 1: .bootstrap-creds (preservar / gerar / abortar) ----
+    if sudo test -f "$creds_file" 2>/dev/null; then
+        log_success "Bootstrap creds MinIO já existentes — preservando credenciais."
+    elif $DRY_RUN; then
+        log_warn "Dry-run: credenciais MinIO seriam geradas em $creds_file"
+    elif $already_initialized; then
+        # Guard: data dir formatado mas .bootstrap-creds shredded sem custódia.
+        # Regenerar criaria root_user/root_pw novos no Vault diferentes dos
+        # que MinIO aceita em runtime — apps (Fase 5) lendo Vault falhariam.
+        log_error "$creds_file ausente, mas $DATA_BASE/minio/data/.minio.sys/ já existe"
+        log_error "Regenerar credenciais agora produziria mismatch entre MinIO e Vault."
+        log_error "Restaure $creds_file a partir do Vault — ver docs/RUNBOOKS.md §12.4."
+        exit 1
+    else
+        log_info "Gerando credenciais MinIO (root_user 16 bytes hex + root_pw 32 bytes hex)..."
+        local root_user root_pw
+        root_user=$(openssl rand -hex 16)
+        root_pw=$(openssl rand -hex 32)
+        sudo tee "$creds_file" >/dev/null <<EOF
+root_user=$root_user
+root_pw=$root_pw
+EOF
+        sudo chown root:root "$creds_file"
+        sudo chmod 600 "$creds_file"
+        log_warn "Credenciais geradas em $creds_file. Custódia obrigatória — ver runbook §12.2."
+    fi
+
+    # EnvironmentFile (sempre re-aplicado). Senhas via env do systemd → docker
+    # `-e VAR` (sem `=value`); cmdline NÃO expõe (`/proc/<pid>/cmdline` puxa
+    # do env de processo, não dos args). MINIO_USERNAME/GROUPNAME/UID/GID
+    # instruem o entrypoint a chroot pro user 1000:1000.
+    if $DRY_RUN; then
+        echo "[DRY-RUN] Escreveria $env_file"
+    else
+        local root_user_current root_pw_current
+        root_user_current=$(sudo grep '^root_user=' "$creds_file" | cut -d= -f2)
+        root_pw_current=$(sudo grep '^root_pw=' "$creds_file" | cut -d= -f2)
+        if [[ -z "$root_user_current" || -z "$root_pw_current" ]]; then
+            log_error "root_user ou root_pw vazio em $creds_file. Abortando."
+            exit 1
+        fi
+        sudo tee "$env_file" >/dev/null <<EOF
+MINIO_ROOT_USER=$root_user_current
+MINIO_ROOT_PASSWORD=$root_pw_current
+MINIO_USERNAME=minio
+MINIO_GROUPNAME=minio
+MINIO_UID=1000
+MINIO_GID=1000
+EOF
+        sudo chown root:root "$env_file"
+        sudo chmod 600 "$env_file"
+        unset root_user_current root_pw_current
+    fi
+
+    # systemd unit (sempre re-aplicado). Heredoc single-quoted: paths hardcoded.
+    # --address e --console-address ligam explicitamente em 10.0.2.87 (subnet
+    # privada VCN). Console em 9001 NÃO está exposto externamente (sem
+    # IngressRoute) — acesso só via kubectl port-forward ou SSH tunnel.
+    if $DRY_RUN; then
+        echo "[DRY-RUN] Escreveria $unit_file"
+    else
+        sudo tee "$unit_file" >/dev/null <<'UNIT'
+[Unit]
+Description=Uni+ MinIO 2025-09 (standalone data-host)
+Documentation=https://github.com/unifesspa-edu-br/uniplus-infra/blob/main/docs/RUNBOOKS.md
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=10
+TimeoutStartSec=120
+EnvironmentFile=/etc/uniplus-minio.env
+
+ExecStartPre=-/usr/bin/docker rm -f uniplus-minio
+ExecStart=/usr/bin/docker run --rm --name uniplus-minio \
+  --network host \
+  -e MINIO_ROOT_USER \
+  -e MINIO_ROOT_PASSWORD \
+  -e MINIO_USERNAME \
+  -e MINIO_GROUPNAME \
+  -e MINIO_UID \
+  -e MINIO_GID \
+  -v /var/lib/uniplus/minio/data:/data \
+  quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z \
+  server --address 10.0.2.87:9000 --console-address 10.0.2.87:9001 /data
+
+ExecStop=/usr/bin/docker stop -t 30 uniplus-minio
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+    fi
+
+    run "sudo systemctl daemon-reload"
+    run "sudo systemctl enable uniplus-minio"
+
+    if $DRY_RUN; then
+        echo "[DRY-RUN] systemctl start uniplus-minio + curl /minio/health/live"
+    elif sudo systemctl is-active --quiet uniplus-minio; then
+        log_success "uniplus-minio já ativo — preservando state (sem restart)."
+    else
+        sudo systemctl start uniplus-minio
+        log_info "Aguardando MinIO aceitar conexões..."
+        local attempts=0
+        until curl -sf --max-time 2 http://10.0.2.87:9000/minio/health/live >/dev/null 2>&1; do
+            attempts=$(( attempts + 1 ))
+            if (( attempts >= 18 )); then
+                log_error "MinIO não respondeu /minio/health/live em 90s. Ver: sudo journalctl -u uniplus-minio -n 50"
+                exit 1
+            fi
+            sleep 5
+        done
+        log_success "uniplus-minio ativo + /minio/health/live OK."
+    fi
+}
+
+# Cria buckets baseline em standalone via mc (one-shot job).
+#
+# Idempotente — `mc mb --ignore-existing` skip se bucket já existe. Roda em
+# container ad-hoc da imagem mc:latest, sem persistência. Buckets são
+# pré-cadastros para usos previstos:
+#   - keycloak-backups: destino de pg_dump (Story #118 sub-task)
+#   - loki-chunks: chunks de log (quando observability aterrissar)
+#   - tempo-traces: traces (idem)
+#   - app-uploads: bucket genérico para apps Uni+ (Fase 5)
+#
+# Per-app users + policies são responsabilidade da Fase 5 (cada app PR pede
+# seu user via mc admin user add + policy attach).
+step_data_bootstrap_minio_buckets() {
+    if $SKIP_DOCKER && ! command -v docker &>/dev/null; then
+        log_warn "Docker indisponível e --skip-docker ativo — pulando bucket bootstrap."
+        return
+    fi
+
+    if ! sudo systemctl is-active --quiet uniplus-minio 2>/dev/null && ! $DRY_RUN; then
+        log_warn "uniplus-minio não está ativo — pulando bucket bootstrap."
+        return
+    fi
+
+    log_info "Pré-criando buckets baseline (keycloak-backups, loki-chunks, tempo-traces, app-uploads)..."
+
+    local creds_file="$DATA_BASE/minio/.bootstrap-creds"
+
+    if ! sudo test -f "$creds_file" 2>/dev/null; then
+        if $DRY_RUN; then
+            log_warn "Dry-run: bucket bootstrap precisaria de $creds_file"
+            return
+        fi
+        log_warn "$creds_file ausente — buckets não criados (presume custódia já feita)."
+        log_warn "Para re-rodar manualmente: ver docs/RUNBOOKS.md §12.5."
+        return
+    fi
+
+    if $DRY_RUN; then
+        echo "[DRY-RUN] mc alias set + mc mb keycloak-backups loki-chunks tempo-traces app-uploads"
+        return
+    fi
+
+    local root_user root_pw
+    root_user=$(sudo grep '^root_user=' "$creds_file" | cut -d= -f2)
+    root_pw=$(sudo grep '^root_pw=' "$creds_file" | cut -d= -f2)
+    if [[ -z "$root_user" || -z "$root_pw" ]]; then
+        log_error "root_user ou root_pw vazio em $creds_file — não consigo criar buckets."
+        exit 1
+    fi
+
+    # Credenciais via stdin (here-string + read -r no shell do container).
+    # `mc alias set --quiet` evita echo do password no stdout.
+    sudo docker run --rm -i --network host \
+        --entrypoint sh \
+        quay.io/minio/mc:latest -c '
+            set -e
+            read -r U
+            read -r P
+            mc --quiet alias set local http://10.0.2.87:9000 "$U" "$P"
+            for b in keycloak-backups loki-chunks tempo-traces app-uploads; do
+                mc mb --ignore-existing "local/$b"
+            done
+            mc ls local
+        ' <<EOF
+$root_user
+$root_pw
+EOF
+    log_success "Buckets baseline pré-criados (idempotente)."
+    unset root_user root_pw
+}
+
 summary_data() {
     echo ""
     echo "============================================"
@@ -1093,6 +1335,7 @@ summary_data() {
     echo "Data services systemd:"
     echo "  systemctl status uniplus-postgres"
     echo "  systemctl status uniplus-redis"
+    echo "  systemctl status uniplus-minio"
     echo ""
     echo "Custódia das senhas iniciais (PRIMEIRA EXECUÇÃO):"
     echo "  Postgres — runbook §9.2:"
@@ -1103,10 +1346,14 @@ summary_data() {
     echo "    1. Ler:        sudo cat $DATA_BASE/redis/.bootstrap-creds"
     echo "    2. Custodiar:  Vault (secret/standalone/redis/default) + gestor institucional"
     echo "    3. Limpar:     sudo shred -u $DATA_BASE/redis/.bootstrap-creds"
+    echo "  MinIO — runbook §12.2:"
+    echo "    1. Ler:        sudo cat $DATA_BASE/minio/.bootstrap-creds"
+    echo "    2. Custodiar:  Vault (secret/standalone/minio/root) + gestor institucional"
+    echo "    3. Limpar:     sudo shred -u $DATA_BASE/minio/.bootstrap-creds"
     echo ""
     echo "Próximos passos (Epic data/*):"
-    echo "  Os serviços Kafka e MinIO serão provisionados em sub-tasks futuras"
-    echo "  (mesmo padrão de Postgres/Redis: container Docker via systemd nos mounts dedicados)."
+    echo "  O serviço Kafka será provisionado em sub-task futura"
+    echo "  (mesmo padrão de Postgres/Redis/MinIO: container Docker via systemd)."
     echo ""
     echo "Validar:"
     echo "  df -h $DATA_BASE/*"
@@ -1114,6 +1361,7 @@ summary_data() {
     echo "  sudo docker exec uniplus-postgres pg_isready -U postgres"
     echo "  sudo docker exec -i uniplus-redis sh -c 'read -r P; REDISCLI_AUTH=\$P redis-cli ping' \\"
     echo "    <<<\"\$(sudo grep ^default_pw= $DATA_BASE/redis/.bootstrap-creds | cut -d= -f2)\""
+    echo "  curl -sf http://10.0.2.87:9000/minio/health/live && echo ' — MinIO health OK'"
 }
 
 # ============================================================================
@@ -1144,6 +1392,8 @@ case "$ROLE" in
         step_create_placeholder_dirs
         step_data_setup_postgres
         step_data_setup_redis
+        step_data_setup_minio
+        step_data_bootstrap_minio_buckets
         summary_data
         ;;
 esac
