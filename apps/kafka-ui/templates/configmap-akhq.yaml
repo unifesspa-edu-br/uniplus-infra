@@ -1,0 +1,15 @@
+{{- if .Values.kafkaUi.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kafkaUi.configMapName" . }}
+  labels:
+    {{- include "kafkaUi.labels" . | nindent 4 }}
+data:
+  # application.yml renderizado via tpl para interpolar values em todo o
+  # template. Pattern análogo ao realm-import do keycloak-replica.
+  # `${VAR}` no YAML é deixado literal — Micronaut/AKHQ resolve em runtime
+  # via env do container.
+  application.yml: |
+{{ tpl (.Files.Get "files/application.yml.tpl") . | indent 4 }}
+{{- end }}

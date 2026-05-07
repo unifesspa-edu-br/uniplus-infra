@@ -1,0 +1,16 @@
+{{- if and .Values.kafkaUi.enabled .Values.kafkaUi.ingress.enabled .Values.kafkaUi.ingress.tls.enabled .Values.kafkaUi.ingress.tls.certManager.enabled -}}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "kafkaUi.fullname" . }}
+  labels:
+    {{- include "kafkaUi.labels" . | nindent 4 }}
+spec:
+  secretName: {{ .Values.kafkaUi.ingress.tls.secretName | default (printf "%s-tls" (include "kafkaUi.fullname" .)) }}
+  commonName: {{ .Values.kafkaUi.ingress.host }}
+  dnsNames:
+    - {{ .Values.kafkaUi.ingress.host }}
+  issuerRef:
+    name: {{ .Values.kafkaUi.ingress.tls.certManager.clusterIssuer }}
+    kind: ClusterIssuer
+{{- end }}

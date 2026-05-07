@@ -1,0 +1,17 @@
+{{- if .Values.kafkaUi.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "kafkaUi.fullname" . }}
+  labels:
+    {{- include "kafkaUi.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "kafkaUi.selectorLabels" . | nindent 4 }}
+{{- end }}
