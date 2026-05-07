@@ -80,11 +80,30 @@ akhq:
 
 # Micronaut OIDC (consumido pelo AKHQ). issuer + client_id no values;
 # client_secret via env OIDC_CLIENT_SECRET (envFrom do Secret kafka-ui-oidc-client).
+#
+# authentication: cookie — Micronaut gera sua própria JWT de sessão
+# (assinada com HS256 + MICRONAUT_SECURITY_TOKEN_JWT_SIGNATURES_SECRET_GENERATOR_SECRET
+# do ESO) ao invés de reusar o id_token do Keycloak como cookie. Necessário
+# porque o AKHQ OidcAuthenticationMapper sobrescreve o attributes map do
+# Authentication, perdendo o `openid-token` que `idtoken` mode espera —
+# resultando em `OauthErrorResponseException` no IdTokenLoginHandler:103
+# após login OIDC bem-sucedido. Com cookie mode, AKHQ pode mapear claims
+# (groups, username) sem que Micronaut dependa do id_token preservado.
+#
+# JWKS jwks.keycloak.url permite Micronaut validar id_token no momento do
+# login (extrair groups claim) — não necessário para sessão subsequente
+# (cookie mode usa HS256 local).
 {{- if .Values.kafkaUi.oidc.enabled }}
 micronaut:
   security:
     enabled: true
-    authentication: idtoken
+    authentication: cookie
+    token:
+      jwt:
+        signatures:
+          jwks:
+            {{ .Values.kafkaUi.oidc.providerName }}:
+              url: "{{ .Values.kafkaUi.oidc.issuerUri }}/protocol/openid-connect/certs"
     oauth2:
       enabled: true
       clients:
