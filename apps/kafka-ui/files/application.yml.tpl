@@ -90,20 +90,16 @@ akhq:
 # após login OIDC bem-sucedido. Com cookie mode, AKHQ pode mapear claims
 # (groups, username) sem que Micronaut dependa do id_token preservado.
 #
-# JWKS jwks.keycloak.url permite Micronaut validar id_token no momento do
-# login (extrair groups claim) — não necessário para sessão subsequente
-# (cookie mode usa HS256 local).
+# Micronaut faz auto-discovery do JWKS endpoint via .well-known/openid-configuration
+# do issuer — config explícita de jwks.* causa NonUniqueBeanException
+# (JwksSignatureConfigurationProperties vs JwksSignatureConfiguration) na
+# imagem AKHQ 0.27.0. Pattern recomendado: deixar Micronaut descobrir
+# automaticamente via OIDC issuer.
 {{- if .Values.kafkaUi.oidc.enabled }}
 micronaut:
   security:
     enabled: true
     authentication: cookie
-    token:
-      jwt:
-        signatures:
-          jwks:
-            {{ .Values.kafkaUi.oidc.providerName }}:
-              url: "{{ .Values.kafkaUi.oidc.issuerUri }}/protocol/openid-connect/certs"
     oauth2:
       enabled: true
       clients:
