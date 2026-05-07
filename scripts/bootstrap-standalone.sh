@@ -846,6 +846,237 @@ UNIT
     fi
 }
 
+# Configura Redis 8.6.3 como container Docker gerenciado por systemd no data-host.
+#
+# UID/GID do container: 999:1000 (redis:8.6.3-alpine — confirmado por
+# `docker run --rm redis:8.6.3-alpine id redis`). Diferente do Postgres alpine
+# (uid 70), e diferente da convenção 999:999 das imagens Debian-based.
+#
+# Auth: ACL file (`user default on >password ~* &* +@all`) montado read-only
+# em `/usr/local/etc/redis/users.acl`. Senha 256 bits (openssl rand -hex 32),
+# custodiada via .bootstrap-creds + Vault (mesmo padrão Postgres §9.2).
+#
+# Idempotência (decisões independentes):
+#   - .bootstrap-creds: preserva se existe, gera se ausente, aborta se ACL file
+#     já existe sem .bootstrap-creds (regenerar produziria mismatch entre ACL
+#     file e Vault).
+#   - ACL file + redis.conf: sempre re-aplicados (redis-server lê em startup).
+#   - systemd unit: sempre re-aplicado (cheap, corrige drift).
+#   - Serviço já ativo: não reinicia (evita downtime em re-runs).
+#
+# Persistência híbrida AOF (appendfsync everysec) + RDB snapshots — pattern
+# recomendado em 8.x para balance latência/durabilidade.
+step_data_setup_redis() {
+    # Honra --skip-docker (mesmo guard de step_data_setup_postgres). Sem este,
+    # --skip-docker mutaria diretórios e EnvironmentFile e falharia tarde aqui.
+    if $SKIP_DOCKER && ! command -v docker &>/dev/null; then
+        log_warn "Docker indisponível e --skip-docker ativo — pulando setup do Redis."
+        return
+    fi
+
+    log_info "Configurando Redis 8.6.3 systemd..."
+
+    local creds_file="$DATA_BASE/redis/.bootstrap-creds"
+    local conf_dir="/etc/uniplus-redis"
+    local redis_conf="$conf_dir/redis.conf"
+    local acl_file="$conf_dir/users.acl"
+    local unit_file="/etc/systemd/system/uniplus-redis.service"
+
+    # Diretórios + ownership:
+    #   - $DATA_BASE/redis/data: 999:1000 mode 750 (data dir do container,
+    #     contém AOF + RDB). O entrypoint do redis:8-alpine roda como root
+    #     inicialmente, faz fix_data_dir_perms (chown redis + chmod u+rw nos
+    #     RDB/appendonlydir), e dropa privs para uid 999 via setpriv. Pré-set
+    #     999:1000 evita warnings do entrypoint.
+    #   - /etc/uniplus-redis/: 755 root:root (config dir no host). Precisa ser
+    #     traversável pelo uid 999 para que o redis-server (após drop de privs
+    #     via setpriv no entrypoint) consiga abrir os arquivos mounted em
+    #     /usr/local/etc/redis/. Mode 700 root:root bloqueia traverse e quebra
+    #     o startup (Codex P1 round 1). A confidencialidade vem do mode dos
+    #     próprios arquivos: redis.conf 644 root:root (sem segredos, legível
+    #     para auditoria) e users.acl 600 chown 999:1000 (cleartext da senha
+    #     legível apenas pelo redis-server). Mounted read-only no container,
+    #     então ACL SAVE / CONFIG REWRITE NÃO funcionam (acl_file é regenerado
+    #     pelo bootstrap a partir do .bootstrap-creds — fonte da verdade).
+    run "sudo mkdir -p $DATA_BASE/redis/data $conf_dir"
+    run "sudo chown 999:1000 $DATA_BASE/redis/data"
+    run "sudo chmod 750 $DATA_BASE/redis/data"
+    run "sudo chown root:root $conf_dir"
+    run "sudo chmod 755 $conf_dir"
+
+    # Detectar inicialização prévia: presença do ACL file no host indica que
+    # um run anterior gerou credenciais. AOF/RDB no data dir são proxy mais
+    # fraco — em um restore com data dir vazio + ACL file ainda presente, o
+    # ACL é o que define a senha aceita pelo Redis em startup.
+    local already_initialized=false
+    if ! $DRY_RUN && sudo test -f "$acl_file" 2>/dev/null; then
+        already_initialized=true
+    fi
+
+    # ---- Decisão 1: .bootstrap-creds (preservar / gerar / abortar) ----
+    if sudo test -f "$creds_file" 2>/dev/null; then
+        log_success "Bootstrap creds Redis já existentes — preservando senha."
+    elif $DRY_RUN; then
+        log_warn "Dry-run: senha Redis seria gerada em $creds_file"
+    elif $already_initialized; then
+        # Guard: ACL file existe mas .bootstrap-creds foi shredded sem custódia.
+        # Regenerar agora produziria senha nova no Vault diferente da senha
+        # ativa no ACL file — apps consumidoras (Fase 5) leriam Vault e
+        # falhariam autenticando.
+        log_error "$creds_file ausente, mas $acl_file já existe."
+        log_error "Regenerar senha agora produziria mismatch entre ACL file e Vault."
+        log_error "Restaure $creds_file a partir do Vault — ver docs/RUNBOOKS.md §11.4."
+        exit 1
+    else
+        log_info "Gerando senha Redis (256 bits)..."
+        local default_pw
+        default_pw=$(openssl rand -hex 32)
+        sudo tee "$creds_file" >/dev/null <<EOF
+default_pw=$default_pw
+EOF
+        sudo chown root:root "$creds_file"
+        sudo chmod 600 "$creds_file"
+        log_warn "Senha gerada em $creds_file. Custódia obrigatória — ver runbook §11.2."
+    fi
+
+    # ---- Decisão 2: ACL file (sempre regerado a partir da senha custodiada) ----
+    # Diferente do Postgres init SQL (efêmero, shredded após primeira inicialização),
+    # o ACL file PERSISTE — redis-server lê em todo startup e reload. Não há
+    # rastro extra: a senha vive em .bootstrap-creds (até custódia + shred) e no
+    # ACL file (cifrada como hash SHA256 internamente, mas o file contém o
+    # cleartext até o redis re-escrever em ACL SAVE — que aqui é noop por mount
+    # read-only). Trade-off aceito: ACL file é root:root 600 no filesystem
+    # do host; visibilidade limitada a quem tem sudo no data-host.
+    if $DRY_RUN; then
+        log_warn "Dry-run: ACL file seria escrito em $acl_file"
+    elif sudo test -f "$creds_file" 2>/dev/null; then
+        local pw
+        pw=$(sudo grep '^default_pw=' "$creds_file" | cut -d= -f2)
+        if [[ -z "$pw" ]]; then
+            log_error "default_pw vazio em $creds_file — não posso (re)gerar ACL file."
+            exit 1
+        fi
+        # Heredoc unquoted permite expansão de $pw. Senha hex-only (openssl
+        # rand -hex 32), sem metacaracteres ACL — segura na linha do user.
+        sudo tee "$acl_file" >/dev/null <<EOF
+user default on >$pw ~* &* +@all
+EOF
+        sudo chown 999:1000 "$acl_file"
+        sudo chmod 600 "$acl_file"
+        unset pw
+    fi
+
+    # redis.conf (sempre re-aplicado). Heredoc single-quoted preserva conteúdo
+    # literal — paths são hardcoded para alinhar com $DATA_BASE/$conf_dir.
+    # Permissão 644 root:root: o conf NÃO contém segredos (a senha vive no
+    # users.acl). Manter o conf legível pelo grupo geral simplifica auditoria
+    # operacional sem leak. Diverge intencionalmente do users.acl, que continua
+    # 600 chown 999:1000 — defesa em camadas (owner restrito + mode restrito)
+    # apropriada quando o arquivo carrega cleartext da senha.
+    if $DRY_RUN; then
+        echo "[DRY-RUN] Escreveria $redis_conf"
+    else
+        sudo tee "$redis_conf" >/dev/null <<'CONF'
+# Listeners — bind explícito (protected-mode default `yes` em 7+ exige
+# bind + auth; sem bind o redis recusa conexões não-loopback)
+bind 10.0.2.87 127.0.0.1 -::1
+port 6379
+protected-mode yes
+
+# Auth via ACL file (mounted read-only no container)
+aclfile /usr/local/etc/redis/users.acl
+
+# Persistência híbrida AOF + RDB
+appendonly yes
+appendfsync everysec
+appendfilename "appendonly.aof"
+# RDB snapshots: dump se ≥ 1 chave em 1h, ≥ 100 em 5min, ≥ 10000 em 1min
+save 3600 1 300 100 60 10000
+
+# Memory cap — data-host tem 16GB; deixa margem para Postgres + futuros services
+maxmemory 2gb
+maxmemory-policy allkeys-lru
+
+# Data dir (mount /data dentro do container)
+dir /data
+
+# Logging para stdout (capturado por journalctl via systemd)
+logfile ""
+loglevel notice
+CONF
+        sudo chown root:root "$redis_conf"
+        sudo chmod 644 "$redis_conf"
+    fi
+
+    # systemd unit (sempre re-aplicado). Heredoc single-quoted: paths hardcoded.
+    if $DRY_RUN; then
+        echo "[DRY-RUN] Escreveria $unit_file"
+    else
+        sudo tee "$unit_file" >/dev/null <<'UNIT'
+[Unit]
+Description=Uni+ Redis 8.6.3 (standalone data-host)
+Documentation=https://github.com/unifesspa-edu-br/uniplus-infra/blob/main/docs/RUNBOOKS.md
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=10
+TimeoutStartSec=120
+
+ExecStartPre=-/usr/bin/docker rm -f uniplus-redis
+ExecStart=/usr/bin/docker run --rm --name uniplus-redis \
+  --network host \
+  -v /var/lib/uniplus/redis/data:/data \
+  -v /etc/uniplus-redis:/usr/local/etc/redis:ro \
+  redis:8.6.3-alpine \
+  redis-server /usr/local/etc/redis/redis.conf
+
+ExecStop=/usr/bin/docker stop -t 30 uniplus-redis
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+    fi
+
+    run "sudo systemctl daemon-reload"
+    run "sudo systemctl enable uniplus-redis"
+
+    if $DRY_RUN; then
+        echo "[DRY-RUN] systemctl start uniplus-redis + smoke test PING/PONG"
+    elif sudo systemctl is-active --quiet uniplus-redis; then
+        log_success "uniplus-redis já ativo — preservando state (sem restart)."
+    else
+        sudo systemctl start uniplus-redis
+        log_info "Aguardando Redis aceitar conexões..."
+        local pw
+        pw=$(sudo grep '^default_pw=' "$creds_file" | cut -d= -f2)
+        if [[ -z "$pw" ]]; then
+            log_error "default_pw vazio em $creds_file — não consigo validar PING."
+            exit 1
+        fi
+        # Senha via stdin (`<<<` + `read -r` no shell do container) — NÃO em
+        # argv. `docker exec -i` conecta stdin local ao stdin do processo
+        # remoto; REDISCLI_AUTH é env var do redis-cli (forma oficial de
+        # passar senha sem cmdline exposure). Mesmo padrão de §9.3 do runbook.
+        local attempts=0
+        until sudo docker exec -i uniplus-redis sh -c \
+                'read -r PW; REDISCLI_AUTH="$PW" redis-cli ping' \
+                <<<"$pw" 2>/dev/null | grep -q PONG; do
+            attempts=$(( attempts + 1 ))
+            if (( attempts >= 12 )); then
+                log_error "Redis não respondeu PONG em 60s. Ver: sudo journalctl -u uniplus-redis -n 50"
+                exit 1
+            fi
+            sleep 5
+        done
+        log_success "uniplus-redis ativo + PING/PONG OK."
+        unset pw
+    fi
+}
+
 summary_data() {
     echo ""
     echo "============================================"
@@ -859,23 +1090,30 @@ summary_data() {
     echo "  $DATA_BASE/vault     ← $DISK_VAULT    (LVM vg-vault)"
     echo "  $DATA_BASE/redis     (disco local)"
     echo ""
-    echo "Postgres 18 systemd:"
+    echo "Data services systemd:"
     echo "  systemctl status uniplus-postgres"
+    echo "  systemctl status uniplus-redis"
     echo ""
-    echo "Custódia das senhas iniciais (PRIMEIRA EXECUÇÃO — ver runbook §9.2):"
-    echo "  1. Ler senhas:    sudo cat $DATA_BASE/postgres/.bootstrap-creds"
-    echo "  2. Salvar no gestor institucional + Vault standalone"
-    echo "     (kubectl exec no k8s-host → vault kv put secret/standalone/postgres/keycloak)"
-    echo "  3. Após custódia: sudo shred -u $DATA_BASE/postgres/.bootstrap-creds"
+    echo "Custódia das senhas iniciais (PRIMEIRA EXECUÇÃO):"
+    echo "  Postgres — runbook §9.2:"
+    echo "    1. Ler:        sudo cat $DATA_BASE/postgres/.bootstrap-creds"
+    echo "    2. Custodiar:  Vault (secret/standalone/postgres/keycloak) + gestor institucional"
+    echo "    3. Limpar:     sudo shred -u $DATA_BASE/postgres/.bootstrap-creds"
+    echo "  Redis — runbook §11.2:"
+    echo "    1. Ler:        sudo cat $DATA_BASE/redis/.bootstrap-creds"
+    echo "    2. Custodiar:  Vault (secret/standalone/redis/default) + gestor institucional"
+    echo "    3. Limpar:     sudo shred -u $DATA_BASE/redis/.bootstrap-creds"
     echo ""
     echo "Próximos passos (Epic data/*):"
-    echo "  Os serviços Kafka, MinIO e Redis serão provisionados em sub-tasks futuras"
-    echo "  (mesmo padrão do Postgres: container Docker via systemd nos mounts dedicados)."
+    echo "  Os serviços Kafka e MinIO serão provisionados em sub-tasks futuras"
+    echo "  (mesmo padrão de Postgres/Redis: container Docker via systemd nos mounts dedicados)."
     echo ""
     echo "Validar:"
     echo "  df -h $DATA_BASE/*"
     echo "  sudo vgs && sudo lvs"
     echo "  sudo docker exec uniplus-postgres pg_isready -U postgres"
+    echo "  sudo docker exec -i uniplus-redis sh -c 'read -r P; REDISCLI_AUTH=\$P redis-cli ping' \\"
+    echo "    <<<\"\$(sudo grep ^default_pw= $DATA_BASE/redis/.bootstrap-creds | cut -d= -f2)\""
 }
 
 # ============================================================================
@@ -905,6 +1143,7 @@ case "$ROLE" in
         step_setup_lvm
         step_create_placeholder_dirs
         step_data_setup_postgres
+        step_data_setup_redis
         summary_data
         ;;
 esac
