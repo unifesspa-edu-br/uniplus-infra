@@ -1319,6 +1319,217 @@ EOF
     unset root_user root_pw
 }
 
+# Configura Apache Kafka 4.2.0 (KRaft only — ZooKeeper removido em 4.0 GA) como
+# container Docker gerenciado por systemd no data-host. Single-node combined
+# (process.roles=broker,controller).
+#
+# UID/GID: 1000:1000 (appuser, default user da imagem apache/kafka:4.2.0).
+#
+# Auth: PLAINTEXT — subnet privada VCN + iptables INPUT chain filtrando
+# externos. Acceptable em standalone (validação). Pattern SASL/SCRAM-SHA-512
+# documentado em RUNBOOKS §13 para hml/prod.
+#
+# Cluster ID: gerado uma vez via `kafka-storage.sh random-uuid`, persistido em
+# .bootstrap-creds (não é segredo — apenas identificador único do cluster, mas
+# preservar é importante: regenerar produziria mismatch com meta.properties já
+# escrito em $DATA_BASE/kafka/data/). Format do storage é AUTOMÁTICO via
+# `KafkaDockerWrapper setup` no entrypoint (idempotente — skip se já formatado).
+#
+# Idempotência:
+#   - .bootstrap-creds: preserva se existe; gera se ausente; aborta se data dir
+#     já tem meta.properties sem .bootstrap-creds (recovery via §13.4).
+#   - EnvironmentFile + systemd unit: sempre re-aplicados.
+#   - Entrypoint do container: format storage skip se já formatado.
+#   - Serviço já ativo: não reinicia.
+step_data_setup_kafka() {
+    if $SKIP_DOCKER && ! command -v docker &>/dev/null; then
+        log_warn "Docker indisponível e --skip-docker ativo — pulando setup do Kafka."
+        return
+    fi
+
+    log_info "Configurando Kafka 4.2.0 KRaft systemd..."
+
+    local creds_file="$DATA_BASE/kafka/.bootstrap-creds"
+    local env_file="/etc/uniplus-kafka.env"
+    local unit_file="/etc/systemd/system/uniplus-kafka.service"
+
+    # Diretórios + ownership: Kafka data dir 1000:1000 mode 750. UID 1000
+    # corresponde ao appuser do container. O entrypoint roda já como appuser
+    # (default User no Dockerfile), então NÃO há drop de privs (diferente de
+    # Postgres/Redis/MinIO que iniciam como root).
+    run "sudo mkdir -p $DATA_BASE/kafka/data"
+    run "sudo chown 1000:1000 $DATA_BASE/kafka/data"
+    run "sudo chmod 750 $DATA_BASE/kafka/data"
+
+    # Detectar inicialização prévia: meta.properties no data dir indica
+    # storage formatado. Análogo a PG_VERSION (Postgres) e .minio.sys/ (MinIO).
+    local already_initialized=false
+    if ! $DRY_RUN && \
+       sudo test -f "$DATA_BASE/kafka/data/meta.properties" 2>/dev/null; then
+        already_initialized=true
+    fi
+
+    # ---- Decisão 1: .bootstrap-creds (preservar / gerar / abortar) ----
+    if sudo test -f "$creds_file" 2>/dev/null; then
+        log_success "Bootstrap creds Kafka já existentes — preservando cluster_id."
+    elif $DRY_RUN; then
+        log_warn "Dry-run: cluster_id Kafka seria gerado em $creds_file"
+    elif $already_initialized; then
+        # Guard: meta.properties existe mas .bootstrap-creds shredded ou
+        # perdido. cluster.id está no meta.properties (é o source-of-truth do
+        # storage); operador deve restaurar via §13.4 (lê do meta.properties
+        # ou do Vault) antes de re-rodar.
+        log_error "$creds_file ausente, mas $DATA_BASE/kafka/data/meta.properties já existe."
+        log_error "Regenerar cluster_id agora produziria mismatch com storage formatado."
+        log_error "Restaure $creds_file a partir do Vault — ver docs/RUNBOOKS.md §13.4."
+        exit 1
+    else
+        log_info "Gerando cluster_id Kafka via kafka-storage.sh random-uuid..."
+        local cluster_id
+        # Container ad-hoc apenas pra random-uuid; sem state, descartável.
+        cluster_id=$(sudo docker run --rm --entrypoint /opt/kafka/bin/kafka-storage.sh \
+            apache/kafka:4.2.0 random-uuid 2>/dev/null | tr -d '\r\n')
+        if [[ -z "$cluster_id" ]]; then
+            log_error "Falha ao gerar cluster_id via kafka-storage.sh."
+            exit 1
+        fi
+        sudo tee "$creds_file" >/dev/null <<EOF
+cluster_id=$cluster_id
+EOF
+        sudo chown root:root "$creds_file"
+        sudo chmod 600 "$creds_file"
+        log_warn "cluster_id gerado em $creds_file. Persistir em Vault — ver runbook §13.2."
+    fi
+
+    # EnvironmentFile (sempre re-aplicado). NOTA: cluster_id NÃO é segredo, mas
+    # passamos via env consistente com pattern dos outros services. Configura
+    # KRaft single-node combined com static quorum (KAFKA_CONTROLLER_QUORUM_VOTERS).
+    if $DRY_RUN; then
+        echo "[DRY-RUN] Escreveria $env_file"
+    else
+        local cluster_id_current
+        cluster_id_current=$(sudo grep '^cluster_id=' "$creds_file" | cut -d= -f2)
+        if [[ -z "$cluster_id_current" ]]; then
+            log_error "cluster_id vazio em $creds_file. Abortando."
+            exit 1
+        fi
+        # KAFKA_LOG_DIRS override do default `/tmp/kraft-combined-logs` da
+        # imagem apache/kafka:4.2.0 — sem isso, o broker escreveria em /tmp
+        # dentro do container (efêmero, NÃO no volume mounted), resultando em
+        # data loss silencioso no primeiro restart (cluster_id mismatch entre
+        # env e meta.properties recriado em /tmp).
+        #
+        # KAFKA_HEAP_OPTS PRECISA de aspas — systemd EnvironmentFile parser
+        # tokeniza por espaço sem quoting; sem aspas, apenas `-Xmx1g` é setado
+        # e `-Xms1g` é descartado silenciosamente.
+        sudo tee "$env_file" >/dev/null <<EOF
+CLUSTER_ID=$cluster_id_current
+KAFKA_PROCESS_ROLES=broker,controller
+KAFKA_NODE_ID=1
+KAFKA_LISTENERS=PLAINTEXT://10.0.2.87:9092,CONTROLLER://10.0.2.87:9093
+KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://10.0.2.87:9092
+KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
+KAFKA_CONTROLLER_QUORUM_VOTERS=1@10.0.2.87:9093
+KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+KAFKA_LOG_DIRS=/var/lib/kafka/data
+KAFKA_AUTO_CREATE_TOPICS_ENABLE=false
+KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR=1
+KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1
+KAFKA_SHARE_COORDINATOR_STATE_TOPIC_REPLICATION_FACTOR=1
+KAFKA_SHARE_COORDINATOR_STATE_TOPIC_MIN_ISR=1
+KAFKA_HEAP_OPTS="-Xmx1g -Xms1g"
+EOF
+        sudo chown root:root "$env_file"
+        sudo chmod 600 "$env_file"
+        unset cluster_id_current
+    fi
+
+    # systemd unit (sempre re-aplicado). Heredoc single-quoted: paths hardcoded.
+    # Container monta /var/lib/uniplus/kafka/data em /var/lib/kafka/data
+    # (path declarado VOLUME no Dockerfile da imagem oficial). KAFKA_LOG_DIRS
+    # explicitamente override do default `/tmp/kraft-combined-logs` para esse
+    # mesmo path — ver heredoc do EnvironmentFile acima. Network host pra
+    # listener bind direto na VCN privada.
+    if $DRY_RUN; then
+        echo "[DRY-RUN] Escreveria $unit_file"
+    else
+        sudo tee "$unit_file" >/dev/null <<'UNIT'
+[Unit]
+Description=Uni+ Apache Kafka 4.2.0 KRaft (standalone data-host)
+Documentation=https://github.com/unifesspa-edu-br/uniplus-infra/blob/main/docs/RUNBOOKS.md
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=10
+TimeoutStartSec=180
+EnvironmentFile=/etc/uniplus-kafka.env
+
+ExecStartPre=-/usr/bin/docker rm -f uniplus-kafka
+ExecStart=/usr/bin/docker run --rm --name uniplus-kafka \
+  --network host \
+  -e CLUSTER_ID \
+  -e KAFKA_PROCESS_ROLES \
+  -e KAFKA_NODE_ID \
+  -e KAFKA_LISTENERS \
+  -e KAFKA_ADVERTISED_LISTENERS \
+  -e KAFKA_CONTROLLER_LISTENER_NAMES \
+  -e KAFKA_CONTROLLER_QUORUM_VOTERS \
+  -e KAFKA_INTER_BROKER_LISTENER_NAME \
+  -e KAFKA_LISTENER_SECURITY_PROTOCOL_MAP \
+  -e KAFKA_LOG_DIRS \
+  -e KAFKA_AUTO_CREATE_TOPICS_ENABLE \
+  -e KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR \
+  -e KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR \
+  -e KAFKA_TRANSACTION_STATE_LOG_MIN_ISR \
+  -e KAFKA_SHARE_COORDINATOR_STATE_TOPIC_REPLICATION_FACTOR \
+  -e KAFKA_SHARE_COORDINATOR_STATE_TOPIC_MIN_ISR \
+  -e KAFKA_HEAP_OPTS \
+  -v /var/lib/uniplus/kafka/data:/var/lib/kafka/data \
+  apache/kafka:4.2.0
+
+ExecStop=/usr/bin/docker stop -t 30 uniplus-kafka
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+    fi
+
+    run "sudo systemctl daemon-reload"
+    run "sudo systemctl enable uniplus-kafka"
+
+    if $DRY_RUN; then
+        echo "[DRY-RUN] systemctl start uniplus-kafka + broker-api-versions probe"
+    elif sudo systemctl is-active --quiet uniplus-kafka; then
+        log_success "uniplus-kafka já ativo — preservando state (sem restart)."
+    else
+        sudo systemctl start uniplus-kafka
+        log_info "Aguardando Kafka aceitar conexões (cold start ~30-90s)..."
+        local attempts=0
+        # broker-api-versions é o probe canônico — retorna lista de APIs
+        # quando o broker está ready (post-format + ISR estabilizada). Timeout
+        # mais largo (180s) que Postgres/Redis pelo cold start de JVM + KRaft
+        # metadata controller bootstrap.
+        until sudo docker exec uniplus-kafka \
+                /opt/kafka/bin/kafka-broker-api-versions.sh \
+                --bootstrap-server localhost:9092 &>/dev/null; do
+            attempts=$(( attempts + 1 ))
+            if (( attempts >= 36 )); then
+                log_error "Kafka não respondeu broker-api-versions em 180s."
+                log_error "Ver: sudo journalctl -u uniplus-kafka -n 100"
+                exit 1
+            fi
+            sleep 5
+        done
+        log_success "uniplus-kafka ativo + broker-api-versions OK."
+    fi
+}
+
 summary_data() {
     echo ""
     echo "============================================"
@@ -1336,6 +1547,7 @@ summary_data() {
     echo "  systemctl status uniplus-postgres"
     echo "  systemctl status uniplus-redis"
     echo "  systemctl status uniplus-minio"
+    echo "  systemctl status uniplus-kafka"
     echo ""
     echo "Custódia das senhas iniciais (PRIMEIRA EXECUÇÃO):"
     echo "  Postgres — runbook §9.2:"
@@ -1350,10 +1562,10 @@ summary_data() {
     echo "    1. Ler:        sudo cat $DATA_BASE/minio/.bootstrap-creds"
     echo "    2. Custodiar:  Vault (secret/standalone/minio/root) + gestor institucional"
     echo "    3. Limpar:     sudo shred -u $DATA_BASE/minio/.bootstrap-creds"
-    echo ""
-    echo "Próximos passos (Epic data/*):"
-    echo "  O serviço Kafka será provisionado em sub-task futura"
-    echo "  (mesmo padrão de Postgres/Redis/MinIO: container Docker via systemd)."
+    echo "  Kafka — runbook §13.2 (cluster_id NÃO é segredo):"
+    echo "    1. Ler:        sudo cat $DATA_BASE/kafka/.bootstrap-creds"
+    echo "    2. Registrar:  Vault (secret/standalone/kafka/cluster) — auditoria"
+    echo "    3. .bootstrap-creds permanece (não há shred — sem cleartext de senha)"
     echo ""
     echo "Validar:"
     echo "  df -h $DATA_BASE/*"
@@ -1362,6 +1574,8 @@ summary_data() {
     echo "  sudo docker exec -i uniplus-redis sh -c 'read -r P; REDISCLI_AUTH=\$P redis-cli ping' \\"
     echo "    <<<\"\$(sudo grep ^default_pw= $DATA_BASE/redis/.bootstrap-creds | cut -d= -f2)\""
     echo "  curl -sf http://10.0.2.87:9000/minio/health/live && echo ' — MinIO health OK'"
+    echo "  sudo docker exec uniplus-kafka /opt/kafka/bin/kafka-broker-api-versions.sh \\"
+    echo "    --bootstrap-server localhost:9092 | head -3"
 }
 
 # ============================================================================
@@ -1394,6 +1608,7 @@ case "$ROLE" in
         step_data_setup_redis
         step_data_setup_minio
         step_data_bootstrap_minio_buckets
+        step_data_setup_kafka
         summary_data
         ;;
 esac
