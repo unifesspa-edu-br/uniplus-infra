@@ -1473,6 +1473,199 @@ Standalone usa `letsencrypt-staging` durante a Fase 4–6 (90d, browser warning 
 | Realm import falha com `Could not parse JSON` | Erro de sintaxe no `uniplus-realm.json` ou `${VAR}` referenciando env var não setada | Validar JSON localmente (`jq . files/uniplus-realm.json`); conferir se todos os `UNIPLUS_PORTAL_*` env vars existem no Pod |
 | Pod startupProbe falha após 10min | Postgres lento na 1ª conexão (cold start) ou DB inacessível | `kc logs ... --previous`; conferir `nc -zv 10.0.2.87 5432` do Pod (sem hostNetwork) |
 
+## 11. Redis (standalone)
+
+Cache local — `redis:8.6.3-alpine` em container Docker gerenciado por systemd no data-host (`10.0.2.87:6379`). Pré-requisito: §9 Postgres systemd ativo (mesmo data-host) + Vault unsealed para custódia da senha.
+
+### 11.1 Redis 8.6.3 — bootstrap automatizado
+
+A função `step_data_setup_redis` em `scripts/bootstrap-standalone.sh` provisiona, na ordem:
+
+1. Diretórios `/var/lib/uniplus/redis/data` (mode `750`, owner `999:1000` — uid `redis` no container `redis:8.6.3-alpine`) e `/etc/uniplus-redis/` (mode `755`, owner `root:root` — traversável pelo uid 999 do container; confidencialidade dos arquivos é via mode dos próprios files).
+2. `.bootstrap-creds` (root:root 600) em `/var/lib/uniplus/redis/.bootstrap-creds` com `default_pw` (256 bits via `openssl rand -hex 32`) — gerado **somente na primeira execução**.
+3. ACL file `/etc/uniplus-redis/users.acl` (mode `600`, owner `999:1000`) — sempre regerado a partir de `default_pw` lido do `.bootstrap-creds`. Conteúdo: `user default on >$pw ~* &* +@all`.
+4. Config `/etc/uniplus-redis/redis.conf` (mode `644`, owner `root:root` — sem segredos, conf é legível para auditoria) com `bind 10.0.2.87 127.0.0.1 -::1`, `protected-mode yes`, `aclfile /usr/local/etc/redis/users.acl`, AOF (`appendfsync everysec`) + RDB (`save 3600 1 300 100 60 10000`), `maxmemory 2gb` `allkeys-lru`.
+5. `systemd` unit `/etc/systemd/system/uniplus-redis.service` com `Restart=always`, container em `--network host` (Redis listen em `10.0.2.87:6379`), config dir mounted **read-only** (`-v /etc/uniplus-redis:/usr/local/etc/redis:ro`).
+
+**Diferença vs Postgres (§9.1):** o ACL file **persiste** entre runs (redis-server lê em todo startup), enquanto o init SQL do Postgres é efêmero (executado uma vez pelo entrypoint, depois shredded). O ACL contém o cleartext da senha — proteção é via mode `600` + owner uid do container; visibilidade limitada a quem tem `sudo` no data-host. `ACL SAVE` / `CONFIG REWRITE` no container são noop por o mount ser read-only — fonte da verdade da senha continua sendo `.bootstrap-creds` + Vault.
+
+**Idempotência:**
+
+- `.bootstrap-creds`: preserva se existe; gera se ausente; aborta se ACL file já existe sem `.bootstrap-creds` (regenerar produziria mismatch entre ACL ativo e Vault — apps autenticando via Vault falhariam).
+- ACL file + redis.conf: sempre re-aplicados (cheap; redis-server faz reload na próxima inicialização).
+- systemd unit: sempre re-aplicado.
+- Serviço já ativo: bootstrap não reinicia (evita downtime).
+
+**Verificação imediata pós-bootstrap (no data-host):**
+
+```bash
+sudo systemctl status uniplus-redis
+sudo docker exec -i uniplus-redis sh -c 'read -r P; REDISCLI_AUTH="$P" redis-cli ping' \
+  <<<"$(sudo grep ^default_pw= /var/lib/uniplus/redis/.bootstrap-creds | cut -d= -f2)"
+# Esperado: PONG
+sudo docker exec -i uniplus-redis sh -c \
+  'read -r P; REDISCLI_AUTH="$P" redis-cli info persistence' \
+  <<<"$(sudo grep ^default_pw= /var/lib/uniplus/redis/.bootstrap-creds | cut -d= -f2)" \
+  | grep -E '^(aof_enabled|rdb_last_save_time):'
+# Esperado: aof_enabled:1
+```
+
+### 11.2 Custódia da senha inicial
+
+> ⚠️ **CRÍTICO.** O `.bootstrap-creds` é o **único rastro fora do ACL file** da senha gerada. Custodiar imediatamente em gestor institucional + Vault standalone, depois `shred -u` o arquivo.
+
+**Passo 1 — Ler senha no data-host:**
+
+```bash
+ssh -i ~/.ssh/id_ed25519 ubuntu@10.0.2.87
+sudo cat /var/lib/uniplus/redis/.bootstrap-creds
+# default_pw=<64 hex>
+```
+
+**Passo 2 — Salvar `default_pw` no Vault standalone (executar do k8s-host):**
+
+> Mesmo padrão de higiene da §9.2 (port-forward + token via env do shell, não argv).
+
+```bash
+read -rsp "Cole default_pw (do passo 1): " RED_PW; echo
+
+sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml \
+  -n vault port-forward platform-vault-uniplus-standalone-0 8200:8200 \
+  > /tmp/vault-pf.log 2>&1 &
+PF_PID=$!
+trap 'kill "$PF_PID" 2>/dev/null; unset RED_PW VAULT_TOKEN VAULT_ADDR' EXIT
+export VAULT_ADDR=http://127.0.0.1:8200
+until curl -s --max-time 1 "$VAULT_ADDR/v1/sys/health" >/dev/null 2>&1; do sleep 1; done
+
+read -rsp "Root token: " VAULT_TOKEN; echo
+export VAULT_TOKEN
+
+vault kv put secret/standalone/redis/default \
+  host=10.0.2.87 \
+  port=6379 \
+  username=default \
+  password="$RED_PW"
+
+vault kv get secret/standalone/redis/default
+# Esperado: campos host/port/username/password presentes
+```
+
+**Passo 3 — Limpar `.bootstrap-creds` no data-host:**
+
+```bash
+ssh -i ~/.ssh/id_ed25519 ubuntu@10.0.2.87
+sudo shred -u /var/lib/uniplus/redis/.bootstrap-creds
+```
+
+> ⚠️ Após `shred -u`, re-execução do bootstrap **abortaria** com mensagem apontando §11.4 (ACL file persiste, mas não há mais como regenerá-lo sem fonte da senha). Restaurar `.bootstrap-creds` a partir do Vault antes de re-executar.
+
+### 11.3 Validação end-to-end (pod K8s → Redis)
+
+Confirma que pods do cluster K3s alcançam o Redis no data-host via TCP. Pré-requisito: PR #125 aplicado (iptables FORWARD ACCEPT entre flannel CIDR e VCN).
+
+**Executar no k8s-host:**
+
+```bash
+# 1) Conectividade TCP bruta
+nc -zv 10.0.2.87 6379
+# Esperado: succeeded
+
+# 2) Ler senha — fail fast se não disponível
+REDIS_PW=$(ssh ubuntu@10.0.2.87 \
+  "sudo grep default_pw= /var/lib/uniplus/redis/.bootstrap-creds 2>/dev/null | cut -d= -f2")
+if [ -z "$REDIS_PW" ]; then
+  echo "ERRO: default_pw não encontrado em .bootstrap-creds no data-host." >&2
+  echo "  - Se .bootstrap-creds foi shredded (§11.2), restaure via §11.4 antes" >&2
+  echo "    OU cole a senha manualmente: read -rsp 'default_pw: ' REDIS_PW; echo" >&2
+  return 1 2>/dev/null || exit 1
+fi
+
+# 3) Pod ad-hoc com redis-cli (sem hostNetwork — usa flannel).
+#    Senha via stdin → REDISCLI_AUTH (mesmo padrão §9.3 com PGPASSWORD)
+sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml run redis-validation \
+  --image=redis:8.6.3-alpine --restart=Never --rm -i --command -- \
+  sh -c 'read -r PW; REDISCLI_AUTH="$PW" redis-cli -h 10.0.2.87 ping' \
+  <<<"$REDIS_PW"
+# Esperado: PONG
+unset REDIS_PW
+```
+
+Se o pod fica preso em `Pending` ou retorna `Connection refused`: revisar §8.6/§8.7 do plano-pai (#123) e confirmar que `iptables -L FORWARD` no k8s-host mostra os ACCEPTs flannel↔VCN antes do `REJECT --reject-with icmp-host-prohibited`.
+
+### 11.4 Restore: re-criar `.bootstrap-creds` a partir do Vault
+
+Caso o operador tenha rodado `shred -u` (§11.2) e precise re-executar o bootstrap (ou recuperar a senha localmente para troubleshooting), recriar o arquivo a partir do Vault:
+
+```bash
+# No k8s-host — port-forward + leitura do secret (mesmo pattern §9.4)
+sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml \
+  -n vault port-forward platform-vault-uniplus-standalone-0 8200:8200 \
+  > /tmp/vault-pf.log 2>&1 &
+PF_PID=$!
+trap 'kill "$PF_PID" 2>/dev/null; unset RED_PW VAULT_TOKEN VAULT_ADDR' EXIT
+export VAULT_ADDR=http://127.0.0.1:8200
+until curl -s --max-time 1 "$VAULT_ADDR/v1/sys/health" >/dev/null 2>&1; do sleep 1; done
+
+read -rsp "Root token: " VAULT_TOKEN; echo
+export VAULT_TOKEN
+
+RED_PW=$(vault kv get -field=password secret/standalone/redis/default)
+
+# Transmitir para o data-host via stdin do ssh — não cruza argv
+ssh -i ~/.ssh/id_ed25519 ubuntu@10.0.2.87 \
+  "sudo tee /var/lib/uniplus/redis/.bootstrap-creds > /dev/null && \
+   sudo chmod 600 /var/lib/uniplus/redis/.bootstrap-creds && \
+   sudo chown root:root /var/lib/uniplus/redis/.bootstrap-creds" <<EOF
+default_pw=$RED_PW
+EOF
+```
+
+**Após reconstituir `.bootstrap-creds`:** rodar `./scripts/bootstrap-standalone.sh --role=standalone-data` no data-host. O bootstrap regenera o ACL file a partir do `default_pw` recém-restaurado e re-aplica config/unit. Se o serviço estava ativo, não reinicia — o ACL novo só passa a valer no próximo restart manual (`sudo systemctl restart uniplus-redis`) ou após `redis-cli ACL LOAD` via container.
+
+### 11.5 Rotacionar `default_pw`
+
+```bash
+# 1) Gerar nova senha + atualizar Vault (k8s-host)
+NEW_PW=$(openssl rand -hex 32)
+vault kv put secret/standalone/redis/default \
+  host=10.0.2.87 port=6379 username=default password="$NEW_PW"
+
+# 2) Reconstituir .bootstrap-creds via §11.4 com o NEW_PW
+
+# 3) Re-rodar bootstrap (regenera ACL file)
+ssh ubuntu@10.0.2.87 "cd ~/uniplus-infra && ./scripts/bootstrap-standalone.sh --role=standalone-data"
+
+# 4) Aplicar a nova ACL no Redis em runtime (sem restart):
+ssh ubuntu@10.0.2.87 "sudo docker exec -i uniplus-redis sh -c \
+  'read -r P; REDISCLI_AUTH=\"\$P\" redis-cli ACL LOAD' \
+  <<<\"\$(sudo grep ^default_pw= /var/lib/uniplus/redis/.bootstrap-creds | cut -d= -f2)\""
+# Esperado: OK
+
+unset NEW_PW
+```
+
+> ⚠️ Apps consumidoras (Fase 5) que cacheiem a senha em ConfigMap/env precisam restart após rotação — o ESO refresh é assíncrono (default `refreshInterval=1h`); forçar via `kc annotate externalsecret ... force-sync="$(date +%s)" --overwrite`.
+
+### 11.6 Backup e Restore
+
+> Procedimento detalhado em sub-task da Story #118 (paralelo aos backups Postgres). Resumo:
+>
+> - **Backup:** AOF rewrite + cópia do `appendonlydir/` para bucket MinIO (`s3://backups/redis/<timestamp>/`) via systemd timer no data-host.
+> - **Restore:** parar `uniplus-redis`, restaurar `appendonlydir/` em `$DATA_BASE/redis/data/`, ajustar ownership `999:1000`, iniciar serviço.
+>
+> Em standalone, perda de Redis é **aceitável** — cache, não fonte da verdade. Aplicações reconstroem state a partir do Postgres no próximo cold path.
+
+### 11.7 Troubleshooting
+
+| Sintoma | Diagnóstico | Fix |
+|---|---|---|
+| `WRONGPASS invalid username-password` no log do app | Senha no app desatualizada vs Vault, ou ACL file e Vault desincronizados | Conferir `vault kv get secret/standalone/redis/default` vs `default_pw` em `.bootstrap-creds`; se mismatch, executar §11.5 |
+| Container reinicia em loop com `Configuration loading: ACL file not readable` | Ownership do `users.acl` ≠ `999:1000` ou mode ≠ `600` (uid 999 do container precisa ser owner) | `sudo chown 999:1000 /etc/uniplus-redis/users.acl && sudo chmod 600 /etc/uniplus-redis/users.acl` |
+| `DENIED Redis is running in protected mode` | `bind` ausente em `redis.conf` ou ACL file vazio | Validar `redis.conf` mounted contém `bind` + `aclfile`; re-executar bootstrap |
+| `nc -zv 10.0.2.87 6379` succeeded mas `redis-cli` retorna `Could not connect to Redis: Connection reset` | iptables FORWARD ainda dropando flannel→VCN ou app pod usa IP errado | `kc exec` no pod e testar `nc -zv 10.0.2.87 6379` direto; conferir resultado do bloco §11.3 |
+| AOF cresce indefinidamente | `auto-aof-rewrite-percentage 100` não dispara (default mas pode ter sido desligado em config customizada) | `redis-cli BGREWRITEAOF`; revisar `redis.conf` |
+| OOM kills do container | `maxmemory 2gb` excedido ou cgroup limit do host menor | `redis-cli INFO memory`; ajustar `maxmemory` em `redis.conf` ou liberar memória no host |
+
 ---
 
 *Documento mantido pelo CTIC/UNIFESSPA. Atualizações via Pull Request.*
