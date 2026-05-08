@@ -1802,16 +1802,21 @@ EOF
         exit 1
     fi
 
-    # CREATE ROLE / CREATE DATABASE não suportam IF NOT EXISTS direto.
-    # Pattern: psql DO block que checa pg_roles antes de criar role;
-    # CREATE DATABASE falha silenciosamente se já existe (catch via || true).
+    # CREATE ROLE não suporta IF NOT EXISTS antes do PG 16. Pattern:
+    # psql `\if` block que checa pg_roles primeiro e despacha ALTER vs CREATE.
+    #
+    # IMPORTANTE: NÃO usar DO $$ ... $$ block aqui — psql NÃO interpola
+    # `:'var'` dentro de dollar-quoted strings (literais), gerando
+    # `syntax error at or near ":"`. Reproduzido em runtime contra
+    # postgres:18-alpine (Codex P1 round 2). Solução: meta-commands `\if`
+    # processados pelo psql ANTES do SQL chegar no server, onde
+    # `:'apicurio_pw'` é interpolado como SQL literal corretamente.
     #
     # Senhas NUNCA em argv (vazaria via /proc/<pid>/cmdline world-readable).
     # Ambas via env vars do `docker exec`:
     #   - PGPASSWORD: especial do libpq (auth do connect)
     #   - APICURIO_PW: lida pelo psql via meta-comando \getenv (psql ≥ 14 —
-    #     OK em Postgres 18 do uniplus-standalone) e interpolada como
-    #     variável de sessão :'apicurio_pw' no SQL.
+    #     OK em Postgres 18 do uniplus-standalone)
     # Env vars ficam em /proc/<pid>/environ (root-only, mode 400) ao invés
     # de /proc/<pid>/cmdline (mode 444). Code-reviewer P1 round 1.
     sudo docker exec \
@@ -1820,15 +1825,12 @@ EOF
         -i uniplus-postgres \
         psql -U postgres -v ON_ERROR_STOP=1 <<'SQL' 2>&1 | tail -10
 \getenv apicurio_pw APICURIO_PW
-DO $$
-BEGIN
-   IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'apicurio') THEN
-      CREATE ROLE apicurio WITH LOGIN PASSWORD :'apicurio_pw' NOSUPERUSER NOCREATEDB NOCREATEROLE;
-   ELSE
-      ALTER ROLE apicurio WITH LOGIN PASSWORD :'apicurio_pw';
-   END IF;
-END
-$$;
+SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'apicurio') AS role_exists \gset
+\if :role_exists
+   ALTER ROLE apicurio WITH LOGIN PASSWORD :'apicurio_pw';
+\else
+   CREATE ROLE apicurio WITH LOGIN PASSWORD :'apicurio_pw' NOSUPERUSER NOCREATEDB NOCREATEROLE;
+\endif
 SELECT 'apicurio role ok' AS status;
 SQL
 

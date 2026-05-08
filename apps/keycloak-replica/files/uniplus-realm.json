@@ -101,13 +101,13 @@
     {
       "clientId": "apicurio-registry",
       "name": "Apicurio Registry — Schema Registry (Confluent SR API)",
-      "description": "Cliente OIDC do Apicurio Registry (apps/apicurio-registry). Confidential client — Apicurio é backend Quarkus, mantém client_secret no Vault em secret/standalone/keycloak/clients/apicurio-registry (RUNBOOKS §15.1). Após import inicial, operador deve recuperar o secret gerado pelo Keycloak via kcadm.sh e custodiar.",
+      "description": "Cliente OIDC do Apicurio Registry (apps/apicurio-registry). Confidential client — Apicurio é backend Quarkus, mantém client_secret no Vault em secret/standalone/keycloak/clients/apicurio-registry (RUNBOOKS §15.1). Após import inicial, operador deve recuperar o secret gerado pelo Keycloak via kcadm.sh e custodiar. directAccessGrantsEnabled=true habilita password grant para smoke test documentado (§15.4); em prod o admin deve usar authorization code + PKCE via UI ou kcadm direto e este flag deve ser revisado.",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": false,
       "standardFlowEnabled": true,
       "implicitFlowEnabled": false,
-      "directAccessGrantsEnabled": false,
+      "directAccessGrantsEnabled": true,
       "serviceAccountsEnabled": true,
       "frontchannelLogout": true,
       "redirectUris": [
