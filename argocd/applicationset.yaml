@@ -40,6 +40,7 @@ spec:
                 - app: keycloak-replica
                 - app: kafka-ui
                 - app: apicurio-registry
+                - app: redis-ui
 
   template:
     metadata:
