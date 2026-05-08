@@ -2,8 +2,8 @@
 {{- if not .Values.apicurioRegistry.storage.host -}}
 {{- fail "apicurioRegistry.storage.host é obrigatório quando enabled=true (sem isso, JDBC URL renderiza 'jdbc:postgresql://:5432/apicurio' inválida e pod não sobe). Configurar em environments/<env>/values.yaml." -}}
 {{- end -}}
-{{- if and .Values.apicurioRegistry.oidc.enabled (not .Values.apicurioRegistry.externalSecrets.enabled) -}}
-{{- fail "apicurioRegistry.oidc.enabled=true requer externalSecrets.enabled=true (QUARKUS_OIDC_CREDENTIALS_SECRET é injetado via ESO; sem ele o pod entra em CreateContainerConfigError silenciosamente). Habilite externalSecrets ou desabilite oidc." -}}
+{{- if not .Values.apicurioRegistry.externalSecrets.enabled -}}
+{{- fail "apicurioRegistry.enabled=true requer externalSecrets.enabled=true. O Deployment lê DB_PASSWORD do Secret `<fullname>-db` (sintetizado pelo ESO) via secretKeyRef e, quando OIDC está on, também QUARKUS_OIDC_CREDENTIALS_SECRET de `<fullname>-oidc-client`. Sem ESO, ambos os Secrets não existem e o pod entra em CreateContainerConfigError silenciosamente. Habilite externalSecrets ou desabilite o chart." -}}
 {{- end -}}
 apiVersion: apps/v1
 kind: Deployment
