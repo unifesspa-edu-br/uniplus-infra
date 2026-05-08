@@ -2590,8 +2590,10 @@ kc() { sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml "$@"; }
 
 ```bash
 # No host data (10.0.2.87), executar a etapa apicurio do bootstrap.
+# Role correto é `standalone-data` (validation do script aceita apenas
+# `standalone-k8s` ou `standalone-data`).
 ssh ubuntu@10.0.2.87 "cd /opt/uniplus-infra && sudo ./scripts/bootstrap-standalone.sh \
-  --role data-host --skip-k3s --skip-docker"
+  --role=standalone-data"
 ```
 
 O step idempotente `step_data_setup_apicurio_db` cria role + database e preserva senhas existentes. Após primeira execução:
@@ -2656,14 +2658,31 @@ kc exec -n uniplus -i deploy/keycloak-replica-uniplus-standalone -- bash -c '
 
 **Passo 3 — Recuperar `client_secret` e custodiar em Vault.**
 
+O endpoint `clients/$CID/client-secret` é o único que retorna o valor efetivo do confidential client secret — `get clients --fields secret` retorna vazio (Keycloak não expõe o secret no list). Mesmo pattern do AKHQ §14.1.
+
 ```bash
-SECRET=$(kc exec -n uniplus deploy/keycloak-replica-uniplus-standalone -- \
-  /opt/keycloak/bin/kcadm.sh get clients -r uniplus \
-  -q clientId=apicurio-registry --fields secret --format csv --noquotes | tail -1)
+kc exec -n uniplus -i deploy/keycloak-replica-uniplus-standalone -- bash -c '
+  set -e
+  /opt/keycloak/bin/kcadm.sh config credentials \
+    --server http://localhost:8080/auth \
+    --realm master \
+    --user "$KC_BOOTSTRAP_ADMIN_USERNAME" \
+    --password "$KC_BOOTSTRAP_ADMIN_PASSWORD" >/dev/null
+
+  CID=$(/opt/keycloak/bin/kcadm.sh get clients -r uniplus \
+    -q clientId=apicurio-registry --fields id --format csv --noquotes | tail -1)
+
+  /opt/keycloak/bin/kcadm.sh get clients/$CID/client-secret -r uniplus \
+    --fields value --format csv --noquotes | tail -1
+' > /tmp/apicurio-cs
+
+SECRET=$(cat /tmp/apicurio-cs)
 
 VAULT_TOKEN=hvs.xxx \
   vault kv put secret/standalone/keycloak/clients/apicurio-registry \
     client_secret="$SECRET"
+
+shred -u /tmp/apicurio-cs
 ```
 
 ### 15.2 Custódia: rotação de senha do DB
