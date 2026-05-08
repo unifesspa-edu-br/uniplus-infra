@@ -1,0 +1,17 @@
+{{- if .Values.uniplusApiIngresso.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "uniplusApiIngresso.fullname" . }}
+  labels:
+    {{- include "uniplusApiIngresso.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "uniplusApiIngresso.selectorLabels" . | nindent 4 }}
+{{- end }}

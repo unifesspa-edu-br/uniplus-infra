@@ -1,0 +1,175 @@
+{{- if .Values.uniplusApiIngresso.enabled -}}
+{{- if not .Values.uniplusApiIngresso.database.host -}}
+{{- fail "uniplusApiIngresso.database.host é obrigatório quando enabled=true. Configurar em environments/<env>/values.yaml (ex.: 10.0.2.87)." -}}
+{{- end -}}
+{{- if not .Values.uniplusApiIngresso.redis.host -}}
+{{- fail "uniplusApiIngresso.redis.host é obrigatório quando enabled=true." -}}
+{{- end -}}
+{{- if not .Values.uniplusApiIngresso.storage.endpoint -}}
+{{- fail "uniplusApiIngresso.storage.endpoint é obrigatório quando enabled=true (MinIO endpoint)." -}}
+{{- end -}}
+{{- if and .Values.uniplusApiIngresso.oidc.enabled (not .Values.uniplusApiIngresso.oidc.issuerUri) -}}
+{{- fail "uniplusApiIngresso.oidc.issuerUri é obrigatório quando oidc.enabled=true." -}}
+{{- end -}}
+{{- if and .Values.uniplusApiIngresso.kafka.enabled (not .Values.uniplusApiIngresso.kafka.bootstrapServers) -}}
+{{- fail "uniplusApiIngresso.kafka.bootstrapServers é obrigatório quando kafka.enabled=true." -}}
+{{- end -}}
+{{- if not .Values.uniplusApiIngresso.externalSecrets.enabled -}}
+{{- fail "uniplusApiIngresso.enabled=true requer externalSecrets.enabled=true. Deployment depende dos Secrets sintetizados pelo ESO (Postgres password, Redis, MinIO, Kafka, OIDC)." -}}
+{{- end -}}
+{{- $cs := .Values.uniplusApiIngresso.database.connectionStringName -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "uniplusApiIngresso.fullname" . }}
+  labels:
+    {{- include "uniplusApiIngresso.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.uniplusApiIngresso.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      {{- include "uniplusApiIngresso.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "uniplusApiIngresso.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "uniplusApiIngresso.serviceAccountName" . }}
+      {{- with .Values.uniplusApiIngresso.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.uniplusApiIngresso.podSecurityContext | nindent 8 }}
+      containers:
+        - name: api
+          image: "{{ .Values.uniplusApiIngresso.image.registry }}/{{ .Values.uniplusApiIngresso.image.repository }}:{{ .Values.uniplusApiIngresso.image.tag }}"
+          imagePullPolicy: {{ .Values.uniplusApiIngresso.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.uniplusApiIngresso.containerSecurityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            # === ASP.NET Core base ===
+            - name: ASPNETCORE_ENVIRONMENT
+              value: {{ .Values.uniplusApiIngresso.aspnet.environment | quote }}
+            - name: ASPNETCORE_URLS
+              value: {{ .Values.uniplusApiIngresso.aspnet.urls | quote }}
+            # === Postgres (ConnectionStrings__<Name>Db via .NET binding) ===
+            # Composição via env: host/port/database em values, password
+            # injetado via secretKeyRef. .NET aceita connection string completa
+            # numa única env — montamos no formato Npgsql.
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "uniplusApiIngresso.postgresSecretName" . }}
+                  key: POSTGRES_PASSWORD
+            - name: ConnectionStrings__{{ $cs }}
+              value: "Host={{ .Values.uniplusApiIngresso.database.host }};Port={{ .Values.uniplusApiIngresso.database.port }};Database={{ .Values.uniplusApiIngresso.database.name }};Username={{ .Values.uniplusApiIngresso.database.username }};Password=$(POSTGRES_PASSWORD)"
+            # === Redis (Connection string formato StackExchange.Redis) ===
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "uniplusApiIngresso.redisSecretName" . }}
+                  key: REDIS_PASSWORD
+            - name: Redis__ConnectionString
+              value: "{{ .Values.uniplusApiIngresso.redis.host }}:{{ .Values.uniplusApiIngresso.redis.port }},user={{ .Values.uniplusApiIngresso.redis.username }},password=$(REDIS_PASSWORD)"
+            {{- if .Values.uniplusApiIngresso.kafka.enabled }}
+            # === Kafka (SASL_SSL + SCRAM via .NET nested binding) ===
+            # Confluent.Kafka client lê estas env como AdminClientConfig/
+            # ProducerConfig.SecurityProtocol/SaslMechanism/SaslUsername/etc
+            # quando bind via IConfiguration.GetSection("Kafka").
+            - name: Kafka__BootstrapServers
+              value: {{ .Values.uniplusApiIngresso.kafka.bootstrapServers | quote }}
+            - name: Kafka__SecurityProtocol
+              value: {{ .Values.uniplusApiIngresso.kafka.securityProtocol | quote }}
+            - name: Kafka__SaslMechanism
+              value: {{ .Values.uniplusApiIngresso.kafka.saslMechanism | quote }}
+            - name: Kafka__SaslUsername
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "uniplusApiIngresso.kafkaSecretName" . }}
+                  key: KAFKA_USERNAME
+            - name: Kafka__SaslPassword
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "uniplusApiIngresso.kafkaSecretName" . }}
+                  key: KAFKA_PASSWORD
+            - name: Kafka__SslCaLocation
+              value: {{ .Values.uniplusApiIngresso.kafka.caCertPath | quote }}
+            {{- end }}
+            # === MinIO (Storage:* binding) ===
+            - name: MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "uniplusApiIngresso.minioSecretName" . }}
+                  key: MINIO_ACCESS_KEY
+            - name: MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "uniplusApiIngresso.minioSecretName" . }}
+                  key: MINIO_SECRET_KEY
+            - name: Storage__Endpoint
+              value: {{ .Values.uniplusApiIngresso.storage.endpoint | quote }}
+            - name: Storage__AccessKey
+              value: "$(MINIO_ACCESS_KEY)"
+            - name: Storage__SecretKey
+              value: "$(MINIO_SECRET_KEY)"
+            - name: Storage__BucketName
+              value: {{ .Values.uniplusApiIngresso.storage.bucketName | quote }}
+            {{- if .Values.uniplusApiIngresso.oidc.enabled }}
+            # === OIDC (Auth:* binding — bearer validation) ===
+            - name: Auth__Authority
+              value: {{ .Values.uniplusApiIngresso.oidc.issuerUri | quote }}
+            - name: Auth__Audience
+              value: {{ .Values.uniplusApiIngresso.oidc.audience | quote }}
+            {{- end }}
+            {{- with .Values.uniplusApiIngresso.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- if .Values.uniplusApiIngresso.kafka.enabled }}
+          volumeMounts:
+            # CA cert PEM do broker Kafka self-signed.
+            - name: kafka-ca
+              mountPath: /etc/uniplus-kafka/ca.crt
+              subPath: ca.crt
+              readOnly: true
+          {{- end }}
+          startupProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            failureThreshold: {{ .Values.uniplusApiIngresso.startupProbe.failureThreshold }}
+            periodSeconds: {{ .Values.uniplusApiIngresso.startupProbe.periodSeconds }}
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            periodSeconds: {{ .Values.uniplusApiIngresso.livenessProbe.periodSeconds }}
+          # Readiness usa /health (agregado com checks externos: Postgres,
+          # Redis, etc.). Pod sai de Ready quando dependência está down —
+          # comportamento desejado pra service mesh remover do load balancer.
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: {{ .Values.uniplusApiIngresso.readinessProbe.periodSeconds }}
+          resources:
+            {{- toYaml .Values.uniplusApiIngresso.resources | nindent 12 }}
+      {{- if .Values.uniplusApiIngresso.kafka.enabled }}
+      volumes:
+        - name: kafka-ca
+          secret:
+            secretName: {{ include "uniplusApiIngresso.kafkaSecretName" . }}
+            items:
+              - key: ca.crt
+                path: ca.crt
+      {{- end }}
+{{- end }}

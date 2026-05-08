@@ -1,0 +1,17 @@
+{{- if .Values.uniplusApiPortal.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "uniplusApiPortal.fullname" . }}
+  labels:
+    {{- include "uniplusApiPortal.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "uniplusApiPortal.selectorLabels" . | nindent 4 }}
+{{- end }}

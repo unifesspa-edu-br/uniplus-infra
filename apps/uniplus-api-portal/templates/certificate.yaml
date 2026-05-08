@@ -1,0 +1,19 @@
+{{- if and .Values.uniplusApiPortal.enabled .Values.uniplusApiPortal.ingress.enabled .Values.uniplusApiPortal.ingress.tls.enabled .Values.uniplusApiPortal.ingress.tls.certManager.enabled -}}
+{{- if not .Values.uniplusApiPortal.ingress.tls.certManager.clusterIssuer -}}
+{{- fail "uniplusApiPortal.ingress.tls.certManager.clusterIssuer é obrigatório quando certManager.enabled=true (ex.: letsencrypt-prod)." -}}
+{{- end -}}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "uniplusApiPortal.fullname" . }}
+  labels:
+    {{- include "uniplusApiPortal.labels" . | nindent 4 }}
+spec:
+  secretName: {{ .Values.uniplusApiPortal.ingress.tls.secretName | default (printf "%s-tls" (include "uniplusApiPortal.fullname" .)) }}
+  commonName: {{ .Values.uniplusApiPortal.ingress.host }}
+  dnsNames:
+    - {{ .Values.uniplusApiPortal.ingress.host }}
+  issuerRef:
+    name: {{ .Values.uniplusApiPortal.ingress.tls.certManager.clusterIssuer }}
+    kind: ClusterIssuer
+{{- end }}

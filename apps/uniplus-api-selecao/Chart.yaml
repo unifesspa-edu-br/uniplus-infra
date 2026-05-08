@@ -1,19 +1,33 @@
 apiVersion: v2
 name: uniplus-api-selecao
-description: API .NET 10 do módulo Seleção — editais e classificação
+description: |
+  API .NET 10 do módulo Selecao Uni+ — conteúdo institucional e perfis.
+  Backend ASP.NET Core minimal API + Wolverine (CQRS/messaging) + Serilog.
+  OpenAPI 3.1 em /openapi/portal.json. Health: /health (readiness),
+  /health/live (liveness).
 type: application
+
 version: 0.1.0
-appVersion: "1.0.0"
-keywords:
-  - uniplus
-  - api
-  - unifesspa
+
+# Sincronizar com tag publicada em ghcr.io/unifesspa-edu-br/uniplus-api-selecao.
+appVersion: "0.1.1"
+
 home: https://github.com/unifesspa-edu-br/uniplus-infra
 sources:
   - https://github.com/unifesspa-edu-br/uniplus-infra
+  - https://github.com/unifesspa-edu-br/uniplus-api
+
 maintainers:
   - name: CTIC UNIFESSPA
     email: jeferson.ferreira@unifesspa.edu.br
+
+keywords:
+  - uniplus
+  - api
+  - portal
+  - dotnet
+  - unifesspa
+
 annotations:
   category: api
   licenses: MIT

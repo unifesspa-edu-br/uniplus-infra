@@ -1,6 +1,6 @@
 # uniplus-api-selecao
 
-API .NET 10 do módulo Seleção — editais e classificação
+API .NET 10 do módulo Selecao — conteúdo institucional e perfis
 
 > ⚠️ **Status:** placeholder inicial. Implementação dos templates pendente.
 

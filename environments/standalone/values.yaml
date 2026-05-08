@@ -610,6 +610,105 @@ minioConsoleProxy:
         clusterIssuer: letsencrypt-prod
 
 # ----------------------------------------------------------------------------
+# Apps Uni+ API (portal, seleção, ingresso) — backends .NET 10 ASP.NET Core
+# publicados em ghcr.io/unifesspa-edu-br/uniplus-api-{portal,selecao,ingresso}.
+# Resource servers (bearer-only) que validam JWT contra realm uniplus,
+# audience=uniplus. Conectam Postgres (DB dedicado), Redis, Kafka SASL_SSL,
+# MinIO S3.
+# ----------------------------------------------------------------------------
+uniplusApiPortal:
+  enabled: true
+  database:
+    host: 10.0.2.87
+  redis:
+    host: 10.0.2.87
+  kafka:
+    # Desligado no primeiro deploy até validar que Wolverine/Confluent.Kafka
+    # do `uniplus-api` faz binding nativo de Kafka__SecurityProtocol/SaslMechanism/
+    # SaslUsername/SaslPassword/SslCaLocation via IConfiguration.GetSection("Kafka").
+    # Se o binding não existir, conexão SASL_SSL falha em runtime sem aparecer
+    # em helm lint. Re-habilitar após confirmação no código (issue follow-up).
+    # Code-reviewer P1 round 1.
+    enabled: false
+    bootstrapServers: 10.0.2.87:9092
+  storage:
+    endpoint: 10.0.2.87:9000
+  oidc:
+    issuerUri: https://standalone.portaluni.com.br/auth/realms/uniplus
+  ingress:
+    enabled: true
+    entryPoint: websecure
+    host: api-portal.standalone.portaluni.com.br
+    tls:
+      enabled: true
+      secretName: uniplus-api-portal-tls
+      certManager:
+        enabled: true
+        clusterIssuer: letsencrypt-prod
+  networkPolicy:
+    enabled: true
+    dataHostCIDR: 10.0.2.0/24
+    oidcIssuerCIDR: 164.152.53.29/32
+
+uniplusApiSelecao:
+  enabled: true
+  database:
+    host: 10.0.2.87
+  redis:
+    host: 10.0.2.87
+  kafka:
+    # Ver comentário em uniplusApiPortal.kafka — desligado até validar binding.
+    enabled: false
+    bootstrapServers: 10.0.2.87:9092
+  storage:
+    endpoint: 10.0.2.87:9000
+  oidc:
+    issuerUri: https://standalone.portaluni.com.br/auth/realms/uniplus
+  ingress:
+    enabled: true
+    entryPoint: websecure
+    host: api-selecao.standalone.portaluni.com.br
+    tls:
+      enabled: true
+      secretName: uniplus-api-selecao-tls
+      certManager:
+        enabled: true
+        clusterIssuer: letsencrypt-prod
+  networkPolicy:
+    enabled: true
+    dataHostCIDR: 10.0.2.0/24
+    oidcIssuerCIDR: 164.152.53.29/32
+
+uniplusApiIngresso:
+  enabled: true
+  database:
+    host: 10.0.2.87
+  redis:
+    host: 10.0.2.87
+  kafka:
+    # Ver comentário em uniplusApiPortal.kafka — desligado até validar binding.
+    enabled: false
+    bootstrapServers: 10.0.2.87:9092
+  storage:
+    endpoint: 10.0.2.87:9000
+  oidc:
+    issuerUri: https://standalone.portaluni.com.br/auth/realms/uniplus
+  ingress:
+    enabled: true
+    entryPoint: websecure
+    host: api-ingresso.standalone.portaluni.com.br
+    tls:
+      enabled: true
+      secretName: uniplus-api-ingresso-tls
+      certManager:
+        enabled: true
+        clusterIssuer: letsencrypt-prod
+  networkPolicy:
+    enabled: true
+    dataHostCIDR: 10.0.2.0/24
+    oidcIssuerCIDR: 164.152.53.29/32
+
+# ----------------------------------------------------------------------------
 # Componentes stateful no data-host (Postgres, Kafka, MinIO, Redis) rodam
 # FORA do K8s, gerenciados por systemd em /var/lib/uniplus/* (ADR-002 +
 # ADR-005). Endpoints chegam às apps via External Secrets sintetizados a
