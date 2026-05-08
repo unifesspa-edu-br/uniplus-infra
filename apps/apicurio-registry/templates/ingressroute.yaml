@@ -1,4 +1,7 @@
 {{- if and .Values.apicurioRegistry.enabled .Values.apicurioRegistry.ingress.enabled -}}
+{{- if not .Values.apicurioRegistry.ingress.host -}}
+{{- fail "apicurioRegistry.ingress.host é obrigatório quando ingress.enabled=true (Traefik IngressRoute requer Host(...) válido; host vazio produz rule não-funcional e propaga em Certificate dnsNames vazio). Configurar em environments/<env>/values.yaml (ex.: schema-registry.standalone.portaluni.com.br)." -}}
+{{- end -}}
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
 metadata:

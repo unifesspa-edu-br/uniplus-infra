@@ -1,4 +1,7 @@
 {{- if and .Values.apicurioRegistry.enabled .Values.apicurioRegistry.ingress.enabled .Values.apicurioRegistry.ingress.tls.enabled .Values.apicurioRegistry.ingress.tls.certManager.enabled -}}
+{{- if not .Values.apicurioRegistry.ingress.tls.certManager.clusterIssuer -}}
+{{- fail "apicurioRegistry.ingress.tls.certManager.clusterIssuer é obrigatório quando certManager.enabled=true (issuerRef.name vazio produz Certificate inválido/não-emissível, TLS secret nunca é provisionado e HTTPS ingress fica quebrado). Configurar em environments/<env>/values.yaml (ex.: letsencrypt-prod ou letsencrypt-staging)." -}}
+{{- end -}}
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
