@@ -20,39 +20,18 @@ akhq:
         ssl.endpoint.identification.algorithm: ""
 
   # Segurança: OIDC via Keycloak realm `uniplus`.
+  #
+  # AKHQ 0.25+ traz groups built-in `admin` (full RW), `reader` (read only)
+  # e `no-roles` (default sem permissão). Mapear groups OIDC diretamente
+  # para esses nomes built-in evita declarar custom roles/groups (pattern
+  # mais simples; menos drift; alinhado com defaults).
+  #
+  # Tentativa anterior usava sintaxe antiga deprecated
+  # (groups.<name>.roles: [topic/read, ...]) que parseia sem erro mas
+  # resolve para role=null no JWT — user reconhecido como group mas sem
+  # permissions. Bug descoberto via decode JWT cookie pós-#150.
   security:
     default-group: no-roles
-    groups:
-      no-roles:
-        roles: []
-        attributes: { description: "Sem permissão" }
-      kafka-admins:
-        roles:
-          - topic/read
-          - topic/insert
-          - topic/delete
-          - topic/config/update
-          - group/read
-          - group/delete
-          - group/offsets/update
-          - schema/read
-          - schema/insert
-          - schema/delete
-          - schema/version/delete
-          - acl/read
-          - acl/insert
-          - acl/delete
-          - node/read
-          - node/config/update
-        attributes: { description: "Administradores do Kafka" }
-      kafka-readonly:
-        roles:
-          - topic/read
-          - group/read
-          - schema/read
-          - acl/read
-          - node/read
-        attributes: { description: "Acesso de leitura ao Kafka" }
 {{- if .Values.kafkaUi.oidc.enabled }}
     oidc:
       enabled: true
@@ -75,13 +54,17 @@ akhq:
           # nunca match — user fica com roles=[isAuthenticated()] only,
           # cookie JWT tem groups vazio "{}", "página inicial" não carrega
           # tópicos. Esse foi o bug que ficou pendente em #142 → #149.
+          # Mapeamento direto para AKHQ built-in groups:
+          #   admin    — full RW (todos resources × actions)
+          #   reader   — read only
+          #   no-roles — sem permissão (default)
           groups:
             - name: "{{ .Values.kafkaUi.oidc.groups.kafkaAdminsClaim }}"
               groups:
-                - kafka-admins
+                - admin
             - name: "{{ .Values.kafkaUi.oidc.groups.kafkaReadOnlyClaim }}"
               groups:
-                - kafka-readonly
+                - reader
 {{- end }}
 
 # Micronaut OIDC (consumido pelo AKHQ). issuer + client_id no values;
