@@ -64,18 +64,24 @@ akhq:
           # para incluir o membership do usuário.
           groups-field: {{ .Values.kafkaUi.oidc.groupsClaim }}
           username-field: preferred_username
-          # AKHQ OIDC mapping: `name:` é a key da role AKHQ definida acima
-          # em `akhq.security.groups` (NÃO a claim do IdP); `groups:` lista
-          # os valores que o IdP devolve no claim `groups-field` que devem
-          # ser mapeados a essa role. Usar `role:` é syntax incorreta — AKHQ
-          # ignora silenciosamente e o user cai em default-group=no-roles.
+          # AKHQ OIDC mapping (sintaxe correta — verificada via doc oficial
+          # https://akhq.io/docs/configuration/authentifications/oidc.html
+          # após bug runtime descoberto em login real):
+          #   - `name:` é o VALOR do claim do IdP (ex: "/admins/kafka")
+          #   - `groups:` lista os AKHQ role groups (definidos em
+          #     akhq.security.groups acima) que o user assume
+          # Inverso: usar `name: kafka-admins` + `groups: [/admins/kafka]`
+          # passa silenciosamente em start (sem erro de schema) mas mapa
+          # nunca match — user fica com roles=[isAuthenticated()] only,
+          # cookie JWT tem groups vazio "{}", "página inicial" não carrega
+          # tópicos. Esse foi o bug que ficou pendente em #142 → #149.
           groups:
-            - name: kafka-admins
+            - name: "{{ .Values.kafkaUi.oidc.groups.kafkaAdminsClaim }}"
               groups:
-                - "{{ .Values.kafkaUi.oidc.groups.kafkaAdminsClaim }}"
-            - name: kafka-readonly
+                - kafka-admins
+            - name: "{{ .Values.kafkaUi.oidc.groups.kafkaReadOnlyClaim }}"
               groups:
-                - "{{ .Values.kafkaUi.oidc.groups.kafkaReadOnlyClaim }}"
+                - kafka-readonly
 {{- end }}
 
 # Micronaut OIDC (consumido pelo AKHQ). issuer + client_id no values;
