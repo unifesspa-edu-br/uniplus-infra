@@ -2634,9 +2634,14 @@ kc exec -n uniplus -i deploy/keycloak-replica-uniplus-standalone -- bash -c '
       -s enabled=true \
       -s publicClient=false \
       -s standardFlowEnabled=true \
+      -s directAccessGrantsEnabled=true \
+      -s serviceAccountsEnabled=true \
       -s "redirectUris=[\"https://schema-registry.standalone.portaluni.com.br/*\"]" \
       -s "webOrigins=[\"https://schema-registry.standalone.portaluni.com.br\"]" \
       -s frontchannelLogout=true
+    # Nota: directAccessGrantsEnabled=true habilita password grant para o
+    # smoke do §15.4. Em prod, revisar — admin deve usar authorization code
+    # + PKCE via UI ou kcadm direto. Espelha o realm.json do PR #155.
   fi
 
   # Adiciona mapper groups (full path)
