@@ -2592,7 +2592,10 @@ kc() { sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml "$@"; }
 # No host data (10.0.2.87), executar a etapa apicurio do bootstrap.
 # Role correto é `standalone-data` (validation do script aceita apenas
 # `standalone-k8s` ou `standalone-data`).
-ssh ubuntu@10.0.2.87 "cd /opt/uniplus-infra && sudo ./scripts/bootstrap-standalone.sh \
+# IMPORTANTE: NÃO usar `sudo ./scripts/bootstrap-standalone.sh` — o script
+# aborta com `check_not_root` quando EUID=0 (usa sudo internamente para
+# operações específicas). Executar como user normal (ubuntu).
+ssh ubuntu@10.0.2.87 "cd /opt/uniplus-infra && ./scripts/bootstrap-standalone.sh \
   --role=standalone-data"
 ```
 
@@ -2702,8 +2705,9 @@ EOF
 sudo chmod 600 /var/lib/uniplus/postgres/.bootstrap-creds-apicurio
 sudo chown root:root /var/lib/uniplus/postgres/.bootstrap-creds-apicurio"
 
-# Agora pode rodar o bootstrap normalmente:
-ssh ubuntu@10.0.2.87 "cd /opt/uniplus-infra && sudo ./scripts/bootstrap-standalone.sh --role=standalone-data"
+# Agora pode rodar o bootstrap normalmente (sem sudo — script aborta
+# com check_not_root se EUID=0; usa sudo internamente).
+ssh ubuntu@10.0.2.87 "cd /opt/uniplus-infra && ./scripts/bootstrap-standalone.sh --role=standalone-data"
 
 # Após confirmar success, shred novamente (idempotente).
 ```
