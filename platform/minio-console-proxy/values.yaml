@@ -18,9 +18,12 @@ minioConsoleProxy:
   # por este proxy: clients S3 falam direto com o IP privado via NetworkPolicy
   # do app, sem passar por Traefik (overhead desnecessário + sem auth UI).
   backend:
-    # Hostname/IP do data-host onde MinIO roda. Pode ser FQDN ou IP — Service
-    # ExternalName aceita ambos (DNS resolvido em runtime no kube-dns).
-    host: ""                    # ex.: 10.0.2.87 ou data-host.uniplus.internal
+    # IP IPv4 literal do data-host onde MinIO roda. EndpointSlice manual
+    # (ver templates/service.yaml) declara addressType: IPv4 — FQDN não é
+    # aceito pelo K8s nesse contexto. Para FQDN seria necessário addressType:
+    # FQDN (não implementado neste chart) ou resolver no values do environment.
+    # Render-time guard rejeita não-IPv4 com mensagem explicativa.
+    host: ""                    # ex.: 10.0.2.87
     # Port do MinIO Console (não da API S3 9000).
     consolePort: 9001
 
