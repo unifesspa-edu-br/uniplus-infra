@@ -274,6 +274,26 @@ networkPolicy:
     - 10.43.0.0/16
     - 10.0.1.0/24  # ajustar por cluster — ver bloco acima
 
+  # Namespaces das apps que o Traefik proxa para. Inclui `minio-console-proxy`
+  # do chart platform/minio-console-proxy (Issue #153) — embora o backend
+  # principal seja externo (data-host via Endpoints manuais), o ACME HTTP-01
+  # solver pode nascer nesse namespace e o IngressRoute também vive lá.
+  # Aplicado pelo chart platform/traefik via .Values.networkPolicy.appNamespaces.
+  appNamespaces:
+    - uniplus
+    - vault
+    - keycloak
+    - minio-console-proxy
+
+  # Backends externos ao cluster — libera egress do Traefik para data-host.
+  # Necessário para Services com Endpoints manuais cujo IP é externo (ex.:
+  # MinIO Console em 10.0.2.87:9001). Sem isso, Traefik retorna 502 Bad
+  # Gateway silenciosamente. Code-reviewer P0 do platform/minio-console-proxy.
+  externalBackends:
+    - cidr: 10.0.2.87/32
+      ports:
+        - 9001  # MinIO Console (Issue #153)
+
 # ----------------------------------------------------------------------------
 # External Secrets (chart platform/external-secrets/) — endpoint do Vault.
 # Standalone usa Application name `platform-vault-uniplus-standalone` no
@@ -323,6 +343,16 @@ traefik:
         redirections: null
     websecure:
       hostPort: 443
+
+  # === Args adicionais do Traefik ===
+  # `--providers.kubernetescrd.allowExternalNameServices=true` permite que
+  # IngressRoutes apontem para Services do tipo ExternalName. NÃO usado pelo
+  # minio-console-proxy (que migrou para ClusterIP + Endpoints manuais por
+  # incompatibilidade de IP literal em ExternalName), mas mantém-se para
+  # casos futuros (ex.: backends com FQDN externo onde ExternalName é a
+  # ferramenta certa). Desligado por default no chart upstream.
+  additionalArguments:
+    - "--providers.kubernetescrd.allowExternalNameServices=true"
 
 # ----------------------------------------------------------------------------
 # Keycloak local (apps/keycloak-replica) — sem federação Gov.br no MVP.
@@ -519,6 +549,33 @@ apicurioRegistry:
 
   serviceMonitor:
     enabled: false
+
+# ----------------------------------------------------------------------------
+# MinIO Console proxy — expõe o Console (port 9001) do MinIO standalone
+# (rodando como systemd no data-host) via HTTPS público com cert LE prod.
+# Apenas Service ExternalName + IngressRoute Traefik. Issue #153.
+# ----------------------------------------------------------------------------
+minioConsoleProxy:
+  enabled: true
+
+  backend:
+    # MinIO no data-host — mesmo IP usado pelos apps via NetworkPolicy
+    # privada. ExternalName aceita IP literal sem DNS lookup adicional.
+    host: 10.0.2.87
+    consolePort: 9001
+
+  ingress:
+    enabled: true
+    entryPoint: websecure
+    host: minio.standalone.portaluni.com.br
+    tls:
+      enabled: true
+      secretName: minio-console-proxy-tls
+      certManager:
+        enabled: true
+        # LE prod direto (kafka-ui/keycloak já promovidos; novo subdomínio
+        # entra sem warning de browser).
+        clusterIssuer: letsencrypt-prod
 
 # ----------------------------------------------------------------------------
 # Componentes stateful no data-host (Postgres, Kafka, MinIO, Redis) rodam

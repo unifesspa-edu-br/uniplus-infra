@@ -1,0 +1,60 @@
+{{- if .Values.minioConsoleProxy.enabled -}}
+{{- if not .Values.minioConsoleProxy.backend.host -}}
+{{- fail "minioConsoleProxy.backend.host é obrigatório quando enabled=true (Endpoints precisa de IP do data-host onde MinIO Console roda; sem isso o Endpoints fica sem subset.addresses e Traefik retorna 502)." -}}
+{{- end -}}
+# Service ClusterIP + EndpointSlice manual (não ExternalName, não Endpoints v1).
+#
+# Por que NÃO ExternalName: o campo `externalName` requer FQDN, não IP
+# literal. CoreDNS retorna NXDOMAIN para `externalName: 10.0.2.87` (IP)
+# e o Traefik resolve para zero backends → 502 Bad Gateway. Comportamento
+# documentado em https://kubernetes.io/docs/concepts/services-networking/service/
+# (campo é "DNS name", não IP). Code-reviewer P0 round 1.
+#
+# Por que EndpointSlice e não Endpoints (v1): Endpoints API foi marcada
+# deprecated em K8s v1.33+ (helm lint emite warning). EndpointSlice é a
+# API moderna desde K8s 1.21 (estável); Traefik k8s provider lê ambas.
+# Schema é ligeiramente mais verboso mas idiomatic forward-compat.
+#
+# Service ClusterIP sem selector + EndpointSlice manual com `endpoints[].addresses[]`
+# apontando para o data-host. Kube-proxy cria as iptables/nftables rules e
+# Traefik resolve normalmente via ClusterIP. Funciona com IPs literais.
+#
+# Label `kubernetes.io/service-name: <fullname>` no EndpointSlice é
+# OBRIGATÓRIO — kube-proxy usa esse label para associar o EndpointSlice
+# ao Service correspondente (selector implícito).
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "minioConsoleProxy.fullname" . }}
+  labels:
+    {{- include "minioConsoleProxy.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .Values.minioConsoleProxy.backend.consolePort }}
+      targetPort: {{ .Values.minioConsoleProxy.backend.consolePort }}
+      protocol: TCP
+  # Sem `selector`: EndpointSlice abaixo é gerenciado manualmente, não
+  # auto-derivado de pods do cluster (que não existem para este chart).
+---
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: {{ include "minioConsoleProxy.fullname" . }}
+  labels:
+    {{- include "minioConsoleProxy.labels" . | nindent 4 }}
+    # OBRIGATÓRIO: kube-proxy usa este label para associar EndpointSlice
+    # ao Service de mesmo nome (sem selector explícito no Service).
+    kubernetes.io/service-name: {{ include "minioConsoleProxy.fullname" . }}
+addressType: IPv4
+ports:
+  - name: http
+    port: {{ .Values.minioConsoleProxy.backend.consolePort }}
+    protocol: TCP
+endpoints:
+  - addresses:
+      - {{ .Values.minioConsoleProxy.backend.host | quote }}
+    conditions:
+      ready: true
+{{- end }}

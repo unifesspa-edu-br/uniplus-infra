@@ -1,0 +1,33 @@
+{{- if and .Values.minioConsoleProxy.enabled .Values.minioConsoleProxy.ingress.enabled -}}
+{{- if not .Values.minioConsoleProxy.ingress.host -}}
+{{- fail "minioConsoleProxy.ingress.host é obrigatório quando ingress.enabled=true (Traefik IngressRoute requer Host(...) válido; host vazio produz rule não-funcional). Configurar em environments/<env>/values.yaml (ex.: minio.standalone.portaluni.com.br)." -}}
+{{- end -}}
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ include "minioConsoleProxy.fullname" . }}
+  labels:
+    {{- include "minioConsoleProxy.labels" . | nindent 4 }}
+spec:
+  entryPoints:
+    - {{ .Values.minioConsoleProxy.ingress.entryPoint }}
+  routes:
+    - match: Host(`{{ .Values.minioConsoleProxy.ingress.host }}`)
+      kind: Rule
+      {{- with .Values.minioConsoleProxy.ingress.middlewares }}
+      middlewares:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      services:
+        - name: {{ include "minioConsoleProxy.fullname" . }}
+          port: {{ .Values.minioConsoleProxy.backend.consolePort }}
+          # Service ExternalName não tem endpoint K8s — Traefik faz resolução
+          # DNS contra o externalName e proxa request para lá. Sem `passHostHeader=false`
+          # explícito, Traefik mantém o Host original (minio.standalone...);
+          # MinIO Console aceita qualquer Host (não valida vs allowed_hosts),
+          # então não é necessário rewrite.
+  {{- if .Values.minioConsoleProxy.ingress.tls.enabled }}
+  tls:
+    secretName: {{ .Values.minioConsoleProxy.ingress.tls.secretName | default (printf "%s-tls" (include "minioConsoleProxy.fullname" .)) }}
+  {{- end }}
+{{- end }}

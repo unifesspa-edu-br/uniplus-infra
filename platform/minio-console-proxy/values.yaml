@@ -1,0 +1,44 @@
+# Defaults do chart platform/minio-console-proxy/.
+# Cada environment (environments/<env>/values.yaml) sobrescreve apenas o
+# necessário. Por padrão o chart fica DESABILITADO — só os ambientes que
+# precisam de Console MinIO público (ex.: standalone) ligam via
+# `minioConsoleProxy.enabled: true`.
+
+commonLabels:
+  app.kubernetes.io/part-of: uniplus
+  app.kubernetes.io/component: data-admin
+
+minioConsoleProxy:
+  # Liga/desliga o chart inteiro. Default false.
+  enabled: false
+
+  # === Backend MinIO (rodando como systemd no data-host, fora do cluster) ===
+  # Service K8s do tipo ExternalName aponta para o hostname/IP do data-host.
+  # `targetPort` é o port do Console (9001) — port API S3 (9000) NÃO é exposto
+  # por este proxy: clients S3 falam direto com o IP privado via NetworkPolicy
+  # do app, sem passar por Traefik (overhead desnecessário + sem auth UI).
+  backend:
+    # Hostname/IP do data-host onde MinIO roda. Pode ser FQDN ou IP — Service
+    # ExternalName aceita ambos (DNS resolvido em runtime no kube-dns).
+    host: ""                    # ex.: 10.0.2.87 ou data-host.uniplus.internal
+    # Port do MinIO Console (não da API S3 9000).
+    consolePort: 9001
+
+  # === Exposição externa via Traefik IngressRoute ===
+  ingress:
+    # default ON quando chart habilitado — sem ingress, este chart não tem
+    # propósito (apenas o Service ExternalName seria criado, sem rota).
+    enabled: true
+    entryPoint: websecure
+    host: ""                    # ex.: minio.standalone.portaluni.com.br
+    tls:
+      enabled: true
+      secretName: ""            # criado pelo cert-manager se certManager.enabled
+      certManager:
+        enabled: false
+        clusterIssuer: ""       # ex.: letsencrypt-staging | letsencrypt-prod
+
+    # Middleware Traefik para reescrever Host header e/ou forçar redirect.
+    # MinIO Console aceita acesso por hostname diferente sem rewrite porque
+    # ele lê o Host header e gera URLs relativas. Mantemos vazio por padrão.
+    middlewares: []

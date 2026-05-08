@@ -1,0 +1,37 @@
+apiVersion: v2
+name: minio-console-proxy
+description: |
+  Proxy K8s para o MinIO Console externo (rodando como systemd no data-host
+  em 10.0.2.87:9001). Apenas Service ExternalName + IngressRoute Traefik +
+  Certificate cert-manager — sem workload K8s.
+
+  MinIO Console tem login próprio (root user/pwd custodiado no Vault em
+  `secret/standalone/minio/root`); este chart só expõe o proxy HTTPS público.
+  Para hml/prod considerar OIDC SSO via OpenID provider config no MinIO server
+  ao invés deste login local.
+type: application
+
+# Versão do chart wrapper Uni+. Bump em qualquer mudança de template/values.
+version: 0.1.0
+
+# appVersion fica vazio — não há binário versionado nesse chart (proxy puro).
+appVersion: "0.0.0"
+
+home: https://github.com/unifesspa-edu-br/uniplus-infra
+sources:
+  - https://github.com/unifesspa-edu-br/uniplus-infra
+
+maintainers:
+  - name: CTIC UNIFESSPA
+    email: jeferson.ferreira@unifesspa.edu.br
+
+keywords:
+  - uniplus
+  - minio
+  - console
+  - proxy
+  - unifesspa
+
+annotations:
+  category: data-admin
+  licenses: Apache-2.0
