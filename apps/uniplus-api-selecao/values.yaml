@@ -76,6 +76,14 @@ uniplusApiSelecao:
     issuerUri: ""               # ex.: https://standalone.portaluni.com.br/auth/realms/uniplus
     audience: uniplus
 
+  # === CORS (obrigatório fora de Development) ===
+  # APIs validam no startup que Cors:AllowedOrigins esteja preenchido em
+  # ASPNETCORE_ENVIRONMENT=Production. Lista de origins (frontend SPA, ex.:
+  # https://portal.standalone.portaluni.com.br). Renderiza como env vars
+  # Cors__AllowedOrigins__0=..., __1=..., etc (.NET nested config binding).
+  cors:
+    allowedOrigins: []          # ex.: ["https://portal.standalone.portaluni.com.br"]
+
   # === ExternalSecrets (Vault → K8s Secret) ===
   externalSecrets:
     enabled: true
