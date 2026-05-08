@@ -1,0 +1,24 @@
+{{- if and .Values.uniplusApiPortal.enabled .Values.uniplusApiPortal.ingress.enabled -}}
+{{- if not .Values.uniplusApiPortal.ingress.host -}}
+{{- fail "uniplusApiPortal.ingress.host é obrigatório quando ingress.enabled=true (ex.: api-portal.standalone.portaluni.com.br)." -}}
+{{- end -}}
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ include "uniplusApiPortal.fullname" . }}
+  labels:
+    {{- include "uniplusApiPortal.labels" . | nindent 4 }}
+spec:
+  entryPoints:
+    - {{ .Values.uniplusApiPortal.ingress.entryPoint }}
+  routes:
+    - match: Host(`{{ .Values.uniplusApiPortal.ingress.host }}`)
+      kind: Rule
+      services:
+        - name: {{ include "uniplusApiPortal.fullname" . }}
+          port: 8080
+  {{- if .Values.uniplusApiPortal.ingress.tls.enabled }}
+  tls:
+    secretName: {{ .Values.uniplusApiPortal.ingress.tls.secretName | default (printf "%s-tls" (include "uniplusApiPortal.fullname" .)) }}
+  {{- end }}
+{{- end }}

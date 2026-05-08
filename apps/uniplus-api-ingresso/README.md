@@ -1,6 +1,6 @@
 # uniplus-api-ingresso
 
-API .NET 10 do módulo Ingresso — matrícula e vínculo acadêmico
+API .NET 10 do módulo Ingresso — conteúdo institucional e perfis
 
 > ⚠️ **Status:** placeholder inicial. Implementação dos templates pendente.
 

@@ -1,0 +1,85 @@
+{{- if and .Values.uniplusApiPortal.enabled .Values.uniplusApiPortal.networkPolicy.enabled -}}
+{{- if not .Values.uniplusApiPortal.networkPolicy.dataHostCIDR -}}
+{{- fail "uniplusApiPortal.networkPolicy.dataHostCIDR é obrigatório (egress para Postgres + Redis + Kafka + MinIO no data-host)." -}}
+{{- end -}}
+{{- if and .Values.uniplusApiPortal.oidc.enabled (not .Values.uniplusApiPortal.networkPolicy.oidcIssuerCIDR) -}}
+{{- fail "uniplusApiPortal.networkPolicy.oidcIssuerCIDR é obrigatório quando oidc.enabled=true (issuer público resolvido via Traefik no IP do k8s-host)." -}}
+{{- end -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "uniplusApiPortal.fullname" . }}
+  labels:
+    {{- include "uniplusApiPortal.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "uniplusApiPortal.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.uniplusApiPortal.networkPolicy.traefikNamespace }}
+      ports:
+        - protocol: TCP
+          port: 8080
+    {{- if and .Values.uniplusApiPortal.metrics.enabled .Values.uniplusApiPortal.serviceMonitor.enabled }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.uniplusApiPortal.networkPolicy.monitoringNamespace }}
+      ports:
+        - protocol: TCP
+          port: 8080
+    {{- end }}
+  egress:
+    # DNS (CoreDNS).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Data-host (Postgres 5432 + Redis 6379 + Kafka 9092 + MinIO 9000).
+    # Single rule by CIDR + multi-port (todos compartilham mesmo /24 em standalone).
+    - to:
+        - ipBlock:
+            cidr: {{ .Values.uniplusApiPortal.networkPolicy.dataHostCIDR }}
+      ports:
+        - protocol: TCP
+          port: 5432  # Postgres
+        - protocol: TCP
+          port: 6379  # Redis
+        - protocol: TCP
+          port: 9000  # MinIO API S3
+        {{- if .Values.uniplusApiPortal.kafka.enabled }}
+        - protocol: TCP
+          port: 9092  # Kafka SASL_SSL
+        {{- end }}
+    # Keycloak in-cluster (fallback se issuerUri usar Service DNS).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.uniplusApiPortal.networkPolicy.keycloakNamespace }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: keycloak-replica
+      ports:
+        - protocol: TCP
+          port: {{ .Values.uniplusApiPortal.networkPolicy.keycloakPort }}
+    {{- if .Values.uniplusApiPortal.oidc.enabled }}
+    # OIDC issuer público — JWT validation chama jwks endpoint (HTTPS).
+    - to:
+        - ipBlock:
+            cidr: {{ .Values.uniplusApiPortal.networkPolicy.oidcIssuerCIDR }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.uniplusApiPortal.networkPolicy.oidcIssuerPort }}
+    {{- end }}
+{{- end }}

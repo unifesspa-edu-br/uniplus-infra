@@ -1,22 +1,162 @@
-# Default values para uniplus-api-ingresso
-# TODO: implementar conforme estrutura do uniplus-web
-
-replicas: 2
-
-image:
-  registry: ghcr.io
-  repository: unifesspa-edu-br/uniplus-api-ingresso
-  pullPolicy: IfNotPresent
-  tag: ""
-
-resources:
-  requests:
-    cpu: 100m
-    memory: 128Mi
-  limits:
-    cpu: 500m
-    memory: 256Mi
+# Defaults do chart apps/uniplus-api-ingresso/.
+# Cada environment (environments/<env>/values.yaml) sobrescreve apenas o
+# necessário. Por padrão DESABILITADO — só ambientes onde a imagem GHCR
+# estiver publicada e os pré-requisitos atendidos (DB, Vault paths, OIDC
+# client) ligam via `uniplusApiIngresso.enabled: true`.
 
 commonLabels:
   app.kubernetes.io/part-of: uniplus
   app.kubernetes.io/component: api
+
+uniplusApiIngresso:
+  enabled: false
+
+  image:
+    registry: ghcr.io
+    repository: unifesspa-edu-br/uniplus-api-ingresso
+    # Sincronizar com tag publicada em GHCR.
+    tag: "v0.1.1"
+    pullPolicy: IfNotPresent
+
+  imagePullSecrets: []
+
+  # API stateless. Em standalone 1 réplica para reduzir uso de recursos.
+  replicas: 1
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+
+  serviceAccount:
+    create: true
+    name: ""
+
+  aspnet:
+    environment: Production
+    urls: "http://+:8080"
+
+  # === Backend Postgres (DB dedicada por app) ===
+  database:
+    host: ""                    # ex.: 10.0.2.87
+    port: 5432
+    name: uniplus_ingresso
+    username: ingresso
+    # Nome em ConnectionStrings__<Name>Db (.NET config binding).
+    connectionStringName: IngressoDb
+
+  # === Backend Redis (default user) ===
+  redis:
+    host: ""                    # ex.: 10.0.2.87
+    port: 6379
+    username: default
+
+  # === Backend Kafka (SASL_SSL + SCRAM-SHA-512, ADR-009) ===
+  # Pode ser desligado em primeiro deploy se SCRAM users per-app ainda não
+  # foram provisionados. Em standalone usa SCRAM admin compartilhado.
+  kafka:
+    enabled: true
+    bootstrapServers: ""        # ex.: 10.0.2.87:9092
+    securityProtocol: SASL_SSL
+    saslMechanism: SCRAM-SHA-512
+    # CA cert PEM mountado de Secret kafka-admin (key ca_cert).
+    caCertPath: /etc/uniplus-kafka/ca.crt
+
+  # === Backend MinIO S3 ===
+  storage:
+    endpoint: ""                # ex.: 10.0.2.87:9000
+    bucketName: uniplus-storage
+
+  # === OIDC (Auth bearer) ===
+  oidc:
+    enabled: true
+    issuerUri: ""               # ex.: https://standalone.portaluni.com.br/auth/realms/uniplus
+    audience: uniplus
+
+  # === ExternalSecrets (Vault → K8s Secret) ===
+  externalSecrets:
+    enabled: true
+    refreshInterval: "1h"
+    secretStoreRef:
+      kind: ClusterSecretStore
+      name: vault-default
+
+    postgresApp:
+      vaultPath: secret/standalone/postgres/ingresso
+      passwordKey: password
+
+    redisDefault:
+      vaultPath: secret/standalone/redis/default
+      passwordKey: password
+
+    kafkaAdmin:
+      vaultPath: secret/standalone/kafka/admin
+      usernameKey: username
+      passwordKey: password
+      caCertKey: ca_cert
+
+    minioRoot:
+      vaultPath: secret/standalone/minio/root
+      usernameKey: username
+      passwordKey: password
+
+    oidcClient:
+      vaultPath: secret/standalone/keycloak/clients/uniplus-api-ingresso
+      clientSecretKey: client_secret
+
+  # === Exposição externa via Traefik IngressRoute ===
+  ingress:
+    enabled: false
+    entryPoint: websecure
+    host: ""                    # ex.: api-portal.standalone.portaluni.com.br
+    tls:
+      enabled: true
+      secretName: ""
+      certManager:
+        enabled: false
+        clusterIssuer: ""       # ex.: letsencrypt-prod
+
+  # === NetworkPolicy ===
+  networkPolicy:
+    enabled: true
+    traefikNamespace: traefik
+    monitoringNamespace: observability-prometheus
+    dataHostCIDR: ""            # ex.: 10.0.2.0/24
+    keycloakService: keycloak-replica-uniplus-standalone
+    keycloakNamespace: uniplus
+    keycloakPort: 8080
+    oidcIssuerCIDR: ""          # ex.: 164.152.53.29/32
+    oidcIssuerPort: 443
+
+  metrics:
+    enabled: false
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+
+  # /health/live: dependency-free (sempre 200 enquanto processo respira).
+  # /health: agregado readiness — falha sob transient outage de deps.
+  startupProbe:
+    failureThreshold: 60
+    periodSeconds: 5
+  livenessProbe:
+    periodSeconds: 10
+  readinessProbe:
+    periodSeconds: 5
+
+  # Container roda como `appuser` (UID 999, Debian useradd default).
+  podSecurityContext:
+    fsGroup: 999
+  containerSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 999
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    readOnlyRootFilesystem: false
+
+  extraEnv: []
