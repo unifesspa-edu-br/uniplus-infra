@@ -1,0 +1,130 @@
+# Defaults do chart apps/redis-ui/.
+# Cada environment (environments/<env>/values.yaml) sobrescreve apenas o
+# necessário. Por padrão DESABILITADO — só ambientes que precisam de UI
+# Redis (ex.: standalone) ligam via `redisUi.enabled: true`.
+
+commonLabels:
+  app.kubernetes.io/part-of: uniplus
+  app.kubernetes.io/component: data-admin
+
+redisUi:
+  # Liga/desliga o chart inteiro. Default false.
+  enabled: false
+
+  image:
+    registry: docker.io
+    repository: redis/redisinsight
+    # Versão estável validada (Mar/2026). Bumps de minor seguros;
+    # majors requerem revisão das envs RI_* (renomes recorrentes
+    # entre versões).
+    tag: "2.74.0"
+    pullPolicy: IfNotPresent
+
+  imagePullSecrets: []
+
+  # RedisInsight é stateful (SQLite local em /data — connections, settings,
+  # query history). Single-replica é o pattern correto. emptyDir é OK em
+  # standalone porque a connection pré-setup é re-aplicada em restart via
+  # env vars; perda de query history é aceitável.
+  replicas: 1
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+  serviceAccount:
+    create: true
+    name: ""
+
+  # === Backend Redis (pré-setup via env vars) ===
+  # Conexão pré-cadastrada que aparece automaticamente no UI no primeiro
+  # acesso. Pattern: RI_REDIS_* (sem ID = conexão única, ID padrão 0).
+  # Documentação: https://redis.io/docs/latest/operate/redisinsight/configuration/
+  backend:
+    # IP/host do Redis no data-host. Pode ser IP literal ou FQDN
+    # (RedisInsight resolve via getaddrinfo do container — sem restrição
+    # como o EndpointSlice do MinIO Console).
+    host: ""                    # ex.: 10.0.2.87
+    port: 6379
+    # Alias mostrado na lista de connections do UI (puramente cosmético).
+    alias: standalone
+    # Username Redis ACL. Redis standalone usa `default` (sem ACL custom);
+    # password do role `default` vem do ESO `redisDefault`.
+    username: default
+
+  # === ExternalSecrets (Vault → K8s Secret) ===
+  externalSecrets:
+    enabled: true
+    refreshInterval: "1h"
+    secretStoreRef:
+      kind: ClusterSecretStore
+      name: vault-default
+
+    # Password do role `default` do Redis standalone (custodiado em
+    # Vault em PR #133). Sintetizado em Secret K8s e injetado como
+    # env RI_REDIS_PASSWORD via secretKeyRef.
+    redisDefault:
+      vaultPath: secret/standalone/redis/default
+      passwordKey: password
+
+    # Basic auth do Traefik middleware (proteção do UI). Custodiado em
+    # Vault em path dedicado (operador gera via `htpasswd -nbB user senha`
+    # uma vez e custodia). ESO sintetiza Secret no formato Traefik espera
+    # (key `users` com linhas no formato htpasswd).
+    basicAuth:
+      vaultPath: secret/standalone/redis-ui/basic-auth
+      # Nome da key no Vault contendo o htpasswd completo
+      # (formato: "user:$2y$05$<bcrypt_hash>" — uma linha por usuário).
+      htpasswdKey: htpasswd
+
+  # === Exposição externa via Traefik IngressRoute ===
+  ingress:
+    enabled: false
+    entryPoint: websecure
+    host: ""                    # ex.: redis-ui.standalone.portaluni.com.br
+    tls:
+      enabled: true
+      secretName: ""            # criado pelo cert-manager se certManager.enabled
+      certManager:
+        enabled: false
+        clusterIssuer: ""       # ex.: letsencrypt-prod | letsencrypt-staging
+
+  # === NetworkPolicy ===
+  # Egress: Redis data-host (10.0.2.87:6379) + DNS.
+  # Ingress: somente Traefik.
+  networkPolicy:
+    enabled: true
+    traefikNamespace: traefik
+    # CIDR da subnet privada VCN onde o Redis data-host vive.
+    dataHostCIDR: ""
+    dataHostPort: 6379
+
+  # === Probes ===
+  # RedisInsight Quarkus-based; startup ~10-20s.
+  startupProbe:
+    failureThreshold: 30
+    periodSeconds: 5
+  livenessProbe:
+    periodSeconds: 10
+  readinessProbe:
+    periodSeconds: 5
+
+  # === SecurityContext ===
+  # redis/redisinsight roda como uid 1000 (não-root).
+  podSecurityContext:
+    fsGroup: 1000
+  containerSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    readOnlyRootFilesystem: false
+
+  # Env vars adicionais (lista de `{name, value}` ou `{name, valueFrom}`).
+  extraEnv: []

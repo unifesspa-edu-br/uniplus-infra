@@ -551,6 +551,38 @@ apicurioRegistry:
     enabled: false
 
 # ----------------------------------------------------------------------------
+# RedisInsight — UI para Redis standalone (10.0.2.87:6379). Auth via Traefik
+# basicAuth middleware (htpasswd em Vault). Connection pré-setup via env vars.
+# Issue #154.
+# ----------------------------------------------------------------------------
+redisUi:
+  enabled: true
+
+  backend:
+    host: 10.0.2.87
+    port: 6379
+    alias: standalone
+    username: default
+
+  ingress:
+    enabled: true
+    entryPoint: websecure
+    host: redis-ui.standalone.portaluni.com.br
+    tls:
+      enabled: true
+      secretName: redis-ui-tls
+      certManager:
+        enabled: true
+        clusterIssuer: letsencrypt-prod
+
+  networkPolicy:
+    enabled: true
+    traefikNamespace: traefik
+    # /24 da subnet privada VCN — Redis listening em 10.0.2.87:6379.
+    dataHostCIDR: 10.0.2.0/24
+    dataHostPort: 6379
+
+# ----------------------------------------------------------------------------
 # MinIO Console proxy — expõe o Console (port 9001) do MinIO standalone
 # (rodando como systemd no data-host) via HTTPS público com cert LE prod.
 # Apenas Service ExternalName + IngressRoute Traefik. Issue #153.

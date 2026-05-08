@@ -1,0 +1,108 @@
+{{- if .Values.redisUi.enabled -}}
+{{- if not .Values.redisUi.backend.host -}}
+{{- fail "redisUi.backend.host é obrigatório quando enabled=true (sem isso, RedisInsight pre-setup connection fica inválida e a UI sobe sem conexão pré-cadastrada). Configurar em environments/<env>/values.yaml." -}}
+{{- end -}}
+{{- if not .Values.redisUi.externalSecrets.enabled -}}
+{{- fail "redisUi.enabled=true requer externalSecrets.enabled=true. Deployment lê REDIS_PASSWORD do Secret `<fullname>-redis` via secretKeyRef (sem ele o pod entra em CreateContainerConfigError). Habilite externalSecrets ou desabilite o chart." -}}
+{{- end -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "redisUi.fullname" . }}
+  labels:
+    {{- include "redisUi.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.redisUi.replicas }}
+  # RedisInsight tem state local (SQLite em /data) — Recreate para evitar
+  # contention de SQLite entre pods. Single-replica é o pattern correto;
+  # multi-replica não dá ganho (cada pod tem state isolado em emptyDir).
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "redisUi.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "redisUi.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "redisUi.serviceAccountName" . }}
+      {{- with .Values.redisUi.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.redisUi.podSecurityContext | nindent 8 }}
+      containers:
+        - name: redisinsight
+          image: "{{ .Values.redisUi.image.registry }}/{{ .Values.redisUi.image.repository }}:{{ .Values.redisUi.image.tag }}"
+          imagePullPolicy: {{ .Values.redisUi.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.redisUi.containerSecurityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 5540
+              protocol: TCP
+          env:
+            # Server config — RedisInsight 2.x roda em port 5540.
+            - name: RI_APP_PORT
+              value: "5540"
+            - name: RI_APP_HOST
+              value: "0.0.0.0"
+            # Aceita EULA explicitamente (sem isso UI exibe banner consent
+            # bloqueando primeiro acesso). Comportamento documentado em
+            # https://redis.io/docs/latest/operate/redisinsight/configuration/.
+            - name: RI_ACCEPT_TERMS_AND_CONDITIONS
+              value: "true"
+            # Pre-setup connection (sem ID = conexão única default).
+            # Ao bootar, RedisInsight cria essa conexão automaticamente
+            # apontando para o Redis standalone no data-host.
+            - name: RI_REDIS_HOST
+              value: {{ .Values.redisUi.backend.host | quote }}
+            - name: RI_REDIS_PORT
+              value: {{ .Values.redisUi.backend.port | quote }}
+            - name: RI_REDIS_ALIAS
+              value: {{ .Values.redisUi.backend.alias | quote }}
+            - name: RI_REDIS_USERNAME
+              value: {{ .Values.redisUi.backend.username | quote }}
+            - name: RI_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "redisUi.redisDefaultSecretName" . }}
+                  key: REDIS_PASSWORD
+            # TLS=false: Redis standalone aceita conexões plaintext na
+            # subnet privada VCN. NetworkPolicy restringe egress para
+            # 10.0.2.87:6379 apenas — sem exposição externa.
+            - name: RI_REDIS_TLS
+              value: "false"
+            {{- with .Values.redisUi.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          volumeMounts:
+            # SQLite local + connections persistidas durante lifetime do pod.
+            # emptyDir é OK — env vars RI_REDIS_* re-aplicam pre-setup em
+            # cada restart.
+            - name: data
+              mountPath: /data
+          startupProbe:
+            httpGet:
+              path: /api/health/
+              port: http
+            failureThreshold: {{ .Values.redisUi.startupProbe.failureThreshold }}
+            periodSeconds: {{ .Values.redisUi.startupProbe.periodSeconds }}
+          livenessProbe:
+            httpGet:
+              path: /api/health/
+              port: http
+            periodSeconds: {{ .Values.redisUi.livenessProbe.periodSeconds }}
+          readinessProbe:
+            httpGet:
+              path: /api/health/
+              port: http
+            periodSeconds: {{ .Values.redisUi.readinessProbe.periodSeconds }}
+          resources:
+            {{- toYaml .Values.redisUi.resources | nindent 12 }}
+      volumes:
+        - name: data
+          emptyDir: {}
+{{- end }}

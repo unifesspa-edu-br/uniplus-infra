@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "commonLabels": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "redisUi": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "image": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "registry": { "type": "string" },
+            "repository": { "type": "string" },
+            "tag": { "type": "string" },
+            "pullPolicy": { "enum": ["Always", "IfNotPresent", "Never"] }
+          },
+          "required": ["registry", "repository", "tag", "pullPolicy"]
+        },
+        "imagePullSecrets": { "type": "array" },
+        "fullnameOverride": { "type": "string" },
+        "nameOverride": { "type": "string" },
+        "replicas": { "type": "integer", "minimum": 1 },
+        "resources": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "serviceAccount": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "create": { "type": "boolean" },
+            "name": { "type": "string" }
+          }
+        },
+        "backend": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "host": { "type": "string" },
+            "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+            "alias": { "type": "string", "minLength": 1 },
+            "username": { "type": "string", "minLength": 1 }
+          },
+          "required": ["port", "alias", "username"]
+        },
+        "externalSecrets": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "refreshInterval": { "type": "string" },
+            "secretStoreRef": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "kind": { "enum": ["ClusterSecretStore", "SecretStore"] },
+                "name": { "type": "string" }
+              },
+              "required": ["kind", "name"]
+            },
+            "redisDefault": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "vaultPath": { "type": "string" },
+                "passwordKey": { "type": "string" }
+              },
+              "required": ["vaultPath", "passwordKey"]
+            },
+            "basicAuth": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "vaultPath": { "type": "string" },
+                "htpasswdKey": { "type": "string" }
+              },
+              "required": ["vaultPath", "htpasswdKey"]
+            }
+          }
+        },
+        "ingress": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "entryPoint": { "type": "string" },
+            "host": { "type": "string" },
+            "tls": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "secretName": { "type": "string" },
+                "certManager": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": { "type": "boolean" },
+                    "clusterIssuer": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "networkPolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "traefikNamespace": { "type": "string" },
+            "dataHostCIDR": { "type": "string" },
+            "dataHostPort": { "type": "integer" }
+          }
+        },
+        "startupProbe": { "type": "object", "additionalProperties": true },
+        "livenessProbe": { "type": "object", "additionalProperties": true },
+        "readinessProbe": { "type": "object", "additionalProperties": true },
+        "podSecurityContext": { "type": "object", "additionalProperties": true },
+        "containerSecurityContext": { "type": "object", "additionalProperties": true },
+        "extraEnv": { "type": "array" }
+      },
+      "required": ["enabled", "image", "backend"]
+    }
+  }
+}

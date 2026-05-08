@@ -1,0 +1,22 @@
+{{- if and .Values.redisUi.enabled .Values.redisUi.ingress.enabled .Values.redisUi.externalSecrets.enabled -}}
+# Traefik middleware basicAuth — protege o IngressRoute do RedisInsight UI.
+# RedisInsight 2.x não tem auth nativa, então a proteção fica na borda do
+# Traefik. Senha em htpasswd format (bcrypt) custodiada em Vault e
+# sintetizada como Secret K8s com key `users` pelo ESO acima.
+#
+# Traefik referencia o Secret pelo nome no campo `basicAuth.secret`.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ include "redisUi.basicAuthMiddlewareName" . }}
+  labels:
+    {{- include "redisUi.labels" . | nindent 4 }}
+spec:
+  basicAuth:
+    secret: {{ include "redisUi.basicAuthSecretName" . }}
+    realm: "RedisInsight Uni+"
+    # removeHeader=true tira o header Authorization antes de proxar pro
+    # backend. RedisInsight ignora Authorization (não tem auth nativa)
+    # mas remover é boa prática (evita leak de credenciais para o app).
+    removeHeader: true
+{{- end }}

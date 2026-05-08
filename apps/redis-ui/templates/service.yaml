@@ -1,0 +1,17 @@
+{{- if .Values.redisUi.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "redisUi.fullname" . }}
+  labels:
+    {{- include "redisUi.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 5540
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "redisUi.selectorLabels" . | nindent 4 }}
+{{- end }}

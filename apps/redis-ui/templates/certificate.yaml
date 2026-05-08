@@ -1,0 +1,19 @@
+{{- if and .Values.redisUi.enabled .Values.redisUi.ingress.enabled .Values.redisUi.ingress.tls.enabled .Values.redisUi.ingress.tls.certManager.enabled -}}
+{{- if not .Values.redisUi.ingress.tls.certManager.clusterIssuer -}}
+{{- fail "redisUi.ingress.tls.certManager.clusterIssuer é obrigatório quando certManager.enabled=true. Configurar em environments/<env>/values.yaml (ex.: letsencrypt-prod ou letsencrypt-staging)." -}}
+{{- end -}}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "redisUi.fullname" . }}
+  labels:
+    {{- include "redisUi.labels" . | nindent 4 }}
+spec:
+  secretName: {{ .Values.redisUi.ingress.tls.secretName | default (printf "%s-tls" (include "redisUi.fullname" .)) }}
+  commonName: {{ .Values.redisUi.ingress.host }}
+  dnsNames:
+    - {{ .Values.redisUi.ingress.host }}
+  issuerRef:
+    name: {{ .Values.redisUi.ingress.tls.certManager.clusterIssuer }}
+    kind: ClusterIssuer
+{{- end }}

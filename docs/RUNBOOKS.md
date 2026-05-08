@@ -2839,4 +2839,113 @@ curl -sk -H "Authorization: Bearer $TOKEN" \
 
 ---
 
+## 16. RedisInsight UI (standalone)
+
+UI para inspecionar/admin o Redis standalone — chart `apps/redis-ui/` (issue #154). RedisInsight 2.74 com connection pré-setup via env vars apontando para o Redis systemd no data-host (`10.0.2.87:6379`). Pré-requisitos: §11 Redis ativo + Vault unsealed + Traefik com IngressRoute funcionando.
+
+### 16.1 Pré-flight: htpasswd + custódia
+
+RedisInsight 2.x **não tem auth nativa**. Proteção via Traefik `basicAuth` middleware com htpasswd custodiado em Vault.
+
+**Passo 1 — Gerar htpasswd (bcrypt):**
+
+```bash
+# Gerar usuário + senha forte. Bcrypt obrigatório (Traefik não aceita md5/sha).
+USERNAME=admin
+PASSWORD=$(openssl rand -base64 24)
+HTPASSWD=$(htpasswd -nbB "$USERNAME" "$PASSWORD")
+echo "user=$USERNAME pass=$PASSWORD"
+echo "htpasswd=$HTPASSWD"
+```
+
+**Passo 2 — Custodiar em Vault:**
+
+```bash
+kc() { sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml "$@"; }
+
+kc -n vault exec platform-vault-uniplus-standalone-0 -- \
+  env VAULT_TOKEN=hvs.xxx \
+  vault kv put -tls-skip-verify secret/standalone/redis-ui/basic-auth \
+    username="$USERNAME" \
+    password="$PASSWORD" \
+    htpasswd="$HTPASSWD"
+```
+
+A senha cleartext (`password`) fica como referência operacional para login no UI; a chave usada pelo ESO é `htpasswd` (sintetizada como `users` no Secret K8s consumido pelo middleware).
+
+**Passo 3 — Forçar refresh do ESO + verificar pod:**
+
+```bash
+kc annotate -n uniplus externalsecret \
+  redis-ui-uniplus-standalone-redis-ui-redis \
+  redis-ui-uniplus-standalone-redis-ui-basic-auth \
+  force-sync=$(date +%s) --overwrite
+
+# Pod fica Ready quando ambos secrets sincronizam:
+kc get pods -n uniplus -l app.kubernetes.io/name=redis-ui
+```
+
+### 16.2 Smoke test
+
+```bash
+# 1. Pod healthy
+kc get pods -n uniplus -l app.kubernetes.io/name=redis-ui
+# READY 1/1, STATUS Running
+
+# 2. Health endpoint via port-forward (sem basic auth no path interno)
+kc port-forward -n uniplus deploy/redis-ui-uniplus-standalone-redis-ui 5540:5540 &
+sleep 2
+curl -s http://localhost:5540/api/health
+# {"status":"UP",...}
+kill %1
+
+# 3. UI HTTPS externa retorna 401 sem credenciais (basic auth ativo)
+curl -sk https://redis-ui.standalone.portaluni.com.br/ -o /dev/null -w "%{http_code}\n"
+# 401
+
+# 4. Login funciona com user/pass do Vault
+curl -sk -u "admin:<PASSWORD>" https://redis-ui.standalone.portaluni.com.br/api/health -w "\n%{http_code}\n"
+# 200 (UI responde)
+
+# 5. Conexão Redis pré-setup aparece no UI (browser)
+xdg-open https://redis-ui.standalone.portaluni.com.br
+# Login admin / <PASSWORD>
+# Lista de databases mostra "standalone" (alias) com host=10.0.2.87:6379
+```
+
+### 16.3 Rotacionar senha basic auth
+
+```bash
+# 1. Gerar nova senha + htpasswd
+NEW_PW=$(openssl rand -base64 24)
+NEW_HTPASSWD=$(htpasswd -nbB admin "$NEW_PW")
+
+# 2. Update Vault
+kc -n vault exec platform-vault-uniplus-standalone-0 -- \
+  env VAULT_TOKEN=hvs.xxx \
+  vault kv put -tls-skip-verify secret/standalone/redis-ui/basic-auth \
+    username=admin password="$NEW_PW" htpasswd="$NEW_HTPASSWD"
+
+# 3. Force ESO refresh
+kc annotate -n uniplus externalsecret \
+  redis-ui-uniplus-standalone-redis-ui-basic-auth \
+  force-sync=$(date +%s) --overwrite
+
+# Traefik recarrega Middleware automaticamente (provider K8s watches CRDs).
+# Browser exige re-login com nova senha em ~30s.
+```
+
+### 16.4 Troubleshooting
+
+| Sintoma | Causa provável | Resolução |
+|---|---|---|
+| Pod `CreateContainerConfigError` | ESO não sintetizou Secret (Vault offline ou htpasswd ausente) | `kc describe externalsecret -n uniplus redis-ui-uniplus-standalone-redis-ui-{redis,basic-auth}` — checar `status.conditions`. Se `SecretNotFound`: confirmar Vault unsealed + paths corretos |
+| Pod `CrashLoopBackOff`, log `Connection refused (...:6379)` | Egress Redis bloqueado por NetworkPolicy | Validar `dataHostCIDR=10.0.2.0/24` em `environments/standalone/values.yaml`. Confirmar `uniplus-redis` ativo no data-host |
+| 401 mesmo com credenciais corretas | htpasswd em formato errado (md5/sha em vez de bcrypt) | Re-gerar com `htpasswd -nbB` (-B = bcrypt). Re-custodiar + force ESO refresh + restart Middleware via `kc rollout restart -n traefik deploy/...` (raramente necessário) |
+| UI carrega mas conexão pré-setup ausente | RedisInsight não recriou conexões em restart (emptyDir limpo + env não foi re-aplicada) | `kc exec -n uniplus deploy/redis-ui-uniplus-standalone-redis-ui -- env \| grep RI_REDIS_` — confirmar env vars setadas. Se OK, `kc rollout restart deploy/redis-ui-uniplus-standalone-redis-ui` re-aplica setup |
+| Login na UI mas `Connection failed` ao clicar no DB | Senha Redis errada no ESO ou Redis exigindo TLS | Validar senha em Vault `secret/standalone/redis/default` bate com `/etc/uniplus-redis/users.acl`. Se ok, RedisInsight 2.x default `RI_REDIS_TLS=false` (nosso config) — Redis standalone aceita plaintext na subnet privada |
+| Browser warning "Not secure" | Cert LE staging ou expirado | Confirmar `clusterIssuer: letsencrypt-prod` em `environments/standalone/values.yaml`. `kc get certificate -n uniplus redis-ui-uniplus-standalone-redis-ui` deve estar `READY=True` |
+
+---
+
 *Documento mantido pelo CTIC/UNIFESSPA. Atualizações via Pull Request.*

@@ -1,0 +1,32 @@
+{{- if and .Values.redisUi.enabled .Values.redisUi.ingress.enabled -}}
+{{- if not .Values.redisUi.ingress.host -}}
+{{- fail "redisUi.ingress.host é obrigatório quando ingress.enabled=true (Traefik IngressRoute requer Host(...) válido). Configurar em environments/<env>/values.yaml (ex.: redis-ui.standalone.portaluni.com.br)." -}}
+{{- end -}}
+{{- if not .Values.redisUi.externalSecrets.enabled -}}
+{{- fail "redisUi.ingress.enabled=true requer externalSecrets.enabled=true. IngressRoute referencia o middleware basicAuth, que depende do Secret htpasswd sintetizado pelo ESO. Sem ESO, o middleware fica sem Secret válido e Traefik rejeita o IngressRoute. (Defense-in-depth: o deployment.yaml também tem este guard.)" -}}
+{{- end -}}
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ include "redisUi.fullname" . }}
+  labels:
+    {{- include "redisUi.labels" . | nindent 4 }}
+spec:
+  entryPoints:
+    - {{ .Values.redisUi.ingress.entryPoint }}
+  routes:
+    - match: Host(`{{ .Values.redisUi.ingress.host }}`)
+      kind: Rule
+      middlewares:
+        # basicAuth obrigatório — RedisInsight 2.x não tem auth nativa.
+        # Middleware vive no mesmo namespace que o IngressRoute (uniplus
+        # via ApplicationSet uniplus-apps). Ref: templates/middleware.yaml.
+        - name: {{ include "redisUi.basicAuthMiddlewareName" . }}
+      services:
+        - name: {{ include "redisUi.fullname" . }}
+          port: 5540
+  {{- if .Values.redisUi.ingress.tls.enabled }}
+  tls:
+    secretName: {{ .Values.redisUi.ingress.tls.secretName | default (printf "%s-tls" (include "redisUi.fullname" .)) }}
+  {{- end }}
+{{- end }}

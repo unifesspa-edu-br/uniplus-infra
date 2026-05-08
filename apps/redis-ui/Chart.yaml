@@ -1,0 +1,35 @@
+apiVersion: v2
+name: redis-ui
+description: |
+  Web UI para o Redis standalone — RedisInsight (Redis Inc., Apache 2.0).
+  Inspeção/admin de keys, TTL, memory usage, RESP commands. Conecta ao
+  Redis 8.6.3 systemd no data-host (10.0.2.87:6379).
+
+  Auth: RedisInsight 2.x NÃO tem auth nativo. Protegido via Traefik
+  basicAuth middleware (htpasswd custodiado em Vault). Para SSO via
+  Keycloak considerar futuro Traefik forwardAuth + oauth2-proxy.
+type: application
+
+version: 0.1.0
+
+appVersion: "2.74.0"
+
+home: https://github.com/unifesspa-edu-br/uniplus-infra
+sources:
+  - https://github.com/unifesspa-edu-br/uniplus-infra
+  - https://github.com/RedisInsight/RedisInsight
+
+maintainers:
+  - name: CTIC UNIFESSPA
+    email: jeferson.ferreira@unifesspa.edu.br
+
+keywords:
+  - uniplus
+  - redis
+  - redisinsight
+  - admin
+  - unifesspa
+
+annotations:
+  category: data-admin
+  licenses: Apache-2.0
