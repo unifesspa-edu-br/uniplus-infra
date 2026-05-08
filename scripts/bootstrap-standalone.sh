@@ -1735,6 +1735,118 @@ UNIT
     fi
 }
 
+# Cria database `apicurio` + role `apicurio` no Postgres standalone para
+# servir como storage backend do Apicurio Schema Registry (issue #152).
+#
+# Decisão: storage Postgres em vez de KafkaSQL — single-broker standalone
+# não vira SPOF para schema metadata; separação clara do data plane Kafka.
+# Migração para KafkaSQL viável em hml/prod (3-broker cluster).
+#
+# Pré-condição: step_data_setup_postgres já rodou (uniplus-postgres ativo
+# + .bootstrap-creds com super_pw para criar role/db).
+#
+# Idempotência:
+#   - .bootstrap-creds-apicurio: preserva se existe; gera apicurio_pw se ausente
+#   - DB role/database: CREATE IF NOT EXISTS (psql IF NOT EXISTS é tricky;
+#     usar pattern de idempotência via SELECT pg_catalog.pg_roles + gosh)
+step_data_setup_apicurio_db() {
+    if $SKIP_DOCKER && ! command -v docker &>/dev/null; then
+        log_warn "Docker indisponível e --skip-docker ativo — pulando setup do Apicurio DB."
+        return
+    fi
+
+    if ! sudo systemctl is-active --quiet uniplus-postgres 2>/dev/null && ! $DRY_RUN; then
+        log_warn "uniplus-postgres não está ativo — pulando setup Apicurio DB."
+        return
+    fi
+
+    log_info "Configurando Apicurio Registry database no Postgres standalone..."
+
+    local pg_creds="$DATA_BASE/postgres/.bootstrap-creds"
+    local apicurio_creds="$DATA_BASE/postgres/.bootstrap-creds-apicurio"
+
+    if ! sudo test -f "$pg_creds" 2>/dev/null && ! $DRY_RUN; then
+        log_warn "$pg_creds ausente — Apicurio DB exige super_pw do Postgres. Restaure via §9.4 do RUNBOOKS antes."
+        return
+    fi
+
+    # ---- Decisão 1: .bootstrap-creds-apicurio (preservar / gerar) ----
+    if sudo test -f "$apicurio_creds" 2>/dev/null; then
+        log_success "Bootstrap creds Apicurio já existentes — preservando senha."
+    elif $DRY_RUN; then
+        log_warn "Dry-run: senha apicurio seria gerada em $apicurio_creds"
+    else
+        log_info "Gerando senha Apicurio DB (256 bits)..."
+        local apicurio_pw
+        apicurio_pw=$(openssl rand -hex 32)
+        sudo tee "$apicurio_creds" >/dev/null <<EOF
+apicurio_pw=$apicurio_pw
+EOF
+        sudo chown root:root "$apicurio_creds"
+        sudo chmod 600 "$apicurio_creds"
+        log_warn "Senha Apicurio gerada em $apicurio_creds. Custódia obrigatória — runbook §15.2."
+    fi
+
+    # ---- Decisão 2: criar role + database (idempotente) ----
+    if $DRY_RUN; then
+        echo "[DRY-RUN] Criaria role + database 'apicurio' via psql"
+        return
+    fi
+
+    local super_pw apicurio_pw
+    super_pw=$(sudo grep '^super_pw=' "$pg_creds" | cut -d= -f2)
+    apicurio_pw=$(sudo grep '^apicurio_pw=' "$apicurio_creds" | cut -d= -f2)
+
+    if [[ -z "$super_pw" || -z "$apicurio_pw" ]]; then
+        log_error "super_pw ou apicurio_pw vazio nos creds files. Abortando."
+        exit 1
+    fi
+
+    # CREATE ROLE / CREATE DATABASE não suportam IF NOT EXISTS direto.
+    # Pattern: psql DO block que checa pg_roles antes de criar role;
+    # CREATE DATABASE falha silenciosamente se já existe (catch via || true).
+    #
+    # Senhas NUNCA em argv (vazaria via /proc/<pid>/cmdline world-readable).
+    # Ambas via env vars do `docker exec`:
+    #   - PGPASSWORD: especial do libpq (auth do connect)
+    #   - APICURIO_PW: lida pelo psql via meta-comando \getenv (psql ≥ 14 —
+    #     OK em Postgres 18 do uniplus-standalone) e interpolada como
+    #     variável de sessão :'apicurio_pw' no SQL.
+    # Env vars ficam em /proc/<pid>/environ (root-only, mode 400) ao invés
+    # de /proc/<pid>/cmdline (mode 444). Code-reviewer P1 round 1.
+    sudo docker exec \
+        -e PGPASSWORD="$super_pw" \
+        -e APICURIO_PW="$apicurio_pw" \
+        -i uniplus-postgres \
+        psql -U postgres -v ON_ERROR_STOP=1 <<'SQL' 2>&1 | tail -10
+\getenv apicurio_pw APICURIO_PW
+DO $$
+BEGIN
+   IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'apicurio') THEN
+      CREATE ROLE apicurio WITH LOGIN PASSWORD :'apicurio_pw' NOSUPERUSER NOCREATEDB NOCREATEROLE;
+   ELSE
+      ALTER ROLE apicurio WITH LOGIN PASSWORD :'apicurio_pw';
+   END IF;
+END
+$$;
+SELECT 'apicurio role ok' AS status;
+SQL
+
+    # CREATE DATABASE não pode rodar dentro de transaction block — separar.
+    # Erro 'already exists' ignorado silenciosamente via || true.
+    sudo docker exec -e PGPASSWORD="$super_pw" uniplus-postgres \
+        psql -U postgres -tc "SELECT 1 FROM pg_database WHERE datname = 'apicurio'" 2>/dev/null \
+        | grep -q 1 \
+      || sudo docker exec -e PGPASSWORD="$super_pw" uniplus-postgres \
+        psql -U postgres -c "CREATE DATABASE apicurio OWNER apicurio ENCODING 'UTF8' LC_COLLATE 'C' LC_CTYPE 'C' TEMPLATE template0" 2>&1 | tail -3
+
+    sudo docker exec -e PGPASSWORD="$super_pw" uniplus-postgres \
+        psql -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE apicurio TO apicurio" >/dev/null 2>&1
+
+    log_success "Apicurio DB pronta: role apicurio + database apicurio (owner=apicurio)."
+    unset super_pw apicurio_pw
+}
+
 summary_data() {
     echo ""
     echo "============================================"
@@ -1818,6 +1930,7 @@ case "$ROLE" in
         step_data_setup_minio
         step_data_bootstrap_minio_buckets
         step_data_setup_kafka
+        step_data_setup_apicurio_db
         summary_data
         ;;
 esac

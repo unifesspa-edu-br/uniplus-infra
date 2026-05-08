@@ -1,0 +1,16 @@
+{{- if and .Values.apicurioRegistry.enabled .Values.apicurioRegistry.ingress.enabled .Values.apicurioRegistry.ingress.tls.enabled .Values.apicurioRegistry.ingress.tls.certManager.enabled -}}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "apicurioRegistry.fullname" . }}
+  labels:
+    {{- include "apicurioRegistry.labels" . | nindent 4 }}
+spec:
+  secretName: {{ .Values.apicurioRegistry.ingress.tls.secretName | default (printf "%s-tls" (include "apicurioRegistry.fullname" .)) }}
+  commonName: {{ .Values.apicurioRegistry.ingress.host }}
+  dnsNames:
+    - {{ .Values.apicurioRegistry.ingress.host }}
+  issuerRef:
+    name: {{ .Values.apicurioRegistry.ingress.tls.certManager.clusterIssuer }}
+    kind: ClusterIssuer
+{{- end }}

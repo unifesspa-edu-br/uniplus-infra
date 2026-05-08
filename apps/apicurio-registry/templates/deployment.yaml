@@ -1,0 +1,171 @@
+{{- if .Values.apicurioRegistry.enabled -}}
+{{- if not .Values.apicurioRegistry.storage.host -}}
+{{- fail "apicurioRegistry.storage.host é obrigatório quando enabled=true (sem isso, JDBC URL renderiza 'jdbc:postgresql://:5432/apicurio' inválida e pod não sobe). Configurar em environments/<env>/values.yaml." -}}
+{{- end -}}
+{{- if and .Values.apicurioRegistry.oidc.enabled (not .Values.apicurioRegistry.externalSecrets.enabled) -}}
+{{- fail "apicurioRegistry.oidc.enabled=true requer externalSecrets.enabled=true (QUARKUS_OIDC_CREDENTIALS_SECRET é injetado via ESO; sem ele o pod entra em CreateContainerConfigError silenciosamente). Habilite externalSecrets ou desabilite oidc." -}}
+{{- end -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "apicurioRegistry.fullname" . }}
+  labels:
+    {{- include "apicurioRegistry.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.apicurioRegistry.replicas }}
+  # Stateless app — RollingUpdate sem maxSurge para 1-at-a-time. Apicurio
+  # multi-réplica é seguro porque todo state vai pro Postgres único.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      {{- include "apicurioRegistry.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "apicurioRegistry.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "apicurioRegistry.serviceAccountName" . }}
+      {{- with .Values.apicurioRegistry.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.apicurioRegistry.podSecurityContext | nindent 8 }}
+      containers:
+        - name: apicurio-registry
+          image: "{{ .Values.apicurioRegistry.image.registry }}/{{ .Values.apicurioRegistry.image.repository }}:{{ .Values.apicurioRegistry.image.tag }}"
+          imagePullPolicy: {{ .Values.apicurioRegistry.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.apicurioRegistry.containerSecurityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            # === Storage SQL (Postgres) ===
+            # APICURIO_STORAGE_KIND=sql + APICURIO_STORAGE_SQL_KIND=postgresql
+            # selecionam o backend; URL/user/password vêm separadamente.
+            # Apicurio 3.x usa simultaneamente APICURIO_DATASOURCE_* (nomes
+            # legacy 2.x preservados) e QUARKUS_DATASOURCE_* (Quarkus nativo).
+            # Setamos as duas para evitar dependência de qual path o código
+            # consulta primeiro (varia entre 3.0 e 3.2 release notes).
+            - name: APICURIO_STORAGE_KIND
+              value: {{ .Values.apicurioRegistry.storage.kind | quote }}
+            - name: APICURIO_STORAGE_SQL_KIND
+              value: {{ .Values.apicurioRegistry.storage.sqlKind | quote }}
+            - name: APICURIO_DATASOURCE_URL
+              value: {{ include "apicurioRegistry.jdbcUrl" . | quote }}
+            - name: APICURIO_DATASOURCE_USERNAME
+              value: {{ .Values.apicurioRegistry.storage.username | quote }}
+            - name: APICURIO_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "apicurioRegistry.dbCredsSecretName" . }}
+                  key: DB_PASSWORD
+            # Quarkus mirror (nomes nativos consultados pelo runtime).
+            - name: QUARKUS_DATASOURCE_JDBC_URL
+              value: {{ include "apicurioRegistry.jdbcUrl" . | quote }}
+            - name: QUARKUS_DATASOURCE_USERNAME
+              value: {{ .Values.apicurioRegistry.storage.username | quote }}
+            - name: QUARKUS_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "apicurioRegistry.dbCredsSecretName" . }}
+                  key: DB_PASSWORD
+            # === OIDC issuer URL (SEMPRE setado, mesmo com oidc.enabled=false) ===
+            # Apicurio 3.2.4 vem com default
+            # `QUARKUS_OIDC_AUTH_SERVER_URL=https://auth.apicur.io/auth/realms/apicurio-local`
+            # apontando para Keycloak demo público da Red Hat. Quarkus pode
+            # consultar essa config durante init mesmo com oidc.enabled=false
+            # em alguns paths do bootstrap — qualquer call out leak para
+            # auth.apicur.io vaza nosso DNS interno + topologia para terceiro.
+            #
+            # Fallback `localhost:9999` quando OIDC desligado força failure
+            # local óbvio se OIDC for ativado por engano via env override.
+            # Code-reviewer P1 round 1.
+            - name: QUARKUS_OIDC_AUTH_SERVER_URL
+              value: {{ .Values.apicurioRegistry.oidc.issuerUri | default "http://localhost:9999/oidc-disabled" | quote }}
+            {{- if .Values.apicurioRegistry.oidc.enabled }}
+            # === OIDC (Quarkus) — auth ativa ===
+            - name: APICURIO_AUTH_ENABLED
+              value: "true"
+            - name: QUARKUS_OIDC_ENABLED
+              value: "true"
+            - name: QUARKUS_OIDC_TENANT_ENABLED
+              value: "true"
+            - name: QUARKUS_OIDC_CLIENT_ID
+              value: {{ .Values.apicurioRegistry.oidc.clientId | quote }}
+            # Path do claim do JWT que carrega os groups/roles. Default
+            # `groups` casa com o mapper `oidc-group-membership-mapper` do
+            # client `apicurio-registry` no realm uniplus (configurado com
+            # full.path=true → values são "/admins/kafka", "/users/uniplus").
+            - name: QUARKUS_OIDC_ROLES_ROLE_CLAIM_PATH
+              value: {{ .Values.apicurioRegistry.oidc.rolesClaimPath | quote }}
+            {{- if .Values.apicurioRegistry.roleBasedAuth.enabled }}
+            # === Role-based authorization ===
+            # APICURIO_AUTH_ROLE_SOURCE=token: Apicurio extrai roles do
+            # claim JWT (path = QUARKUS_OIDC_ROLES_ROLE_CLAIM_PATH acima).
+            # APICURIO_AUTH_ROLES_<ROLE>=<value>: mapping do valor exato no
+            # claim para a role interna. Reusamos os groups do realm uniplus
+            # (/admins/kafka → sr-admin, /users/uniplus → sr-developer).
+            - name: APICURIO_AUTH_ROLE_BASED_AUTHORIZATION
+              value: "true"
+            - name: APICURIO_AUTH_ROLE_SOURCE
+              value: "token"
+            {{- if .Values.apicurioRegistry.roleBasedAuth.adminClaim }}
+            - name: APICURIO_AUTH_ROLES_ADMIN
+              value: {{ .Values.apicurioRegistry.roleBasedAuth.adminClaim | quote }}
+            {{- end }}
+            {{- if .Values.apicurioRegistry.roleBasedAuth.developerClaim }}
+            - name: APICURIO_AUTH_ROLES_DEVELOPER
+              value: {{ .Values.apicurioRegistry.roleBasedAuth.developerClaim | quote }}
+            {{- end }}
+            {{- if .Values.apicurioRegistry.roleBasedAuth.readonlyClaim }}
+            - name: APICURIO_AUTH_ROLES_READONLY
+              value: {{ .Values.apicurioRegistry.roleBasedAuth.readonlyClaim | quote }}
+            {{- end }}
+            # Acesso anônimo OFF — qualquer request sem JWT válido = 401.
+            # Defesa em profundidade: mesmo que role mapping falhe, ninguém
+            # entra sem autenticar. Override via extraEnv se necessário.
+            - name: APICURIO_AUTH_ANONYMOUS_READ_ACCESS_ENABLED
+              value: "false"
+            {{- end }}
+            {{- end }}
+            # Quarkus HTTP — 8080 default, explicit para evitar surpresa
+            # se imagem futura mudar.
+            - name: QUARKUS_HTTP_PORT
+              value: "8080"
+            - name: QUARKUS_HTTP_HOST
+              value: "0.0.0.0"
+            {{- with .Values.apicurioRegistry.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- if .Values.apicurioRegistry.oidc.enabled }}
+          envFrom:
+            # QUARKUS_OIDC_CREDENTIALS_SECRET — único campo, envFrom seguro.
+            - secretRef:
+                name: {{ include "apicurioRegistry.oidcClientSecretName" . }}
+          {{- end }}
+          startupProbe:
+            httpGet:
+              path: /q/health/started
+              port: http
+            failureThreshold: {{ .Values.apicurioRegistry.startupProbe.failureThreshold }}
+            periodSeconds: {{ .Values.apicurioRegistry.startupProbe.periodSeconds }}
+          livenessProbe:
+            httpGet:
+              path: /q/health/live
+              port: http
+            periodSeconds: {{ .Values.apicurioRegistry.livenessProbe.periodSeconds }}
+          readinessProbe:
+            httpGet:
+              path: /q/health/ready
+              port: http
+            periodSeconds: {{ .Values.apicurioRegistry.readinessProbe.periodSeconds }}
+          resources:
+            {{- toYaml .Values.apicurioRegistry.resources | nindent 12 }}
+{{- end }}

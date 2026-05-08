@@ -1,0 +1,36 @@
+apiVersion: v2
+name: apicurio-registry
+description: |
+  Apicurio Registry — schema/API artifact registry compatível com a Confluent
+  Schema Registry API. Storage SQL no Postgres standalone (DB `apicurio`,
+  custodiado em Vault); autenticação via OIDC do realm `uniplus` no Keycloak
+  local com role-based authorization (sr-admin/sr-developer/sr-readonly
+  mapeados a partir de groups do JWT).
+
+  Reuso completo da stack standalone — sem Keycloak/DB/issuer próprios.
+type: application
+
+version: 0.1.0
+
+# Apicurio Registry upstream (sincronizar com image.tag).
+appVersion: "3.2.4"
+
+home: https://github.com/unifesspa-edu-br/uniplus-infra
+sources:
+  - https://github.com/unifesspa-edu-br/uniplus-infra
+  - https://github.com/Apicurio/apicurio-registry
+
+maintainers:
+  - name: CTIC UNIFESSPA
+    email: jeferson.ferreira@unifesspa.edu.br
+
+keywords:
+  - uniplus
+  - kafka
+  - schema-registry
+  - apicurio
+  - unifesspa
+
+annotations:
+  category: data
+  licenses: Apache-2.0

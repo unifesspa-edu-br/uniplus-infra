@@ -2568,4 +2568,203 @@ unset NEW_SECRET TKN
 
 ---
 
+## 15. Apicurio Registry — Schema Registry (standalone)
+
+Schema/API artifact registry compatível com a Confluent Schema Registry API — chart `apps/apicurio-registry/` (issue #152). Apicurio 3.2.4, storage SQL no Postgres standalone (DB `apicurio`), autenticação OIDC via realm `uniplus` com role-based authorization. Pré-requisitos: §9 Postgres ativo + §10 Keycloak ativo (realm `uniplus` importado).
+
+### 15.1 Pré-flight: DB + client OIDC + custódia
+
+3 itens precisam estar prontos antes do ArgoCD reconciliar o chart apicurio-registry:
+
+1. **DB `apicurio`** — provisionada pelo `step_data_setup_apicurio_db` do `bootstrap-standalone.sh`
+2. **`secret/standalone/postgres/apicurio`** — senha do role `apicurio` (custodiar a partir de `.bootstrap-creds-apicurio`)
+3. **`secret/standalone/keycloak/clients/apicurio-registry`** — `client_secret` (gerado pelo realm import)
+
+Sem (2) ou (3), os ESOs ficam em `SecretNotFound` e o pod trava em `CreateContainerConfigError`.
+
+```bash
+kc() { sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml "$@"; }
+```
+
+**Passo 1 — Provisionar DB no Postgres data-host.**
+
+```bash
+# No host data (10.0.2.87), executar a etapa apicurio do bootstrap.
+ssh ubuntu@10.0.2.87 "cd /opt/uniplus-infra && sudo ./scripts/bootstrap-standalone.sh \
+  --role data-host --skip-k3s --skip-docker"
+```
+
+O step idempotente `step_data_setup_apicurio_db` cria role + database e preserva senhas existentes. Após primeira execução:
+
+```bash
+# Custodiar senha em Vault (mesmo pattern do §9.2):
+ssh ubuntu@10.0.2.87 "sudo cat /var/lib/uniplus/postgres/.bootstrap-creds-apicurio"
+# apicurio_pw=<HEX_64>
+
+VAULT_TOKEN=hvs.xxx \
+  vault kv put secret/standalone/postgres/apicurio \
+    username=apicurio \
+    password=<HEX_64>
+
+# Após custódia confirmada (vault kv get OK), apagar o arquivo do data-host:
+ssh ubuntu@10.0.2.87 "sudo shred -u /var/lib/uniplus/postgres/.bootstrap-creds-apicurio"
+```
+
+**Passo 2 — Adicionar client `apicurio-registry` ao realm uniplus** (idempotente — Keycloak skipa import se realm já existe).
+
+Como em §14.1 do AKHQ, usar `kcadm.sh` para operação cirúrgica:
+
+```bash
+kc exec -n uniplus -i deploy/keycloak-replica-uniplus-standalone -- bash -c '
+  set -e
+  /opt/keycloak/bin/kcadm.sh config credentials \
+    --server http://localhost:8080/auth \
+    --realm master \
+    --user "$KC_BOOTSTRAP_ADMIN_USERNAME" \
+    --password "$KC_BOOTSTRAP_ADMIN_PASSWORD" >/dev/null
+
+  # Cria client se não existe (idempotente via grep)
+  if ! /opt/keycloak/bin/kcadm.sh get clients -r uniplus --fields clientId 2>/dev/null \
+       | grep -q apicurio-registry; then
+    /opt/keycloak/bin/kcadm.sh create clients -r uniplus \
+      -s clientId=apicurio-registry \
+      -s name="Apicurio Registry" \
+      -s enabled=true \
+      -s publicClient=false \
+      -s standardFlowEnabled=true \
+      -s "redirectUris=[\"https://schema-registry.standalone.portaluni.com.br/*\"]" \
+      -s "webOrigins=[\"https://schema-registry.standalone.portaluni.com.br\"]" \
+      -s frontchannelLogout=true
+  fi
+
+  # Adiciona mapper groups (full path)
+  CID=$(/opt/keycloak/bin/kcadm.sh get clients -r uniplus -q clientId=apicurio-registry --fields id --format csv --noquotes | tail -1)
+  if ! /opt/keycloak/bin/kcadm.sh get clients/$CID/protocol-mappers/models -r uniplus 2>/dev/null \
+       | grep -q "\"name\" : \"groups\""; then
+    /opt/keycloak/bin/kcadm.sh create clients/$CID/protocol-mappers/models -r uniplus \
+      -s name=groups \
+      -s protocol=openid-connect \
+      -s protocolMapper=oidc-group-membership-mapper \
+      -s "config.\"full.path\"=true" \
+      -s "config.\"id.token.claim\"=true" \
+      -s "config.\"access.token.claim\"=true" \
+      -s "config.\"userinfo.token.claim\"=true" \
+      -s "config.\"claim.name\"=groups"
+  fi
+'
+```
+
+**Passo 3 — Recuperar `client_secret` e custodiar em Vault.**
+
+```bash
+SECRET=$(kc exec -n uniplus deploy/keycloak-replica-uniplus-standalone -- \
+  /opt/keycloak/bin/kcadm.sh get clients -r uniplus \
+  -q clientId=apicurio-registry --fields secret --format csv --noquotes | tail -1)
+
+VAULT_TOKEN=hvs.xxx \
+  vault kv put secret/standalone/keycloak/clients/apicurio-registry \
+    client_secret="$SECRET"
+```
+
+### 15.2 Custódia: rotação de senha do DB
+
+Caso a senha do role `apicurio` precise ser rotacionada (compromise, política de rotação 90d):
+
+```bash
+# 1. Gerar nova senha
+NEW_PW=$(openssl rand -hex 32)
+
+# 2. Atualizar role no Postgres
+ssh ubuntu@10.0.2.87 "sudo docker exec -e PGPASSWORD=<super_pw> uniplus-postgres \
+  psql -U postgres -c \"ALTER ROLE apicurio WITH PASSWORD '$NEW_PW';\""
+
+# 3. Atualizar Vault
+VAULT_TOKEN=hvs.xxx \
+  vault kv put secret/standalone/postgres/apicurio username=apicurio password="$NEW_PW"
+
+# 4. Forçar refresh do ESO (default refreshInterval=1h)
+kc annotate -n uniplus externalsecret apicurio-registry-db \
+  force-sync=$(date +%s) --overwrite
+
+# 5. Restart do deployment para o pod pegar a nova senha (env é cacheada)
+kc rollout restart -n uniplus deployment/apicurio-registry
+```
+
+### 15.3 Smoke test pós-deploy
+
+```bash
+# 1. Pod healthy
+kc get pods -n uniplus -l app.kubernetes.io/name=apicurio-registry
+# READY 1/1, STATUS Running
+
+# 2. Health endpoints
+kc exec -n uniplus deploy/apicurio-registry -- \
+  curl -s http://localhost:8080/q/health/ready
+# {"status":"UP","checks":[...]}
+
+# 3. OIDC discovery alcançável (deve retornar 200 com issuer)
+kc exec -n uniplus deploy/apicurio-registry -- \
+  curl -s https://standalone.portaluni.com.br/auth/realms/uniplus/.well-known/openid-configuration | head -c 200
+
+# 4. UI externa
+curl -sk https://schema-registry.standalone.portaluni.com.br/ui/ -o /dev/null -w "%{http_code}\n"
+# 200 (HTML)
+
+# 5. API V3 — listar artifacts (anonymous OFF, deve retornar 401 sem JWT)
+curl -sk https://schema-registry.standalone.portaluni.com.br/apis/registry/v3/groups/default/artifacts -o /dev/null -w "%{http_code}\n"
+# 401 (esperado — auth obrigatória)
+
+# 6. Confluent SR API V2 (compat) — mesmo path, retorna 401
+curl -sk https://schema-registry.standalone.portaluni.com.br/apis/ccompat/v7/subjects -o /dev/null -w "%{http_code}\n"
+# 401 (esperado)
+```
+
+Para teste de smoke autenticado (com JWT), seguir §15.4.
+
+### 15.4 Bootstrap inicial: registrar primeiro schema
+
+Apicurio aceita JWT do realm `uniplus` no header `Authorization: Bearer <token>`. Obter token via password grant (apenas em ambiente standalone — em prod usar service account com client credentials):
+
+```bash
+# Token via password grant — user em /admins/kafka tem role sr-admin
+TOKEN=$(curl -sk -X POST \
+  https://standalone.portaluni.com.br/auth/realms/uniplus/protocol/openid-connect/token \
+  -d "grant_type=password" \
+  -d "client_id=apicurio-registry" \
+  -d "client_secret=$CLIENT_SECRET" \
+  -d "username=jeferson.ferreira" \
+  -d "password=$PW" \
+  -d "scope=openid" \
+  | jq -r .access_token)
+
+# Registrar primeiro Avro schema via Confluent SR compat API
+curl -sk -X POST \
+  https://schema-registry.standalone.portaluni.com.br/apis/ccompat/v7/subjects/uniplus.events.smoke-value/versions \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/vnd.schemaregistry.v1+json" \
+  -d '{"schemaType":"AVRO","schema":"{\"type\":\"record\",\"name\":\"Smoke\",\"fields\":[{\"name\":\"id\",\"type\":\"string\"}]}"}'
+# {"id":1}
+
+# Listar subjects
+curl -sk -H "Authorization: Bearer $TOKEN" \
+  https://schema-registry.standalone.portaluni.com.br/apis/ccompat/v7/subjects
+# ["uniplus.events.smoke-value"]
+```
+
+### 15.5 Troubleshooting
+
+| Sintoma | Causa provável | Resolução |
+|---|---|---|
+| Pod `CreateContainerConfigError` | ESO não sintetizou Secret (Vault offline ou path errado) | `kc describe externalsecret -n uniplus apicurio-registry-{db,oidc-client}` — checar `status.conditions`. Se `SecretNotFound`: confirmar Vault unsealed + path correto |
+| Pod `CrashLoopBackOff`, log `Connection refused (...:5432)` | Egress Postgres bloqueado por NetworkPolicy | Validar `dataHostCIDR` em `environments/standalone/values.yaml` cobre `10.0.2.0/24` (default). Confirmar `uniplus-postgres` ativo no data-host |
+| Pod `CrashLoopBackOff`, log `password authentication failed for user "apicurio"` | Senha em Vault diferente da no Postgres | Recuperar `apicurio_pw` do data-host (`.bootstrap-creds-apicurio` se ainda existe) ou rotacionar via §15.2 |
+| Pod up mas `/q/health/ready` retorna 503 com `OIDC discovery failed` | Egress OIDC issuer bloqueado (default-deny) | Validar `oidcIssuerCIDR=164.152.53.29/32` em `environments/standalone/values.yaml`. Mesmo bug que §14.4 do AKHQ |
+| 401 mesmo com JWT válido em `/admins/kafka` | Mapper groups não aplicado no client | `kc exec deploy/keycloak-replica-... -- /opt/keycloak/bin/kcadm.sh get clients/$CID/protocol-mappers/models -r uniplus` — adicionar mapper conforme §15.1 passo 2 |
+| 403 "user has no roles" mesmo após login | `APICURIO_AUTH_ROLE_BASED_AUTHORIZATION` true mas claim path errado | Decode JWT (`jwt.io`) — verificar claim `groups` presente. Se ausente, mapper groups não está incluindo no access_token (config.access.token.claim=true falta) |
+| UI carrega mas botões "Create artifact" cinza | Role mapeada como `sr-readonly` em vez de `sr-admin` | Verificar group do user no Keycloak: `Users → jeferson.ferreira → Groups`. Adicionar a `/admins/kafka` se ausente |
+| `auth.apicur.io` aparece em logs OIDC | `QUARKUS_OIDC_AUTH_SERVER_URL` não setado — caiu no default Keycloak demo Red Hat | Validar `oidc.issuerUri` em `environments/standalone/values.yaml`. Sempre obrigatório — sem isso, Apicurio confia em IdP externo público |
+| Browser warning "Not secure" no `schema-registry.standalone.portaluni.com.br` | Cert LE staging | Promover para `letsencrypt-prod` em `ingress.tls.certManager.clusterIssuer` (já é default no `environments/standalone/values.yaml` — checar override por engano) |
+
+---
+
 *Documento mantido pelo CTIC/UNIFESSPA. Atualizações via Pull Request.*

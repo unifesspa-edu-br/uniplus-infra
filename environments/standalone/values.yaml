@@ -469,6 +469,58 @@ kafkaUi:
     enabled: false
 
 # ----------------------------------------------------------------------------
+# Apicurio Registry — schema/API artifact registry, Confluent SR API compatível.
+# Integração: Postgres data-host (DB `apicurio`) + Keycloak realm uniplus
+# (client `apicurio-registry`). Reusa groups /admins/kafka e /users/uniplus
+# para mapping de roles sr-admin/sr-developer.
+# ----------------------------------------------------------------------------
+apicurioRegistry:
+  enabled: true
+
+  storage:
+    # Mesmo data-host dos demais services. DB `apicurio` provisionado pelo
+    # step_data_setup_apicurio_db do bootstrap-standalone.sh.
+    host: 10.0.2.87
+
+  oidc:
+    enabled: true
+    issuerUri: https://standalone.portaluni.com.br/auth/realms/uniplus
+
+  ingress:
+    enabled: true
+    entryPoint: websecure
+    host: schema-registry.standalone.portaluni.com.br
+    tls:
+      enabled: true
+      secretName: apicurio-registry-tls
+      certManager:
+        enabled: true
+        # LE prod desde o primeiro deploy (LE staging já foi promovido para
+        # Keycloak + AKHQ; novo subdomínio entra direto em prod sem warning
+        # de browser).
+        clusterIssuer: letsencrypt-prod
+
+  networkPolicy:
+    enabled: true
+    traefikNamespace: traefik
+    monitoringNamespace: observability-prometheus
+    # /24 da subnet privada VCN. Mesmo CIDR do kafkaUi (egress só para 5432
+    # neste chart, mas mantemos o mesmo bloco por consistência).
+    dataHostCIDR: 10.0.2.0/24
+    dataHostPort: 5432
+    keycloakService: keycloak-replica-uniplus-standalone
+    keycloakNamespace: uniplus
+    keycloakPort: 8080
+    # IP público do k8s-host OCI standalone — Quarkus OIDC chama
+    # `.well-known/openid-configuration` contra standalone.portaluni.com.br
+    # que resolve para esse IP. Mesmo pattern do kafkaUi (Codex P1 round 1).
+    oidcIssuerCIDR: 164.152.53.29/32
+    oidcIssuerPort: 443
+
+  serviceMonitor:
+    enabled: false
+
+# ----------------------------------------------------------------------------
 # Componentes stateful no data-host (Postgres, Kafka, MinIO, Redis) rodam
 # FORA do K8s, gerenciados por systemd em /var/lib/uniplus/* (ADR-002 +
 # ADR-005). Endpoints chegam às apps via External Secrets sintetizados a
