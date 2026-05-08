@@ -2690,9 +2690,25 @@ VAULT_TOKEN=hvs.xxx \
 shred -u /tmp/apicurio-cs
 ```
 
-### 15.2 Custódia: rotação de senha do DB
+### 15.2 Custódia: rotação ou restore de senha do DB
 
-Caso a senha do role `apicurio` precise ser rotacionada (compromise, política de rotação 90d):
+**Restore (manutenção/upgrade após shred):** se você executou `shred -u $DATA_BASE/postgres/.bootstrap-creds-apicurio` após custódia em Vault e precisa rodar `bootstrap-standalone.sh --role=standalone-data` de novo (manutenção, upgrade), o step Apicurio aborta com `role apicurio já existe mas .bootstrap-creds-apicurio ausente` (Codex P1 round 5 do PR #155). Restaure o arquivo a partir do Vault antes:
+
+```bash
+APICURIO_PW=$(VAULT_TOKEN=hvs.xxx vault kv get -field=password secret/standalone/postgres/apicurio)
+ssh ubuntu@10.0.2.87 "sudo tee /var/lib/uniplus/postgres/.bootstrap-creds-apicurio > /dev/null <<EOF
+apicurio_pw=$APICURIO_PW
+EOF
+sudo chmod 600 /var/lib/uniplus/postgres/.bootstrap-creds-apicurio
+sudo chown root:root /var/lib/uniplus/postgres/.bootstrap-creds-apicurio"
+
+# Agora pode rodar o bootstrap normalmente:
+ssh ubuntu@10.0.2.87 "cd /opt/uniplus-infra && sudo ./scripts/bootstrap-standalone.sh --role=standalone-data"
+
+# Após confirmar success, shred novamente (idempotente).
+```
+
+**Rotação (compromise ou política 90d):**
 
 ```bash
 # 1. Gerar nova senha

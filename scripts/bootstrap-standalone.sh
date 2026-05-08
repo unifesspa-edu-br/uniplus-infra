@@ -1770,11 +1770,41 @@ step_data_setup_apicurio_db() {
         return
     fi
 
-    # ---- Decisão 1: .bootstrap-creds-apicurio (preservar / gerar) ----
+    # Detecta se o role `apicurio` já existe no Postgres. Pattern: idempotência
+    # operacional — em manutenção/upgrade re-executar bootstrap, role já está
+    # provisionada. Sem essa detecção a Decisão 1 abaixo regenera senha e a
+    # Decisão 2 ALTER ROLE silenciosamente — desincronizando Postgres do Vault
+    # (Codex P1 round 5).
+    local role_exists=false
+    if ! $DRY_RUN; then
+        local super_pw_check
+        super_pw_check=$(sudo grep '^super_pw=' "$pg_creds" | cut -d= -f2)
+        if [[ -n "$super_pw_check" ]] && \
+           sudo docker exec -e PGPASSWORD="$super_pw_check" uniplus-postgres \
+             psql -U postgres -tAc "SELECT 1 FROM pg_catalog.pg_roles WHERE rolname='apicurio'" 2>/dev/null \
+             | grep -q '^1$'; then
+            role_exists=true
+        fi
+        unset super_pw_check
+    fi
+
+    # ---- Decisão 1: .bootstrap-creds-apicurio (preservar / gerar / abortar) ----
     if sudo test -f "$apicurio_creds" 2>/dev/null; then
         log_success "Bootstrap creds Apicurio já existentes — preservando senha."
     elif $DRY_RUN; then
         log_warn "Dry-run: senha apicurio seria gerada em $apicurio_creds"
+    elif $role_exists; then
+        # Guard: role `apicurio` existe no Postgres mas .bootstrap-creds-apicurio
+        # foi shredded (provavelmente após custódia em Vault — runbook §15.2).
+        # Regenerar senha agora rodaria ALTER ROLE silencioso, desincronizando
+        # Postgres da custódia em `secret/standalone/postgres/apicurio` no Vault.
+        # Apicurio ficaria com `password authentication failed for user
+        # "apicurio"` na próxima reconciliação. Mesmo pattern do Postgres §9.4
+        # / Redis §11.4. Codex P1 round 5.
+        log_error "$apicurio_creds ausente, mas role Postgres 'apicurio' já existe."
+        log_error "Regenerar senha agora desincronizaria Postgres do Vault."
+        log_error "Restaure $apicurio_creds a partir do Vault — ver docs/RUNBOOKS.md §15.2."
+        exit 1
     else
         log_info "Gerando senha Apicurio DB (256 bits)..."
         local apicurio_pw
