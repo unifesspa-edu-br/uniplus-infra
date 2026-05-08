@@ -2752,10 +2752,12 @@ APICURIO_DEPLOY=apicurio-registry-uniplus-standalone-apicurio-registry
 kc get pods -n uniplus -l app.kubernetes.io/name=apicurio-registry
 # READY 1/1, STATUS Running
 
-# 2. Health endpoints
+# 2. System info (substitui /q/health/* — Apicurio 3.2.4 desabilita
+# esses paths Quarkus default; use system/info como liveness/readiness
+# proxy: 200 quando JDBC pool ativo + REST routing up).
 kc exec -n uniplus "deploy/$APICURIO_DEPLOY" -- \
-  curl -s http://localhost:8080/q/health/ready
-# {"status":"UP","checks":[...]}
+  curl -s http://localhost:8080/apis/registry/v3/system/info
+# {"name":"Apicurio Registry (SQL)","description":"...","version":"3.2.4",...}
 
 # 3. OIDC discovery alcançável (deve retornar 200 com issuer)
 kc exec -n uniplus "deploy/$APICURIO_DEPLOY" -- \

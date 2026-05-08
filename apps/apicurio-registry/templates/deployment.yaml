@@ -153,20 +153,34 @@ spec:
             - secretRef:
                 name: {{ include "apicurioRegistry.oidcClientSecretName" . }}
           {{- end }}
+          # Health probes: Apicurio Registry 3.2.4 NÃO expõe `/q/health/*`
+          # do Quarkus SmallRye Health por default — esses paths retornam 404
+          # mesmo com pod totalmente up (validado runtime no cluster standalone
+          # 2026-05-08). A imagem `apicurio/apicurio-registry:3.2.4` desabilita
+          # ou move os endpoints health internos.
+          #
+          # Workaround: usar `/apis/registry/v3/system/info` que sempre retorna
+          # 200 quando o backend SQL está conectado (testa cold path básico:
+          # HTTP server up + JDBC pool inicializado + REST routing OK). Auth
+          # NÃO requerido nesse path (system info é público).
+          #
+          # Mesmo path para start/live/ready é OK em standalone (1 réplica,
+          # sem rolling restart agressivo); diferenciar entre fases requer
+          # health endpoints separados que Apicurio 3.x não expõe.
           startupProbe:
             httpGet:
-              path: /q/health/started
+              path: /apis/registry/v3/system/info
               port: http
             failureThreshold: {{ .Values.apicurioRegistry.startupProbe.failureThreshold }}
             periodSeconds: {{ .Values.apicurioRegistry.startupProbe.periodSeconds }}
           livenessProbe:
             httpGet:
-              path: /q/health/live
+              path: /apis/registry/v3/system/info
               port: http
             periodSeconds: {{ .Values.apicurioRegistry.livenessProbe.periodSeconds }}
           readinessProbe:
             httpGet:
-              path: /q/health/ready
+              path: /apis/registry/v3/system/info
               port: http
             periodSeconds: {{ .Values.apicurioRegistry.readinessProbe.periodSeconds }}
           resources:
