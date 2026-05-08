@@ -172,3 +172,10 @@ networkPolicy:
   # CIDRs autorizados para egress ao Kubernetes API server.
   kubeApiCidrs:
     - 10.43.0.0/16
+
+  # Backends externos ao cluster — para IngressRoutes apontando para Services
+  # com Endpoints manuais cujo `subset.addresses[].ip` é IP de host externo
+  # (data-host stateful). Override por environment. Cada item:
+  #   - cidr: CIDR ou /32 do host externo
+  #   - ports: lista de TCP ports permitidos (ex.: [9001] para MinIO Console)
+  externalBackends: []

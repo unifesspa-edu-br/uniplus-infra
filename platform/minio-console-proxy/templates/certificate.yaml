@@ -1,0 +1,19 @@
+{{- if and .Values.minioConsoleProxy.enabled .Values.minioConsoleProxy.ingress.enabled .Values.minioConsoleProxy.ingress.tls.enabled .Values.minioConsoleProxy.ingress.tls.certManager.enabled -}}
+{{- if not .Values.minioConsoleProxy.ingress.tls.certManager.clusterIssuer -}}
+{{- fail "minioConsoleProxy.ingress.tls.certManager.clusterIssuer é obrigatório quando certManager.enabled=true (issuerRef.name vazio produz Certificate inválido/não-emissível). Configurar em environments/<env>/values.yaml (ex.: letsencrypt-prod ou letsencrypt-staging)." -}}
+{{- end -}}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "minioConsoleProxy.fullname" . }}
+  labels:
+    {{- include "minioConsoleProxy.labels" . | nindent 4 }}
+spec:
+  secretName: {{ .Values.minioConsoleProxy.ingress.tls.secretName | default (printf "%s-tls" (include "minioConsoleProxy.fullname" .)) }}
+  commonName: {{ .Values.minioConsoleProxy.ingress.host }}
+  dnsNames:
+    - {{ .Values.minioConsoleProxy.ingress.host }}
+  issuerRef:
+    name: {{ .Values.minioConsoleProxy.ingress.tls.certManager.clusterIssuer }}
+    kind: ClusterIssuer
+{{- end }}

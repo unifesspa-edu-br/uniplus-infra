@@ -1852,13 +1852,28 @@ EOF
 
 ### 12.6 Acesso ao Console UI (porta 9001)
 
-Console NÃO está exposto externamente (sem IngressRoute em standalone). Acesso via SSH tunnel:
+**Acesso público via Traefik IngressRoute** (Issue #153, chart `platform/minio-console-proxy/`):
+
+```
+https://minio.standalone.portaluni.com.br
+```
+
+- Cert TLS LE prod (sem warning de browser)
+- Login: `root_user` / `root_pw` custodiados em Vault `secret/standalone/minio/root`
+- Acesso público — depende de senha forte; rotacionar regularmente (§12.7)
+
+Como funciona internamente:
+- Service `minio-console-proxy-uniplus-standalone-minio-console-proxy` no namespace `minio-console-proxy`: ClusterIP sem selector
+- EndpointSlice manual com `endpoints[].addresses: [10.0.2.87]` apontando ao data-host (NÃO ExternalName — IP literal não resolve via DNS)
+- IngressRoute Traefik faz proxy HTTPS terminando o cert + HTTP plain para o ClusterIP
+- NetworkPolicy do Traefik tem egress para `10.0.2.87/32:9001` (override em `environments/standalone/values.yaml > networkPolicy.externalBackends`)
+
+Acesso via SSH tunnel (fallback, se Traefik/cert-manager fora do ar):
 
 ```bash
 # Do laptop (cria tunnel local 9001 → k8s-host:9001 → data-host:9001 via VCN)
 ssh -L 9001:10.0.2.87:9001 ubuntu@164.152.53.29
 # Em outro terminal: xdg-open http://localhost:9001
-# Login com root_user / root_pw do Vault
 ```
 
 ### 12.7 Rotacionar `root_pw`

@@ -106,6 +106,7 @@ spec:
           - list:
               elements:
                 - component: storage
+                - component: minio-console-proxy
                 - component: traefik
                 - component: cert-manager
                 - component: external-secrets
