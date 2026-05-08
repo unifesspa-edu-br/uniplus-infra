@@ -635,6 +635,14 @@ uniplusApiPortal:
     endpoint: 10.0.2.87:9000
   oidc:
     issuerUri: https://standalone.portaluni.com.br/auth/realms/uniplus
+  cors:
+    # APIs validam Cors:AllowedOrigins não-vazio em ASPNETCORE_ENVIRONMENT=Production
+    # (StartupValidator do .NET); pod CrashLoopBackOff sem isso.
+    # Frontend Uni+ Portal SPA ainda não deployado (uniplus-web#217 OPEN);
+    # placeholder pré-configurado para o domínio futuro.
+    allowedOrigins:
+      - https://standalone.portaluni.com.br
+      - https://portal.standalone.portaluni.com.br
   ingress:
     enabled: true
     entryPoint: websecure
@@ -664,6 +672,11 @@ uniplusApiSelecao:
     endpoint: 10.0.2.87:9000
   oidc:
     issuerUri: https://standalone.portaluni.com.br/auth/realms/uniplus
+  cors:
+    allowedOrigins:
+      - https://standalone.portaluni.com.br
+      - https://portal.standalone.portaluni.com.br
+      - https://selecao.standalone.portaluni.com.br
   ingress:
     enabled: true
     entryPoint: websecure
@@ -693,6 +706,11 @@ uniplusApiIngresso:
     endpoint: 10.0.2.87:9000
   oidc:
     issuerUri: https://standalone.portaluni.com.br/auth/realms/uniplus
+  cors:
+    allowedOrigins:
+      - https://standalone.portaluni.com.br
+      - https://portal.standalone.portaluni.com.br
+      - https://ingresso.standalone.portaluni.com.br
   ingress:
     enabled: true
     entryPoint: websecure

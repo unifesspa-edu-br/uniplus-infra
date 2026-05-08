@@ -131,6 +131,11 @@ spec:
             - name: Auth__Audience
               value: {{ .Values.uniplusApiPortal.oidc.audience | quote }}
             {{- end }}
+            
+            {{- range $i, $origin := .Values.uniplusApiPortal.cors.allowedOrigins }}
+            - name: Cors__AllowedOrigins__{{ $i }}
+              value: {{ $origin | quote }}
+            {{- end }}
             {{- with .Values.uniplusApiPortal.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
