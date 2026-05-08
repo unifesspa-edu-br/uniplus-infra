@@ -17,7 +17,7 @@ redisUi:
     # Versão estável validada (Mar/2026). Bumps de minor seguros;
     # majors requerem revisão das envs RI_* (renomes recorrentes
     # entre versões).
-    tag: "2.74.0"
+    tag: "3.4.2"
     pullPolicy: IfNotPresent
 
   imagePullSecrets: []
