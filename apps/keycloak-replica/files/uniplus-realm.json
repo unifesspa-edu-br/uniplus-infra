@@ -97,6 +97,49 @@
           }
         }
       ]
+    },
+    {
+      "clientId": "apicurio-registry",
+      "name": "Apicurio Registry — Schema Registry (Confluent SR API)",
+      "description": "Cliente OIDC do Apicurio Registry (apps/apicurio-registry). Confidential client — Apicurio é backend Quarkus, mantém client_secret no Vault em secret/standalone/keycloak/clients/apicurio-registry (RUNBOOKS §15.1). Após import inicial, operador deve recuperar o secret gerado pelo Keycloak via kcadm.sh e custodiar.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "frontchannelLogout": true,
+      "redirectUris": [
+        "https://schema-registry.standalone.portaluni.com.br/*",
+        "https://schema-registry.standalone.portaluni.com.br/ui/*"
+      ],
+      "webOrigins": ["https://schema-registry.standalone.portaluni.com.br"],
+      "attributes": {
+        "post.logout.redirect.uris": "+"
+      },
+      "defaultClientScopes": [
+        "web-origins",
+        "acr",
+        "profile",
+        "roles",
+        "email"
+      ],
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "full.path": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "claim.name": "groups"
+          }
+        }
+      ]
     }
   ],
   "groups": [

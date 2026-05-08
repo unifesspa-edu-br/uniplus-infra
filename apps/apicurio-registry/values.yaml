@@ -1,0 +1,188 @@
+# Defaults do chart apps/apicurio-registry/.
+# Cada environment (environments/<env>/values.yaml) sobrescreve apenas o
+# necessário. Por padrão o chart fica DESABILITADO — só os ambientes que
+# precisam de Schema Registry (ex.: standalone) ligam via
+# `apicurioRegistry.enabled: true`.
+
+commonLabels:
+  app.kubernetes.io/part-of: uniplus
+  app.kubernetes.io/component: data-admin
+
+apicurioRegistry:
+  # Liga/desliga o chart inteiro. Default false.
+  enabled: false
+
+  image:
+    registry: docker.io
+    repository: apicurio/apicurio-registry
+    # Versão estável validada (Mar/2026). Bumps de patch seguros;
+    # majors requerem revisão das envs APICURIO_* (renomes recorrentes
+    # entre 2.x → 3.x; checar release notes).
+    tag: "3.2.4"
+    pullPolicy: IfNotPresent
+
+  imagePullSecrets: []
+
+  # Apicurio é stateless (todo state vai pro Postgres externo). 1 réplica
+  # é suficiente em standalone — DB faz single-source-of-truth. HA real
+  # exige Postgres replicado (Fase prod com Patroni).
+  replicas: 1
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+  serviceAccount:
+    create: true
+    name: ""
+
+  # === Storage SQL (Postgres standalone) ===
+  # DB e role provisionados pelo step_data_setup_apicurio_db do
+  # bootstrap-standalone.sh. Senha em Vault — ver externalSecrets.dbCreds.
+  storage:
+    kind: sql
+    sqlKind: postgresql
+    # Hostname/IP do Postgres no data-host. Ex: 10.0.2.87 (subnet privada).
+    host: ""
+    port: 5432
+    database: apicurio
+    username: apicurio
+
+  # === OIDC (Keycloak realm uniplus) ===
+  # Apicurio usa Quarkus OIDC. Confidential client `apicurio-registry` no
+  # realm — client_secret custodiado em Vault e injetado via ExternalSecret.
+  #
+  # IMPORTANTE: Apicurio Registry vem com default
+  # `QUARKUS_OIDC_AUTH_SERVER_URL=https://auth.apicur.io/auth/realms/apicurio-local`
+  # apontando pro Keycloak demo público da Red Hat. SEMPRE override com
+  # issuerUri do nosso Keycloak — sem isso, Apicurio confia em IdP externo
+  # sem SLA/controle.
+  oidc:
+    enabled: true
+    issuerUri: ""                # ex.: https://standalone.portaluni.com.br/auth/realms/uniplus
+    clientId: apicurio-registry
+    # Path do claim do JWT que carrega as roles/groups. Pattern reusa
+    # `groups` do mapper já existente no realm (full path: /admins/kafka).
+    rolesClaimPath: groups
+
+  # === Role-based authorization ===
+  # Apicurio define 3 roles internas: sr-admin (full RW + admin), sr-developer
+  # (CRUD em artifacts próprios), sr-readonly (leitura). Mapeamento via
+  # APICURIO_AUTH_ROLES_<role> = valor exato do claim. Reusamos os groups
+  # já validados para AKHQ (/admins/kafka, /users/uniplus) — admins de Kafka
+  # também são admins de schemas; users uniplus default são developers.
+  # Sem grupo (claim vazio) o behavior depende de auth.anonymous-read-access:
+  # mantemos OFF para que requests anônimas sejam 401 (defesa em profundidade).
+  roleBasedAuth:
+    enabled: true
+    # Claim values que mapeiam pra cada role Apicurio.
+    adminClaim: "/admins/kafka"
+    developerClaim: "/users/uniplus"
+    # Vazio: nenhum grupo automaticamente vira readonly — usuário sem
+    # /admins/kafka e sem /users/uniplus simplesmente não tem role.
+    # Ajustar para "/users/external" futuramente se quisermos guests.
+    readonlyClaim: ""
+
+  # === ExternalSecrets (Vault → K8s Secret) ===
+  externalSecrets:
+    enabled: true
+    refreshInterval: "1h"
+    secretStoreRef:
+      kind: ClusterSecretStore
+      name: vault-default
+
+    # Senha do role `apicurio` no Postgres. Gerada pelo
+    # step_data_setup_apicurio_db do bootstrap-standalone.sh em
+    # .bootstrap-creds-apicurio; operador custodia em Vault path abaixo
+    # via §15.2 do RUNBOOKS após primeira execução.
+    dbCreds:
+      vaultPath: secret/standalone/postgres/apicurio
+      passwordKey: password
+
+    # client_secret OIDC do confidential client `apicurio-registry` no realm
+    # uniplus. Gerado pelo Keycloak no import inicial; operador recupera via
+    # kcadm.sh e custodia em Vault (RUNBOOKS §15.1).
+    oidcClient:
+      vaultPath: secret/standalone/keycloak/clients/apicurio-registry
+      clientSecretKey: client_secret
+
+  # === Exposição externa via Traefik IngressRoute ===
+  ingress:
+    enabled: false
+    entryPoint: websecure
+    host: ""                     # ex.: schema-registry.standalone.portaluni.com.br
+    tls:
+      enabled: true
+      secretName: ""             # criado pelo cert-manager se certManager.enabled
+      certManager:
+        enabled: false
+        clusterIssuer: ""        # ex.: letsencrypt-staging | letsencrypt-prod
+
+  # === NetworkPolicy ===
+  # Egress: Postgres data-host (10.0.2.87:5432) + DNS + Keycloak in-cluster
+  # + OIDC issuer público (HTTPS port 443).
+  # Ingress: Traefik + Prometheus (se ServiceMonitor on).
+  networkPolicy:
+    enabled: true
+    traefikNamespace: traefik
+    monitoringNamespace: observability-prometheus
+    # CIDR da subnet privada VCN onde o Postgres data-host vive. Mesmo
+    # CIDR usado pelo keycloak-replica (storage compartilhado).
+    dataHostCIDR: ""
+    dataHostPort: 5432
+    # Service do Keycloak local (in-cluster). Default casa com release name
+    # padrão do chart keycloak-replica em standalone.
+    keycloakService: keycloak-replica-uniplus-standalone
+    keycloakNamespace: uniplus
+    keycloakPort: 8080
+    # CIDR do endpoint público do OIDC issuer. Apicurio chama
+    # `.well-known/openid-configuration`, `/token`, `/userinfo` em HTTPS
+    # port 443 contra o issuer URL público (entra via Traefik IngressRoute
+    # do Keycloak). Sem essa entrada, o pod resolve o DNS mas o handshake
+    # TLS é bloqueado pelo default-deny do egress (mesmo bug Codex P1
+    # round 1 do kafka-ui).
+    oidcIssuerCIDR: ""
+    oidcIssuerPort: 443
+
+  # === ServiceMonitor (Prometheus) ===
+  # Apicurio expõe métricas em /q/metrics (Quarkus Micrometer). Gateado em
+  # `serviceMonitor.enabled AND metrics.enabled`.
+  metrics:
+    enabled: true
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+
+  # === Probes ===
+  # Apicurio usa Quarkus health endpoints: /q/health/started (startup),
+  # /q/health/live (liveness), /q/health/ready (readiness — retorna 503
+  # enquanto JDBC/OIDC discovery não completarem).
+  startupProbe:
+    failureThreshold: 30
+    periodSeconds: 5
+  livenessProbe:
+    periodSeconds: 10
+  readinessProbe:
+    periodSeconds: 5
+
+  # === SecurityContext ===
+  # apicurio/apicurio-registry:3.2.4 roda como uid 1001 (apicurio).
+  podSecurityContext:
+    fsGroup: 1001
+  containerSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1001
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    # Quarkus escreve em /tmp; rootfs poderia ser readOnly montando /tmp
+    # como emptyDir. Out of scope deste PR (deploy em prod hardening).
+    readOnlyRootFilesystem: false
+
+  # Env vars adicionais (lista de `{name, value}` ou `{name, valueFrom}`).
+  extraEnv: []

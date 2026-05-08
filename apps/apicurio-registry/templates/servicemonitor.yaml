@@ -1,0 +1,16 @@
+{{- if and .Values.apicurioRegistry.enabled .Values.apicurioRegistry.metrics.enabled .Values.apicurioRegistry.serviceMonitor.enabled -}}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "apicurioRegistry.fullname" . }}
+  labels:
+    {{- include "apicurioRegistry.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "apicurioRegistry.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: http
+      path: /q/metrics
+      interval: {{ .Values.apicurioRegistry.serviceMonitor.interval }}
+{{- end }}

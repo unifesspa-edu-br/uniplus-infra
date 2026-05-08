@@ -39,6 +39,7 @@ spec:
                 - app: clamav-scanner
                 - app: keycloak-replica
                 - app: kafka-ui
+                - app: apicurio-registry
 
   template:
     metadata:

@@ -1,0 +1,82 @@
+{{- if and .Values.apicurioRegistry.enabled .Values.apicurioRegistry.networkPolicy.enabled -}}
+{{- if not .Values.apicurioRegistry.networkPolicy.dataHostCIDR -}}
+{{- fail "apicurioRegistry.networkPolicy.dataHostCIDR é obrigatório quando networkPolicy.enabled=true (sem isso o egress para Postgres data-host fica em default-deny silencioso). Configurar em environments/<env>/values.yaml." -}}
+{{- end -}}
+{{- if and .Values.apicurioRegistry.oidc.enabled (not .Values.apicurioRegistry.networkPolicy.oidcIssuerCIDR) -}}
+{{- fail "apicurioRegistry.networkPolicy.oidcIssuerCIDR é obrigatório quando oidc.enabled=true (Quarkus OIDC chama discovery/token endpoints em HTTPS contra o issuer público; sem essa entrada o egress fica em default-deny e auth flows falham silenciosamente). Configurar para o IP público do k8s-host /32 em environments/<env>/values.yaml." -}}
+{{- end -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "apicurioRegistry.fullname" . }}
+  labels:
+    {{- include "apicurioRegistry.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "apicurioRegistry.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # HTTP do Traefik (apenas pods do namespace traefik).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.apicurioRegistry.networkPolicy.traefikNamespace }}
+      ports:
+        - protocol: TCP
+          port: 8080
+    {{- if and .Values.apicurioRegistry.metrics.enabled .Values.apicurioRegistry.serviceMonitor.enabled }}
+    # Prometheus scrape em /q/metrics (mesma porta 8080).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.apicurioRegistry.networkPolicy.monitoringNamespace }}
+      ports:
+        - protocol: TCP
+          port: 8080
+    {{- end }}
+  egress:
+    # DNS (CoreDNS).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Postgres data-host (subnet privada VCN).
+    - to:
+        - ipBlock:
+            cidr: {{ .Values.apicurioRegistry.networkPolicy.dataHostCIDR }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.apicurioRegistry.networkPolicy.dataHostPort }}
+    # Keycloak in-cluster (fallback útil se issuerUri for Service DNS).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.apicurioRegistry.networkPolicy.keycloakNamespace }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: keycloak-replica
+      ports:
+        - protocol: TCP
+          port: {{ .Values.apicurioRegistry.networkPolicy.keycloakPort }}
+    {{- if .Values.apicurioRegistry.oidc.enabled }}
+    # OIDC issuer público (HTTPS). Em standalone, Apicurio chama
+    # `https://standalone.portaluni.com.br/auth/realms/uniplus` que
+    # resolve para o public IP do k8s-host (164.152.53.29) e entra via
+    # Traefik IngressRoute do Keycloak. Sem este egress, o OIDC discovery
+    # falha em default-deny (TLS handshake never completes).
+    - to:
+        - ipBlock:
+            cidr: {{ .Values.apicurioRegistry.networkPolicy.oidcIssuerCIDR }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.apicurioRegistry.networkPolicy.oidcIssuerPort }}
+    {{- end }}
+{{- end }}

@@ -1,0 +1,195 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "commonLabels": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "apicurioRegistry": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "image": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "registry": { "type": "string" },
+            "repository": { "type": "string" },
+            "tag": { "type": "string" },
+            "pullPolicy": { "enum": ["Always", "IfNotPresent", "Never"] }
+          },
+          "required": ["registry", "repository", "tag", "pullPolicy"]
+        },
+        "imagePullSecrets": { "type": "array" },
+        "fullnameOverride": { "type": "string" },
+        "nameOverride": { "type": "string" },
+        "replicas": { "type": "integer", "minimum": 1 },
+        "resources": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "serviceAccount": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "create": { "type": "boolean" },
+            "name": { "type": "string" }
+          }
+        },
+        "storage": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "enum": ["sql", "kafkasql"] },
+            "sqlKind": { "enum": ["postgresql", "h2"] },
+            "host": { "type": "string" },
+            "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+            "database": { "type": "string", "minLength": 1 },
+            "username": { "type": "string", "minLength": 1 }
+          },
+          "required": ["kind", "sqlKind", "database", "username"]
+        },
+        "oidc": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "issuerUri": { "type": "string" },
+            "clientId": { "type": "string", "minLength": 1 },
+            "rolesClaimPath": { "type": "string" }
+          },
+          "required": ["enabled", "clientId", "rolesClaimPath"]
+        },
+        "roleBasedAuth": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "adminClaim": { "type": "string" },
+            "developerClaim": { "type": "string" },
+            "readonlyClaim": { "type": "string" }
+          },
+          "required": ["enabled"]
+        },
+        "externalSecrets": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "refreshInterval": { "type": "string" },
+            "secretStoreRef": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "kind": { "enum": ["ClusterSecretStore", "SecretStore"] },
+                "name": { "type": "string" }
+              },
+              "required": ["kind", "name"]
+            },
+            "dbCreds": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "vaultPath": { "type": "string" },
+                "passwordKey": { "type": "string" }
+              },
+              "required": ["vaultPath", "passwordKey"]
+            },
+            "oidcClient": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "vaultPath": { "type": "string" },
+                "clientSecretKey": { "type": "string" }
+              },
+              "required": ["vaultPath", "clientSecretKey"]
+            }
+          }
+        },
+        "ingress": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "entryPoint": { "type": "string" },
+            "host": { "type": "string" },
+            "tls": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "secretName": { "type": "string" },
+                "certManager": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": { "type": "boolean" },
+                    "clusterIssuer": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "networkPolicy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "traefikNamespace": { "type": "string" },
+            "monitoringNamespace": { "type": "string" },
+            "dataHostCIDR": { "type": "string" },
+            "dataHostPort": { "type": "integer" },
+            "keycloakService": { "type": "string" },
+            "keycloakNamespace": { "type": "string" },
+            "keycloakPort": { "type": "integer" },
+            "oidcIssuerCIDR": { "type": "string" },
+            "oidcIssuerPort": { "type": "integer" }
+          }
+        },
+        "metrics": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" }
+          }
+        },
+        "serviceMonitor": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "interval": { "type": "string" }
+          }
+        },
+        "startupProbe": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "livenessProbe": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "readinessProbe": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "podSecurityContext": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "containerSecurityContext": {
+          "type": "object",
+          "additionalProperties": true
+        },
+        "extraEnv": {
+          "type": "array"
+        }
+      },
+      "required": ["enabled", "image", "storage", "oidc"]
+    }
+  }
+}
