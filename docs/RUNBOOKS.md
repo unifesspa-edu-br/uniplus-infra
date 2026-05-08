@@ -2701,28 +2701,39 @@ ssh ubuntu@10.0.2.87 "sudo docker exec -e PGPASSWORD=<super_pw> uniplus-postgres
 VAULT_TOKEN=hvs.xxx \
   vault kv put secret/standalone/postgres/apicurio username=apicurio password="$NEW_PW"
 
-# 4. Forçar refresh do ESO (default refreshInterval=1h)
-kc annotate -n uniplus externalsecret apicurio-registry-db \
+# 4. Forçar refresh do ESO (default refreshInterval=1h).
+# Nota sobre nomes: Helm renderiza fullname como
+# `<Release.Name>-<Chart.Name>`. Em standalone o ApplicationSet
+# (argocd/applicationset.yaml) gera release name `apicurio-registry-uniplus-standalone`,
+# então o ExternalSecret de DB é
+# `apicurio-registry-uniplus-standalone-apicurio-registry-db`. Mesmo
+# pattern do keycloak-replica/AKHQ vistos em §10/§14.
+kc annotate -n uniplus externalsecret apicurio-registry-uniplus-standalone-apicurio-registry-db \
   force-sync=$(date +%s) --overwrite
 
 # 5. Restart do deployment para o pod pegar a nova senha (env é cacheada)
-kc rollout restart -n uniplus deployment/apicurio-registry
+kc rollout restart -n uniplus deployment/apicurio-registry-uniplus-standalone-apicurio-registry
 ```
 
 ### 15.3 Smoke test pós-deploy
 
 ```bash
-# 1. Pod healthy
+# Helm fullname em standalone: apicurio-registry-uniplus-standalone-apicurio-registry
+# (Release.Name `apicurio-registry-uniplus-standalone` + Chart.Name `apicurio-registry`)
+APICURIO_DEPLOY=apicurio-registry-uniplus-standalone-apicurio-registry
+
+# 1. Pod healthy. Label seletor `app.kubernetes.io/name=apicurio-registry`
+# (chart name) bate em qualquer release — não precisa do fullname.
 kc get pods -n uniplus -l app.kubernetes.io/name=apicurio-registry
 # READY 1/1, STATUS Running
 
 # 2. Health endpoints
-kc exec -n uniplus deploy/apicurio-registry -- \
+kc exec -n uniplus "deploy/$APICURIO_DEPLOY" -- \
   curl -s http://localhost:8080/q/health/ready
 # {"status":"UP","checks":[...]}
 
 # 3. OIDC discovery alcançável (deve retornar 200 com issuer)
-kc exec -n uniplus deploy/apicurio-registry -- \
+kc exec -n uniplus "deploy/$APICURIO_DEPLOY" -- \
   curl -s https://standalone.portaluni.com.br/auth/realms/uniplus/.well-known/openid-configuration | head -c 200
 
 # 4. UI externa
@@ -2774,7 +2785,7 @@ curl -sk -H "Authorization: Bearer $TOKEN" \
 
 | Sintoma | Causa provável | Resolução |
 |---|---|---|
-| Pod `CreateContainerConfigError` | ESO não sintetizou Secret (Vault offline ou path errado) | `kc describe externalsecret -n uniplus apicurio-registry-{db,oidc-client}` — checar `status.conditions`. Se `SecretNotFound`: confirmar Vault unsealed + path correto |
+| Pod `CreateContainerConfigError` | ESO não sintetizou Secret (Vault offline ou path errado) | `kc describe externalsecret -n uniplus apicurio-registry-uniplus-standalone-apicurio-registry-{db,oidc-client}` — checar `status.conditions`. Se `SecretNotFound`: confirmar Vault unsealed + path correto |
 | Pod `CrashLoopBackOff`, log `Connection refused (...:5432)` | Egress Postgres bloqueado por NetworkPolicy | Validar `dataHostCIDR` em `environments/standalone/values.yaml` cobre `10.0.2.0/24` (default). Confirmar `uniplus-postgres` ativo no data-host |
 | Pod `CrashLoopBackOff`, log `password authentication failed for user "apicurio"` | Senha em Vault diferente da no Postgres | Recuperar `apicurio_pw` do data-host (`.bootstrap-creds-apicurio` se ainda existe) ou rotacionar via §15.2 |
 | Pod up mas `/q/health/ready` retorna 503 com `OIDC discovery failed` | Egress OIDC issuer bloqueado (default-deny) | Validar `oidcIssuerCIDR=164.152.53.29/32` em `environments/standalone/values.yaml`. Mesmo bug que §14.4 do AKHQ |
