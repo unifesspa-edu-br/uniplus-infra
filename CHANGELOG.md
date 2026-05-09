@@ -9,6 +9,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ### Adicionado
 
+- Keycloak realm `uniplus` ganha 3 confidential clients para fluxo M2M `client_credentials` — `uniplus-api-portal`, `uniplus-api-selecao`, `uniplus-api-ingresso`. Cada um com `serviceAccountsEnabled=true`, audience mapper para `apicurio-registry` e hardcoded-claim mapper que projeta `groups: ["/users/uniplus"]` (Apicurio mapeia → role `sr-developer`). Destrava `uniplus-api#358` (integração Apicurio Schema Registry). RUNBOOKS §15.6 documenta procedure de recuperação do `client_secret` pós-import. Issue #163.
 - Estrutura inicial do repositório uniplus-infra
 - Documentação institucional (README, CONTRIBUTING, SECURITY, LICENSE)
 - Documentação técnica (ARCHITECTURE, VALIDATION-PLAN, SETUP, RUNBOOKS)

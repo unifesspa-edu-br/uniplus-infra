@@ -2837,6 +2837,181 @@ curl -sk -H "Authorization: Bearer $TOKEN" \
 | `auth.apicur.io` aparece em logs OIDC | `QUARKUS_OIDC_AUTH_SERVER_URL` não setado — caiu no default Keycloak demo Red Hat | Validar `oidc.issuerUri` em `environments/standalone/values.yaml`. Sempre obrigatório — sem isso, Apicurio confia em IdP externo público |
 | Browser warning "Not secure" no `schema-registry.standalone.portaluni.com.br` | Cert LE staging | Promover para `letsencrypt-prod` em `ingress.tls.certManager.clusterIssuer` (já é default no `environments/standalone/values.yaml` — checar override por engano) |
 
+### 15.6 Pré-flight: client_secret das APIs Uni+ (uniplus-api-{portal,selecao,ingresso})
+
+Cada uma das 3 APIs Uni+ (`uniplus-api-portal`, `uniplus-api-selecao`, `uniplus-api-ingresso`) usa **OIDC client_credentials** para obter access_token contra o realm `uniplus` e chamar a Apicurio Registry REST API (`schema-registry.standalone.portaluni.com.br`). O fluxo é puro M2M — sem login interativo, sem redirect, sem PKCE.
+
+3 confidential clients foram declarados em `apps/keycloak-replica/files/uniplus-realm.json` na issue #163:
+
+| clientId | Vault path do client_secret | Consumido por |
+|---|---|---|
+| `uniplus-api-portal` | `secret/standalone/keycloak/clients/uniplus-api-portal` | API Portal (`apps/uniplus-api-portal/templates/externalsecret.yaml` ESO 5) |
+| `uniplus-api-selecao` | `secret/standalone/keycloak/clients/uniplus-api-selecao` | API Seleção (`apps/uniplus-api-selecao/templates/externalsecret.yaml` ESO 5) |
+| `uniplus-api-ingresso` | `secret/standalone/keycloak/clients/uniplus-api-ingresso` | API Ingresso (`apps/uniplus-api-ingresso/templates/externalsecret.yaml` ESO 5) |
+
+Sem `client_secret` em Vault, o ESO 5 fica em `SecretNotFound` e o pod da API trava em `CreateContainerConfigError` quando o Deployment passar a referenciar a env var (uniplus-api#358). Hoje (pré-Apicurio) a env não é montada — o ESO sintetiza o Secret no namespace por defesa em profundidade, mas o Deployment ignora.
+
+Cada client tem dois `protocolMappers` que projetam no access_token: (a) `audience-apicurio-registry` (mapper `oidc-audience-mapper`) — adiciona `apicurio-registry` ao claim `aud`, (b) `groups-hardcoded-developer` (mapper `oidc-hardcoded-claim-mapper`) — projeta `groups: ["/users/uniplus"]` no token. O Apicurio (`apps/apicurio-registry/values.yaml` `roleBasedAuth.developerClaim`) mapeia `/users/uniplus` → role interna `sr-developer`.
+
+```bash
+kc() { sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml "$@"; }
+```
+
+**Passo 1 — Garantir os 3 clients no realm.**
+
+**Cluster novo (fresh import):** o realm.json já carrega os 3 clients no `--import-realm` inicial. Skipar para o Passo 2.
+
+**Cluster existente** (realm `uniplus` já importado anteriormente — Keycloak 26.x **skipa** re-import quando o realm existe): adicionar os 3 clients via `kcadm.sh` (mesmo pattern de §15.1 passo 2 e §14.1 passo 2). Idempotente:
+
+```bash
+kc exec -n uniplus -i deploy/keycloak-replica-uniplus-standalone -- bash -c '
+  set -e
+  /opt/keycloak/bin/kcadm.sh config credentials \
+    --server http://localhost:8080/auth \
+    --realm master \
+    --user "$KC_BOOTSTRAP_ADMIN_USERNAME" \
+    --password "$KC_BOOTSTRAP_ADMIN_PASSWORD" >/dev/null
+
+  for cid in uniplus-api-portal uniplus-api-selecao uniplus-api-ingresso; do
+    if ! /opt/keycloak/bin/kcadm.sh get clients -r uniplus --fields clientId 2>/dev/null \
+         | grep -q "\"clientId\" : \"$cid\""; then
+      /opt/keycloak/bin/kcadm.sh create clients -r uniplus \
+        -s clientId=$cid \
+        -s name="Uni+ API $cid — Service Account (M2M)" \
+        -s enabled=true \
+        -s publicClient=false \
+        -s standardFlowEnabled=false \
+        -s implicitFlowEnabled=false \
+        -s directAccessGrantsEnabled=false \
+        -s serviceAccountsEnabled=true \
+        -s frontchannelLogout=false \
+        -s "redirectUris=[]" \
+        -s "webOrigins=[]" \
+        -s "attributes.\"access.token.lifespan\"=300"
+    fi
+
+    CID=$(/opt/keycloak/bin/kcadm.sh get clients -r uniplus -q clientId=$cid --fields id --format csv --noquotes | tail -1)
+
+    # Mapper 1: audience apicurio-registry
+    if ! /opt/keycloak/bin/kcadm.sh get clients/$CID/protocol-mappers/models -r uniplus 2>/dev/null \
+         | grep -q "\"name\" : \"audience-apicurio-registry\""; then
+      /opt/keycloak/bin/kcadm.sh create clients/$CID/protocol-mappers/models -r uniplus \
+        -s name=audience-apicurio-registry \
+        -s protocol=openid-connect \
+        -s protocolMapper=oidc-audience-mapper \
+        -s "config.\"included.client.audience\"=apicurio-registry" \
+        -s "config.\"id.token.claim\"=false" \
+        -s "config.\"access.token.claim\"=true"
+    fi
+
+    # Mapper 2: groups hardcoded /users/uniplus → role sr-developer no Apicurio
+    if ! /opt/keycloak/bin/kcadm.sh get clients/$CID/protocol-mappers/models -r uniplus 2>/dev/null \
+         | grep -q "\"name\" : \"groups-hardcoded-developer\""; then
+      /opt/keycloak/bin/kcadm.sh create clients/$CID/protocol-mappers/models -r uniplus \
+        -s name=groups-hardcoded-developer \
+        -s protocol=openid-connect \
+        -s protocolMapper=oidc-hardcoded-claim-mapper \
+        -s "config.\"claim.name\"=groups" \
+        -s "config.\"claim.value\"=[\"/users/uniplus\"]" \
+        -s "config.\"jsonType.label\"=JSON" \
+        -s "config.\"id.token.claim\"=true" \
+        -s "config.\"access.token.claim\"=true" \
+        -s "config.\"userinfo.token.claim\"=true" \
+        -s "config.\"access.tokenResponse.claim\"=false"
+    fi
+  done
+'
+```
+
+> **Nota — restart do Pod:** mudar o `realm.json` em Git força um rollout via annotation `checksum/realm` (sha256sum do arquivo) — `helm upgrade` faz a mudança sozinho. Em **cluster existente** o realm já está populado em DB, então o restart **não tem efeito incremental** sobre clients/mappers — por isso o `kcadm.sh` acima é necessário.
+
+**Passo 2 — Recuperar `client_secret` de cada client e custodiar em Vault.**
+
+Mesmo pattern do §14.1 (kafka-ui) e §15.1 passo 3 (apicurio-registry). O endpoint `clients/$CID/client-secret` é o único que retorna o valor efetivo.
+
+```bash
+for cid in uniplus-api-portal uniplus-api-selecao uniplus-api-ingresso; do
+  kc exec -n uniplus -i deploy/keycloak-replica-uniplus-standalone -- bash -c "
+    set -e
+    /opt/keycloak/bin/kcadm.sh config credentials \
+      --server http://localhost:8080/auth \
+      --realm master \
+      --user \"\$KC_BOOTSTRAP_ADMIN_USERNAME\" \
+      --password \"\$KC_BOOTSTRAP_ADMIN_PASSWORD\" >/dev/null
+
+    CID=\$(/opt/keycloak/bin/kcadm.sh get clients -r uniplus \
+      -q clientId=$cid --fields id --format csv --noquotes | tail -1)
+
+    /opt/keycloak/bin/kcadm.sh get clients/\$CID/client-secret -r uniplus \
+      --fields value --format csv --noquotes | tail -1
+  " > /tmp/$cid-cs
+
+  SECRET=$(cat /tmp/$cid-cs)
+
+  VAULT_TOKEN=hvs.xxx \
+    vault kv put secret/standalone/keycloak/clients/$cid \
+      client_secret="$SECRET"
+
+  shred -u /tmp/$cid-cs
+done
+```
+
+**Passo 3 — Smoke test do fluxo client_credentials.**
+
+Confirma que (a) o token endpoint aceita o `client_secret` recuperado, (b) o JWT retornado tem `aud=apicurio-registry` e `groups=["/users/uniplus"]`, (c) o claim `groups` é tratado como array (resultado do mapper com `jsonType.label=JSON`).
+
+```bash
+ISSUER="https://standalone.portaluni.com.br/auth/realms/uniplus"
+for cid in uniplus-api-portal uniplus-api-selecao uniplus-api-ingresso; do
+  CSECRET=$(VAULT_TOKEN=hvs.xxx vault kv get -field=client_secret secret/standalone/keycloak/clients/$cid)
+  TOKEN=$(curl -s -X POST "$ISSUER/protocol/openid-connect/token" \
+    -d "grant_type=client_credentials" \
+    -d "client_id=$cid" \
+    -d "client_secret=$CSECRET" \
+    | jq -r .access_token)
+
+  echo "=== $cid ==="
+  # Decode payload (parte do meio do JWT, base64url)
+  echo "$TOKEN" | cut -d. -f2 | tr '_-' '/+' \
+    | awk '{ l=length($0)%4; if(l==2)$0=$0"=="; else if(l==3)$0=$0"="; print }' \
+    | base64 -d 2>/dev/null \
+    | jq '{aud, azp, groups, scope, sub}'
+done
+```
+
+Saída esperada para cada cliente:
+
+```json
+{
+  "aud": ["apicurio-registry", "account"],
+  "azp": "uniplus-api-portal",
+  "groups": ["/users/uniplus"],
+  "scope": "profile email",
+  "sub": "<uuid-do-service-account>"
+}
+```
+
+**Passo 4 — Validar acesso à Apicurio com o token.**
+
+```bash
+TOKEN=$(curl -s -X POST "$ISSUER/protocol/openid-connect/token" \
+  -d "grant_type=client_credentials" \
+  -d "client_id=uniplus-api-portal" \
+  -d "client_secret=$CSECRET" | jq -r .access_token)
+
+# Lista artifacts (deve retornar 200 OK e JSON, mesmo que vazio).
+curl -s -H "Authorization: Bearer $TOKEN" \
+  https://schema-registry.standalone.portaluni.com.br/apis/registry/v3/groups/default/artifacts | jq .
+```
+
+| Resposta | Diagnóstico |
+|---|---|
+| `200 OK` + JSON | OK — token válido, audience aceito, role developer suficiente |
+| `401 Unauthorized` | Token inválido ou expirado. Re-rodar Passo 3 (lifespan = 300s) |
+| `403 Forbidden` | Token válido mas role insuficiente. Decode `groups` no JWT — deve conter `/users/uniplus`; se ausente, mapper `groups-hardcoded-developer` não foi criado (re-rodar Passo 1) |
+
+**Rotação do client_secret** segue o pattern de §14.4 (kafka-ui) — `kcadm.sh create clients/$CID/client-secret` regenera, depois `vault kv put` atualiza. ESO sincroniza no próximo refresh (1h padrão), e em seguida o Pod consumidor (Deployment da API) precisa ser rolled-restart para pegar a env var nova.
+
 ---
 
 ## 16. RedisInsight UI (standalone)
