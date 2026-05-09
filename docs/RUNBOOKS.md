@@ -2994,10 +2994,17 @@ Saída esperada para cada cliente:
 **Passo 4 — Validar acesso à Apicurio com o token.**
 
 ```bash
+# Recarrega o client_secret de uniplus-api-portal explicitamente.
+# Sem isso, $CSECRET pode estar vindo da última iteração do Passo 3
+# (uniplus-api-ingresso), causando 401 falso e mascarando problemas
+# reais de auth na Apicurio.
+PORTAL_SECRET=$(VAULT_TOKEN=hvs.xxx vault kv get \
+  -field=client_secret secret/standalone/keycloak/clients/uniplus-api-portal)
+
 TOKEN=$(curl -s -X POST "$ISSUER/protocol/openid-connect/token" \
   -d "grant_type=client_credentials" \
   -d "client_id=uniplus-api-portal" \
-  -d "client_secret=$CSECRET" | jq -r .access_token)
+  -d "client_secret=$PORTAL_SECRET" | jq -r .access_token)
 
 # Lista artifacts (deve retornar 200 OK e JSON, mesmo que vazio).
 curl -s -H "Authorization: Bearer $TOKEN" \
