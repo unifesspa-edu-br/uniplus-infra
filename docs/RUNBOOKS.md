@@ -2994,10 +2994,12 @@ Saída esperada para cada cliente:
 **Passo 4 — Validar acesso à Apicurio com o token.**
 
 ```bash
-# Recarrega o client_secret de uniplus-api-portal explicitamente.
-# Sem isso, $CSECRET pode estar vindo da última iteração do Passo 3
-# (uniplus-api-ingresso), causando 401 falso e mascarando problemas
-# reais de auth na Apicurio.
+# Re-declara ISSUER e recarrega client_secret de uniplus-api-portal.
+# Sem isso, operador rodando este passo em shell novo (não na sequência
+# do Passo 3) hit URL malformada ($ISSUER unset) ou 401 falso ($CSECRET
+# vindo da última iteração do loop do Passo 3 — uniplus-api-ingresso),
+# mascarando problemas reais de auth na Apicurio.
+ISSUER="https://standalone.portaluni.com.br/auth/realms/uniplus"
 PORTAL_SECRET=$(VAULT_TOKEN=hvs.xxx vault kv get \
   -field=client_secret secret/standalone/keycloak/clients/uniplus-api-portal)
 
