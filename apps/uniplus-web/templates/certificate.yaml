@@ -3,7 +3,10 @@
 {{- fail "uniplusWeb.ingress.tls.certManager.clusterIssuer é obrigatório quando certManager.enabled=true (ex.: letsencrypt-prod)." -}}
 {{- end -}}
 {{- range $app, $cfg := .Values.uniplusWeb.apps -}}
-{{- if $cfg.enabled }}
+{{- if $cfg.enabled -}}
+{{- if not $cfg.host -}}
+{{- fail (printf "uniplusWeb.apps.%s.host é obrigatório quando ingress.tls.certManager.enabled=true (ex.: %s.standalone.portaluni.com.br). Certificate cert-manager exige dnsNames válido." $app $app) -}}
+{{- end }}
 ---
 apiVersion: cert-manager.io/v1
 kind: Certificate

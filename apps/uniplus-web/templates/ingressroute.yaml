@@ -1,6 +1,9 @@
 {{- if and .Values.uniplusWeb.enabled .Values.uniplusWeb.ingress.enabled -}}
 {{- range $app, $cfg := .Values.uniplusWeb.apps -}}
-{{- if $cfg.enabled }}
+{{- if $cfg.enabled -}}
+{{- if not $cfg.host -}}
+{{- fail (printf "uniplusWeb.apps.%s.host é obrigatório quando uniplusWeb.ingress.enabled=true (ex.: %s.standalone.portaluni.com.br). IngressRoute Traefik exige Host(...) válido." $app $app) -}}
+{{- end }}
 ---
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute

@@ -3,10 +3,13 @@
 {{- if $cfg.enabled -}}
 {{- if not $cfg.image -}}
 {{- fail (printf "uniplusWeb.apps.%s.image é obrigatório (nome da imagem em ghcr.io/unifesspa-edu-br/, ex.: uniplus-portal)." $app) -}}
-{{- end -}}
-{{- if not $cfg.host -}}
-{{- fail (printf "uniplusWeb.apps.%s.host é obrigatório (subdomain do app, ex.: %s.standalone.portaluni.com.br). IngressRoute Traefik exige Host(...) válido." $app $app) -}}
 {{- end }}
+{{/*
+  `host` NÃO é validado aqui — só é consumido por ingressroute.yaml e
+  certificate.yaml, que disparam o `fail` por conta própria quando
+  `ingress.enabled=true` mas o host está vazio. Isso permite deploy
+  interno sem ingress (`ingress.enabled=false`) sem precisar setar host.
+*/}}
 ---
 apiVersion: apps/v1
 kind: Deployment
