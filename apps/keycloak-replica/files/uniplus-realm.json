@@ -140,6 +140,165 @@
           }
         }
       ]
+    },
+    {
+      "clientId": "uniplus-api-portal",
+      "name": "Uni+ API Portal — Service Account (M2M)",
+      "description": "Cliente OIDC confidencial da API Portal Uni+ para fluxo client_credentials (M2M). Usado pela API para obter access_token e chamar a Apicurio Registry REST API (Confluent SR). Não tem fluxo interativo: standardFlowEnabled=false, directAccessGrantsEnabled=false. client_secret gerado pelo Keycloak no import inicial; operador recupera via kcadm.sh e custodia em secret/standalone/keycloak/clients/uniplus-api-portal (RUNBOOKS §15.6). access_token tem aud=apicurio-registry e groups=[/users/uniplus] (via mappers abaixo) — Apicurio mapeia /users/uniplus → role sr-developer (apps/apicurio-registry/values.yaml).",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "frontchannelLogout": false,
+      "redirectUris": [],
+      "webOrigins": [],
+      "attributes": {
+        "access.token.lifespan": "300"
+      },
+      "defaultClientScopes": [
+        "web-origins",
+        "acr",
+        "profile",
+        "roles",
+        "email"
+      ],
+      "protocolMappers": [
+        {
+          "name": "audience-apicurio-registry",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "apicurio-registry",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        },
+        {
+          "name": "groups-hardcoded-developer",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "groups",
+            "claim.value": "[\"/users/uniplus\"]",
+            "jsonType.label": "JSON",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "access.tokenResponse.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "uniplus-api-selecao",
+      "name": "Uni+ API Seleção — Service Account (M2M)",
+      "description": "Cliente OIDC confidencial da API Seleção Uni+ para fluxo client_credentials (M2M). Usado pela API para obter access_token e chamar a Apicurio Registry REST API (Confluent SR). Não tem fluxo interativo: standardFlowEnabled=false, directAccessGrantsEnabled=false. client_secret gerado pelo Keycloak no import inicial; operador recupera via kcadm.sh e custodia em secret/standalone/keycloak/clients/uniplus-api-selecao (RUNBOOKS §15.6). access_token tem aud=apicurio-registry e groups=[/users/uniplus] (via mappers abaixo) — Apicurio mapeia /users/uniplus → role sr-developer (apps/apicurio-registry/values.yaml).",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "frontchannelLogout": false,
+      "redirectUris": [],
+      "webOrigins": [],
+      "attributes": {
+        "access.token.lifespan": "300"
+      },
+      "defaultClientScopes": [
+        "web-origins",
+        "acr",
+        "profile",
+        "roles",
+        "email"
+      ],
+      "protocolMappers": [
+        {
+          "name": "audience-apicurio-registry",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "apicurio-registry",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        },
+        {
+          "name": "groups-hardcoded-developer",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "groups",
+            "claim.value": "[\"/users/uniplus\"]",
+            "jsonType.label": "JSON",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "access.tokenResponse.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "uniplus-api-ingresso",
+      "name": "Uni+ API Ingresso — Service Account (M2M)",
+      "description": "Cliente OIDC confidencial da API Ingresso Uni+ para fluxo client_credentials (M2M). Usado pela API para obter access_token e chamar a Apicurio Registry REST API (Confluent SR). Não tem fluxo interativo: standardFlowEnabled=false, directAccessGrantsEnabled=false. client_secret gerado pelo Keycloak no import inicial; operador recupera via kcadm.sh e custodia em secret/standalone/keycloak/clients/uniplus-api-ingresso (RUNBOOKS §15.6). access_token tem aud=apicurio-registry e groups=[/users/uniplus] (via mappers abaixo) — Apicurio mapeia /users/uniplus → role sr-developer (apps/apicurio-registry/values.yaml).",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "frontchannelLogout": false,
+      "redirectUris": [],
+      "webOrigins": [],
+      "attributes": {
+        "access.token.lifespan": "300"
+      },
+      "defaultClientScopes": [
+        "web-origins",
+        "acr",
+        "profile",
+        "roles",
+        "email"
+      ],
+      "protocolMappers": [
+        {
+          "name": "audience-apicurio-registry",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "apicurio-registry",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        },
+        {
+          "name": "groups-hardcoded-developer",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "groups",
+            "claim.value": "[\"/users/uniplus\"]",
+            "jsonType.label": "JSON",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "access.tokenResponse.claim": "false"
+          }
+        }
+      ]
     }
   ],
   "groups": [
