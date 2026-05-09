@@ -28,6 +28,13 @@ spec:
     metadata:
       labels:
         {{- include "uniplusWeb.labels" (dict "ctx" $ "app" $app) | nindent 8 }}
+      annotations:
+        # Checksum do runtimeConfig deste app específico — força rolling
+        # restart quando apiUrl/keycloak.* mudam. subPath mounts não
+        # propagam ConfigMap updates aos pods em execução, então sem este
+        # hash uma alteração em values ficaria invisível até restart manual
+        # (problema apontado por Codex P1 no PR #171).
+        checksum/runtime-config: {{ $cfg.runtimeConfig | toJson | sha256sum }}
     spec:
       serviceAccountName: {{ include "uniplusWeb.serviceAccountName" (dict "ctx" $ "app" $app) }}
       {{- with $.Values.uniplusWeb.imagePullSecrets }}
