@@ -391,8 +391,18 @@ keycloak:
     portalClient:
       clientId: uniplus-portal
       rootUrl: https://standalone.portaluni.com.br
+      # Cliente público compartilhado pelas 3 SPAs Uni+ (1 client, 3
+      # redirectUris) — pattern definido na story uniplus-infra#162. Cada
+      # SPA roda no próprio subdomain (PR #171); o silent-check-sso do
+      # keycloak-js exige que cada origem esteja autorizada explicitamente.
       redirectUris:
         - https://standalone.portaluni.com.br/*
+        - https://portal.standalone.portaluni.com.br/*
+        - https://selecao.standalone.portaluni.com.br/*
+        - https://ingresso.standalone.portaluni.com.br/*
+      # "+" deriva Web Origins automaticamente dos redirectUris acima
+      # (Keycloak preenche cada host como origem permitida). Isso libera
+      # tanto CORS quanto frame-ancestors para o iframe silent-check-sso.
       webOrigins:
         - "+"
 
