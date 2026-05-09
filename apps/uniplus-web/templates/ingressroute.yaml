@@ -1,0 +1,26 @@
+{{- if and .Values.uniplusWeb.enabled .Values.uniplusWeb.ingress.enabled -}}
+{{- range $app, $cfg := .Values.uniplusWeb.apps -}}
+{{- if $cfg.enabled }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ include "uniplusWeb.appFullname" (dict "ctx" $ "app" $app) }}
+  labels:
+    {{- include "uniplusWeb.labels" (dict "ctx" $ "app" $app) | nindent 4 }}
+spec:
+  entryPoints:
+    - {{ $.Values.uniplusWeb.ingress.entryPoint }}
+  routes:
+    - match: Host(`{{ $cfg.host }}`)
+      kind: Rule
+      services:
+        - name: {{ include "uniplusWeb.appFullname" (dict "ctx" $ "app" $app) }}
+          port: 8080
+  {{- if $.Values.uniplusWeb.ingress.tls.enabled }}
+  tls:
+    secretName: {{ printf "%s-tls" (include "uniplusWeb.appFullname" (dict "ctx" $ "app" $app)) }}
+  {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

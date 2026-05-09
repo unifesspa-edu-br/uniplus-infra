@@ -1,0 +1,42 @@
+{{- if .Values.uniplusWeb.enabled -}}
+{{- range $app, $cfg := .Values.uniplusWeb.apps -}}
+{{- if $cfg.enabled -}}
+{{- if not $cfg.runtimeConfig.apiUrl -}}
+{{- fail (printf "uniplusWeb.apps.%s.runtimeConfig.apiUrl é obrigatório (URL pública da API correspondente, ex.: https://api-%s.standalone.portaluni.com.br). Sem URL real, runtime-config.json contém placeholder e o app aborta o bootstrap (ADR-0021 assertNaoEhPlaceholder)." $app $app) -}}
+{{- end -}}
+{{- if not $cfg.runtimeConfig.keycloak.url -}}
+{{- fail (printf "uniplusWeb.apps.%s.runtimeConfig.keycloak.url é obrigatório (URL do realm Keycloak, ex.: https://standalone.portaluni.com.br/auth)." $app) -}}
+{{- end -}}
+{{- if not $cfg.runtimeConfig.keycloak.realm -}}
+{{- fail (printf "uniplusWeb.apps.%s.runtimeConfig.keycloak.realm é obrigatório (ex.: uniplus)." $app) -}}
+{{- end -}}
+{{- if not $cfg.runtimeConfig.keycloak.clientId -}}
+{{- fail (printf "uniplusWeb.apps.%s.runtimeConfig.keycloak.clientId é obrigatório (ex.: uniplus-portal)." $app) -}}
+{{- end }}
+---
+# ConfigMap montado sobre /usr/share/nginx/html/assets/runtime-config.json
+# (substitui o placeholder embutido na imagem). Schema é a interface
+# AppConfig em libs/shared-data/lib/config/app-config.model.ts do
+# uniplus-web (ADR-0021). nginx serve com Cache-Control: no-store, então
+# bumps de ConfigMap chegam imediatamente ao browser sem rolling restart
+# do pod (mas restart não dói — `data.runtime-config.json` muda hash do
+# objeto, ConfigMap reload é automático via subPath no volume).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "uniplusWeb.runtimeConfigMapName" (dict "ctx" $ "app" $app) }}
+  labels:
+    {{- include "uniplusWeb.labels" (dict "ctx" $ "app" $app) | nindent 4 }}
+data:
+  runtime-config.json: |
+    {
+      "apiUrl": {{ $cfg.runtimeConfig.apiUrl | quote }},
+      "keycloak": {
+        "url": {{ $cfg.runtimeConfig.keycloak.url | quote }},
+        "realm": {{ $cfg.runtimeConfig.keycloak.realm | quote }},
+        "clientId": {{ $cfg.runtimeConfig.keycloak.clientId | quote }}
+      }
+    }
+{{- end }}
+{{- end }}
+{{- end }}

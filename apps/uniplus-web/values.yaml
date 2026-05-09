@@ -1,116 +1,160 @@
-# Default values para uniplus-web
-# Cada ambiente (lab-sp1, lab-sp2, prod-sp1, prod-sp2) define overrides
-# em environments/<ambiente>/values.yaml
+# Defaults para uniplus-web.
+#
+# 1 chart, 3 deployments — portal/seleção/ingresso, cada um com seu
+# subdomain dedicado, ConfigMap de runtime-config.json (ADR-0021 web)
+# e Certificate cert-manager. Pattern simétrico aos charts api-* mas
+# iterando sobre `apps.{portal,selecao,ingresso}`.
+#
+# Cada ambiente sobrescreve em `environments/<env>/values.yaml` o bloco
+# `uniplusWeb` com `host` + `runtimeConfig` por app.
 
-# Configuração comum
-nameOverride: ""
-fullnameOverride: ""
-
-# Imagens (build via GitHub Actions, push para registry)
-image:
-  registry: ghcr.io
-  repository: unifesspa-edu-br
-  pullPolicy: IfNotPresent
-  tag: ""  # se vazio, usa appVersion do Chart
-
-imagePullSecrets: []
-
-# 3 frontends Angular como deployments separados
-apps:
-  portal:
-    enabled: true
-    replicas: 2
-    image: uniplus-web-portal
-    path: /portal
-    isDefault: true  # uniplus.unifesspa.edu.br/ → portal
-    resources:
-      requests:
-        cpu: 100m
-        memory: 128Mi
-      limits:
-        cpu: 500m
-        memory: 256Mi
-
-  selecao:
-    enabled: true
-    replicas: 2
-    image: uniplus-web-selecao
-    path: /selecao
-    resources:
-      requests:
-        cpu: 100m
-        memory: 128Mi
-      limits:
-        cpu: 500m
-        memory: 256Mi
-
-  ingresso:
-    enabled: true
-    replicas: 2
-    image: uniplus-web-ingresso
-    path: /ingresso
-    resources:
-      requests:
-        cpu: 100m
-        memory: 128Mi
-      limits:
-        cpu: 500m
-        memory: 256Mi
-
-# Service config
-service:
-  type: ClusterIP
-  port: 80
-
-# Ingress (Traefik via IngressRoute)
-ingress:
+uniplusWeb:
   enabled: true
-  className: traefik
-  host: uniplus.unifesspa.edu.br  # override em prod
-  tls:
-    enabled: true
-    certResolver: letsencrypt  # cert-manager ou traefik resolver
-    secretName: uniplus-web-tls
 
-# Probes
-probes:
-  liveness:
-    path: /
-    initialDelaySeconds: 10
+  nameOverride: ""
+  fullnameOverride: ""
+
+  # Imagem default (apps.<name>.image override por app).
+  image:
+    registry: ghcr.io
+    repository: unifesspa-edu-br
+    pullPolicy: IfNotPresent
+    # tag default puxa da Chart.AppVersion. Override per-app possível em
+    # apps.<name>.tag.
+    tag: ""
+
+  imagePullSecrets: []
+
+  serviceAccount:
+    create: true
+    name: ""
+
+  # Pod-level securityContext alinhado ao nginxinc/nginx-unprivileged
+  # (UID 101, fsGroup 101). nginx-unprivileged escuta :8080 sem
+  # CAP_NET_BIND_SERVICE.
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 101
+    runAsGroup: 101
+    fsGroup: 101
+
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    runAsNonRoot: true
+    runAsUser: 101
+    runAsGroup: 101
+    readOnlyRootFilesystem: false  # nginx grava em /var/cache/nginx + tmp
+    capabilities:
+      drop: ["ALL"]
+    seccompProfile:
+      type: RuntimeDefault
+
+  startupProbe:
+    failureThreshold: 30
+    periodSeconds: 2
+  livenessProbe:
     periodSeconds: 10
-  readiness:
-    path: /
-    initialDelaySeconds: 5
+  readinessProbe:
     periodSeconds: 5
 
-# Pod security
-securityContext:
-  runAsNonRoot: true
-  runAsUser: 101  # nginx
-  fsGroup: 101
-  readOnlyRootFilesystem: true
-  allowPrivilegeEscalation: false
+  # 3 frontends Angular como deployments separados, cada um servindo no
+  # próprio subdomain. Defaults são placeholders — environments/<env>/
+  # values.yaml preenche `host` + `runtimeConfig` reais.
+  apps:
+    portal:
+      enabled: false  # ativar em environments/<env>/values.yaml
+      replicas: 2
+      # Imagem GHCR — atenção ao naming inconsistente entre portal (sem
+      # prefixo `web-`) e os demais (com `web-`). Verificar tags em
+      # https://github.com/unifesspa-edu-br/packages.
+      image: uniplus-portal
+      tag: v0.1.0  # tag publicada em GHCR (override per-app possível)
+      host: ""  # ex.: portal.standalone.portaluni.com.br
+      # Conteúdo escrito em /assets/runtime-config.json via ConfigMap.
+      # Schema é a interface AppConfig em libs/shared-data/lib/config/
+      # app-config.model.ts do uniplus-web (ADR-0021).
+      runtimeConfig:
+        apiUrl: ""  # ex.: https://api-portal.standalone.portaluni.com.br
+        keycloak:
+          url: ""  # ex.: https://standalone.portaluni.com.br/auth
+          realm: uniplus
+          clientId: uniplus-portal
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 250m
+          memory: 128Mi
 
-# Network policies
-networkPolicy:
-  enabled: true
+    selecao:
+      enabled: false  # ativar em environments/<env>/values.yaml
+      replicas: 2
+      image: uniplus-web-selecao
+      tag: v0.1.0
+      host: ""
+      runtimeConfig:
+        apiUrl: ""
+        keycloak:
+          url: ""
+          realm: uniplus
+          clientId: uniplus-portal
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 250m
+          memory: 128Mi
+
+    ingresso:
+      enabled: false  # ativar em environments/<env>/values.yaml
+      replicas: 2
+      image: uniplus-web-ingresso
+      tag: v0.1.0
+      host: ""
+      runtimeConfig:
+        apiUrl: ""
+        keycloak:
+          url: ""
+          realm: uniplus
+          clientId: uniplus-portal
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 250m
+          memory: 128Mi
+
   ingress:
-    - from:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: traefik
+    enabled: true
+    entryPoint: websecure
+    tls:
+      enabled: true
+      certManager:
+        enabled: true
+        clusterIssuer: letsencrypt-prod
 
-# Observability (auto-discoverable pelo Prometheus)
-serviceMonitor:
-  enabled: true
-  interval: 30s
+  # NetworkPolicy: ingress só do namespace Traefik; egress só DNS (CoreDNS).
+  # Nginx-unprivileged não chama upstream — todas as requests externas
+  # (Keycloak, API) são feitas pelo browser do usuário, não pelo pod.
+  # Por isso não há regra de egress para Keycloak/API.
+  networkPolicy:
+    enabled: true
+    traefikNamespace: traefik
+    monitoringNamespace: monitoring
 
-# Pod anti-affinity para distribuir réplicas
-podAntiAffinity:
-  enabled: true
-  topologyKey: kubernetes.io/hostname
+  # ServiceMonitor opt-in (Prometheus auto-discovery). nginx-unprivileged
+  # serve métricas em formato Prometheus se enabled — fora de escopo standalone.
+  serviceMonitor:
+    enabled: false
+    interval: 30s
 
-# Labels comuns aplicados a todos os recursos
-commonLabels:
-  app.kubernetes.io/part-of: uniplus
-  app.kubernetes.io/component: frontend
+  podAntiAffinity:
+    enabled: true
+    topologyKey: kubernetes.io/hostname
+
+  commonLabels:
+    app.kubernetes.io/part-of: uniplus
+    app.kubernetes.io/component: frontend

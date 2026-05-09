@@ -1,0 +1,51 @@
+{{- if and .Values.uniplusWeb.enabled .Values.uniplusWeb.networkPolicy.enabled -}}
+{{- range $app, $cfg := .Values.uniplusWeb.apps -}}
+{{- if $cfg.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "uniplusWeb.appFullname" (dict "ctx" $ "app" $app) }}
+  labels:
+    {{- include "uniplusWeb.labels" (dict "ctx" $ "app" $app) | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "uniplusWeb.selectorLabels" (dict "ctx" $ "app" $app) | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $.Values.uniplusWeb.networkPolicy.traefikNamespace }}
+      ports:
+        - protocol: TCP
+          port: 8080
+    {{- if $.Values.uniplusWeb.serviceMonitor.enabled }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $.Values.uniplusWeb.networkPolicy.monitoringNamespace }}
+      ports:
+        - protocol: TCP
+          port: 8080
+    {{- end }}
+  egress:
+    # DNS apenas (CoreDNS) — nginx-unprivileged não chama Keycloak/API
+    # por conta própria. Toda a comunicação com o backend é feita pelo
+    # browser do usuário, não pelo pod. Egress restrito a DNS reduz
+    # superfície de ataque caso a imagem seja comprometida.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+{{- end }}
+{{- end }}
+{{- end }}

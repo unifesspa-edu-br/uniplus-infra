@@ -728,6 +728,57 @@ uniplusApiIngresso:
     oidcIssuerCIDR: 164.152.53.29/32
 
 # ----------------------------------------------------------------------------
+# Frontends Uni+ (Angular SPAs servidas por nginx-unprivileged). 1 chart,
+# 3 deployments — cada um no próprio subdomain (pattern subdomain, ADR-018
+# infra). runtime-config.json é montado via ConfigMap sobre o placeholder
+# embutido na imagem e contém apiUrl + Keycloak (ADR-0021 web). Chart
+# uniplus-infra#162.
+#
+# Realm Keycloak `uniplus`. clientId `uniplus-portal` é compartilhado pelos
+# 3 SPAs (1 client público com 3 redirectUri configurados) — alinhado ao
+# uniplusApiPortal.oidc.audience.
+# ----------------------------------------------------------------------------
+uniplusWeb:
+  enabled: true
+
+  apps:
+    portal:
+      enabled: true
+      replicas: 1  # standalone single-node — anti-affinity é preferred, então 1 replica não conflita
+      image: uniplus-portal
+      host: portal.standalone.portaluni.com.br
+      runtimeConfig:
+        apiUrl: https://api-portal.standalone.portaluni.com.br
+        keycloak:
+          url: https://standalone.portaluni.com.br/auth
+          realm: uniplus
+          clientId: uniplus-portal
+
+    selecao:
+      enabled: true
+      replicas: 1
+      image: uniplus-web-selecao
+      host: selecao.standalone.portaluni.com.br
+      runtimeConfig:
+        apiUrl: https://api-selecao.standalone.portaluni.com.br
+        keycloak:
+          url: https://standalone.portaluni.com.br/auth
+          realm: uniplus
+          clientId: uniplus-portal
+
+    ingresso:
+      enabled: true
+      replicas: 1
+      image: uniplus-web-ingresso
+      host: ingresso.standalone.portaluni.com.br
+      runtimeConfig:
+        apiUrl: https://api-ingresso.standalone.portaluni.com.br
+        keycloak:
+          url: https://standalone.portaluni.com.br/auth
+          realm: uniplus
+          clientId: uniplus-portal
+
+# ----------------------------------------------------------------------------
 # Componentes stateful no data-host (Postgres, Kafka, MinIO, Redis) rodam
 # FORA do K8s, gerenciados por systemd em /var/lib/uniplus/* (ADR-002 +
 # ADR-005). Endpoints chegam às apps via External Secrets sintetizados a
