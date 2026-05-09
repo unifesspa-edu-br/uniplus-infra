@@ -623,13 +623,14 @@ uniplusApiPortal:
   redis:
     host: 10.0.2.87
   kafka:
-    # Desligado no primeiro deploy até validar que Wolverine/Confluent.Kafka
-    # do `uniplus-api` faz binding nativo de Kafka__SecurityProtocol/SaslMechanism/
-    # SaslUsername/SaslPassword/SslCaLocation via IConfiguration.GetSection("Kafka").
-    # Se o binding não existir, conexão SASL_SSL falha em runtime sem aparecer
-    # em helm lint. Re-habilitar após confirmação no código (issue follow-up).
-    # Code-reviewer P1 round 1.
-    enabled: false
+    # Habilitado em 2026-05-09 (#165) — bind nativo Kafka:SecurityProtocol/
+    # SaslMechanism/SaslUsername/SaslPassword/SslCaLocation entregue por
+    # uniplus-api#343 (PR #351) e KafkaHealthCheck refatorado para usar
+    # IOptions<KafkaSettings> em uniplus-api#345 (PR #356), publicados em
+    # GHCR como v0.2.0 e puxados pela Epic uniplus-infra#164 (PR #168).
+    # Pré-requisito Vault: secret/standalone/kafka/admin com keys
+    # `username`, `password`, `ca_cert` (ESO refresha o Secret kafka-admin).
+    enabled: true
     bootstrapServers: 10.0.2.87:9092
   storage:
     endpoint: 10.0.2.87:9000
@@ -665,8 +666,8 @@ uniplusApiSelecao:
   redis:
     host: 10.0.2.87
   kafka:
-    # Ver comentário em uniplusApiPortal.kafka — desligado até validar binding.
-    enabled: false
+    # Ver comentário em uniplusApiPortal.kafka — habilitado em #165.
+    enabled: true
     bootstrapServers: 10.0.2.87:9092
   storage:
     endpoint: 10.0.2.87:9000
@@ -699,8 +700,8 @@ uniplusApiIngresso:
   redis:
     host: 10.0.2.87
   kafka:
-    # Ver comentário em uniplusApiPortal.kafka — desligado até validar binding.
-    enabled: false
+    # Ver comentário em uniplusApiPortal.kafka — habilitado em #165.
+    enabled: true
     bootstrapServers: 10.0.2.87:9092
   storage:
     endpoint: 10.0.2.87:9000
