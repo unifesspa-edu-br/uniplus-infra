@@ -1,0 +1,102 @@
+{{- if .Values.uniplusWeb.enabled -}}
+{{- range $app, $cfg := .Values.uniplusWeb.apps -}}
+{{- if $cfg.enabled -}}
+{{- if not $cfg.image -}}
+{{- fail (printf "uniplusWeb.apps.%s.image é obrigatório (nome da imagem em ghcr.io/unifesspa-edu-br/, ex.: uniplus-portal)." $app) -}}
+{{- end -}}
+{{- if not $cfg.host -}}
+{{- fail (printf "uniplusWeb.apps.%s.host é obrigatório (subdomain do app, ex.: %s.standalone.portaluni.com.br). IngressRoute Traefik exige Host(...) válido." $app $app) -}}
+{{- end }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "uniplusWeb.appFullname" (dict "ctx" $ "app" $app) }}
+  labels:
+    {{- include "uniplusWeb.labels" (dict "ctx" $ "app" $app) | nindent 4 }}
+spec:
+  replicas: {{ $cfg.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      {{- include "uniplusWeb.selectorLabels" (dict "ctx" $ "app" $app) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "uniplusWeb.labels" (dict "ctx" $ "app" $app) | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "uniplusWeb.serviceAccountName" (dict "ctx" $ "app" $app) }}
+      {{- with $.Values.uniplusWeb.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml $.Values.uniplusWeb.podSecurityContext | nindent 8 }}
+      {{- if $.Values.uniplusWeb.podAntiAffinity.enabled }}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    {{- include "uniplusWeb.selectorLabels" (dict "ctx" $ "app" $app) | nindent 20 }}
+                topologyKey: {{ $.Values.uniplusWeb.podAntiAffinity.topologyKey }}
+      {{- end }}
+      containers:
+        - name: web
+          image: {{ include "uniplusWeb.image" (dict "ctx" $ "appCfg" $cfg) }}
+          imagePullPolicy: {{ $.Values.uniplusWeb.image.pullPolicy }}
+          securityContext:
+            {{- toYaml $.Values.uniplusWeb.containerSecurityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          # Healthcheck estático (`/health.json` retorna {"status":"ok"})
+          # — definido em docker/nginx.conf. Liveness e startup ambos olham
+          # para esse endpoint porque nginx-unprivileged não tem deps externas
+          # (não chama Keycloak/API por conta própria — quem faz é o browser
+          # do usuário). Readiness mira o mesmo endpoint para que ArgoCD veja
+          # pod Ready assim que nginx aceita conexões.
+          startupProbe:
+            httpGet:
+              path: /health.json
+              port: http
+            failureThreshold: {{ $.Values.uniplusWeb.startupProbe.failureThreshold }}
+            periodSeconds: {{ $.Values.uniplusWeb.startupProbe.periodSeconds }}
+          livenessProbe:
+            httpGet:
+              path: /health.json
+              port: http
+            periodSeconds: {{ $.Values.uniplusWeb.livenessProbe.periodSeconds }}
+          readinessProbe:
+            httpGet:
+              path: /health.json
+              port: http
+            periodSeconds: {{ $.Values.uniplusWeb.readinessProbe.periodSeconds }}
+          resources:
+            {{- toYaml $cfg.resources | nindent 12 }}
+          # Mount runtime-config.json sobre o placeholder embutido na imagem
+          # (que tem URLs `.invalid` e PLACEHOLDER_*). subPath garante que
+          # apenas esse arquivo é substituído — não masca o resto de /assets
+          # que o build do Angular populou (favicons, fonts, etc.).
+          volumeMounts:
+            - name: runtime-config
+              mountPath: /usr/share/nginx/html/assets/runtime-config.json
+              subPath: runtime-config.json
+              readOnly: true
+      volumes:
+        - name: runtime-config
+          configMap:
+            name: {{ include "uniplusWeb.runtimeConfigMapName" (dict "ctx" $ "app" $app) }}
+            items:
+              - key: runtime-config.json
+                path: runtime-config.json
+{{- end }}
+{{- end }}
+{{- end }}

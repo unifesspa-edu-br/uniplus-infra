@@ -1,0 +1,24 @@
+{{- if and .Values.uniplusWeb.enabled .Values.uniplusWeb.ingress.enabled .Values.uniplusWeb.ingress.tls.enabled .Values.uniplusWeb.ingress.tls.certManager.enabled -}}
+{{- if not .Values.uniplusWeb.ingress.tls.certManager.clusterIssuer -}}
+{{- fail "uniplusWeb.ingress.tls.certManager.clusterIssuer é obrigatório quando certManager.enabled=true (ex.: letsencrypt-prod)." -}}
+{{- end -}}
+{{- range $app, $cfg := .Values.uniplusWeb.apps -}}
+{{- if $cfg.enabled }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "uniplusWeb.appFullname" (dict "ctx" $ "app" $app) }}
+  labels:
+    {{- include "uniplusWeb.labels" (dict "ctx" $ "app" $app) | nindent 4 }}
+spec:
+  secretName: {{ printf "%s-tls" (include "uniplusWeb.appFullname" (dict "ctx" $ "app" $app)) }}
+  commonName: {{ $cfg.host }}
+  dnsNames:
+    - {{ $cfg.host }}
+  issuerRef:
+    name: {{ $.Values.uniplusWeb.ingress.tls.certManager.clusterIssuer }}
+    kind: ClusterIssuer
+{{- end }}
+{{- end }}
+{{- end }}

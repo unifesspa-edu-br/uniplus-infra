@@ -1,0 +1,22 @@
+{{- if .Values.uniplusWeb.enabled -}}
+{{- range $app, $cfg := .Values.uniplusWeb.apps -}}
+{{- if $cfg.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "uniplusWeb.appFullname" (dict "ctx" $ "app" $app) }}
+  labels:
+    {{- include "uniplusWeb.labels" (dict "ctx" $ "app" $app) | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "uniplusWeb.selectorLabels" (dict "ctx" $ "app" $app) | nindent 4 }}
+{{- end }}
+{{- end }}
+{{- end }}
