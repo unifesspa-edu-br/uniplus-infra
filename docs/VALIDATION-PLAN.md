@@ -523,7 +523,7 @@ Os cenários abaixo serão executados sequencialmente, do mais simples ao mais c
 
 | # | Item | Como validar | Status mínimo | Bloqueador |
 |---|---|---|---|---|
-| 1 | DNS público | `dig +short standalone.portaluni.com.br` retorna IP do Reserved Public IP OCI; CNAMEs `portal/selecao/ingresso/api-portal/api-selecao/api-ingresso/auth/kafka-ui/schema-registry/redis-ui` apontam para o mesmo IP. | Todos os 10 hosts resolvem | #56 (Reserved IP + DNS A) |
+| 1 | DNS público | `dig +short standalone.portaluni.com.br` retorna IP do Reserved Public IP OCI (Keycloak fica em subpath `/auth/*` no FQDN raiz, sem subdomain dedicado); CNAMEs `portal/selecao/ingresso/api-portal/api-selecao/api-ingresso/minio/kafka-ui/schema-registry/redis-ui` apontam para o mesmo IP. | Todos os 11 hosts resolvem (1 A record + 10 CNAMEs) | #56 (Reserved IP + DNS A) |
 | 2 | TLS público | `curl -sI https://standalone.portaluni.com.br/auth/realms/uniplus` responde 200 com `letsencrypt-prod` (não staging) no cert chain. | Cert válido cadeia LE prod | #65 capítulo + cert-manager + DNS-01 challenge |
 | 3 | K3s single-node | `kubectl get nodes` mostra `k8s-host` Ready; `kubectl get pods -A` sem CrashLoopBackOff. | 100% Ready | RUNBOOKS §8.1 |
 | 4 | ArgoCD reconciliação | `argocd app list` mostra todas as apps `Synced/Healthy`; ApplicationSet detectou cluster pelo label `environment=standalone`. | Todas Synced/Healthy | #62 + RUNBOOKS §8.3 |
@@ -548,10 +548,11 @@ Os cenários abaixo serão executados sequencialmente, do mais simples ao mais c
 - Número de itens em status mínimo na primeira passagem.
 - Lista priorizada de gaps com link para issue/PR.
 
-**Critério de sucesso:**
+**Critério de sucesso (dois gates):**
 
-- ≥ 14/16 itens em status mínimo (permitindo 2 dependentes da Epic data/* como `pending` quando ainda não entregue).
-- Item 10 (Keycloak realm + 8 clients) e Item 13 (Apicurio + subject) **obrigatórios** — destravam smoke E2E real (Cenário 13.A abaixo).
+- **Gate 1 — Fase 5 estrutural** (responsabilidade do time de plataforma): **11/11 dos itens não-Epic-data/*** verdes — 1, 2, 3, 4, 5, 9, 10, 11, 12, 13, 14. Itens 6/7/8/15/16 contam como `pending` aceitável até a Epic data/* entregar; **não bloqueiam Fase 5**. Esse gate destrava o ambiente standalone para uso em demo e desenvolvimento integrado.
+- **Gate 2 — Validação completa pós-Epic data/*** (responsabilidade pós-data/*): **16/16** verdes — todos os itens, incluindo 6/7/8/15/16. Esse gate destrava promoção do standalone como ambiente de homologação.
+- **Itens obrigatórios em ambos os gates:** Item 10 (Keycloak realm + 8 clients) e Item 13 (Apicurio + subject) — destravam o smoke E2E real (Cenário 13.A abaixo).
 
 **Cenário 13.A — Smoke E2E (login real do portal):**
 
