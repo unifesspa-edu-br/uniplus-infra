@@ -81,5 +81,7 @@ output "k8s_host_reserved_ip_ocid" {
   value       = oci_core_public_ip.k8s_host.id
 }
 
-# dns_apex_fqdn removido junto com dns.tf (bug OCI provider v7.32 em rrset
-# import). FQDN continua sendo `standalone.portaluni.com.br` no DNS manual.
+output "dns_apex_fqdn" {
+  description = "FQDN do apex do standalone (record A → reserved IP)."
+  value       = local.apex_domain
+}
