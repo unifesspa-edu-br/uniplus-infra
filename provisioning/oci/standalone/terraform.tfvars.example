@@ -31,8 +31,11 @@ EOT
 profile = "poc"
 
 # Tamanho atual dos 4 block volumes do data-host. Defaults preservam o vivo
-# (200/100/200/50 GB). Para shrink destrutivo a 10 GB cada: ajustar aqui e
-# fazer apply (delete + recreate; perde dados — ver storage.tf).
+# (200/100/200/50 GB).
+# Aumentar é IN-PLACE online (sem reboot, sem perder dados); pós-apply
+# rodar `growpart` + `resize2fs` (ext4) ou `xfs_growfs` no data-host.
+# Diminuir NÃO é suportado pela OCI — usar `tofu destroy && tofu apply`
+# se quiser shape menor (destrutivo). Ver storage.tf.
 volume_sizes_gbs = {
   postgres = 200
   kafka    = 100

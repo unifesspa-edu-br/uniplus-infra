@@ -2,18 +2,25 @@
 # Block volumes do data-host
 #
 # 4 volumes anexados via paravirtualized — montagens LVM (`uniplus-vg/<lv>`)
-# feitas pelo `bootstrap-standalone.sh --role=standalone-data`. Reduzir
-# `volume_sizes_gbs` em terraform.tfvars é destrutivo: OCI não permite
-# encolher block volume; Tofu vai delete + recreate, perdendo dados.
+# feitas pelo `bootstrap-standalone.sh --role=standalone-data`.
 #
-# Para shrink (POC: 200/100/200/50 → 10/10/10/10):
-#   1. Backup de dados críticos (Vault Shamir, KC realm — embora realm.json
-#      esteja em git)
-#   2. Editar terraform.tfvars → volume_sizes_gbs = { postgres=10, kafka=10,
-#      minio=10, vault=10 }
-#   3. tofu apply — confirma 4 destroy + 4 create
-#   4. Re-bootstrap via bootstrap-standalone.sh (LVM nova; vault re-init;
-#      kc realm re-import; demais apps reconciliados pelo ArgoCD)
+# Resize do `volume_sizes_gbs`:
+#   - **Aumentar** (ex.: 200→500): in-place, online, sem reboot, sem perder
+#     dados. OCI provider trata `size_in_gbs` como atributo updateable.
+#     `tofu apply` chama UpdateVolume; resize é segundos no OCI side.
+#     Pós-apply, é necessário ESTENDER o sistema de arquivos dentro da VM:
+#       ssh ubuntu@10.0.2.87
+#       sudo lsblk                  # confirmar nome do device (ex.: sdc)
+#       sudo growpart /dev/sdc 1    # estende a partição (cloud-utils)
+#       sudo resize2fs /dev/sdc1    # ext4; ou xfs_growfs <mountpoint>
+#
+#   - **Diminuir** (ex.: 200→100): NÃO suportado pela OCI. Tofu calcula
+#     "in-place" mas o API rejeita com 400 no apply. Para encolher é
+#     necessário processo manual destrutivo: criar volume novo menor,
+#     `dd`/`rsync` dos dados, swap do attachment, delete do antigo.
+#     **Não recomendado em POC** — economia (<$10/mês) não compensa risco
+#     de perda de dados; usar VM nova (`tofu destroy && apply` com
+#     tamanhos menores em tfvars) é mais limpo.
 # ==============================================================================
 locals {
   data_volumes = {
