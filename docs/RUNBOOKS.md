@@ -913,7 +913,7 @@ argocd app list --selector environment=standalone
 
 ### 8.3.1 DNS records — CNAMEs por host
 
-A topologia standalone expõe 10 hostnames sob `standalone.portaluni.com.br` via Traefik IngressRoutes (validados pelo Cenário 13 do `VALIDATION-PLAN.md`). O FQDN raiz `standalone.portaluni.com.br` aponta para o **Reserved Public IP** OCI (provisionamento via `provisioning/oci/standalone/` — issue #56). Os demais são CNAMEs apontando para o FQDN raiz.
+A topologia standalone expõe 11 hostnames sob `standalone.portaluni.com.br` via Traefik IngressRoutes (validados pelo Cenário 13 do `VALIDATION-PLAN.md`). O FQDN raiz `standalone.portaluni.com.br` aponta para o **Reserved Public IP** OCI (provisionamento via `provisioning/oci/standalone/` — issue #56). Os demais são CNAMEs apontando para o FQDN raiz.
 
 | Host | Tipo | Aponta para | Apps consumidoras |
 |---|---|---|---|
@@ -924,6 +924,7 @@ A topologia standalone expõe 10 hostnames sob `standalone.portaluni.com.br` via
 | `api-portal.standalone.portaluni.com.br` | CNAME | `standalone.portaluni.com.br` | uniplus-api-portal (.NET) |
 | `api-selecao.standalone.portaluni.com.br` | CNAME | `standalone.portaluni.com.br` | uniplus-api-selecao (.NET) |
 | `api-ingresso.standalone.portaluni.com.br` | CNAME | `standalone.portaluni.com.br` | uniplus-api-ingresso (.NET) |
+| `minio.standalone.portaluni.com.br` | CNAME | `standalone.portaluni.com.br` | MinIO Console (object storage admin UI, RUNBOOKS §12.6) |
 | `kafka-ui.standalone.portaluni.com.br` | CNAME | `standalone.portaluni.com.br` | AKHQ (Kafka admin UI) |
 | `schema-registry.standalone.portaluni.com.br` | CNAME | `standalone.portaluni.com.br` | Apicurio Schema Registry |
 | `redis-ui.standalone.portaluni.com.br` | CNAME | `standalone.portaluni.com.br` | RedisInsight |
@@ -938,7 +939,7 @@ RESERVED_IP=$(oci network public-ip get --public-ip-address-ocid \
   ocid1.publicip.oc1..xxxxx --query 'data."ip-address"' --raw-output)
 
 # Hostnames CNAME apontando para standalone.portaluni.com.br
-HOSTS=(portal selecao ingresso api-portal api-selecao api-ingresso kafka-ui schema-registry redis-ui)
+HOSTS=(portal selecao ingresso api-portal api-selecao api-ingresso minio kafka-ui schema-registry redis-ui)
 
 for host in "${HOSTS[@]}"; do
   oci dns record rrset update \
@@ -956,7 +957,7 @@ done
 ```bash
 for host in standalone portal.standalone selecao.standalone ingresso.standalone \
             api-portal.standalone api-selecao.standalone api-ingresso.standalone \
-            kafka-ui.standalone schema-registry.standalone redis-ui.standalone; do
+            minio.standalone kafka-ui.standalone schema-registry.standalone redis-ui.standalone; do
   echo -n "$host.portaluni.com.br → "
   dig +short "$host.portaluni.com.br" | tail -1
 done
