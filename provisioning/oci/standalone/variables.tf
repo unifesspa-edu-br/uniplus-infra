@@ -44,13 +44,10 @@ variable "image_ocid" {
   type        = string
 }
 
-# dns_zone_name foi removida nesta versão — os DNS records do standalone
-# (1 A + 10 CNAMEs em `*.standalone.portaluni.com.br`) continuam gerenciados
-# manualmente na OCI DNS por causa de bug no provider OCI v7.32:
-# `oci_dns_rrset` import falha com "can not marshal to path in request for
-# field ZoneNameOrId. Due to can not marshal a nil pointer" quando o OCID
-# da zona contém `..` (formato compartment-less). Migração para Tofu fica
-# pendente até bug ser resolvido upstream — ver follow-up issue.
+# Nota: o nome da zona DNS pública (`portaluni.com.br`) é hardcoded em
+# dns.tf via data source porque é compartilhado com outros ambientes da
+# plataforma (não-standalone) — variar isso exigiria reestruturar o módulo
+# para multi-zona, fora do escopo do POC.
 
 variable "ssh_authorized_keys" {
   description = "Chaves SSH (uma por linha) injetadas via metadata em ambas instâncias."

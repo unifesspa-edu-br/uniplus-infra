@@ -3,9 +3,9 @@
 Provisionamento OpenTofu do ambiente standalone Uni+ na OCI (sa-saopaulo-1).
 Cobertura: VCN + 2 subnets + IGW + NAT GW + 2 route tables + 2 security
 lists + 2 VMs E5.Flex + 4 block volumes do data-host + Reserved Public IP
-do k8s-host (Stories #52, #53, #54, #55 e parte de #56 da Feature #43).
-DNS records (#56 — parte deferida em #208 por bug do provider), KMS
-auto-unseal (#57) e bridge para Helm (#58) ficam fora deste recorte.
+do k8s-host + 11 DNS records do subdomínio `*.standalone.portaluni.com.br`
+(Stories #52, #53, #54, #55 e #56 da Feature #43). KMS auto-unseal (#57)
+e bridge para Helm (#58) ficam fora deste recorte.
 
 ## Estado atual no OCI
 
@@ -91,6 +91,17 @@ tofu import 'oci_core_volume_attachment.data["kafka"]'    ocid1.volumeattachment
 tofu import 'oci_core_volume_attachment.data["minio"]'    ocid1.volumeattachment.oc1.sa-saopaulo-1.<minio_attachment_ocid>
 tofu import 'oci_core_volume_attachment.data["vault"]'    ocid1.volumeattachment.oc1.sa-saopaulo-1.<vault_attachment_ocid>
 
+# Importar DNS rrsets (1 A apex + 10 CNAMEs).
+# Atenção ao formato chave/valor: provider OCI exige `zoneNameOrId/<id>/domain/<dom>/rtype/<rt>`,
+# não slash simples — slash simples falha com `can not marshal to path in request`.
+ZONE=ocid1.dns-zone.oc1..<...>
+tofu import oci_dns_rrset.standalone_apex \
+  "zoneNameOrId/$ZONE/domain/standalone.portaluni.com.br/rtype/A"
+for sub in api-ingresso api-portal api-selecao ingresso kafka-ui minio portal redis-ui schema-registry selecao; do
+  tofu import "oci_dns_rrset.standalone_cname[\"$sub\"]" \
+    "zoneNameOrId/$ZONE/domain/$sub.standalone.portaluni.com.br/rtype/CNAME"
+done
+
 # Re-plan — esperado: 0 changes (ou drift menor; ajustar HCL/variáveis até zerar)
 tofu plan
 ```
@@ -135,11 +146,6 @@ dados sensíveis de configuração. `.gitignore` cuida disso.
 
 ## Limitações conhecidas
 
-- **DNS records** do standalone (1 A + 10 CNAMEs em `*.standalone.portaluni.com.br`)
-  continuam gerenciados manualmente na OCI DNS — bug do provider OCI v7.32 em
-  `oci_dns_rrset` import (`can not marshal to path in request for field
-  ZoneNameOrId. Due to can not marshal a nil pointer` quando o OCID da zona
-  contém `..`). Migração depende de fix upstream — ver issue #208.
 - **Default route table + default security list** do VCN são automaticamente
   criados pela OCI ao criar o VCN; ficam **não-gerenciados** pelo Tofu (não
   estão anexados a subnet alguma; SLs/RTs nomeadas cobrem o tráfego real).
@@ -163,6 +169,5 @@ dados sensíveis de configuração. `.gitignore` cuida disso.
 
 | Story | Conteúdo | Bloqueio |
 |---|---|---|
-| #208 | DNS records — `oci_dns_rrset` no Tofu (parte deferida da #56) | bug provider OCI v7.32 |
 | #57 | OCI Vault, Master Encryption Key, Dynamic Group, IAM Policy (auto-unseal) | bug `go-kms-wrapping@v2.0.9` |
 | #58 | Bridge de outputs Tofu → `environments/standalone/values.yaml` | nenhum |
