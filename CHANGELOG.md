@@ -11,6 +11,10 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 - Chart `keycloak-replica` passa a consumir a imagem composta `ghcr.io/unifesspa-edu-br/uniplus-keycloak:26.6.1-0` (Keycloak 26.6.1 + JAR `cpf-matcher`) em vez do upstream vanilla `quay.io/keycloak/keycloak:26.6.1`. Standalone passa a validar exatamente o binário que vai pra HML/PROD (production parity). `appVersion` do Chart sincronizada com a tag composta. Issue #192, depende de `unifesspa-edu-br/uniplus-keycloak-providers#13` (Release `v26.6.1-0` em 2026-05-10).
 
+### Adicionado
+
+- Script `scripts/resize-standalone-oci.sh` que faz hot-resize dos shapes OCPU + RAM das 2 VMs OCI do standalone via OCI CLI (`compute instance update --shape-config`). Perfil `poc` (default) aplica `2 OCPU / 12 GB` no k8s-host e `1 OCPU / 4 GB` no data-host — economia de ~$215/mês (75%) sobre o shape original `4 OCPU / 32 GB` em ambos. Perfil `hml` para load real. Operação é online (sem reboot) e reversível em segundos. Footprint dimensionado a partir de medição de uso real (k8s-host 9 GB / data-host 2.1 GB) com margem de 25-100%.
+
 ### Corrigido
 
 - Chart `clamav-scanner` ganha emptyDir mountado em `/var/lock` no container `clamd`. O entrypoint da imagem oficial cria `/var/lock/lock` (lockfile compartilhado) — `/var/lock` no FS image é `root:root` e o container roda como uid 100 → `Permission denied`. Cobre o último gap de paths writable que faltava (`/tmp`, `/run/clamav`, `/var/log/clamav` já tinham emptyDir). Issue #202.
