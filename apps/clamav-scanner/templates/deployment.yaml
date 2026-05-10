@@ -86,6 +86,11 @@ spec:
               mountPath: /run/clamav
             - name: log
               mountPath: /var/log/clamav
+            # Entrypoint da imagem oficial cria `/var/lock/lock` (lockfile);
+            # `/var/lock` no FS image é root:root → uid 100 sem permissão.
+            # Issue #202.
+            - name: lock
+              mountPath: /var/lock
           {{- with .Values.clamavScanner.startupProbe }}
           startupProbe:
             tcpSocket:
@@ -130,5 +135,7 @@ spec:
         - name: run
           emptyDir: {}
         - name: log
+          emptyDir: {}
+        - name: lock
           emptyDir: {}
 {{- end }}
