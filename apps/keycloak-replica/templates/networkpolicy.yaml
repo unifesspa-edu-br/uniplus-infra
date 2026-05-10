@@ -33,6 +33,19 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.keycloak.managementPort }}
+    # Job realm-reconcile (ADR-010) consome a admin REST API do KC para
+    # reconciliar declarativamente o realm.json em re-deploy. Roda no mesmo
+    # namespace; precisa cruzar a NetworkPolicy. Escopo cirúrgico: só pods
+    # com a label uniplus.io/job-role=realm-reconcile (aplicada pelo
+    # template realm-reconcile-job.yaml). Sem isso, Job aguarda 120s o
+    # Service ficar disponível, falha em backoffLimit e marca Job=Failed.
+    - from:
+        - podSelector:
+            matchLabels:
+              uniplus.io/job-role: realm-reconcile
+      ports:
+        - protocol: TCP
+          port: {{ .Values.keycloak.http.httpPort }}
   egress:
     # Postgres no data-host. CIDR/porta vêm dos values do environment;
     # ausência de dataHostCIDR é fail-fast no início do template (acima).
