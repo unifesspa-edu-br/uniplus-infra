@@ -504,6 +504,70 @@ Os cenários abaixo serão executados sequencialmente, do mais simples ao mais c
 - 100% de integridade nos dados restaurados
 - Backlog criado durante queda de `PA1` é sincronizado sem intervenção manual destrutiva
 
+---
+
+### Cenário 13: Validação integrada do ambiente Standalone OCI
+
+**Objetivo:** validar que o ambiente standalone monolocal (Epic [#40](https://github.com/unifesspa-edu-br/uniplus-infra/issues/40), [ADR-008](adrs/ADR-008-topologia-standalone-monolocal.md)) está saudável end-to-end como provider-agnostic sanity check da plataforma Uni+ — sem cobertura de DR geográfico (que é responsabilidade do desenho `SP1`+`SP2`+`PA1` validado nos Cenários 4-5).
+
+**Hipótese:** após bootstrap completo (RUNBOOKS §8) + Vault populado + ApplicationSet ArgoCD reconciliando, o ciclo `usuário → DNS/TLS → portal Angular → Keycloak → API → Postgres/Kafka/MinIO/Apicurio` funciona end-to-end na primeira tentativa, sem ajustes manuais além dos documentados.
+
+**Não-objetivos** (declarado explicitamente para não confundir com cenários 4-5/12):
+
+- Resiliência a queda de DC — standalone é monolocal por definição.
+- Replicação Kafka inter-broker / Postgres failover Patroni — único broker, único primary.
+- Validação de RPO/RTO contra desastre regional.
+- Backup off-site para `PA1` — Cenário 12.
+
+**Procedimento — matriz de 16 itens:**
+
+| # | Item | Como validar | Status mínimo | Bloqueador |
+|---|---|---|---|---|
+| 1 | DNS público | `dig +short standalone.portaluni.com.br` retorna IP do Reserved Public IP OCI; CNAMEs `portal/selecao/ingresso/api-portal/api-selecao/api-ingresso/auth/kafka-ui/schema-registry/redis-ui` apontam para o mesmo IP. | Todos os 10 hosts resolvem | #56 (Reserved IP + DNS A) |
+| 2 | TLS público | `curl -sI https://standalone.portaluni.com.br/auth/realms/uniplus` responde 200 com `letsencrypt-prod` (não staging) no cert chain. | Cert válido cadeia LE prod | #65 capítulo + cert-manager + DNS-01 challenge |
+| 3 | K3s single-node | `kubectl get nodes` mostra `k8s-host` Ready; `kubectl get pods -A` sem CrashLoopBackOff. | 100% Ready | RUNBOOKS §8.1 |
+| 4 | ArgoCD reconciliação | `argocd app list` mostra todas as apps `Synced/Healthy`; ApplicationSet detectou cluster pelo label `environment=standalone`. | Todas Synced/Healthy | #62 + RUNBOOKS §8.3 |
+| 5 | Vault unsealed + ESO ready | `kubectl -n vault exec ... -- vault status` mostra `Sealed=false`; `kubectl get clustersecretstore vault-default` em `Ready=True`. | Unsealed + ESO Ready | RUNBOOKS §8.4 |
+| 6 | Postgres data-host | `ssh ubuntu@10.0.2.87 "sudo systemctl is-active uniplus-postgres"` retorna `active`; `psql -h 10.0.2.87 -U uniplus_admin -c '\l'` lista DBs `keycloak`, `uniplus_portal`, `uniplus_selecao`, `uniplus_ingresso`, `apicurio`. | Service active + 5 DBs | Epic data/* (#98 placeholder) |
+| 7 | Kafka KRaft + SASL_SSL | `kafka-topics --bootstrap-server kafka.standalone.portaluni.com.br:9094 --command-config admin.props --list` lista tópicos do Wolverine + `edital_events`. | Listagem OK + auth OK | Epic data/* + ADR-009 |
+| 8 | MinIO | `mc alias set standalone https://...; mc ls standalone/` lista buckets `app-uploads`, `vault-backup`. | Buckets visíveis | Epic data/* |
+| 9 | ClamAV scanner | `kubectl -n uniplus exec deploy/clamav-scanner -- clamdscan --version` retorna versão; pod `Healthy`. | Healthy + responde | chart `apps/clamav-scanner` |
+| 10 | Keycloak realm `uniplus` | `curl https://standalone.portaluni.com.br/auth/realms/uniplus/.well-known/openid-configuration \| jq .issuer` retorna `https://standalone.portaluni.com.br/auth/realms/uniplus`; clients `uniplus-portal`, `kafka-ui`, `apicurio-registry`, `uniplus-api-{portal,selecao,ingresso}` presentes. | 8 clients OK | RUNBOOKS §10 + #163 |
+| 11 | Apps web (3 SPAs) | `https://portal.standalone.portaluni.com.br/` carrega o Angular bundle (status 200, MIME `text/html`); idem para `selecao` e `ingresso`. | 3 SPAs servindo | #162/PR #171 |
+| 12 | APIs (3 backends) | `https://api-{portal,selecao,ingresso}.standalone.portaluni.com.br/health/ready` retorna 200 com `Healthy` agregado. | 3 APIs Healthy | charts `apps/uniplus-api-*` |
+| 13 | Apicurio Schema Registry | `curl https://schema-registry.standalone.portaluni.com.br/apis/ccompat/v7/subjects` retorna lista contendo `edital_events-value`. | Subject registrado | #152 + #358 (uniplus-api) |
+| 14 | Observabilidade | `https://standalone.portaluni.com.br/grafana/` carrega; dashboards exibem métricas Prometheus de cluster + apps; Loki recebe logs estruturados. | Grafana + Loki + Prometheus OK | Epic observabilidade-local (#103) |
+| 15 | Backup placeholder | `ls /var/backups/uniplus-postgres/` no data-host mostra dump diário recente (≤ 24h); MinIO `vault-backup` recebe snapshot do Vault Raft. | Dumps presentes | Epic data/* sub-task de backup |
+| 16 | Restore placeholder | Execução manual de `pg_restore` em DB sintético recupera dados; `vault operator raft snapshot restore` restaura state. | Procedimento documentado em RUNBOOKS funciona em dry-run | Sub-task RUNBOOKS |
+
+**Itens dependentes da Epic `data/*`** (não bloqueiam Fase 5 estrutural mas marcam validação completa): 6, 7, 8, 15, 16.
+
+**Métricas:**
+
+- Tempo total da matriz (16 itens) — meta: ≤ 30 minutos com cluster já em Synced/Healthy.
+- Número de itens em status mínimo na primeira passagem.
+- Lista priorizada de gaps com link para issue/PR.
+
+**Critério de sucesso:**
+
+- ≥ 14/16 itens em status mínimo (permitindo 2 dependentes da Epic data/* como `pending` quando ainda não entregue).
+- Item 10 (Keycloak realm + 8 clients) e Item 13 (Apicurio + subject) **obrigatórios** — destravam smoke E2E real (Cenário 13.A abaixo).
+
+**Cenário 13.A — Smoke E2E (login real do portal):**
+
+Pós-matriz, executar o smoke test manual de 6 critérios documentado em [`uniplus-infra#99`](https://github.com/unifesspa-edu-br/uniplus-infra/issues/99):
+
+1. `https://standalone.portaluni.com.br` carrega com cert LE prod.
+2. Login com usuário de teste no Keycloak completa e redireciona autenticado.
+3. Rota protegida do portal Angular chama `GET /api/portal/me` e renderiza a resposta.
+4. Logs sem erros 4xx/5xx no caminho do request.
+5. Token JWT contém claim `realm_access.roles` consistente com o realm.
+6. Logout limpa sessão e redireciona para tela pública.
+
+Capturar evidência em `docs/validacao/standalone-2026-MM-DD.md` (screenshot + trecho de logs estruturados).
+
+---
+
 ## 6. Métricas e Critérios de Sucesso
 
 ### 6.1 Métricas globais
