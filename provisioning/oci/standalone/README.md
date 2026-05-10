@@ -4,8 +4,11 @@ Provisionamento OpenTofu do ambiente standalone Uni+ na OCI (sa-saopaulo-1).
 Cobertura: VCN + 2 subnets + IGW + NAT GW + 2 route tables + 2 security
 lists + 2 VMs E5.Flex + 4 block volumes do data-host + Reserved Public IP
 do k8s-host + 11 DNS records do subdomínio `*.standalone.portaluni.com.br`
-(Stories #52, #53, #54, #55 e #56 da Feature #43). KMS auto-unseal (#57)
-e bridge para Helm (#58) ficam fora deste recorte.
++ KMS Vault + Master Encryption Key + Dynamic Group + IAM Policy
+(Stories #52 a #58 da Feature #43). Bridge para charts Helm via
+`scripts/sync-tofu-outputs.sh`. Story #64 (re-init do HashiCorp Vault
+consumindo a KMS key) fica bloqueada por bug upstream — ver "Próximos
+passos".
 
 ## Estado atual no OCI
 
@@ -21,6 +24,10 @@ para o perfil `poc` via `scripts/resize-standalone-oci.sh`:
 | `uniplus-standalone-minio` | block volume 200 GB VPU 0 |
 | `uniplus-standalone-vault` | block volume 50 GB VPU 0 |
 | `uniplus-standalone-ip` | Reserved Public IP, anexado ao primary VNIC do k8s-host. Sobrevive a `tofu destroy/apply`. Atual: `164.152.53.29`. |
+| `uniplus-standalone-vault-kms` | KMS Vault (container OCI), DEFAULT vault-type. Hospeda a unseal key. |
+| `uniplus-standalone-vault-unseal-key` | Master Encryption Key AES-256 software-protected, alvo do `seal "ocikms"` do HashiCorp Vault. |
+| `uniplus-standalone-k8s-host-dg` | Dynamic Group matching `instance.id` do k8s-host (Resource Principal para acesso ao KMS). |
+| `uniplus-standalone-vault-unseal-policy` | IAM Policy que dá `use keys` + `use vaults` ao Dynamic Group. |
 
 ## Pré-requisitos
 
@@ -74,6 +81,13 @@ tofu import oci_core_subnet.private        ocid1.subnet.oc1.sa-saopaulo-1.<...>
 
 # Importar Reserved Public IP do k8s-host (1 recurso)
 tofu import oci_core_public_ip.k8s_host    ocid1.publicip.oc1.sa-saopaulo-1.<...>
+
+# Importar OCI KMS para Vault auto-unseal (4 recursos — ver kms.tf)
+tofu import oci_kms_vault.unseal              ocid1.vault.oc1.sa-saopaulo-1.<...>
+# Atenção: KMS key import format inclui o management endpoint:
+tofu import oci_kms_key.unseal "managementEndpoint/https://<vault-id>-management.kms.<region>.oraclecloud.com/keys/<key-ocid>"
+tofu import oci_identity_dynamic_group.k8s_host ocid1.dynamicgroup.oc1..<...>
+tofu import oci_identity_policy.vault_unseal    ocid1.policy.oc1..<...>
 
 # Importar instances
 tofu import oci_core_instance.k8s_host  ocid1.instance.oc1.sa-saopaulo-1.<...>
@@ -202,4 +216,4 @@ dados sensíveis de configuração. `.gitignore` cuida disso.
 
 | Story | Conteúdo | Bloqueio |
 |---|---|---|
-| #57 | OCI Vault, Master Encryption Key, Dynamic Group, IAM Policy (auto-unseal) | bug `go-kms-wrapping@v2.0.9` |
+| #64 | Re-init Vault HashiCorp com `seal "ocikms"` consumindo a key OCI | **bug upstream confirmado**: `wrappers/ocikms/v2 v2.0.9` (latest tag pública) panica em `getRequestMetadata.func1` na pre-flight encrypt validation; Vault 1.20-2.0 todas afetadas. Documentado in-line em `environments/standalone/values.yaml`. Standalone usa Shamir 5/3 manual como workaround (`docs/RUNBOOKS.md` §8.4). Recursos KMS já estão provisionados e prontos pra uso quando o bug for corrigido upstream. |

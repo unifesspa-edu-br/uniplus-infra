@@ -85,3 +85,33 @@ output "dns_apex_fqdn" {
   description = "FQDN do apex do standalone (record A → reserved IP)."
   value       = local.apex_domain
 }
+
+output "kms_vault_ocid" {
+  description = "OCID do KMS Vault que hospeda a unseal key (Story #57)."
+  value       = oci_kms_vault.unseal.id
+}
+
+output "kms_key_ocid" {
+  description = "OCID da Master Encryption Key usada pelo HashiCorp Vault como seal ocikms."
+  value       = oci_kms_key.unseal.id
+}
+
+output "kms_management_endpoint" {
+  description = "Endpoint de management do KMS Vault (alimenta `seal \"ocikms\".management_endpoint` no Vault)."
+  value       = oci_kms_vault.unseal.management_endpoint
+}
+
+output "kms_crypto_endpoint" {
+  description = "Endpoint de crypto do KMS Vault (alimenta `seal \"ocikms\".crypto_endpoint` no Vault)."
+  value       = oci_kms_vault.unseal.crypto_endpoint
+}
+
+output "kms_dynamic_group_ocid" {
+  description = "OCID do Dynamic Group do k8s-host (Resource Principal para acesso ao KMS)."
+  value       = oci_identity_dynamic_group.k8s_host.id
+}
+
+output "kms_policy_ocid" {
+  description = "OCID da Policy que concede permissão `use keys` + `use vaults` ao Dynamic Group."
+  value       = oci_identity_policy.vault_unseal.id
+}
