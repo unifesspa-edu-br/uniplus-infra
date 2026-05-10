@@ -4,7 +4,7 @@
   o realm `uniplus` declarativamente em runtime, **após o realm já ter sido
   importado** pelo --import-realm inicial do Keycloak.
 
-  Por que existe (ADR-0010 + Story #177 + descoberta no smoke E2E #181):
+  Por que existe (ADR-010 + Story #177 + descoberta no smoke E2E #181):
   Keycloak 26.x **skipa re-import** do realm quando o realm já existe em DB.
   Ou seja, mudanças no apps/keycloak-replica/files/uniplus-realm.json (novos
   clients, mappers, roles) NÃO são aplicadas em ambientes onde o realm já
@@ -74,20 +74,16 @@ spec:
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          envFrom:
-            # Bootstrap admin user/password vem do mesmo ExternalSecret
-            # consumido pelo Pod do Keycloak (KC_BOOTSTRAP_ADMIN_USERNAME +
-            # _PASSWORD).
-            - secretRef:
-                name: {{ include "keycloak-replica.adminSecretName" . }}
           env:
             # URL do Keycloak no cluster — Service local. Não usa o FQDN
             # externo para evitar dependência circular de Traefik+TLS.
             - name: KEYCLOAK_URL
               value: "http://{{ include "keycloak-replica.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.keycloak.http.httpPort | default 8080 }}{{ .Values.keycloak.http.relativePath | default "/auth" }}"
-            # Admin user — mesmo bootstrap admin do Keycloak (custodiado
-            # via ExternalSecret). KC_BOOTSTRAP_ADMIN_USERNAME chega via
-            # envFrom acima; mapeamos para o nome esperado pelo CLI.
+            # Admin user/password — mesmo bootstrap admin custodiado no
+            # ExternalSecret consumido pelo Pod do Keycloak. Mapeamos as
+            # keys KC_BOOTSTRAP_ADMIN_* para os nomes esperados pelo CLI
+            # (KEYCLOAK_USER / KEYCLOAK_PASSWORD) via secretKeyRef — sem
+            # envFrom para não expor outras keys do Secret no container.
             - name: KEYCLOAK_USER
               valueFrom:
                 secretKeyRef:
