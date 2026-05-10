@@ -9,6 +9,7 @@ Scripts de operação do laboratório e do ambiente standalone OCI.
 | `validate-cluster.sh` | Valida saúde do cluster de laboratório (sp1/sp2/pa1) |
 | `validate-standalone.sh` | Valida saúde do ambiente standalone OCI (k8s-host + data-host) |
 | `resize-standalone-oci.sh` | Hot-resize dos shapes (OCPU + RAM) das 2 VMs OCI; perfis `poc` (default, ~$72/mês) e `hml` (~$157/mês) |
+| `sync-tofu-outputs.sh` | Bridge entre `tofu output` (provisioning/oci/standalone/) e os charts Helm. Modos: `--diff` (compara IPs/FQDN com `environments/standalone/values.yaml`), `--apply-configmap` (cria ConfigMap K8s `standalone-tofu-outputs` para charts consumirem via envFrom), `--json`/sem flag (imprime tabela). |
 | `teardown-lab.sh` | Remove o laboratório ou standalone (CUIDADO: destrutivo) |
 
 ## Laboratório (sp1 / sp2 / pa1)
