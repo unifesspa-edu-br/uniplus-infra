@@ -134,6 +134,39 @@ tofu destroy
 tofu apply
 ```
 
+## Bridge para os charts Helm (Story #58)
+
+Outputs do Tofu não chegam automaticamente nos charts Helm — ArgoCD lê
+valores do `environments/standalone/values.yaml` (em git), não do state
+Tofu. A bridge entre os dois mundos é o script
+[`scripts/sync-tofu-outputs.sh`](../../../scripts/sync-tofu-outputs.sh):
+
+```bash
+# Tabela com todos os outputs e onde cada um aparece em values.yaml
+./scripts/sync-tofu-outputs.sh
+
+# Detecta drift entre IPs/FQDN do Tofu e o que está hardcoded no values.yaml
+./scripts/sync-tofu-outputs.sh --diff
+
+# Cria/atualiza ConfigMap K8s `standalone-tofu-outputs` no namespace
+# `uniplus` com TODOS os outputs como chaves planas. Útil para charts
+# (ex.: Vault — Story #57) consumirem via envFrom/valueFrom sem precisar
+# duplicar valores em values.yaml.
+./scripts/sync-tofu-outputs.sh --apply-configmap [--namespace=uniplus]
+```
+
+**Estratégia de bridge** (compatível com GitOps):
+
+- Schema do `environments/standalone/values.yaml` continua **provider-agnostic**;
+  é versionado em git e lido pelo ArgoCD.
+- Valores OCI-specific (IPs, hostnames) ficam **hardcoded** no `values.yaml`
+  para o ArgoCD ter tudo no repo. Recreate de infra que mude algum desses
+  valores exige PR ajustando o `values.yaml`. O `--diff` ajuda a detectar
+  divergência cedo.
+- Outputs sensíveis ou OCID-only (ex.: `vcn_ocid`, OCIDs do KMS futuro
+  da Story #57) **não** entram em `values.yaml` — ficam no `ConfigMap` K8s
+  populado por `--apply-configmap`. Charts os consomem via `envFrom`.
+
 ## State
 
 State **local** por padrão (`terraform.tfstate` no diretório, ignorado pelo
@@ -170,4 +203,3 @@ dados sensíveis de configuração. `.gitignore` cuida disso.
 | Story | Conteúdo | Bloqueio |
 |---|---|---|
 | #57 | OCI Vault, Master Encryption Key, Dynamic Group, IAM Policy (auto-unseal) | bug `go-kms-wrapping@v2.0.9` |
-| #58 | Bridge de outputs Tofu → `environments/standalone/values.yaml` | nenhum |
