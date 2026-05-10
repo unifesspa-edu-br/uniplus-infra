@@ -1,14 +1,14 @@
 # OpenTofu — standalone OCI
 
 Provisionamento OpenTofu do ambiente standalone Uni+ na OCI (sa-saopaulo-1).
-Cobertura: VCN + 2 subnets + IGW + NAT GW + 2 route tables + 2 security
-lists + 2 VMs E5.Flex + 4 block volumes do data-host + Reserved Public IP
-do k8s-host + 11 DNS records do subdomínio `*.standalone.portaluni.com.br`
-+ KMS Vault + Master Encryption Key + Dynamic Group + IAM Policy
-(Stories #52 a #58 da Feature #43). Bridge para charts Helm via
-`scripts/sync-tofu-outputs.sh`. Story #64 (re-init do HashiCorp Vault
-consumindo a KMS key) fica bloqueada por bug upstream — ver "Próximos
-passos".
+Cobertura completa: VCN, 2 subnets, IGW, NAT GW, 2 route tables, 2
+security lists, 2 VMs E5.Flex, 4 block volumes do data-host, Reserved
+Public IP do k8s-host, 11 DNS records do subdomínio
+`*.standalone.portaluni.com.br`, KMS Vault, Master Encryption Key,
+Dynamic Group e IAM Policy (Stories #52 a #58 da Feature #43). Bridge
+para charts Helm via `scripts/sync-tofu-outputs.sh`. Story #64 (re-init
+do HashiCorp Vault consumindo a KMS key) fica condicional ao
+destravamento da NetworkPolicy do chart Vault — ver "Próximos passos".
 
 ## Estado atual no OCI
 
