@@ -66,8 +66,8 @@ clamavScanner:
   clamdConfig:
     maxFileSize: "100M"
     maxScanSize: "400M"
-    maxRecursion: "16"
-    maxFiles: "10000"
+    maxRecursion: 16
+    maxFiles: 10000
     maxThreads: 4
     scanIdleTimeout: 600
     heuristicAlerts: "yes"
