@@ -625,7 +625,12 @@ step_data_configure_iptables() {
 #     primeiro pg_isready OK. Cobre o fluxo §9.4 (restore creds, data dir
 #     vazio → SQL recriado) e elimina cópia persistente do keycloak_pw em
 #     cleartext em $DATA_BASE/postgres/init/ (Codex P2 round 2).
-#   - EnvironmentFile + systemd unit: sempre re-aplicados (cheap, corrige drift).
+#   - Credential file (/etc/credstore/uniplus-postgres-password): sempre
+#     re-escrito a partir de super_pw em .bootstrap-creds. Mode 400 root:root.
+#     Pattern systemd LoadCredential — issue #128.
+#   - Legacy /etc/uniplus-postgres.env (EnvironmentFile): se existe, é
+#     shredded — migração one-way para LoadCredential.
+#   - systemd unit: sempre re-aplicada (cheap, corrige drift).
 #   - Serviço já ativo: não reinicia (evita downtime em re-runs).
 #
 # Pós-condições para o operador (ver runbook §9.2):
@@ -647,7 +652,15 @@ step_data_setup_postgres() {
 
     local creds_file="$DATA_BASE/postgres/.bootstrap-creds"
     local init_sql="$DATA_BASE/postgres/init/00-keycloak.sql"
-    local env_file="/etc/uniplus-postgres.env"
+    # systemd LoadCredential — senha lida sob demanda quando o serviço inicia,
+    # nunca via /proc/<pid>/environ. Issue #128 (Codex P2 round 4 do PR #127):
+    # systemd 250+ recomenda LoadCredential=/EncryptedCredential= em vez de
+    # EnvironmentFile= para secret delivery. Em Ubuntu 24.04 (systemd 255)
+    # com TPM2 disponível, podemos opcionalmente cifrar o conteúdo via
+    # `systemd-creds encrypt --name=postgres-password` (binding ao host).
+    local cred_dir="/etc/credstore"
+    local cred_file="$cred_dir/uniplus-postgres-password"
+    local legacy_env_file="/etc/uniplus-postgres.env"
     local unit_file="/etc/systemd/system/uniplus-postgres.service"
 
     # Diretórios + ownership: ambos pertencem ao uid 70 (postgres no container
@@ -744,12 +757,15 @@ EOF
         log_info "Init SQL pronto em $init_sql (será shredded após pg_isready OK)."
     fi
 
-    # EnvironmentFile: sempre re-aplicado (super_pw lido do creds file). Usar
-    # `docker run -e POSTGRES_PASSWORD` (sem `=value`) evita exposure da senha
-    # em /proc/<pid>/cmdline — docker puxa do env do systemd, populado via
-    # EnvironmentFile.
+    # Credential file (systemd LoadCredential): sempre re-aplicado. super_pw
+    # vem do .bootstrap-creds. Mode 400 root:root — só systemd lê durante o
+    # service start. ExecStart NÃO recebe a senha via env — em vez disso,
+    # systemd bind-mounta o file em ${CREDENTIALS_DIRECTORY}/postgres-password
+    # (tmpfs do unit, isolado de /proc/<pid>/environ), e o docker monta esse
+    # path read-only no container, lido pela imagem postgres:18-alpine via
+    # POSTGRES_PASSWORD_FILE (entrypoint suporta nativamente).
     if $DRY_RUN; then
-        echo "[DRY-RUN] Escreveria $env_file (POSTGRES_PASSWORD lido de $creds_file)"
+        echo "[DRY-RUN] Criaria $cred_dir + escreveria $cred_file (super_pw lido de $creds_file)"
     else
         local super_pw_current
         super_pw_current=$(sudo grep '^super_pw=' "$creds_file" | cut -d= -f2)
@@ -757,18 +773,37 @@ EOF
             log_error "Não consegui ler super_pw de $creds_file. Abortando."
             exit 1
         fi
-        sudo tee "$env_file" >/dev/null <<EOF
-POSTGRES_PASSWORD=$super_pw_current
-POSTGRES_INITDB_ARGS=--encoding=UTF8
-EOF
-        sudo chown root:root "$env_file"
-        sudo chmod 600 "$env_file"
+        sudo mkdir -p "$cred_dir"
+        sudo chown root:root "$cred_dir"
+        sudo chmod 700 "$cred_dir"
+        # Senha sem trailing newline — `printf` em vez de heredoc evita
+        # `\n` que `cat` enxergaria como parte da senha (postgres rejeitaria).
+        printf '%s' "$super_pw_current" | sudo tee "$cred_file" >/dev/null
+        sudo chown root:root "$cred_file"
+        sudo chmod 400 "$cred_file"
     fi
 
-    # systemd unit: sempre re-aplicado. Heredoc single-quoted preserva o
-    # conteúdo literal — paths são hardcoded para alinhar com $DATA_BASE
-    # (/var/lib/uniplus). A unit em si não usa variáveis de shell; o systemd
-    # injeta POSTGRES_PASSWORD via EnvironmentFile no env do docker run.
+    # Migração: se /etc/uniplus-postgres.env (legacy EnvironmentFile) existe,
+    # remover via shred para não deixar cópia da senha em texto plano em path
+    # exposto. Idempotente: se já foi migrado em run anterior, no-op.
+    if $DRY_RUN; then
+        echo "[DRY-RUN] Removeria $legacy_env_file via shred -u (se presente)"
+    elif sudo test -f "$legacy_env_file" 2>/dev/null; then
+        sudo shred -u "$legacy_env_file"
+        log_info "Legacy $legacy_env_file removido (migrado para $cred_file)."
+    fi
+
+    # systemd unit: sempre re-aplicada. Usa LoadCredential= em vez de
+    # EnvironmentFile= — systemd 250+ pattern recomendado (sem expor senha em
+    # /proc/<pid>/environ ou propagação a child processes).
+    #
+    # ExecStart resolve `${CREDENTIALS_DIRECTORY}` ANTES do exec — é uma var
+    # do systemd, não shell. Docker recebe o path real (tipicamente
+    # /run/credentials/uniplus-postgres.service/postgres-password) e bind-monta
+    # como /run/secrets/postgres-password no container. POSTGRES_PASSWORD_FILE
+    # aponta para esse path; entrypoint do postgres:18-alpine roda como root
+    # antes do gosu drop e consegue ler (mode 400 root:root no host preserva
+    # ownership no bind mount → root no container lê OK).
     if $DRY_RUN; then
         echo "[DRY-RUN] Escreveria $unit_file"
     else
@@ -785,13 +820,18 @@ Type=simple
 Restart=always
 RestartSec=10
 TimeoutStartSec=120
-EnvironmentFile=/etc/uniplus-postgres.env
+
+# systemd 250+ secret delivery — issue #128. A senha é lida do file abaixo,
+# bind-mounted em ${CREDENTIALS_DIRECTORY}/postgres-password (tmpfs por unit,
+# isolada de /proc<pid>/environ). Não expor via env do systemd.
+LoadCredential=postgres-password:/etc/credstore/uniplus-postgres-password
 
 ExecStartPre=-/usr/bin/docker rm -f uniplus-postgres
 ExecStart=/usr/bin/docker run --rm --name uniplus-postgres \
   --network host \
-  -e POSTGRES_PASSWORD \
-  -e POSTGRES_INITDB_ARGS \
+  -e POSTGRES_PASSWORD_FILE=/run/secrets/postgres-password \
+  -e POSTGRES_INITDB_ARGS=--encoding=UTF8 \
+  -v ${CREDENTIALS_DIRECTORY}/postgres-password:/run/secrets/postgres-password:ro \
   -v /var/lib/uniplus/postgres/data:/var/lib/postgresql \
   -v /var/lib/uniplus/postgres/init:/docker-entrypoint-initdb.d:ro \
   postgres:18-alpine \
