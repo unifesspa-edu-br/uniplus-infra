@@ -27,6 +27,28 @@ spec:
       securityContext:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      initContainers:
+        # `fsGroupChangePolicy: Always` no podSecurityContext NÃO funciona com
+        # rancher.io/local-path provisioner (k3s standalone) — kubelet pula
+        # fsGroup operations para volumes hostPath-based por design. Sem este
+        # initContainer, o entrypoint da imagem oficial faz `chown -R` no
+        # mountpoint, falha com "Operation not permitted" sob runAsUser=100,
+        # e o pod entra em CrashLoopBackOff. Issues #188, #200.
+        - name: chown-signatures
+          image: "{{ .Values.clamavScanner.image.registry | default "docker.io" }}/{{ .Values.clamavScanner.image.repository }}:{{ .Values.clamavScanner.image.tag | default "1.4" }}"
+          imagePullPolicy: {{ .Values.clamavScanner.image.pullPolicy | default "IfNotPresent" }}
+          command: ["chown", "-R", "100:100", "/var/lib/clamav"]
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+            allowPrivilegeEscalation: false
+            capabilities:
+              add: ["CHOWN"]
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: signatures
+              mountPath: /var/lib/clamav
       containers:
         - name: clamd
           image: "{{ .Values.clamavScanner.image.registry | default "docker.io" }}/{{ .Values.clamavScanner.image.repository }}:{{ .Values.clamavScanner.image.tag | default "1.4" }}"
