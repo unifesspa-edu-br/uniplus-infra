@@ -70,3 +70,16 @@ output "nat_gateway_public_ip" {
   description = "IP público do NAT Gateway (egress da subnet privada)."
   value       = oci_core_nat_gateway.this.nat_ip
 }
+
+output "k8s_host_reserved_ip" {
+  description = "IP público RESERVED do k8s-host (sobrevive a recreate; apontado pelo apex DNS)."
+  value       = oci_core_public_ip.k8s_host.ip_address
+}
+
+output "k8s_host_reserved_ip_ocid" {
+  description = "OCID do Reserved Public IP do k8s-host."
+  value       = oci_core_public_ip.k8s_host.id
+}
+
+# dns_apex_fqdn removido junto com dns.tf (bug OCI provider v7.32 em rrset
+# import). FQDN continua sendo `standalone.portaluni.com.br` no DNS manual.

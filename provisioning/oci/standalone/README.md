@@ -1,11 +1,11 @@
 # OpenTofu — standalone OCI
 
 Provisionamento OpenTofu do ambiente standalone Uni+ na OCI (sa-saopaulo-1).
-Cobertura mínima viável (Stories #52, #54 e #55 da Feature #43): as 2 VMs
-E5.Flex e os 4 block volumes do data-host. Recursos de rede (VCN, subnets,
-IGW, NSGs) ficam **fora deste recorte** — provisionados manualmente,
-importados via referência por OCID. A migração da rede é a Story #53
-(`network.tf`).
+Cobertura: VCN + 2 subnets + IGW + NAT GW + 2 route tables + 2 security
+lists + 2 VMs E5.Flex + 4 block volumes do data-host + Reserved Public IP
+do k8s-host (Stories #52, #53, #54, #55 e parte de #56 da Feature #43).
+DNS records (#56 — parte deferida em #208 por bug do provider), KMS
+auto-unseal (#57) e bridge para Helm (#58) ficam fora deste recorte.
 
 ## Estado atual no OCI
 
@@ -20,6 +20,7 @@ para o perfil `poc` via `scripts/resize-standalone-oci.sh`:
 | `uniplus-standalone-kafka` | block volume 100 GB VPU 0 |
 | `uniplus-standalone-minio` | block volume 200 GB VPU 0 |
 | `uniplus-standalone-vault` | block volume 50 GB VPU 0 |
+| `uniplus-standalone-ip` | Reserved Public IP, anexado ao primary VNIC do k8s-host. Sobrevive a `tofu destroy/apply`. Atual: `164.152.53.29`. |
 
 ## Pré-requisitos
 
@@ -70,6 +71,9 @@ tofu import oci_core_security_list.public  ocid1.securitylist.oc1.sa-saopaulo-1.
 tofu import oci_core_security_list.private ocid1.securitylist.oc1.sa-saopaulo-1.<...>
 tofu import oci_core_subnet.public         ocid1.subnet.oc1.sa-saopaulo-1.<...>
 tofu import oci_core_subnet.private        ocid1.subnet.oc1.sa-saopaulo-1.<...>
+
+# Importar Reserved Public IP do k8s-host (1 recurso)
+tofu import oci_core_public_ip.k8s_host    ocid1.publicip.oc1.sa-saopaulo-1.<...>
 
 # Importar instances
 tofu import oci_core_instance.k8s_host  ocid1.instance.oc1.sa-saopaulo-1.<...>
@@ -131,6 +135,11 @@ dados sensíveis de configuração. `.gitignore` cuida disso.
 
 ## Limitações conhecidas
 
+- **DNS records** do standalone (1 A + 10 CNAMEs em `*.standalone.portaluni.com.br`)
+  continuam gerenciados manualmente na OCI DNS — bug do provider OCI v7.32 em
+  `oci_dns_rrset` import (`can not marshal to path in request for field
+  ZoneNameOrId. Due to can not marshal a nil pointer` quando o OCID da zona
+  contém `..`). Migração depende de fix upstream — ver issue #208.
 - **Default route table + default security list** do VCN são automaticamente
   criados pela OCI ao criar o VCN; ficam **não-gerenciados** pelo Tofu (não
   estão anexados a subnet alguma; SLs/RTs nomeadas cobrem o tráfego real).
@@ -141,7 +150,6 @@ dados sensíveis de configuração. `.gitignore` cuida disso.
   Implementação atual usa security lists por subnet — atende todas as
   necessidades; migração para NSG é refinamento futuro caso precise isolar
   tráfego entre VMs da mesma subnet.
-- **DNS + Reserved Public IP**: na Story #56.
 - **OCI Vault KMS** (auto-unseal Vault): na Story #57 (atualmente bloqueada
   por bug upstream `go-kms-wrapping@v2.0.9`).
 - **IAM Dynamic Group + Policy** (resource principal): na Story #58.
@@ -153,8 +161,8 @@ dados sensíveis de configuração. `.gitignore` cuida disso.
 
 ## Próximos passos
 
-| Story | Conteúdo |
-|---|---|
-| #56 | DNS A record + Reserved Public IP do k8s-host |
-| #57 | OCI Vault, Master Encryption Key, Dynamic Group, IAM Policy (auto-unseal) |
-| #58 | Bridge de outputs Tofu → `environments/standalone/values.yaml` |
+| Story | Conteúdo | Bloqueio |
+|---|---|---|
+| #208 | DNS records — `oci_dns_rrset` no Tofu (parte deferida da #56) | bug provider OCI v7.32 |
+| #57 | OCI Vault, Master Encryption Key, Dynamic Group, IAM Policy (auto-unseal) | bug `go-kms-wrapping@v2.0.9` |
+| #58 | Bridge de outputs Tofu → `environments/standalone/values.yaml` | nenhum |
