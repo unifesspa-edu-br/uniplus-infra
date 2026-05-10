@@ -770,7 +770,9 @@ Ambiente de homologação e produção inicial composto por dois hosts Ubuntu na
 | `k8s-host` | K3s single-node + Helm + ArgoCD | `164.152.53.29` | — |
 | `data-host` | Docker + LVM (Postgres, Kafka, MinIO, Vault, Redis) | — | `10.0.2.87` |
 
-> Pré-requisito: chave SSH `~/.ssh/id_ed25519` com acesso a ambos os hosts como usuário `ubuntu`.
+> **Pré-requisito infra:** as VMs OCI E4.Flex (k8s-host + data-host), VCN, subnets, NSGs, Block Volumes e Reserved Public IP são provisionados via OpenTofu em `provisioning/oci/standalone/` — ver [`provisioning/oci/standalone/README.md`](../provisioning/oci/standalone/README.md) e issues [#52](https://github.com/unifesspa-edu-br/uniplus-infra/issues/52)–[#58](https://github.com/unifesspa-edu-br/uniplus-infra/issues/58). Os procedures abaixo assumem essas VMs já no ar com Ubuntu 24.04 LTS instalado.
+>
+> **Pré-requisito SSH:** chave SSH `~/.ssh/id_ed25519` com acesso a ambos os hosts como usuário `ubuntu`.
 
 ### 8.1 Bootstrap do k8s-host
 
@@ -1202,6 +1204,34 @@ ssh -t -i ~/.ssh/id_ed25519 ubuntu@10.0.2.87 \
 **O que é preservado:** dados nos block volumes OCI — o LVM fica intacto, apenas desmontado. Re-montagem pelo bootstrap recupera os dados.
 
 **Pós-teardown:** re-bootstrap via `./scripts/bootstrap-standalone.sh --role=standalone-data`.
+
+### 8.8 Troubleshooting do bootstrap
+
+Sintomas comuns durante a primeira ativação do ambiente standalone, com diagnóstico e remediação.
+
+| Sintoma | Causa provável | Resolução |
+|---|---|---|
+| `kubectl get nodes` retorna `NotReady` após §8.1 | K3s ainda inicializando (containerd, CNI, kubelet); ou conflito de CIDR com VCN | Aguardar 1–2 min e reexecutar. Se persistir: `journalctl -u k3s --since "5 min ago" -p err`. CIDR conflict aparece com `iptables: rule does not match`; ajustar `--cluster-cidr`/`--service-cidr` no service unit do K3s. |
+| `kubectl -n vault exec ... -- vault status` retorna `Sealed=true` após restart | Pod do Vault foi reiniciado (manutenção, OOM, upgrade K3s) — Shamir exige unseal manual a cada start | Executar §8.4.2 com 3 das 5 unseal keys custodiadas no gestor institucional. **Não é one-shot — é procedimento operacional recorrente em standalone enquanto Vault rodar com Shamir** (ver decisão temporária na introdução de §8.4). |
+| `argocd app list` mostra todas as apps em `OutOfSync` ou `Unknown` após §8.3 | ApplicationSet não detectou o cluster; labels ausentes ou cluster não registrado | Validar `argocd cluster list` mostra `uniplus-standalone` com `STATUS=Successful`. Se ausente: re-executar §8.3 garantindo as 2 flags `--label uniplus.io/managed=true --label environment=standalone`. Sem **ambos** os labels o ApplicationSet ignora o cluster (intersecção de seletores em `argocd/applicationset.yaml`). |
+| Apps do ApplicationSet ficam em `Healthy=Unknown` por > 5 min | Reconciliação lenta do primeiro deploy (download de imagens grandes); ou Helm dep fail no chart | `argocd app sync <app>` para forçar; ver eventos com `argocd app get <app>`. Se `helm-template`: `argocd app history <app>` mostra última tentativa de manifest gen + erros. |
+| Pods em `CreateContainerConfigError: secret X not found` em todos os apps | ESO não sintetizou Secret porque Vault está selado ou ClusterSecretStore não está Ready | 1) `vault status` (selado? rodar §8.4.2). 2) `kc get clustersecretstore vault-default -o yaml \| grep -A5 status` — ver se `Valid` e `Ready`. 3) Se ESO ok mas Vault sem o secret esperado: custódia foi pulada (cada componente tem sua subseção §10.x/§14.1/§15.6 para popular). |
+| `cert-manager` não emite certs — Pods Certificate em `False`, log `dns01: connection refused` | DNS-01 challenge bloqueado por NSG ou DNS zone não delegada | Validar resolver upstream do data-host (`/etc/resolv.conf`); ACME-01 challenge via HTTP-01 funciona como fallback enquanto LE staging valida o setup (ver §10.6 troubleshooting cert-manager). |
+| `oci dns record rrset update` retorna 404 zone-not-found | Zone OCID errado ou compartment scope insuficiente | `oci dns zone list --compartment-id <root> --query 'data[?name==`portaluni.com.br`]'` — copiar `id` correto. Se vazio: zona ainda não criada na OCI DNS (`provisioning/oci/standalone/dns.tf` em #56). Workaround manual via OCI Console > DNS > Public Zones. |
+| `argocd cluster add` falha com `permission denied` | Token admin do ArgoCD expirou | `argocd account get-user-info` — se 401, re-autenticar via §8.3 passo 2. Se persiste: senha admin pós-rotação não foi custodiada em Vault e foi perdida — workaround: `kubectl -n argocd patch secret argocd-secret --type=merge -p '{"stringData":{"admin.password":"<bcrypt>"}}'` (ver argocd-cm anotações). |
+
+**Logs estruturados de bootstrap** (úteis para post-mortem):
+
+```bash
+# K3s service journal (últimos 30 min)
+sudo journalctl -u k3s --since "30 min ago" --no-pager
+
+# ArgoCD controller (sync events)
+kubectl -n argocd logs deploy/argocd-application-controller --tail=200
+
+# ESO operator (ClusterSecretStore Valid checks)
+kubectl -n external-secrets-system logs deploy/external-secrets --tail=100
+```
 
 ## 9. Data services no data-host (standalone)
 
