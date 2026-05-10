@@ -25,6 +25,22 @@ traefik:
   deployment:
     replicas: 1
 
+  # updateStrategy: `Recreate` em vez de RollingUpdate (default do subchart).
+  # Razão: o Pod do Traefik usa hostPort (80/443) bind direto na VM em
+  # standalone (single-node K3s) — RollingUpdate tenta criar Pod novo
+  # antes de remover o antigo, e o port conflict bloqueia o scheduling
+  # do Pod novo permanentemente (FailedScheduling: didn't have free
+  # ports for the requested pod ports). Em standalone aceitamos ~10s de
+  # downtime por update em troca de releases que não travam (#180).
+  # Prod 3-DC com replicas≥2 + LoadBalancer override para RollingUpdate
+  # via environments/prod-*/values.yaml.
+  #
+  # Caminho de values do subchart: `updateStrategy.type` (NÃO
+  # `deployment.strategy.type` — pegadinha do upstream traefik/charts).
+  updateStrategy:
+    type: Recreate
+    rollingUpdate: null
+
   # Recursos lab — Tabela 10.1 (200m→1000m / 256MB→512MB).
   resources:
     requests:

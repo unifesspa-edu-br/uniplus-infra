@@ -1,0 +1,17 @@
+{{- if and .Values.clamavScanner.enabled .Values.clamavScanner.persistence.enabled -}}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "clamavScanner.fullname" . }}-signatures
+  labels:
+    {{- include "clamavScanner.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    {{- toYaml .Values.clamavScanner.persistence.accessModes | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ .Values.clamavScanner.persistence.size | default "2Gi" }}
+  {{- with .Values.clamavScanner.persistence.storageClassName }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+{{- end }}

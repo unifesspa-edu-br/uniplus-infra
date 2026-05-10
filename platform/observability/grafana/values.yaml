@@ -69,6 +69,29 @@ grafana:
   ingress:
     enabled: false
 
+  # IngressRoute Traefik (template wrapper Uni+ — platform/observability/grafana/
+  # templates/ingressroute.yaml). Suporta dois patterns:
+  #
+  # 1) Subpath: host raiz + pathPrefix (ex.: standalone.portaluni.com.br/grafana/*).
+  #    Exige serve_from_sub_path: true em grafana.ini.server e root_url terminando
+  #    em /grafana/. Wrapper emite um Middleware StripPrefix automaticamente.
+  #
+  # 2) Subdomain: host dedicado (ex.: grafana.standalone.portaluni.com.br) com
+  #    pathPrefix vazio. Pattern dos outros admin UIs Uni+ (kafka-ui,
+  #    schema-registry, redis-ui).
+  #
+  # Default OFF — habilitado em environments/<env>/values.yaml por env.
+  ingressRoute:
+    enabled: false
+    entryPoint: websecure
+    host: ""              # ex.: standalone.portaluni.com.br
+    pathPrefix: ""        # subpath (ex.: /grafana) ou vazio (subdomain)
+    serviceName: ""       # default: <Release.Name>-grafana (Service do subchart)
+    servicePort: 80       # porta do Service do subchart Grafana
+    tls:
+      enabled: true
+      secretName: ""      # vazio = Traefik usa default cert (LE prod via cert-manager + Certificate emitido em outro template ou chart)
+
   # Métricas Prometheus do próprio Grafana. ServiceMonitor vem do upstream
   # (gateado por `serviceMonitor.enabled`); wrapper não emite SM próprio.
   serviceMonitor:
@@ -115,7 +138,14 @@ grafana:
   # tiver o client `grafana` configurado.
   grafana.ini:
     server:
-      root_url: ""  # override por env (ex.: https://grafana.standalone.portaluni.com.br)
+      root_url: ""  # override por env (ex.: https://standalone.portaluni.com.br/grafana/)
+      # Habilita Grafana servir corretamente quando atrás de PathPrefix.
+      # Quando root_url contém subpath (ex.: /grafana/), Grafana reescreve
+      # URLs internas com o prefix. Sem isso, login redireciona para /login
+      # (em vez de /grafana/login) e quebra cookies/CSRF. Override por env
+      # via environments/<env>/values.yaml quando subpath. Subdomain root
+      # (sem subpath) deixa false (default).
+      serve_from_sub_path: false
     analytics:
       reporting_enabled: false
       check_for_updates: false

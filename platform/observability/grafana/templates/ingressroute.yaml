@@ -1,0 +1,71 @@
+{{- if and .Values.grafana.enabled .Values.grafana.ingressRoute.enabled -}}
+{{- $ing := .Values.grafana.ingressRoute -}}
+{{- if not $ing.host -}}
+{{- fail "grafana.ingressRoute.enabled=true exige grafana.ingressRoute.host não vazio. Sobrescrever em environments/<env>/values.yaml com o FQDN público (ex.: standalone.portaluni.com.br quando subpath, ou grafana.<env>.portaluni.com.br quando subdomain)." -}}
+{{- end -}}
+{{- $svcName := default (printf "%s-grafana" .Release.Name) $ing.serviceName -}}
+{{- $svcPort := default 80 $ing.servicePort -}}
+{{/*
+  Grafana IngressRoute Traefik. Suporta dois patterns:
+
+  1) Subpath (host raiz com PathPrefix):
+     standalone.portaluni.com.br/grafana/* — exige serve_from_sub_path: true
+     no grafana.ini.server e root_url terminando em /grafana/.
+     Render adiciona Middleware StripPrefix /grafana — Grafana recebe paths
+     sem o prefix, que é a forma esperada quando serve_from_sub_path=true.
+
+  2) Subdomain (host dedicado):
+     grafana.standalone.portaluni.com.br/* — root_url sem subpath,
+     serve_from_sub_path=false. Pattern de outros admin UIs Uni+
+     (kafka-ui, schema-registry, redis-ui).
+
+  ingressRoute.pathPrefix vazio → caminho 2 (subdomain).
+  ingressRoute.pathPrefix preenchido (ex.: "/grafana") → caminho 1.
+*/}}
+{{- if $ing.pathPrefix -}}
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ printf "%s-strip-prefix" (include "grafana.fullname" .) }}
+  labels:
+    app.kubernetes.io/part-of: uniplus
+    app.kubernetes.io/component: grafana
+spec:
+  stripPrefix:
+    prefixes:
+      - {{ $ing.pathPrefix | quote }}
+---
+{{- end }}
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ include "grafana.fullname" . }}
+  labels:
+    app.kubernetes.io/part-of: uniplus
+    app.kubernetes.io/component: grafana
+spec:
+  entryPoints:
+    - {{ $ing.entryPoint | default "websecure" | quote }}
+  routes:
+    {{- if $ing.pathPrefix }}
+    - match: Host(`{{ $ing.host }}`) && PathPrefix(`{{ $ing.pathPrefix }}`)
+      kind: Rule
+      middlewares:
+        - name: {{ printf "%s-strip-prefix" (include "grafana.fullname" .) }}
+      services:
+        - name: {{ $svcName }}
+          port: {{ $svcPort }}
+    {{- else }}
+    - match: Host(`{{ $ing.host }}`)
+      kind: Rule
+      services:
+        - name: {{ $svcName }}
+          port: {{ $svcPort }}
+    {{- end }}
+  {{- if $ing.tls.enabled }}
+  tls:
+    {{- if $ing.tls.secretName }}
+    secretName: {{ $ing.tls.secretName | quote }}
+    {{- end }}
+  {{- end }}
+{{- end }}
