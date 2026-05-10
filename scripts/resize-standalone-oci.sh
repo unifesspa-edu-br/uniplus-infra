@@ -1,19 +1,31 @@
 #!/usr/bin/env bash
 # ============================================================================
 # resize-standalone-oci.sh
-# Hot-resize dos shapes (OCPU + memória) das 2 VMs do standalone OCI.
-# E5.Flex permite reconfiguração online sem reboot — operação reversível,
-# zero downtime no compute.
+# Resize dos shapes (OCPU + memória) das 2 VMs do standalone OCI via
+# `oci compute instance update --shape-config`.
 #
-# Footprint padrão é dimensionado para "validação de conceito" (sem load
+# IMPORTANTE — Esta operação REBOOTA as VMs:
+# `oci compute instance update --shape-config` é uma "Reshape" no OCI; quando
+# o novo shape difere do atual em OCPU ou memória, a instância é reiniciada
+# (~30-90s downtime por VM). Stateful services (Postgres/Kafka/Redis/MinIO/
+# Vault) param e voltam ao subir o systemd; pods K8s entram em CrashLoop
+# transitório enquanto k3s reaparece. NÃO rodar durante operação produtiva
+# sem janela de manutenção planejada.
+#
+# Dito isso, em uso real (10/05) os 4 services systemd do data-host
+# voltaram active sem perda de dados, e todos os pods do k8s-host
+# religaram dentro de ~2min — graças à graceful shutdown do systemd e
+# auto-recovery do k3s.
+#
+# Footprint padrão dimensionado para "validação de conceito" (sem load
 # real): k8s-host roda k3s + ~20 pods leves; data-host roda Postgres + Kafka
 # + Redis + MinIO em modo idle. Para HML/PROD escalar para shapes maiores.
 #
 # Uso:
-#   ./scripts/resize-standalone-oci.sh                 # aplica perfil "min"
-#   ./scripts/resize-standalone-oci.sh --profile=poc   # idem
-#   ./scripts/resize-standalone-oci.sh --profile=hml   # shapes mais robustos
+#   ./scripts/resize-standalone-oci.sh                 # interativo, perfil poc
+#   ./scripts/resize-standalone-oci.sh --profile=hml   # shapes maiores
 #   ./scripts/resize-standalone-oci.sh --dry-run       # mostra plano sem aplicar
+#   ./scripts/resize-standalone-oci.sh --yes           # pula confirmação (CI)
 #
 # Pré-requisitos:
 #   - oci CLI configurada (~/.oci/config) com permissão para
@@ -31,12 +43,14 @@ set -euo pipefail
 
 PROFILE="poc"
 DRY_RUN=0
+ASSUME_YES=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --profile=*) PROFILE="${1#*=}";;
     --dry-run)   DRY_RUN=1;;
-    -h|--help)   sed -n '2,30p' "$0"; exit 0;;
+    --yes|-y)    ASSUME_YES=1;;
+    -h|--help)   sed -n '2,40p' "$0"; exit 0;;
     *) echo "Opção desconhecida: $1" >&2; exit 1;;
   esac
   shift
@@ -59,14 +73,29 @@ case "$PROFILE" in
   *) echo "Perfil desconhecido: $PROFILE (use poc|hml)" >&2; exit 1;;
 esac
 
-echo "Perfil: $PROFILE"
-echo "  k8s-host  → $K8S_OCPU OCPU / $K8S_MEM GB"
-echo "  data-host → $DATA_OCPU OCPU / $DATA_MEM GB"
-echo
+cat <<EOF
+Perfil: $PROFILE
+  k8s-host  → $K8S_OCPU OCPU / $K8S_MEM GB
+  data-host → $DATA_OCPU OCPU / $DATA_MEM GB
+
+ATENÇÃO: esta operação REBOOTA as 2 VMs (~30-90s downtime cada).
+- Postgres, Kafka, Redis, MinIO, Vault: parados e religados pelo systemd
+- Pods K8s: CrashLoop transitório enquanto k3s reaparece
+- Não rode em produção sem janela de manutenção
+EOF
 
 if [ $DRY_RUN -eq 1 ]; then
   echo "[dry-run] nada aplicado."
   exit 0
+fi
+
+if [ $ASSUME_YES -eq 0 ]; then
+  printf "Confirmar reboot e resize? [y/N] "
+  read -r confirm
+  case "$confirm" in
+    y|Y|yes|YES) ;;
+    *) echo "Abortado."; exit 1;;
+  esac
 fi
 
 resize() {
@@ -83,8 +112,10 @@ resize() {
 resize "data-host" "$DATA_OCID" "$DATA_OCPU" "$DATA_MEM"
 resize "k8s-host"  "$K8S_OCID"  "$K8S_OCPU"  "$K8S_MEM"
 
-echo
-echo "Resize aplicado. Validar com:"
-echo "  ssh ubuntu@164.152.53.29 'free -h | head -2; nproc'"
-echo "  ssh ubuntu@164.152.53.29 'sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl top node'"
-echo "  ssh ubuntu@164.152.53.29 'ssh ubuntu@10.0.2.87 \"systemctl is-active uniplus-postgres uniplus-kafka uniplus-redis uniplus-minio\"'"
+cat <<EOF
+
+Resize aplicado. Validar (após ~1-2min para serviços religarem):
+  ssh ubuntu@164.152.53.29 'uptime; free -h | head -2; nproc'
+  ssh ubuntu@164.152.53.29 'sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get nodes; sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get pods -A --field-selector=status.phase!=Running'
+  ssh ubuntu@164.152.53.29 'ssh ubuntu@10.0.2.87 "uptime; systemctl is-active uniplus-postgres uniplus-kafka uniplus-redis uniplus-minio"'
+EOF
