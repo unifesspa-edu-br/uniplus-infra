@@ -102,6 +102,51 @@ keycloak:
       webOrigins:
         - "+"
 
+  # Realm reconcile — Job Helm hook (post-install,post-upgrade) que
+  # executa keycloak-config-cli (adorsys) para reconciliar o realm
+  # declarativamente em runtime, depois do --import-realm já ter sido
+  # consumido. Compensa o "skip re-import" do Keycloak 26.x quando o
+  # realm já existe (Story #177).
+  #
+  # Quando ligar:
+  # - Standalone/HML/Prod onde mudanças no realm.json (novos clients,
+  #   mappers, roles) precisam refletir no cluster sem `kcadm.sh` manual
+  #   ou rotação de DB.
+  #
+  # Quando deixar OFF:
+  # - Lab dev local onde o realm é descartado a cada re-bootstrap (o
+  #   --import-realm já cobre).
+  realmReconcile:
+    enabled: false
+    image:
+      registry: quay.io
+      repository: adorsys/keycloak-config-cli
+      # Tag matching Keycloak 26.x — major.minor obrigatório (versões
+      # diferentes podem falhar em migrations de schema). Versões em
+      # https://hub.docker.com/r/adorsys/keycloak-config-cli/tags
+      tag: "6.4.0-26.0.6"
+      pullPolicy: IfNotPresent
+    # Tempo máximo de espera por Keycloak ficar disponível antes de
+    # tentar reconciliar. Pod do KC pode estar em rolling restart após
+    # upgrade — 120s cobre janela típica.
+    availabilityCheckTimeout: "120s"
+    # Logging do Job. INFO para diagnóstico padrão; DEBUG em
+    # troubleshooting.
+    logLevel: INFO
+    # Lifecycle do Job. ttlSeconds remove o Job após sucesso para não
+    # poluir o namespace; backoffLimit permite até N retries por falha
+    # transitória; activeDeadline aborta jobs presos.
+    ttlSecondsAfterFinished: 600
+    backoffLimit: 3
+    activeDeadlineSeconds: 600
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
   # ExternalSecrets — todos os secrets vivem no Vault (`secret/...`).
   # Manifests no Git contêm apenas referências.
   externalSecrets:

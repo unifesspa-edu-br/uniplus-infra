@@ -436,6 +436,13 @@ keycloak:
       webOrigins:
         - "+"
 
+  # Realm reconcile via keycloak-config-cli (Story #177) — habilitado em
+  # standalone para fechar o gap descoberto durante o smoke #181: clients
+  # M2M com mappers ausentes em realm vivo (Keycloak 26.x skipa re-import).
+  # Job Helm hook roda a cada deploy, idempotente, sem destruir users/sessões.
+  realmReconcile:
+    enabled: true
+
   externalSecrets:
     enabled: true
     refreshInterval: "1h"

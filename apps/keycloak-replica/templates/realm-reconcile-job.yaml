@@ -1,0 +1,171 @@
+{{- if and .Values.keycloak.enabled .Values.keycloak.realmReconcile.enabled }}
+{{/*
+  Job Helm hook que executa keycloak-config-cli (adorsys) para reconciliar
+  o realm `uniplus` declarativamente em runtime, **após o realm já ter sido
+  importado** pelo --import-realm inicial do Keycloak.
+
+  Por que existe (ADR-0010 + Story #177 + descoberta no smoke E2E #181):
+  Keycloak 26.x **skipa re-import** do realm quando o realm já existe em DB.
+  Ou seja, mudanças no apps/keycloak-replica/files/uniplus-realm.json (novos
+  clients, mappers, roles) NÃO são aplicadas em ambientes onde o realm já
+  foi populado anteriormente — fica drift silencioso entre Git e cluster.
+
+  Foi exatamente o que descobrimos no smoke #181: os clients M2M
+  `uniplus-api-{portal,selecao,ingresso}` (PR #169) existiam no realm vivo
+  mas SEM os 2 protocolMappers (`audience-apicurio-registry` +
+  `groups-hardcoded-developer`) — porque foram adicionados no realm.json
+  *depois* do realm ter sido criado pela primeira vez. Mitigação manual via
+  `kcadm.sh` (RUNBOOKS §15.6 passo 1) executada durante o smoke; este Job
+  automatiza essa reconciliação.
+
+  Como funciona:
+  - Helm hook `post-install,post-upgrade` — roda automaticamente após cada
+    `helm install`/`upgrade` do chart, ou seja, em todo deploy ArgoCD.
+  - Imagem `quay.io/adorsys/keycloak-config-cli` versão alinhada com o
+    Keycloak 26.x do chart (matching major.minor obrigatório — versões
+    diferentes podem falhar em migrations de schema do realm).
+  - Lê o ConfigMap do realm.json existente (já provisionado por
+    configmap-realm.yaml) e reconcilia via API REST do Keycloak local.
+  - Idempotent: se o realm já bate com o JSON, no-op. Se há drift, aplica
+    diff. Não destrói usuários/sessões — escopo controlado por
+    IMPORT_MANAGED_* env vars.
+
+  Helm hook vs ArgoCD sync wave:
+  - hook annotation faz Helm RENDER o resource e gerenciá-lo localmente
+    (não vira parte do release). Em ArgoCD com Helm engine, esse hook é
+    respeitado quando server-side apply está em uso (configurado pelo
+    AppProject).
+
+  Falha do Job: a annotation `hook-delete-policy: hook-succeeded` deixa o
+  Job no cluster se falhar (para inspeção), e remove em sucesso.
+*/}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "keycloak-replica.fullname" . }}-realm-reconcile
+  labels:
+    {{- include "keycloak-replica.labels" . | nindent 4 }}
+    app.kubernetes.io/component: realm-reconcile
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": hook-succeeded,before-hook-creation
+spec:
+  ttlSecondsAfterFinished: {{ .Values.keycloak.realmReconcile.ttlSecondsAfterFinished | default 600 }}
+  backoffLimit: {{ .Values.keycloak.realmReconcile.backoffLimit | default 3 }}
+  activeDeadlineSeconds: {{ .Values.keycloak.realmReconcile.activeDeadlineSeconds | default 600 }}
+  template:
+    metadata:
+      labels:
+        {{- include "keycloak-replica.labels" . | nindent 8 }}
+        app.kubernetes.io/component: realm-reconcile
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: {{ include "keycloak-replica.serviceAccountName" . }}
+      {{- with .Values.keycloak.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: keycloak-config-cli
+          image: "{{ .Values.keycloak.realmReconcile.image.registry | default "quay.io" }}/{{ .Values.keycloak.realmReconcile.image.repository }}:{{ .Values.keycloak.realmReconcile.image.tag }}"
+          imagePullPolicy: {{ .Values.keycloak.realmReconcile.image.pullPolicy | default "IfNotPresent" }}
+          {{- with .Values.keycloak.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          envFrom:
+            # Bootstrap admin user/password vem do mesmo ExternalSecret
+            # consumido pelo Pod do Keycloak (KC_BOOTSTRAP_ADMIN_USERNAME +
+            # _PASSWORD).
+            - secretRef:
+                name: {{ include "keycloak-replica.adminSecretName" . }}
+          env:
+            # URL do Keycloak no cluster — Service local. Não usa o FQDN
+            # externo para evitar dependência circular de Traefik+TLS.
+            - name: KEYCLOAK_URL
+              value: "http://{{ include "keycloak-replica.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.keycloak.http.httpPort | default 8080 }}{{ .Values.keycloak.http.relativePath | default "/auth" }}"
+            # Admin user — mesmo bootstrap admin do Keycloak (custodiado
+            # via ExternalSecret). KC_BOOTSTRAP_ADMIN_USERNAME chega via
+            # envFrom acima; mapeamos para o nome esperado pelo CLI.
+            - name: KEYCLOAK_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak-replica.adminSecretName" . }}
+                  key: KC_BOOTSTRAP_ADMIN_USERNAME
+            - name: KEYCLOAK_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "keycloak-replica.adminSecretName" . }}
+                  key: KC_BOOTSTRAP_ADMIN_PASSWORD
+            # Espera o Keycloak ficar disponível antes de tentar reconciliar
+            # (Pod do Keycloak pode estar reiniciando após upgrade).
+            - name: KEYCLOAK_AVAILABILITYCHECK_ENABLED
+              value: "true"
+            - name: KEYCLOAK_AVAILABILITYCHECK_TIMEOUT
+              value: "{{ .Values.keycloak.realmReconcile.availabilityCheckTimeout | default "120s" }}"
+            # Caminho do realm.json montado via ConfigMap (mesmo arquivo
+            # consumido pelo --import-realm inicial em deployment.yaml).
+            - name: IMPORT_FILES_LOCATIONS
+              value: "/realm/uniplus-realm.json"
+            # ${VAR} no realm.json (ex.: ${UNIPLUS_PORTAL_CLIENT_SECRET})
+            # é substituído por env vars do Pod — mesmo pattern do KC.
+            - name: IMPORT_VARSUBSTITUTION_ENABLED
+              value: "true"
+            - name: IMPORT_VARSUBSTITUTION_NESTED
+              value: "true"
+            # Modo gerenciado por resource — controla o que o cli pode
+            # CRIAR/ATUALIZAR/DELETAR. Defaults conservadores: gerencia
+            # tudo que está no realm.json mas NÃO deleta usuários nem
+            # group memberships criados manualmente fora do JSON.
+            - name: IMPORT_MANAGED_AUTHENTICATION_FLOW
+              value: "no-delete"
+            - name: IMPORT_MANAGED_GROUP
+              value: "no-delete"
+            - name: IMPORT_MANAGED_REQUIRED_ACTION
+              value: "no-delete"
+            - name: IMPORT_MANAGED_CLIENT_SCOPE
+              value: "no-delete"
+            - name: IMPORT_MANAGED_SCOPE_MAPPING
+              value: "no-delete"
+            - name: IMPORT_MANAGED_COMPONENT
+              value: "no-delete"
+            - name: IMPORT_MANAGED_SUB_COMPONENT
+              value: "no-delete"
+            - name: IMPORT_MANAGED_ROLE
+              value: "no-delete"
+            # Clients são FULL — reconcile completo (incluindo mappers,
+            # service accounts, scopes). Esta é a frente principal da #177.
+            - name: IMPORT_MANAGED_CLIENT
+              value: "full"
+            - name: IMPORT_MANAGED_CLIENT_AUTHORIZATION_RESOURCES
+              value: "full"
+            # Senhas em users do realm.json — não rotaciona automaticamente
+            # passwords pré-existentes no realm vivo (segurança).
+            - name: IMPORT_MANAGED_USER
+              value: "no-delete"
+            # Forçar update mesmo se conteúdo bate (idempotente). Default
+            # é skip para performance.
+            - name: IMPORT_FORCE
+              value: "false"
+            # Cache busting para o cli detectar mudanças em re-roda.
+            - name: IMPORT_CACHE_KEY
+              value: "{{ .Values.keycloak.realmImport.realmName }}-{{ .Release.Revision }}"
+            # Logging
+            - name: LOGGING_LEVEL_ROOT
+              value: "{{ .Values.keycloak.realmReconcile.logLevel | default "INFO" }}"
+            - name: LOGGING_LEVEL_DE_ADORSYS_KEYCLOAK_CONFIG
+              value: "{{ .Values.keycloak.realmReconcile.logLevel | default "INFO" }}"
+          volumeMounts:
+            - name: realm-config
+              mountPath: /realm
+              readOnly: true
+          {{- with .Values.keycloak.realmReconcile.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: realm-config
+          configMap:
+            name: {{ include "keycloak-replica.realmConfigMapName" . }}
+{{- end }}
