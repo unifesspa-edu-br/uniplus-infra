@@ -1,0 +1,44 @@
+# Copiar para terraform.tfvars (ignorado pelo .gitignore) e ajustar.
+
+# Compartment raiz da tenancy unifesspa-edu-br (no standalone, recursos vivem
+# direto no compartment raiz; quando isolar em compartment próprio, ajustar
+# aqui e usar `oci iam compartment list` para descobrir o OCID novo).
+compartment_ocid = "ocid1.tenancy.oc1..REPLACE_WITH_TENANCY_OCID"
+
+region              = "sa-saopaulo-1"
+availability_domain = "mixQ:SA-SAOPAULO-1-AD-1"
+fault_domain        = "FAULT-DOMAIN-1"
+
+# Recursos de rede pré-existentes (provisionados manualmente; serão migrados
+# para Tofu na Story #53 / network.tf).
+vcn_ocid            = "ocid1.vcn.oc1.sa-saopaulo-1.REPLACE_WITH_VCN_OCID"
+subnet_public_ocid  = "ocid1.subnet.oc1.sa-saopaulo-1.REPLACE_WITH_PUBLIC_SUBNET_OCID"
+subnet_private_ocid = "ocid1.subnet.oc1.sa-saopaulo-1.REPLACE_WITH_PRIVATE_SUBNET_OCID"
+
+# Imagem Ubuntu 24.04 LTS em sa-saopaulo-1.
+# Atualizar quando OCI publicar nova versão LTS via:
+#   oci compute image list --compartment-id <tenancy> --operating-system "Canonical Ubuntu" --operating-system-version 24.04 --shape VM.Standard.E5.Flex --sort-by TIMECREATED
+image_ocid = "ocid1.image.oc1.sa-saopaulo-1.REPLACE_WITH_IMAGE_OCID"
+
+# Chave SSH pública (uma por linha) que será injetada via metadata.
+# Ubuntu cria ~/.ssh/authorized_keys automaticamente no usuário `ubuntu`.
+ssh_authorized_keys = <<-EOT
+  ssh-ed25519 AAAA... operador@host
+EOT
+
+# Perfil de capacidade. "poc" para validação (~$72/mês compute), "hml" para
+# load real (~$157/mês). Mudar e aplicar `tofu apply` REBOOTA as VMs.
+profile = "poc"
+
+# Tamanho atual dos 4 block volumes do data-host. Defaults preservam o vivo
+# (200/100/200/50 GB). Para shrink destrutivo a 10 GB cada: ajustar aqui e
+# fazer apply (delete + recreate; perde dados — ver storage.tf).
+volume_sizes_gbs = {
+  postgres = 200
+  kafka    = 100
+  minio    = 200
+  vault    = 50
+}
+
+# 0 = Lower Cost (sem IOPS dedicado; suficiente para POC). 10 = Balanced.
+volume_vpus_per_gb = 0

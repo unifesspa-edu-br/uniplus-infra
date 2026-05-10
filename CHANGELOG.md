@@ -10,6 +10,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 ### Alterado
 
 - Chart `keycloak-replica` passa a consumir a imagem composta `ghcr.io/unifesspa-edu-br/uniplus-keycloak:26.6.1-0` (Keycloak 26.6.1 + JAR `cpf-matcher`) em vez do upstream vanilla `quay.io/keycloak/keycloak:26.6.1`. Standalone passa a validar exatamente o binário que vai pra HML/PROD (production parity). `appVersion` do Chart sincronizada com a tag composta. Issue #192, depende de `unifesspa-edu-br/uniplus-keycloak-providers#13` (Release `v26.6.1-0` em 2026-05-10).
+- `provisioning/oci/standalone/` passa a codificar em OpenTofu as 2 VMs (`oci_core_instance.k8s_host` + `oci_core_instance.data_host`) e os 4 block volumes do data-host (`oci_core_volume.data` for_each + `oci_core_volume_attachment.data`). Recursos vivos importados via `tofu import` (10 imports); `tofu plan` retorna `No changes` pós-import (estado declarativo bate com OCI). Permite `tofu apply` para mudar perfil de capacidade ou shrink destrutivo dos blocks via diff de tfvars. Recursos de rede (VCN/subnets/IGW/NSGs) ainda referenciados por OCID em variáveis — migração na Story #53. Stories #52 + #54 + #55 da Feature #43.
 
 ### Corrigido
 
