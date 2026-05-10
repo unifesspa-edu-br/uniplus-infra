@@ -94,8 +94,14 @@ for key, info in sorted(data.items()):
                                uniplusApi*.db.host
                                keycloakReplica.networkPolicy.dataHostCIDR (deriva /32)
   dns_apex_fqdn              → ingress.host (apex e CNAMEs derivados)
-  vcn_ocid + subnet_*_ocid   → reservados para Story #57 (Vault auto-unseal),
-                               populados via ConfigMap.
+  vcn_ocid + subnet_*_ocid   → não consumidos pelos charts hoje; expostos
+                               para infra paralela (HML separado etc.).
+  kms_key_ocid               → seal "ocikms".key_id (chart platform/vault)
+  kms_management_endpoint    → seal "ocikms".management_endpoint
+  kms_crypto_endpoint        → seal "ocikms".crypto_endpoint
+  kms_vault_ocid             → comentário/auditoria (chart referencia só a key)
+  kms_dynamic_group_ocid     → idem
+  kms_policy_ocid            → idem
 MAP
     ;;
 
