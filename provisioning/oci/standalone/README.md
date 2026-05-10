@@ -60,6 +60,17 @@ oci bv volume list --compartment-id "$TENANCY" --all \
 oci compute volume-attachment list --compartment-id "$TENANCY" --all \
   | jq -r '.data[] | select(."lifecycle-state"=="ATTACHED") | "vol=\(."volume-id") attach=\(.id)"'
 
+# Importar network (9 recursos: VCN + IGW + NAT + 2 RTs + 2 SLs + 2 subnets)
+tofu import oci_core_vcn.this              ocid1.vcn.oc1.sa-saopaulo-1.<...>
+tofu import oci_core_internet_gateway.this ocid1.internetgateway.oc1.sa-saopaulo-1.<...>
+tofu import oci_core_nat_gateway.this      ocid1.natgateway.oc1.sa-saopaulo-1.<...>
+tofu import oci_core_route_table.public    ocid1.routetable.oc1.sa-saopaulo-1.<...>
+tofu import oci_core_route_table.private   ocid1.routetable.oc1.sa-saopaulo-1.<...>
+tofu import oci_core_security_list.public  ocid1.securitylist.oc1.sa-saopaulo-1.<...>
+tofu import oci_core_security_list.private ocid1.securitylist.oc1.sa-saopaulo-1.<...>
+tofu import oci_core_subnet.public         ocid1.subnet.oc1.sa-saopaulo-1.<...>
+tofu import oci_core_subnet.private        ocid1.subnet.oc1.sa-saopaulo-1.<...>
+
 # Importar instances
 tofu import oci_core_instance.k8s_host  ocid1.instance.oc1.sa-saopaulo-1.<...>
 tofu import oci_core_instance.data_host ocid1.instance.oc1.sa-saopaulo-1.<...>
@@ -120,8 +131,16 @@ dados sensíveis de configuração. `.gitignore` cuida disso.
 
 ## Limitações conhecidas
 
-- **Network não importada**: VCN/subnets/route tables/NSGs/IGW são referenciados
-  por OCID (vars). Migração na Story #53.
+- **Default route table + default security list** do VCN são automaticamente
+  criados pela OCI ao criar o VCN; ficam **não-gerenciados** pelo Tofu (não
+  estão anexados a subnet alguma; SLs/RTs nomeadas cobrem o tráfego real).
+  Se algum dia precisar gerenciar, adicionar `oci_core_default_route_table`
+  e `oci_core_default_security_list` referenciando os OCIDs vivos via import.
+- **NSGs (network security groups)** não criadas — Story #53 originalmente
+  previa NSGs separadas para k8s-host e data-host (granularidade por VNIC).
+  Implementação atual usa security lists por subnet — atende todas as
+  necessidades; migração para NSG é refinamento futuro caso precise isolar
+  tráfego entre VMs da mesma subnet.
 - **DNS + Reserved Public IP**: na Story #56.
 - **OCI Vault KMS** (auto-unseal Vault): na Story #57 (atualmente bloqueada
   por bug upstream `go-kms-wrapping@v2.0.9`).
@@ -136,7 +155,6 @@ dados sensíveis de configuração. `.gitignore` cuida disso.
 
 | Story | Conteúdo |
 |---|---|
-| #53 | `network.tf` — VCN, 2 subnets, IGW, NAT GW, route tables, NSGs |
 | #56 | DNS A record + Reserved Public IP do k8s-host |
 | #57 | OCI Vault, Master Encryption Key, Dynamic Group, IAM Policy (auto-unseal) |
 | #58 | Bridge de outputs Tofu → `environments/standalone/values.yaml` |

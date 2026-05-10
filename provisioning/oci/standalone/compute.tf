@@ -19,7 +19,7 @@ resource "oci_core_instance" "k8s_host" {
   }
 
   create_vnic_details {
-    subnet_id        = var.subnet_public_ocid
+    subnet_id        = oci_core_subnet.public.id
     assign_public_ip = true
     hostname_label   = "k8s-host"
   }
@@ -63,7 +63,7 @@ resource "oci_core_instance" "data_host" {
   }
 
   create_vnic_details {
-    subnet_id        = var.subnet_private_ocid
+    subnet_id        = oci_core_subnet.private.id
     assign_public_ip = false
     hostname_label   = "data-host"
   }

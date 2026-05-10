@@ -40,3 +40,33 @@ output "applied_shapes" {
     data_host = local.shapes.data_host
   }
 }
+
+output "vcn_ocid" {
+  description = "OCID da VCN do standalone."
+  value       = oci_core_vcn.this.id
+}
+
+output "subnet_public_ocid" {
+  description = "OCID da subnet pública (k8s-host)."
+  value       = oci_core_subnet.public.id
+}
+
+output "subnet_private_ocid" {
+  description = "OCID da subnet privada (data-host)."
+  value       = oci_core_subnet.private.id
+}
+
+output "internet_gateway_ocid" {
+  description = "OCID do Internet Gateway."
+  value       = oci_core_internet_gateway.this.id
+}
+
+output "nat_gateway_ocid" {
+  description = "OCID do NAT Gateway."
+  value       = oci_core_nat_gateway.this.id
+}
+
+output "nat_gateway_public_ip" {
+  description = "IP público do NAT Gateway (egress da subnet privada)."
+  value       = oci_core_nat_gateway.this.nat_ip
+}

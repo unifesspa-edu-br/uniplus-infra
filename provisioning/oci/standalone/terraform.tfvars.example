@@ -9,11 +9,14 @@ region              = "sa-saopaulo-1"
 availability_domain = "mixQ:SA-SAOPAULO-1-AD-1"
 fault_domain        = "FAULT-DOMAIN-1"
 
-# Recursos de rede pré-existentes (provisionados manualmente; serão migrados
-# para Tofu na Story #53 / network.tf).
-vcn_ocid            = "ocid1.vcn.oc1.sa-saopaulo-1.REPLACE_WITH_VCN_OCID"
-subnet_public_ocid  = "ocid1.subnet.oc1.sa-saopaulo-1.REPLACE_WITH_PUBLIC_SUBNET_OCID"
-subnet_private_ocid = "ocid1.subnet.oc1.sa-saopaulo-1.REPLACE_WITH_PRIVATE_SUBNET_OCID"
+# Topologia da VCN. Defaults preservam o standalone vivo (10.0.0.0/16 com
+# subnet pública 10.0.1.0/24 e privada 10.0.2.0/24). Ajustar apenas em
+# ambientes paralelos (HML separado, etc.).
+# vcn_cidr = "10.0.0.0/16"
+# subnet_cidrs = {
+#   public  = "10.0.1.0/24"
+#   private = "10.0.2.0/24"
+# }
 
 # Imagem Ubuntu 24.04 LTS em sa-saopaulo-1.
 # Atualizar quando OCI publicar nova versão LTS via:
