@@ -46,6 +46,7 @@
         "post.logout.redirect.uris": "+"
       },
       "defaultClientScopes": [
+        "basic",
         "web-origins",
         "acr",
         "profile",
@@ -89,6 +90,7 @@
         "post.logout.redirect.uris": "+"
       },
       "defaultClientScopes": [
+        "basic",
         "web-origins",
         "acr",
         "profile",
@@ -132,6 +134,7 @@
         "post.logout.redirect.uris": "+"
       },
       "defaultClientScopes": [
+        "basic",
         "web-origins",
         "acr",
         "profile",
@@ -172,6 +175,7 @@
         "access.token.lifespan": "300"
       },
       "defaultClientScopes": [
+        "basic",
         "web-origins",
         "acr",
         "profile",
@@ -225,6 +229,7 @@
         "access.token.lifespan": "300"
       },
       "defaultClientScopes": [
+        "basic",
         "web-origins",
         "acr",
         "profile",
@@ -278,6 +283,7 @@
         "access.token.lifespan": "300"
       },
       "defaultClientScopes": [
+        "basic",
         "web-origins",
         "acr",
         "profile",
