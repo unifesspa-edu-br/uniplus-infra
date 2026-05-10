@@ -9,6 +9,7 @@
 - [3. Visão de Contexto (C4 Nível 1)](#3-visão-de-contexto-c4-nível-1)
 - [4. Visão de Container (C4 Nível 2)](#4-visão-de-container-c4-nível-2)
 - [5. Topologia Física (C4 Deployment)](#5-topologia-física-c4-deployment)
+- [5.5 Topologias suportadas](#55-topologias-suportadas)
 - [6. Componentes Internos (C4 Nível 3)](#6-componentes-internos-c4-nível-3)
 - [7. Fluxos Principais](#7-fluxos-principais)
 - [8. Decisões Arquiteturais](#8-decisões-arquiteturais)
@@ -189,6 +190,64 @@ Para balancear carga de escrita entre os DCs, os primaries dos bancos são distr
 | `uniplus_ingresso` | SP1 | SP2 |
 
 `PA1` participa da recuperabilidade e pode manter réplicas/backup conforme o componente, mas não recebe primary operacional obrigatório para tráfego de usuário.
+
+### 5.5 Topologias suportadas
+
+A plataforma é deployable em **duas topologias** distintas — não duas configurações da mesma topologia, e sim modelos com objetivos operacionais diferentes. A escolha entre elas é orientada pelo SLA pretendido, não por preferência técnica.
+
+#### 5.5.1 3-DC (SP1 + SP2 + PA1) — modelo de produção plena
+
+Topologia detalhada nas seções §5.1–5.4. Resumo dos drivers:
+
+- **Atendimento ativo-ativo** entre SP1 e SP2 com link L2L de 500 Mbps.
+- **PA1** carrega responsabilidades institucionais (LDAP/AD, OIDC source institucional, retenção de backup, witness opcional). Pode ficar fora algumas horas sem derrubar o atendimento.
+- **HA por componente**: Patroni para Postgres, KRaft para Kafka, modo distribuído do MinIO, Vault em modo HA com Raft, etc.
+- **Falha completa de um DC**: o outro continua servindo o tráfego com degradação aceitável (latência, throughput de write em primaries movidos).
+
+**Quando usar:** produção, HML que precisa exercitar o modelo de DR, certificação institucional.
+
+**Custo:** 3 racks/locações, link L2L privado, redundância de hardware, time de operação 24×7.
+
+#### 5.5.2 Standalone (monolocal) — modelo de validação institucional
+
+Topologia descrita em [ADR-008](adrs/ADR-008-topologia-standalone.md). Resumo:
+
+- **Single-site monolocal** — duas VMs (`k8s-host`, `data-host`) coabitam o mesmo provedor (lab, OCI Always Free, ou laboratório institucional).
+- **Sem HA inter-DC** — a topologia não pretende sobreviver a falha de site. Single-node K3s + Postgres 18 + Kafka KRaft + MinIO single-node + Vault Shamir 1-de-1.
+- **GitOps end-to-end preservado** — chart layout, ArgoCD, ExternalSecrets, ESO continuam idênticos ao 3-DC. O delta é nos `environments/standalone/values.yaml` (1 réplica, sem witness, paths de storage local, etc.).
+- **Acesso externo via Cloudflare Tunnel** — sem dependência de IP público nem de NAT/DNS institucional. Smoke E2E completo executável (PR #181).
+- **Provisioning provider-agnostic** — VMs de qualquer provedor (OCI, lab on-prem, VMs em estação de trabalho) bastam ter Ubuntu 24.04 + kernel atualizado + IP roteável entre as duas VMs.
+
+**Quando usar:**
+
+- Validação técnica antes de provisionar 3-DC (smoke E2E, integração ponta-a-ponta).
+- Workshops, treinamento interno, demonstração para gestão.
+- Disaster recovery exploration (subir uma cópia funcional num provedor alternativo em horas).
+- Ambientes institucionais que aceitam SLA single-site (ex.: secretarias internas, painéis administrativos).
+
+**O que não cobre:**
+
+- Falha de site (rede, energia, hardware) → indisponibilidade total até reparo.
+- Volume de produção plena Uni+ (~20k candidatos/processo) → standalone tem limites de throughput nativos do single-node.
+- Compliance institucional que exija redundância geográfica.
+
+**Custo:** 2 VMs (~12 vCPU + 24 GB RAM + 200 GB) + Cloudflare Tunnel (gratuito até limites). Operável por 1 pessoa.
+
+#### 5.5.3 Como o repositório suporta as duas
+
+| Aspecto | 3-DC | Standalone |
+|---|---|---|
+| `apps/` charts | mesmos | mesmos |
+| `platform/` charts | mesmos | mesmos |
+| `data/` (Postgres/Kafka/MinIO/Redis fora-do-K8s) | binários iguais, configs HA | binários iguais, configs single-node |
+| `environments/` overrides | `lab-{sp1,sp2,pa1}/` + `prod-{sp1,sp2,pa1}/` | `standalone/` |
+| `argocd/applicationset.yaml` | mesmo (multi-cluster) | mesmo (single-cluster, gera só Apps de standalone) |
+| `scripts/bootstrap-{role}.sh` | `bootstrap-lab.sh --role={sp1\|sp2\|pa1}` | `bootstrap-standalone.sh` |
+| ADRs específicas | ADRs 001–007, 009 (3-DC) | [ADR-008](adrs/ADR-008-topologia-standalone.md), [ADR-010](adrs/ADR-010-keycloak-config-cli-realm-reconcile.md) (standalone) |
+
+**Princípio de divergência mínima:** valores divergem apenas em `environments/<env>/values.yaml`. Charts não trazem código condicional `{{- if eq .Values.topology "standalone" -}}` — a topologia é uma propriedade do environment, não do chart.
+
+> Excecções pontuais (ex.: `keycloak.realmReconcile.enabled` ligado em standalone, desligado em prod até o smoke validar; `traefik.updateStrategy.type=Recreate` necessário em single-node por HostPort conflict) ficam em values.yaml documentadas inline e em ADR. Não há flag global de "topologia".
 
 ## 6. Componentes Internos (C4 Nível 3)
 

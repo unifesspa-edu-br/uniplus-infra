@@ -14,6 +14,15 @@ Este repositório contém todos os manifests, charts Helm, scripts e documentaç
 
 A plataforma Uni+ é o sistema institucional unificado da UNIFESSPA para processos seletivos, ingresso e portal acadêmico, composta por três módulos integrados (Portal, Seleção e Ingresso) com autenticação federada via Gov.br.
 
+### Topologias suportadas
+
+O mesmo conjunto de charts e scripts é deployable em duas topologias distintas — escolhidas pelo SLA pretendido, não por preferência técnica. Detalhes em [docs/ARCHITECTURE.md §5.5](docs/ARCHITECTURE.md#55-topologias-suportadas).
+
+| Topologia | Descrição | Quando usar | ADRs |
+|---|---|---|---|
+| **3-DC** (`SP1` + `SP2` + `PA1`) | Ativo-ativo entre EVEO Cotia/Osasco + DC institucional UNIFESSPA Marabá. HA por componente (Patroni/KRaft/MinIO distribuído). Sobrevive a falha de site. | Produção plena, HML que exercita DR, certificação institucional. | ADRs 001–007, 009 |
+| **Standalone** (monolocal) | Single-site provider-agnostic (lab, OCI Always Free, on-prem). Duas VMs (`k8s-host` + `data-host`). K3s single-node + Postgres/Kafka/MinIO/Vault em modo single. Mesmos charts, divergência só em `environments/standalone/values.yaml`. | Validação técnica antes de 3-DC, smoke E2E, treinamento, DR exploration, ambientes institucionais com SLA single-site. | [ADR-008](docs/adrs/ADR-008-topologia-standalone.md), [ADR-009](docs/adrs/ADR-009-kafka-sasl-ssl-scram-standalone.md), [ADR-010](docs/adrs/ADR-010-keycloak-config-cli-realm-reconcile.md) |
+
 ## Estrutura do repositório
 
 ```
