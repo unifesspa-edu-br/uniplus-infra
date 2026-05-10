@@ -88,4 +88,28 @@ spec:
         - protocol: TCP
           port: 443
     {{- end }}
+    # Cloud provider IMDS + KMS endpoint para auto-unseal "ocikms" / "awskms"
+    # / "gcpckms" / "azurekeyvault". Vault SDK obtém credenciais via Instance
+    # Principal (HTTP GET no link-local IMDS) e chama o KMS endpoint público
+    # (HTTPS) com as credenciais. Sem isso, o seal do provider entra em
+    # `getRequestMetadata.func1` panic — signer fica nil quando IMDS não
+    # responde. Validado empiricamente em 2026-05-10 com OCI KMS standalone.
+    {{- if .Values.networkPolicy.cloudKmsEgressEnabled }}
+    - to:
+        - ipBlock:
+            cidr: 169.254.169.254/32
+      ports:
+        - protocol: TCP
+          port: 80
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 443
+    {{- end }}
 {{- end }}

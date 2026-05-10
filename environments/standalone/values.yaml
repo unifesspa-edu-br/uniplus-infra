@@ -217,18 +217,31 @@ vault:
       raft:
         enabled: true
         setNodeId: true
-        # Config Raft sem bloco `seal` — Vault usa Shamir por default.
-        # `vault operator init -key-shares=5 -key-threshold=3` na inicialização.
+        # Restaurado o bloco `seal "ocikms"` em 2026-05-10 após validar a
+        # causa raiz do panic anterior (era NetworkPolicy bloqueando egress
+        # para IMDS 169.254.169.254 + endpoint público KMS — não bug do
+        # go-kms-wrapping@v2.0.9 como originalmente suposto). Egress agora
+        # liberado via networkPolicy.cloudKmsEgressEnabled=true em values
+        # do chart vault/.
         #
-        # `service_registration "kubernetes"` REMOVIDO em standalone:
+        # OCID do Key, endpoints crypto/management e auth_type vêm via env
+        # vars injetados a partir de Secret `vault-ocikms-config` (criado
+        # manualmente; deveria ser sintetizado por External Secret #64
+        # quando bootstrap permitir).
+        #
+        # auth_type_api_key="false" força autenticação por Resource/Instance
+        # Principal — o Pod assume a identidade da VM k8s-host via IMDS,
+        # que está no Dynamic Group `uniplus-standalone-k8s-host-dg` com
+        # permissão `use keys` na Master Encryption Key.
+        #
+        # `service_registration "kubernetes"` permanece REMOVIDO em standalone:
         # K3s/flannel + service-account auth gera `nil response` no GET
         # do Pod, e Vault BLOQUEIA a resposta HTTP de qualquer request
         # síncrono enquanto retry-loop service_registration está ativo.
         # Sintoma: `vault operator init` retorna `context deadline exceeded`
         # após 60s mesmo com keys já geradas — keys perdidas. Service
         # registration é nice-to-have (atualiza labels active/standby),
-        # não-essencial para single-replica standalone. Em prod 3-DC
-        # manter habilitado (Patroni-like leader election).
+        # não-essencial para single-replica standalone.
         # Override para listener IPv4 explícito porque Vault CLI default
         # usa http://127.0.0.1:8200 e [::]:8200 com bindv6only=1 não atende.
         config: |
@@ -243,6 +256,27 @@ vault:
           storage "raft" {
             path = "/vault/data"
           }
+
+          seal "ocikms" {
+            key_id              = "${VAULT_SEAL_OCIKMS_KEY_ID}"
+            crypto_endpoint     = "${VAULT_SEAL_OCIKMS_CRYPTO_ENDPOINT}"
+            management_endpoint = "${VAULT_SEAL_OCIKMS_MANAGEMENT_ENDPOINT}"
+            auth_type_api_key   = "false"
+          }
+
+    # Env vars consumidos pelo bloco `seal "ocikms"` acima. Valores no
+    # Secret `vault-ocikms-config` (criado em sessão anterior; OCIDs
+    # alinhados com `kms_key_ocid` + endpoints do Tofu output).
+    extraSecretEnvironmentVars:
+      - envName: VAULT_SEAL_OCIKMS_KEY_ID
+        secretName: vault-ocikms-config
+        secretKey: key_id
+      - envName: VAULT_SEAL_OCIKMS_CRYPTO_ENDPOINT
+        secretName: vault-ocikms-config
+        secretKey: crypto_endpoint
+      - envName: VAULT_SEAL_OCIKMS_MANAGEMENT_ENDPOINT
+        secretName: vault-ocikms-config
+        secretKey: management_endpoint
 
     dataStorage:
       size: 5Gi
@@ -290,6 +324,10 @@ networkPolicy:
   traefikNamespace: traefik
   kubeApiCidrs:
     - 10.43.0.0/16
+  # Standalone usa OCI KMS para auto-unseal — Vault precisa egress IMDS
+  # (Instance Principal) + HTTPS:443 (KMS endpoint público). Sem isso, o
+  # SDK do Vault panica em `getRequestMetadata.func1` (validado 2026-05-10).
+  cloudKmsEgressEnabled: true
     - 10.0.1.0/24  # ajustar por cluster — ver bloco acima
 
   # Namespaces das apps que o Traefik proxa para. Inclui `minio-console-proxy`

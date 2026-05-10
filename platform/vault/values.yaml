@@ -132,6 +132,15 @@ networkPolicy:
   # service registration (ex.: Vault sem injeção de secrets via K8s).
   kubeApiCidrs:
     - 10.43.0.0/16
+  # Egress para cloud provider IMDS (169.254.169.254) + KMS endpoints
+  # públicos (HTTPS:443 internet). Necessário quando o seal block é
+  # "ocikms"/"awskms"/"gcpckms"/"azurekeyvault" e Vault autentica via
+  # Instance Principal (default em VMs gerenciadas pelo provider). Sem
+  # essas rotas, Vault SDK panica em `getRequestMetadata.func1` porque
+  # o signer fica nil. Default false em SP1/SP2 (auto-unseal Transit
+  # via PA1 — não precisa IMDS); habilitar em standalone e qualquer
+  # ambiente que use cloud KMS direto.
+  cloudKmsEgressEnabled: false
 
 # ServiceMonitor para Prometheus (Vault expõe métricas em /v1/sys/metrics).
 # Desligado por default — ligar quando #26 (Prometheus chart) estiver pronto.
