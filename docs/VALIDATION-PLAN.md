@@ -528,16 +528,16 @@ Os cenários abaixo serão executados sequencialmente, do mais simples ao mais c
 | 3 | K3s single-node | `kubectl get nodes` mostra `k8s-host` Ready; `kubectl get pods -A` sem CrashLoopBackOff. | 100% Ready | RUNBOOKS §8.1 |
 | 4 | ArgoCD reconciliação | `argocd app list` mostra todas as apps `Synced/Healthy`; ApplicationSet detectou cluster pelo label `environment=standalone`. | Todas Synced/Healthy | #62 + RUNBOOKS §8.3 |
 | 5 | Vault unsealed + ESO ready | `kubectl -n vault exec ... -- vault status` mostra `Sealed=false`; `kubectl get clustersecretstore vault-default` em `Ready=True`. | Unsealed + ESO Ready | RUNBOOKS §8.4 |
-| 6 | Postgres data-host | `ssh ubuntu@10.0.2.87 "sudo systemctl is-active uniplus-postgres"` retorna `active`; `psql -h 10.0.2.87 -U uniplus_admin -c '\l'` lista DBs `keycloak`, `uniplus_portal`, `uniplus_selecao`, `uniplus_ingresso`, `apicurio`. | Service active + 5 DBs | Epic data/* (#98 placeholder) |
-| 7 | Kafka KRaft + SASL_SSL | `kafka-topics --bootstrap-server 10.0.2.87:9092 --command-config admin.props --list` lista tópicos do Wolverine + `edital_events` (broker SASL_SSL no data-host privado, conforme `environments/standalone/values.yaml` `bootstrapServers: 10.0.2.87:9092` e RUNBOOKS §9 / ADR-009). | Listagem OK + auth OK | Epic data/* + ADR-009 |
-| 8 | MinIO | `mc alias set standalone https://...; mc ls standalone/` lista buckets `app-uploads`, `vault-backup`. | Buckets visíveis | Epic data/* |
+| 6 | Postgres data-host | `ssh ubuntu@10.0.2.87 "sudo systemctl is-active uniplus-postgres"` retorna `active`; `psql -h 10.0.2.87 -U uniplus_admin -c '\l'` lista DBs `keycloak`, `uniplus_portal`, `uniplus_selecao`, `uniplus_ingresso`, `apicurio`. | Service active + 5 DBs | Epic `data/*` (#98 placeholder) |
+| 7 | Kafka KRaft + SASL_SSL | `kafka-topics --bootstrap-server 10.0.2.87:9092 --command-config admin.props --list` lista tópicos do Wolverine + `edital_events` (broker SASL_SSL no data-host privado, conforme `environments/standalone/values.yaml` `bootstrapServers: 10.0.2.87:9092` e RUNBOOKS §9 / ADR-009). | Listagem OK + auth OK | Epic `data/*` + ADR-009 |
+| 8 | MinIO | `mc alias set standalone https://...; mc ls standalone/` lista buckets `app-uploads`, `vault-backup`. | Buckets visíveis | Epic `data/*` |
 | 9 | ClamAV scanner | `kubectl -n uniplus exec deploy/clamav-scanner -- clamdscan --version` retorna versão; pod `Healthy`. | Healthy + responde | chart `apps/clamav-scanner` |
 | 10 | Keycloak realm `uniplus` | `curl https://standalone.portaluni.com.br/auth/realms/uniplus/.well-known/openid-configuration \| jq .issuer` retorna `https://standalone.portaluni.com.br/auth/realms/uniplus`; clients `uniplus-portal`, `kafka-ui`, `apicurio-registry`, `uniplus-api-{portal,selecao,ingresso}` presentes. | 8 clients OK | RUNBOOKS §10 + #163 |
 | 11 | Apps web (3 SPAs) | `https://portal.standalone.portaluni.com.br/` carrega o Angular bundle (status 200, MIME `text/html`); idem para `selecao` e `ingresso`. | 3 SPAs servindo | #162/PR #171 |
 | 12 | APIs (3 backends) | `https://api-{portal,selecao,ingresso}.standalone.portaluni.com.br/health/ready` retorna 200 com `Healthy` agregado. | 3 APIs Healthy | charts `apps/uniplus-api-*` |
 | 13 | Apicurio Schema Registry | `curl https://schema-registry.standalone.portaluni.com.br/apis/ccompat/v7/subjects` retorna lista contendo `edital_events-value`. | Subject registrado | #152 + #358 (uniplus-api) |
 | 14 | Observabilidade | `https://standalone.portaluni.com.br/grafana/` carrega; dashboards exibem métricas Prometheus de cluster + apps; Loki recebe logs estruturados. | Grafana + Loki + Prometheus OK | Epic observabilidade-local (#103) |
-| 15 | Backup placeholder | `ls /var/backups/uniplus-postgres/` no data-host mostra dump diário recente (≤ 24h); MinIO `vault-backup` recebe snapshot do Vault Raft. | Dumps presentes | Epic data/* sub-task de backup |
+| 15 | Backup placeholder | `ls /var/backups/uniplus-postgres/` no data-host mostra dump diário recente (≤ 24h); MinIO `vault-backup` recebe snapshot do Vault Raft. | Dumps presentes | Epic `data/*` sub-task de backup |
 | 16 | Restore placeholder | Execução manual de `pg_restore` em DB sintético recupera dados; `vault operator raft snapshot restore` restaura state. | Procedimento documentado em RUNBOOKS funciona em dry-run | Sub-task RUNBOOKS |
 
 **Itens dependentes da Epic `data/*`** (não bloqueiam Fase 5 estrutural mas marcam validação completa): 6, 7, 8, 15, 16.
@@ -550,8 +550,8 @@ Os cenários abaixo serão executados sequencialmente, do mais simples ao mais c
 
 **Critério de sucesso (dois gates):**
 
-- **Gate 1 — Fase 5 estrutural** (responsabilidade do time de plataforma): **11/11 dos itens não-Epic-data/*** verdes — 1, 2, 3, 4, 5, 9, 10, 11, 12, 13, 14. Itens 6/7/8/15/16 contam como `pending` aceitável até a Epic data/* entregar; **não bloqueiam Fase 5**. Esse gate destrava o ambiente standalone para uso em demo e desenvolvimento integrado.
-- **Gate 2 — Validação completa pós-Epic data/*** (responsabilidade pós-data/*): **16/16** verdes — todos os itens, incluindo 6/7/8/15/16. Esse gate destrava promoção do standalone como ambiente de homologação.
+- **Gate 1 — Fase 5 estrutural** (responsabilidade do time de plataforma): **11/11 dos itens não-Epic-`data/*`** verdes — 1, 2, 3, 4, 5, 9, 10, 11, 12, 13, 14. Itens 6/7/8/15/16 contam como `pending` aceitável até a Epic `data/*` entregar; **não bloqueiam Fase 5**. Esse gate destrava o ambiente standalone para uso em demo e desenvolvimento integrado.
+- **Gate 2 — Validação completa pós-Epic `data/*`** (responsabilidade pós-`data/*`): **16/16** verdes — todos os itens, incluindo 6/7/8/15/16. Esse gate destrava promoção do standalone como ambiente de homologação.
 - **Itens obrigatórios em ambos os gates:** Item 10 (Keycloak realm + 8 clients) e Item 13 (Apicurio + subject) — destravam o smoke E2E real (Cenário 13.A abaixo).
 
 **Cenário 13.A — Smoke E2E (login real do portal):**
