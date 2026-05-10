@@ -1,22 +1,123 @@
-# Default values para clamav-scanner
-# TODO: implementar conforme estrutura do uniplus-web
-
-replicas: 2
-
-image:
-  registry: ghcr.io
-  repository: unifesspa-edu-br/clamav-scanner
-  pullPolicy: IfNotPresent
-  tag: ""
-
-resources:
-  requests:
-    cpu: 100m
-    memory: 128Mi
-  limits:
-    cpu: 500m
-    memory: 256Mi
+# Defaults do chart apps/clamav-scanner.
+#
+# Cada environment (environments/<env>/values.yaml) sobrescreve apenas o
+# necessário. Por padrão DESABILITADO — só os ambientes que precisam de
+# scan de malware (ex.: standalone, prod-{sp1,sp2}) ligam via
+# `clamavScanner.enabled: true`.
+#
+# **Importante:** apesar do nome "scanner", a entrega atual deste chart é o
+# **daemon ClamAV oficial** (`clamav/clamav`) expondo o protocolo `clamd`
+# (TCP 3310) via Service ClusterIP. O worker .NET dedicado que consome
+# Kafka e chama clamd para análise de uploads é responsabilidade da Epic
+# `uniplus-api` (futuro) — quando entregue, conectará ao Service deste
+# chart como cliente clamd, sem alterar este chart.
 
 commonLabels:
   app.kubernetes.io/part-of: uniplus
-  app.kubernetes.io/component: worker
+  app.kubernetes.io/component: malware-scanner
+
+clamavScanner:
+  # Liga/desliga o chart inteiro. Default false. Ambientes que precisam
+  # de scan de malware sobrescrevem para true em environments/<env>/values.yaml.
+  enabled: false
+
+  image:
+    registry: docker.io
+    repository: clamav/clamav
+    # ClamAV LTS — bumps de patch seguros; majors requerem verificação
+    # das assinaturas do freshclam.
+    tag: "1.4"
+    pullPolicy: IfNotPresent
+
+  imagePullSecrets: []
+
+  # 1 réplica em standalone/lab. Daemon clamd é stateful (assinaturas em
+  # PVC RWO) — replicar exige RWX storage ou cada réplica com sua própria
+  # DB. Default 1.
+  replicas: 1
+
+  # Resources — daemon ClamAV consome ~1GB RAM com signature DB carregada.
+  resources:
+    requests:
+      cpu: 200m
+      memory: 1Gi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+
+  # Persistence: DB de signatures (~600MB descompactada) + locks. PVC
+  # obrigatório — sem isso freshclam baixa tudo a cada restart (~10min de
+  # inicialização) e o probe de ready falha.
+  persistence:
+    enabled: true
+    accessModes: ["ReadWriteOnce"]
+    size: 2Gi
+    storageClassName: ""
+
+  # Service: ClusterIP, porta 3310 (clamd default). Apps Uni+ se conectam
+  # via DNS interno
+  # `<release-name>-clamav-scanner.uniplus.svc.cluster.local:3310`.
+  service:
+    type: ClusterIP
+    port: 3310
+    annotations: {}
+
+  # clamd.conf — defaults conservadores para single-node lab/standalone.
+  clamdConfig:
+    maxFileSize: "100M"
+    maxScanSize: "400M"
+    maxRecursion: "16"
+    maxFiles: "10000"
+    maxThreads: 4
+    scanIdleTimeout: 600
+    heuristicAlerts: "yes"
+    detectPua: "yes"
+    scanArchive: "yes"
+    scanMail: "yes"
+    scanPe: "yes"
+    scanElf: "yes"
+    scanPdf: "yes"
+    scanXmldocs: "yes"
+    scanHwp3: "yes"
+
+  # freshclam — atualização de assinaturas.
+  freshclam:
+    # Intervalo entre checks (em horas).
+    checks: 24
+    # Mirror upstream. Override por environment para mirrors regionais.
+    databaseMirror: "database.clamav.net"
+
+  # Probes — daemon demora ~30-60s para iniciar (carga signature DB).
+  startupProbe:
+    failureThreshold: 30
+    periodSeconds: 5
+  livenessProbe:
+    periodSeconds: 60
+    timeoutSeconds: 10
+  readinessProbe:
+    periodSeconds: 10
+    timeoutSeconds: 5
+
+  # SecurityContext — daemon roda como UID 100 (clamav) na imagem oficial.
+  podSecurityContext:
+    fsGroup: 100
+  containerSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 100
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    readOnlyRootFilesystem: false
+
+  # NetworkPolicy. Ingress: apps Uni+ via TCP 3310. Egress: DNS + freshclam
+  # mirrors (HTTPS 443).
+  networkPolicy:
+    enabled: true
+    freshclamEgressPort: 443
+    # Namespace dos clientes (apps Uni+).
+    clientNamespace: uniplus
+
+  serviceAccount:
+    create: true
+    name: ""

@@ -1,0 +1,65 @@
+{{- if .Values.clamavScanner.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "clamavScanner.fullname" . }}-config
+  labels:
+    {{- include "clamavScanner.labels" . | nindent 4 }}
+data:
+  clamd.conf: |
+    # Render do chart Uni+ apps/clamav-scanner. Override via .Values.clamavScanner.clamdConfig
+    # em environments/<env>/values.yaml.
+    LogFile /var/log/clamav/clamd.log
+    LogTime yes
+    LogClean no
+    LogVerbose no
+    LogFileMaxSize 50M
+
+    DatabaseDirectory /var/lib/clamav
+    LocalSocket /run/clamav/clamd.sock
+    LocalSocketMode 666
+    LocalSocketGroup clamav
+    FixStaleSocket yes
+    TCPSocket {{ .Values.clamavScanner.service.port | default 3310 }}
+    TCPAddr 0.0.0.0
+
+    User clamav
+    AllowSupplementaryGroups yes
+
+    # Limites — derivados de .Values.clamavScanner.clamdConfig
+    MaxFileSize {{ .Values.clamavScanner.clamdConfig.maxFileSize | default "100M" }}
+    MaxScanSize {{ .Values.clamavScanner.clamdConfig.maxScanSize | default "400M" }}
+    MaxRecursion {{ .Values.clamavScanner.clamdConfig.maxRecursion | default 16 }}
+    MaxFiles {{ .Values.clamavScanner.clamdConfig.maxFiles | default 10000 }}
+    MaxThreads {{ .Values.clamavScanner.clamdConfig.maxThreads | default 4 }}
+    IdleTimeout {{ .Values.clamavScanner.clamdConfig.scanIdleTimeout | default 600 }}
+
+    # Heurística + sandbox
+    HeuristicAlerts {{ .Values.clamavScanner.clamdConfig.heuristicAlerts | default "yes" }}
+    DetectPUA {{ .Values.clamavScanner.clamdConfig.detectPua | default "yes" }}
+    ScanArchive {{ .Values.clamavScanner.clamdConfig.scanArchive | default "yes" }}
+    ScanMail {{ .Values.clamavScanner.clamdConfig.scanMail | default "yes" }}
+    ScanPE {{ .Values.clamavScanner.clamdConfig.scanPe | default "yes" }}
+    ScanELF {{ .Values.clamavScanner.clamdConfig.scanElf | default "yes" }}
+    ScanPDF {{ .Values.clamavScanner.clamdConfig.scanPdf | default "yes" }}
+    ScanXMLDOCS {{ .Values.clamavScanner.clamdConfig.scanXmldocs | default "yes" }}
+    ScanHWP3 {{ .Values.clamavScanner.clamdConfig.scanHwp3 | default "yes" }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "clamavScanner.fullname" . }}-freshclam
+  labels:
+    {{- include "clamavScanner.labels" . | nindent 4 }}
+data:
+  freshclam.conf: |
+    # Atualização de signature DB. Override via .Values.clamavScanner.freshclam.
+    DatabaseDirectory /var/lib/clamav
+    UpdateLogFile /var/log/clamav/freshclam.log
+    LogTime yes
+    LogVerbose no
+    DatabaseMirror {{ .Values.clamavScanner.freshclam.databaseMirror | default "database.clamav.net" }}
+    Checks {{ div 24 (.Values.clamavScanner.freshclam.checks | default 24) }}
+    DatabaseOwner clamav
+    DNSDatabaseInfo current.cvd.clamav.net
+{{- end }}

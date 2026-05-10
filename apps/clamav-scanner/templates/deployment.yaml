@@ -1,0 +1,112 @@
+{{- if .Values.clamavScanner.enabled -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "clamavScanner.fullname" . }}
+  labels:
+    {{- include "clamavScanner.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.clamavScanner.replicas | default 1 }}
+  # Daemon clamd com PVC RWO único — replicar exigiria coordenação extra.
+  # Recreate mantém estratégia simples mesmo em rolling updates.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "clamavScanner.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "clamavScanner.labels" . | nindent 8 }}
+      annotations:
+        # Reload pods quando ConfigMap muda (clamd.conf, freshclam.conf).
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "clamavScanner.serviceAccountName" . }}
+      {{- with .Values.clamavScanner.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: clamd
+          image: "{{ .Values.clamavScanner.image.registry | default "docker.io" }}/{{ .Values.clamavScanner.image.repository }}:{{ .Values.clamavScanner.image.tag | default "1.4" }}"
+          imagePullPolicy: {{ .Values.clamavScanner.image.pullPolicy | default "IfNotPresent" }}
+          {{- with .Values.clamavScanner.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: clamd
+              containerPort: {{ .Values.clamavScanner.service.port | default 3310 }}
+              protocol: TCP
+          env:
+            # Sinaliza para a imagem oficial que clamd deve subir como TCP service
+            # (default da imagem é socket Unix). Usa o conf montado em
+            # /etc/clamav/clamd.conf via ConfigMap volume.
+            - name: CLAMAV_NO_CLAMD
+              value: "false"
+            - name: CLAMAV_NO_FRESHCLAMD
+              value: "false"
+          volumeMounts:
+            - name: signatures
+              mountPath: /var/lib/clamav
+            - name: clamd-config
+              mountPath: /etc/clamav/clamd.conf
+              subPath: clamd.conf
+              readOnly: true
+            - name: freshclam-config
+              mountPath: /etc/clamav/freshclam.conf
+              subPath: freshclam.conf
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+            - name: run
+              mountPath: /run/clamav
+            - name: log
+              mountPath: /var/log/clamav
+          {{- with .Values.clamavScanner.startupProbe }}
+          startupProbe:
+            tcpSocket:
+              port: clamd
+            failureThreshold: {{ .failureThreshold | default 30 }}
+            periodSeconds: {{ .periodSeconds | default 5 }}
+          {{- end }}
+          {{- with .Values.clamavScanner.livenessProbe }}
+          livenessProbe:
+            tcpSocket:
+              port: clamd
+            periodSeconds: {{ .periodSeconds | default 60 }}
+            timeoutSeconds: {{ .timeoutSeconds | default 10 }}
+          {{- end }}
+          {{- with .Values.clamavScanner.readinessProbe }}
+          readinessProbe:
+            tcpSocket:
+              port: clamd
+            periodSeconds: {{ .periodSeconds | default 10 }}
+            timeoutSeconds: {{ .timeoutSeconds | default 5 }}
+          {{- end }}
+          {{- with .Values.clamavScanner.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+      volumes:
+        - name: signatures
+          {{- if .Values.clamavScanner.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "clamavScanner.fullname" . }}-signatures
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        - name: clamd-config
+          configMap:
+            name: {{ include "clamavScanner.fullname" . }}-config
+        - name: freshclam-config
+          configMap:
+            name: {{ include "clamavScanner.fullname" . }}-freshclam
+        - name: tmp
+          emptyDir: {}
+        - name: run
+          emptyDir: {}
+        - name: log
+          emptyDir: {}
+{{- end }}

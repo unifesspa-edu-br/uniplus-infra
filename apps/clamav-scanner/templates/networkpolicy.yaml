@@ -1,0 +1,40 @@
+{{- if and .Values.clamavScanner.enabled .Values.clamavScanner.networkPolicy.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "clamavScanner.fullname" . }}
+  labels:
+    {{- include "clamavScanner.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "clamavScanner.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Apps Uni+ no clientNamespace conectam clamd via TCP {{ .Values.clamavScanner.service.port }}.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.clamavScanner.networkPolicy.clientNamespace | default "uniplus" }}
+      ports:
+        - port: {{ .Values.clamavScanner.service.port | default 3310 }}
+          protocol: TCP
+  egress:
+    # DNS — kube-system/coredns
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # freshclam — HTTPS para signature mirror upstream (DNS dinâmico,
+    # sem CIDR fixo). Egress amplo na porta indicada.
+    - ports:
+        - port: {{ .Values.clamavScanner.networkPolicy.freshclamEgressPort | default 443 }}
+          protocol: TCP
+{{- end }}

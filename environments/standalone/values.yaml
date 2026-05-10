@@ -120,6 +120,24 @@ grafana:
   grafana.ini:
     server:
       root_url: https://standalone.portaluni.com.br/grafana/
+      # subpath ativo — Grafana reescreve URLs internas com /grafana/.
+      serve_from_sub_path: true
+  # IngressRoute Traefik via subpath /grafana/* no FQDN raiz (consistente
+  # com Keycloak em /auth/*). Middleware StripPrefix /grafana é emitido
+  # automaticamente pelo template do wrapper — Grafana recebe paths sem
+  # o prefix, conforme serve_from_sub_path=true espera. Issue #179.
+  ingressRoute:
+    enabled: true
+    entryPoint: websecure
+    host: standalone.portaluni.com.br
+    pathPrefix: /grafana
+    servicePort: 80
+    tls:
+      enabled: true
+      # secretName vazio → Traefik usa default cert (LE prod via cert-manager +
+      # Certificate emitido pelo chart raiz quando ingress.host == FQDN). Em
+      # standalone o cert raiz já é compartilhado com Keycloak/Apicurio.
+      secretName: ""
   datasources:
     datasources.yaml:
       apiVersion: 1
@@ -293,6 +311,18 @@ networkPolicy:
     - cidr: 10.0.2.87/32
       ports:
         - 9001  # MinIO Console (Issue #153)
+
+# ----------------------------------------------------------------------------
+# ClamAV daemon (chart apps/clamav-scanner/) — `clamav/clamav` oficial
+# expondo clamd TCP 3310 via Service ClusterIP. Apps Uni+ que precisarem
+# scan de uploads chamam clamd via INSTREAM. Issue #178 — habilitado em
+# standalone para fechar gap visual do ArgoCD App "Synced/Healthy mas
+# sem Pod" e cobrir item 9 do Cenário 13.
+# ----------------------------------------------------------------------------
+clamavScanner:
+  enabled: true
+  persistence:
+    storageClassName: standalone-local-nvme
 
 # ----------------------------------------------------------------------------
 # External Secrets (chart platform/external-secrets/) — endpoint do Vault.

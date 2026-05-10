@@ -1,0 +1,21 @@
+{{- if .Values.clamavScanner.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "clamavScanner.fullname" . }}
+  labels:
+    {{- include "clamavScanner.labels" . | nindent 4 }}
+  {{- with .Values.clamavScanner.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.clamavScanner.service.type | default "ClusterIP" }}
+  selector:
+    {{- include "clamavScanner.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: clamd
+      port: {{ .Values.clamavScanner.service.port | default 3310 }}
+      targetPort: clamd
+      protocol: TCP
+{{- end }}
