@@ -324,11 +324,11 @@ networkPolicy:
   traefikNamespace: traefik
   kubeApiCidrs:
     - 10.43.0.0/16
+    - 10.0.1.0/24  # ajustar por cluster — ver bloco acima
   # Standalone usa OCI KMS para auto-unseal — Vault precisa egress IMDS
   # (Instance Principal) + HTTPS:443 (KMS endpoint público). Sem isso, o
   # SDK do Vault panica em `getRequestMetadata.func1` (validado 2026-05-10).
   cloudKmsEgressEnabled: true
-    - 10.0.1.0/24  # ajustar por cluster — ver bloco acima
 
   # Namespaces das apps que o Traefik proxa para. Inclui `minio-console-proxy`
   # do chart platform/minio-console-proxy (Issue #153) — embora o backend
