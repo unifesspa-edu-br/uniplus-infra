@@ -99,8 +99,14 @@ clamavScanner:
     timeoutSeconds: 5
 
   # SecurityContext — daemon roda como UID 100 (clamav) na imagem oficial.
+  # `fsGroupChangePolicy: Always` força chown do mountpoint a cada subida do
+  # pod: necessário com k3s local-path provisioner, que NÃO aplica fsGroup
+  # automaticamente em volumes recém-criados (entrypoint da imagem oficial
+  # tenta `chown /var/lib/clamav` antes do drop privileges e falha com
+  # "Operation not permitted" sob `runAsNonRoot: true`). Issue #188.
   podSecurityContext:
     fsGroup: 100
+    fsGroupChangePolicy: Always
   containerSecurityContext:
     runAsNonRoot: true
     runAsUser: 100
