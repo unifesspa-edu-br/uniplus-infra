@@ -842,17 +842,126 @@ cd uniplus-infra
 
 ### 8.3 Registro do cluster no ArgoCD
 
-> Procedimento detalhado a ser documentado em #85. Resumo:
+O cluster K3s recém-bootstrappeado precisa ser registrado no ArgoCD com **labels apropriados** para que o ApplicationSet em `argocd/applicationset.yaml` o detecte e inicie a sincronização. O ApplicationSet generaliza por label — sem alterações no manifest desde que os labels sejam consistentes.
+
+**Pré-requisito:** ArgoCD operacional no cluster (validado pelo passo final de §8.1) e `argocd` CLI instalada na workstation do operador (`brew install argocd` ou pacote oficial).
+
+**Passo 1 — Recuperar a senha inicial admin do ArgoCD.**
 
 ```bash
-# No k8s-host, autenticar no ArgoCD e registrar o cluster local
-argocd login localhost:8080 --insecure --username admin --password <senha-inicial>
-
-# O kubeconfig do K3s aponta para o cluster local — registrar como "standalone"
-argocd cluster add default --name uniplus-standalone --in-cluster
+# Senha inicial é gerada pelo ArgoCD na primeira sincronização e fica no Secret
+# argocd-initial-admin-secret. Após o primeiro login, **rotacionar imediatamente**
+# via `argocd account update-password` e custodiar em Vault em
+# secret/standalone/argocd/admin (RUNBOOKS §14.4 pattern).
+sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml \
+  -n argocd get secret argocd-initial-admin-secret \
+  -o jsonpath='{.data.password}' | base64 -d
 ```
 
-Após o registro, o ApplicationSet em `argocd/applicationset.yaml` detecta o cluster pelo label e inicia a sincronização.
+**Passo 2 — Port-forward + login na workstation.**
+
+```bash
+# Terminal 1 — port-forward (manter aberto durante o registro)
+sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml \
+  -n argocd port-forward svc/argocd-server 8080:443 &
+
+# Terminal 2 — login + register
+argocd login localhost:8080 --insecure --username admin --password <senha-passo-1>
+```
+
+**Passo 3 — Registrar o cluster com labels do ApplicationSet.**
+
+O ApplicationSet em `argocd/applicationset.yaml` filtra clusters via dois labels: `uniplus.io/managed=true` (cluster gerenciado pela plataforma) e `environment=standalone` (overlay GitOps a aplicar). Sem ambos, o cluster fica visível mas não recebe Apps.
+
+```bash
+# Como o K3s é o cluster local onde o próprio ArgoCD roda, o registro é
+# `--in-cluster` (sem necessidade de kubeconfig externo).
+argocd cluster add default \
+  --name uniplus-standalone \
+  --in-cluster \
+  --label uniplus.io/managed=true \
+  --label environment=standalone
+```
+
+> **Por que dois labels?** `uniplus.io/managed` separa clusters da plataforma de eventuais clusters de teste/sandbox que partilhem o controle plane do ArgoCD. `environment=standalone` é o seletor do overlay GitOps — distingue do `lab-sp1`, `lab-sp2`, `lab-pa1`, `prod-sp1`, etc. ApplicationSet usa **interseção** dos labels: cluster precisa ter os dois.
+
+**Passo 4 — Validar reconciliação.**
+
+```bash
+# Listar clusters registrados
+argocd cluster list
+# Esperado: uniplus-standalone com STATUS=Successful
+
+# Ver Apps que o ApplicationSet criou para este cluster
+argocd app list --selector environment=standalone
+# Esperado: uma App por chart de apps/ e platform/, todos Synced/Healthy
+# (alguns podem ficar OutOfSync inicialmente até o primeiro reconcile completar)
+```
+
+**Tempo estimado:** 2–5 minutos (port-forward + login + register + primeiro reconcile do ApplicationSet).
+
+> **Custódia da senha admin pós-rotação:**
+>
+> ```bash
+> # Após `argocd account update-password`, custodiar em Vault
+> ARGOCD_NEW_PASSWORD="..." \
+> VAULT_TOKEN=hvs.xxx \
+>   vault kv put secret/standalone/argocd/admin password="$ARGOCD_NEW_PASSWORD"
+> ```
+
+### 8.3.1 DNS records — CNAMEs por host
+
+A topologia standalone expõe 10 hostnames sob `standalone.portaluni.com.br` via Traefik IngressRoutes (validados pelo Cenário 13 do `VALIDATION-PLAN.md`). O FQDN raiz `standalone.portaluni.com.br` aponta para o **Reserved Public IP** OCI (provisionamento via `provisioning/oci/standalone/` — issue #56). Os demais são CNAMEs apontando para o FQDN raiz.
+
+| Host | Tipo | Aponta para | Apps consumidoras |
+|---|---|---|---|
+| `standalone.portaluni.com.br` | A | Reserved Public IP OCI | keycloak-replica (subpath `/auth/*`), Grafana (`/grafana/*`) |
+| `portal.standalone.portaluni.com.br` | CNAME | `standalone.portaluni.com.br` | uniplus-web (Angular SPA portal) |
+| `selecao.standalone.portaluni.com.br` | CNAME | `standalone.portaluni.com.br` | uniplus-web (Angular SPA selecao) |
+| `ingresso.standalone.portaluni.com.br` | CNAME | `standalone.portaluni.com.br` | uniplus-web (Angular SPA ingresso) |
+| `api-portal.standalone.portaluni.com.br` | CNAME | `standalone.portaluni.com.br` | uniplus-api-portal (.NET) |
+| `api-selecao.standalone.portaluni.com.br` | CNAME | `standalone.portaluni.com.br` | uniplus-api-selecao (.NET) |
+| `api-ingresso.standalone.portaluni.com.br` | CNAME | `standalone.portaluni.com.br` | uniplus-api-ingresso (.NET) |
+| `kafka-ui.standalone.portaluni.com.br` | CNAME | `standalone.portaluni.com.br` | AKHQ (Kafka admin UI) |
+| `schema-registry.standalone.portaluni.com.br` | CNAME | `standalone.portaluni.com.br` | Apicurio Schema Registry |
+| `redis-ui.standalone.portaluni.com.br` | CNAME | `standalone.portaluni.com.br` | RedisInsight |
+
+**Provisionar via OCI CLI** (alternativa ao Tofu — útil quando o caminho declarativo do `#56` ainda não está completo):
+
+```bash
+ZONE_OCID="ocid1.dns-zone.oc1..xxxxx"  # zona portaluni.com.br
+
+# Reserved Public IP (já existente conforme #56) — aqui apenas referência:
+RESERVED_IP=$(oci network public-ip get --public-ip-address-ocid \
+  ocid1.publicip.oc1..xxxxx --query 'data."ip-address"' --raw-output)
+
+# Hostnames CNAME apontando para standalone.portaluni.com.br
+HOSTS=(portal selecao ingresso api-portal api-selecao api-ingresso kafka-ui schema-registry redis-ui)
+
+for host in "${HOSTS[@]}"; do
+  oci dns record rrset update \
+    --zone-name-or-id "$ZONE_OCID" \
+    --domain "$host.standalone.portaluni.com.br" \
+    --rtype CNAME \
+    --items '[{"domain":"'"$host.standalone.portaluni.com.br"'","rdata":"standalone.portaluni.com.br.","rtype":"CNAME","ttl":300}]' \
+    --force
+  echo "Criado/atualizado: $host.standalone.portaluni.com.br → standalone.portaluni.com.br"
+done
+```
+
+**Validar propagação** (TTL 300 = ≤ 5 min em primeira criação):
+
+```bash
+for host in standalone portal.standalone selecao.standalone ingresso.standalone \
+            api-portal.standalone api-selecao.standalone api-ingresso.standalone \
+            kafka-ui.standalone schema-registry.standalone redis-ui.standalone; do
+  echo -n "$host.portaluni.com.br → "
+  dig +short "$host.portaluni.com.br" | tail -1
+done
+# Todos devem resolver para o IP do Reserved Public IP.
+```
+
+**Trigger de reavaliação:** quando `provisioning/oci/standalone/dns.tf` (sub-task de #56) entregar o caminho declarativo, este procedimento OCI CLI vira fallback de emergência apenas. Tofu fica como fonte canônica.
 
 ### 8.4 Init, unseal e configuração do Vault (Shamir manual)
 
