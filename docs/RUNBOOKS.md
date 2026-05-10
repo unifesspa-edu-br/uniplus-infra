@@ -1659,7 +1659,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: kc-import
-          image: quay.io/keycloak/keycloak:26.6.1
+          image: ghcr.io/unifesspa-edu-br/uniplus-keycloak:26.6.1-0
           args:
             - import
             - --override=true
@@ -2639,8 +2639,9 @@ kc exec -n uniplus -i deploy/keycloak-replica-uniplus-standalone -- bash -c '
     --password "$KC_BOOTSTRAP_ADMIN_PASSWORD" >/dev/null
 
   # 1.1 Criar grupos /admins/kafka e /users/uniplus (idempotente — ignora se existem).
-  # NOTA: container quay.io/keycloak/keycloak:26.6.1 é RHEL 9 minimal e NÃO tem
-  # awk/jq/python — usar grep+cut. Pattern para extrair ID por name no CSV.
+  # NOTA: container ghcr.io/.../uniplus-keycloak:26.6.1-0 herda RHEL 9 minimal
+  # do upstream Keycloak e NÃO tem awk/jq/python — usar grep+cut. Pattern para
+  # extrair ID por name no CSV.
   for GP in "admins/kafka" "users/uniplus"; do
     PARENT=${GP%/*}; CHILD=${GP##*/}
     /opt/keycloak/bin/kcadm.sh create groups -r uniplus -s name="$PARENT" 2>/dev/null || true

@@ -20,12 +20,15 @@ keycloak:
   enabled: false
 
   image:
-    registry: quay.io
-    repository: keycloak/keycloak
-    # Versão upstream estável validada para 26.x (mantém alinhamento com
-    # appVersion do Chart.yaml). Bumps de patch (26.6.x) são seguros;
-    # major/minor exige checagem de migration guide.
-    tag: "26.6.1"
+    registry: ghcr.io
+    repository: unifesspa-edu-br/uniplus-keycloak
+    # Imagem composta Uni+ = Keycloak upstream + JAR cpf-matcher (SPI providers
+    # institucionais). Tag scheme :<KC-VERSION>-<PATCH-PROVIDERS> publicado pelo
+    # workflow release.yml de unifesspa-edu-br/uniplus-keycloak-providers.
+    # Standalone usa a MESMA imagem que vai pra HML/PROD para garantir que o
+    # smoke E2E valida exatamente o binário de produção (production parity).
+    # Sincronizar com appVersion do Chart.yaml.
+    tag: "26.6.1-0"
     pullPolicy: IfNotPresent
 
   imagePullSecrets: []
@@ -123,8 +126,12 @@ keycloak:
       repository: adorsys/keycloak-config-cli
       # Tag matching Keycloak 26.x — major.minor obrigatório (versões
       # diferentes podem falhar em migrations de schema). Versões em
-      # https://hub.docker.com/r/adorsys/keycloak-config-cli/tags
-      tag: "6.4.0-26.0.6"
+      # https://quay.io/repository/adorsys/keycloak-config-cli?tab=tags
+      # 6.5.0-26.5.4 é a tag mais recente disponível; KC 26.6.x ainda sem
+      # tag pareada upstream. Mesma major do KC vivo (26.6.1) → admin API
+      # estável (`/admin/realms/{realm}/clients/{id}/protocol-mappers/models`
+      # não muda). Quando adorsys publicar `*-26.6.x`, abrir follow-up.
+      tag: "6.5.0-26.5.4"
       pullPolicy: IfNotPresent
     # Tempo máximo de espera por Keycloak ficar disponível antes de
     # tentar reconciliar. Pod do KC pode estar em rolling restart após

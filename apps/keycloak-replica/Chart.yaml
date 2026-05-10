@@ -6,10 +6,12 @@ description: |
 type: application
 
 # Versão do chart wrapper Uni+. Bump em qualquer mudança de template/values.
-version: 0.2.0
+version: 0.3.0
 
-# Versão do Keycloak upstream empacotada (sincronizar com image.tag).
-appVersion: "26.6.1"
+# Versão da imagem composta `uniplus-keycloak` empacotada (sincronizar com
+# image.tag). Scheme :<KC-VERSION>-<PATCH-PROVIDERS> — ver
+# unifesspa-edu-br/uniplus-keycloak-providers.
+appVersion: "26.6.1-0"
 
 home: https://github.com/unifesspa-edu-br/uniplus-infra
 sources:
