@@ -91,13 +91,17 @@ tofu output
 $EDITOR terraform.tfvars   # profile = "hml"
 tofu apply
 
-# Shrink destrutivo dos blocks (delete + recreate; PERDE dados — fazer backup
-# de Vault recovery keys, schemas, etc. antes)
-$EDITOR terraform.tfvars   # volume_sizes_gbs = { postgres=10, kafka=10, minio=10, vault=10 }
+# Aumentar tamanho dos blocks (in-place, online, sem reboot, sem perder dados)
+$EDITOR terraform.tfvars   # volume_sizes_gbs.postgres = 500
 tofu apply
-# Re-bootstrap obrigatório após:
-ssh ubuntu@164.152.53.29 'sudo /home/ubuntu/uniplus-infra/scripts/bootstrap-standalone.sh --role=standalone-k8s'
-ssh ubuntu@10.0.2.87     'sudo /home/ubuntu/uniplus-infra/scripts/bootstrap-standalone.sh --role=standalone-data'
+# Pós-apply, estender o FS dentro da VM:
+ssh ubuntu@164.152.53.29 "ssh ubuntu@10.0.2.87 'sudo lsblk; sudo growpart /dev/sdc 1; sudo resize2fs /dev/sdc1'"
+
+# Diminuir tamanho dos blocks: NÃO suportado pela OCI (block volume só cresce).
+# Tofu calcula in-place mas o API rejeita 400 no apply. Para encolher de fato,
+# o caminho é destrutivo (delete + recreate via tofu destroy/apply ou criar
+# volume novo + dd + swap manual). Não recomendado em POC — economia não
+# compensa o risco; redimensionar para baixo é caso de migrar para infra nova.
 
 # Recriar do zero (cuidado — destrutivo total)
 tofu destroy
