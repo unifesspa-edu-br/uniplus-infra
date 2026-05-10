@@ -21,19 +21,22 @@ variable "fault_domain" {
   default     = "FAULT-DOMAIN-1"
 }
 
-variable "vcn_ocid" {
-  description = "OCID da VCN existente (provisionada manualmente; será migrada para Tofu na Story #53/network.tf)."
+variable "vcn_cidr" {
+  description = "CIDR block da VCN do standalone."
   type        = string
+  default     = "10.0.0.0/16"
 }
 
-variable "subnet_public_ocid" {
-  description = "OCID da subnet pública (k8s-host); 10.0.1.0/24 no standalone atual."
-  type        = string
-}
-
-variable "subnet_private_ocid" {
-  description = "OCID da subnet privada (data-host); 10.0.2.0/24 no standalone atual."
-  type        = string
+variable "subnet_cidrs" {
+  description = "CIDR blocks das 2 subnets (public para k8s-host, private para data-host). Devem caber dentro de vcn_cidr."
+  type = object({
+    public  = string
+    private = string
+  })
+  default = {
+    public  = "10.0.1.0/24"
+    private = "10.0.2.0/24"
+  }
 }
 
 variable "image_ocid" {
