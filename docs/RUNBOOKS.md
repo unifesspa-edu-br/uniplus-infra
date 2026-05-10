@@ -1419,6 +1419,10 @@ A migração de `EnvironmentFile=` para `LoadCredential=` (PR fecha #128) muda o
 
 **Pré-requisitos:** acesso root no data-host (`10.0.2.87`); cliente Keycloak parado ou em janela onde reconnect é aceitável (Postgres restart força re-auth de connections existentes).
 
+> ⚠️ **Procedimento assume senha hex-only** (`openssl rand -hex N` — caracteres `[0-9a-f]`). Se a política institucional exigir charset diferente (símbolos, mistura), o `ALTER USER ... WITH PASSWORD '$NEW_PW'` em heredoc unquoted e o `sed -i "s/.../...$NEW_PW/"` ficam vulneráveis a escape (`'`, `/`, `&`, etc.). Para outros charsets, gerar via `openssl rand -base64 N | tr -d '/=+'` e validar manualmente, ou refatorar para passar via `psql -v` com `quote_literal()`.
+>
+> Hex é suficientemente forte (32 bytes hex = 128 bits de entropia) e mantém o procedimento simples — recomendamos manter.
+
 **Passo 1 — Gerar nova senha:**
 
 ```bash
@@ -1472,9 +1476,20 @@ Em Ubuntu 24.04 (systemd 255), o credential file pode ser cifrado e bound ao TPM
 sudo systemd-creds has-tpm2
 # Esperado: yes
 
-# 2) Imprime PCRs disponíveis (defaults: 7 = secure boot, 11 = unified kernel image)
+# 2) Imprime PCRs disponíveis para escolha de bind
 sudo tpm2_pcrread sha256
 ```
+
+**Escolha de PCR para o bind:**
+
+| PCR | Cobertura | Estabilidade em servidor Ubuntu |
+|---|---|---|
+| 0 | BIOS/UEFI code | estável entre boots; muda em firmware update |
+| 4 | Boot loader code | muda em update do GRUB/shim |
+| 7 | Secure Boot policy | em servidor sem Secure Boot habilitado, valor é constante (zeros) — válido para sealing mas não adiciona binding real |
+| 11 | Unified Kernel Image (UKI) | só preenchido com UKI (Ubuntu 24.04 default ainda usa initrd tradicional — PCR 11 fica zero) |
+
+Recomendação para Ubuntu 24.04 server **sem UKI** (default): usar **PCR 0** (binding ao firmware da máquina). Adicionar PCR 7 só se Secure Boot estiver habilitado e enrollment do MOK customizado importar para a equação. PCRs 4 e 11 só fazem sentido com configurações específicas.
 
 **Cifrar o credential com TPM2 binding:**
 
@@ -1483,7 +1498,7 @@ sudo tpm2_pcrread sha256
 # para inspeção; pode-se trocar por --binary se preferir.
 NEW_PW_BLOB=$(sudo systemd-creds encrypt \
     --name=postgres-password \
-    --tpm2-pcrs=7+11 \
+    --tpm2-pcrs=0 \
     /etc/credstore/uniplus-postgres-password -)
 
 # Sobrescrever in-place com o blob cifrado
