@@ -56,6 +56,19 @@
         "address",
         "phone",
         "offline_access"
+      ],
+      "protocolMappers": [
+        {
+          "name": "audience-uniplus",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "uniplus",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
       ]
     },
     {
