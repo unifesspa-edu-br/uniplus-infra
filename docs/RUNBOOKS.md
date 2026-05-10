@@ -1245,14 +1245,14 @@ A função `step_data_setup_postgres` em `scripts/bootstrap-standalone.sh` provi
 1. Diretórios `/var/lib/uniplus/postgres/{data,init}` com ownership `70:70` (uid `postgres` no container `postgres:18-alpine` — Alpine usa uid 70, distinto do uid 999 das imagens Debian-based).
 2. `.bootstrap-creds` (root:root 600) em `/var/lib/uniplus/postgres/.bootstrap-creds` com `super_pw` + `keycloak_pw` (256 bits cada via `openssl rand -hex 32`) — gerado **somente na primeira execução**.
 3. Init SQL **efêmero** `/var/lib/uniplus/postgres/init/00-keycloak.sql` (mode `600`, owner `70:70`) — gerado APENAS quando o cluster ainda não foi inicializado (sem `PG_VERSION` em `data/`). Cria role `keycloak` + database `keycloak` na primeira inicialização. Após `pg_isready` confirmar que o entrypoint executou o script, o arquivo é shredded (`shred -u`) — `keycloak_pw` em cleartext NÃO persiste no filesystem do data-host entre runs (snapshots/backups da LVM `vg-postgres` não capturam cópia extra do secret).
-4. EnvironmentFile `/etc/uniplus-postgres.env` (root:root 600) com `POSTGRES_PASSWORD=<super_pw>` lido do `.bootstrap-creds`. `docker run` recebe a senha via `-e POSTGRES_PASSWORD` (sem `=value`) — evita exposure em `/proc/<pid>/cmdline`.
-5. `systemd` unit `/etc/systemd/system/uniplus-postgres.service` com `Restart=always`, `Type=simple`, container em `--network host` (Postgres listen em `10.0.2.87:5432`).
+4. **Credential file** `/etc/credstore/uniplus-postgres-password` (root:root `400`, dir `700`) contendo `super_pw` em texto puro (sem trailing newline). Issue #128 — substitui o legacy `/etc/uniplus-postgres.env` (EnvironmentFile) pelo pattern `LoadCredential=` do systemd 250+: a senha é bind-mounted pelo systemd em `${CREDENTIALS_DIRECTORY}/postgres-password` (tmpfs do unit, isolada de `/proc/<pid>/environ`) e nunca trafega via env do processo. Em Ubuntu 24.04 LTS (systemd 255), o file pode ser opcionalmente cifrado via `systemd-creds encrypt --name=postgres-password --tpm2-pcrs=...` para binding ao TPM2 do host (ver §9.6).
+5. `systemd` unit `/etc/systemd/system/uniplus-postgres.service` com `Restart=always`, `Type=simple`, `LoadCredential=postgres-password:/etc/credstore/uniplus-postgres-password`, container em `--network host` (Postgres listen em `10.0.2.87:5432`). O `docker run` consome a senha via `POSTGRES_PASSWORD_FILE=/run/secrets/postgres-password` (suportado nativamente pelo entrypoint `postgres:18-alpine`) — bind-mount read-only de `${CREDENTIALS_DIRECTORY}/postgres-password` no container, lido pelo entrypoint **antes** do `gosu` drop para uid 70.
 
 **Idempotência (decisões independentes):**
 
 - `.bootstrap-creds`: se já existe, preserva; se não existe e cluster já inicializado, aborta apontando §9.4; senão, gera novas senhas.
 - Init SQL: regenerado sempre que o cluster ainda não tem `PG_VERSION` (cobre o fluxo §9.4 — restore creds, data dir vazio → SQL recriado a partir do `keycloak_pw` persistido). Cleanup defensivo se leftover persiste após cluster já estar inicializado.
-- EnvironmentFile + systemd unit: sempre re-aplicados (cheap, corrige drift sem afetar state do cluster).
+- Credential file (`/etc/credstore/uniplus-postgres-password`) + systemd unit: sempre re-escritos a partir do `super_pw` em `.bootstrap-creds` — corrige drift sem afetar state do cluster. Legacy `/etc/uniplus-postgres.env` (EnvironmentFile) é shredded via `shred -u` na primeira execução pós-migração.
 - Serviço já ativo: bootstrap não reinicia (evita downtime).
 
 **Verificação imediata pós-bootstrap:**
@@ -1406,6 +1406,104 @@ EOF
 >
 > - **Backup:** `pg_dump --format=custom keycloak` rodado periodicamente via systemd timer no data-host, output enviado para bucket MinIO (`s3://backups/postgres/<timestamp>.dump`).
 > - **Restore:** `pg_restore --clean --if-exists --no-owner --dbname=keycloak <dump>` em data-host com volume LVM intacto.
+
+### 9.6 Rotação de credentials e TPM2 binding (issue #128)
+
+A migração de `EnvironmentFile=` para `LoadCredential=` (PR fecha #128) muda o pattern de secret delivery do Postgres systemd. Este sub-runbook cobre operações Day-2 sobre `/etc/credstore/uniplus-postgres-password`.
+
+**Quando rotacionar:**
+
+- Credential exposta acidentalmente (compartilhada em chat/PR/issue por engano)
+- Custódia transferida (engenheiro DevOps off-boarded)
+- Janela de manutenção planejada com bump conjunto de senhas
+
+**Pré-requisitos:** acesso root no data-host (`10.0.2.87`); cliente Keycloak parado ou em janela onde reconnect é aceitável (Postgres restart força re-auth de connections existentes).
+
+**Passo 1 — Gerar nova senha:**
+
+```bash
+ssh -i ~/.ssh/id_ed25519 ubuntu@10.0.2.87
+NEW_PW=$(openssl rand -hex 32)
+echo "New super_pw (custodiar antes de continuar): $NEW_PW"
+```
+
+**Passo 2 — Atualizar a senha no cluster Postgres em si (`ALTER USER`):**
+
+```bash
+sudo docker exec -i uniplus-postgres psql -U postgres -d postgres <<SQL
+ALTER USER postgres WITH PASSWORD '$NEW_PW';
+SQL
+unset NEW_PW   # <-- só desfazer DEPOIS de também atualizar o credential file
+```
+
+> ⚠️ Se desfazer `NEW_PW` antes do Passo 3, ficamos com cluster aceitando a nova senha mas systemd ainda servindo a antiga via LoadCredential — próximo restart do unit falha em `pg_isready`. Sequência rígida.
+
+**Passo 3 — Atualizar credential file e `.bootstrap-creds`:**
+
+```bash
+# Reescrever o credential file (mode 400 root:root, sem trailing newline)
+printf '%s' "$NEW_PW" | sudo tee /etc/credstore/uniplus-postgres-password >/dev/null
+sudo chmod 400 /etc/credstore/uniplus-postgres-password
+
+# Atualizar .bootstrap-creds para que re-runs do bootstrap reflitam a senha viva
+sudo sed -i "s/^super_pw=.*/super_pw=$NEW_PW/" /var/lib/uniplus/postgres/.bootstrap-creds
+unset NEW_PW
+```
+
+**Passo 4 — Re-iniciar o unit (zero downtime se Keycloak tolera reconnect):**
+
+```bash
+sudo systemctl restart uniplus-postgres
+sudo docker exec uniplus-postgres pg_isready -U postgres   # esperado: accepting connections
+```
+
+**Passo 5 — Validar conectividade end-to-end** (do k8s-host, conforme §9.3).
+
+> O `keycloak_pw` (senha do role `keycloak`, não `postgres`) é independente — fica no Vault em `secret/standalone/postgres/keycloak`. Rotação dele segue procedimento separado (`ALTER USER keycloak` + atualizar Vault + restart Keycloak Pod para re-pull do ExternalSecret).
+
+#### 9.6.1 TPM2 binding (opcional)
+
+Em Ubuntu 24.04 (systemd 255), o credential file pode ser cifrado e bound ao TPM2 do host — descriptografar fora desta máquina específica fica computacionalmente inviável.
+
+**Verificar enrollment:**
+
+```bash
+# 1) TPM2 disponível e systemd-creds vê
+sudo systemd-creds has-tpm2
+# Esperado: yes
+
+# 2) Imprime PCRs disponíveis (defaults: 7 = secure boot, 11 = unified kernel image)
+sudo tpm2_pcrread sha256
+```
+
+**Cifrar o credential com TPM2 binding:**
+
+```bash
+# Read+encrypt+write atomicamente. --pretty emite o blob em base64 multiline
+# para inspeção; pode-se trocar por --binary se preferir.
+NEW_PW_BLOB=$(sudo systemd-creds encrypt \
+    --name=postgres-password \
+    --tpm2-pcrs=7+11 \
+    /etc/credstore/uniplus-postgres-password -)
+
+# Sobrescrever in-place com o blob cifrado
+echo "$NEW_PW_BLOB" | sudo tee /etc/credstore/uniplus-postgres-password >/dev/null
+sudo chmod 400 /etc/credstore/uniplus-postgres-password
+unset NEW_PW_BLOB
+```
+
+Após o encrypt, mudar a syntax na unit:
+
+```ini
+# /etc/systemd/system/uniplus-postgres.service
+LoadCredentialEncrypted=postgres-password:/etc/credstore/uniplus-postgres-password
+```
+
+(O bootstrap não força encrypt automaticamente — decisão deliberada para permitir validação antes de tornar o binding obrigatório.)
+
+`systemctl restart uniplus-postgres` e `pg_isready` para confirmar. Se PCRs mudarem (firmware update, kernel diferente em boot via grub), o decrypt falha; ver `man systemd-creds` para policies de unsealing avulso.
+
+> ⚠️ TPM2 binding **destrói portabilidade** do credential. Se o data-host for re-provisionado ou o TPM resetar, o blob fica inrecuperável. Sempre manter custódia paralela do `super_pw` em texto puro no gestor institucional, separadamente.
 
 ## 10. Keycloak (standalone)
 
