@@ -7,6 +7,10 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+### Corrigido
+
+- Keycloak client `uniplus-portal` (public + PKCE, frontend Angular) recebe `protocolMapper` `audience-uniplus` (`oidc-audience-mapper` com `included.custom.audience=uniplus`, projetado apenas no access_token). Sem o mapper o token vinha com `aud: ["account"]` e as APIs Uni+ — que validam `Auth__Audience=uniplus` — respondiam 401 a qualquer chamada do frontend. Mitigação manual via `kcadm.sh` foi aplicada durante o smoke #166; agora o mapper está persistido em `apps/keycloak-replica/files/uniplus-realm.json` e o Job `realm-reconcile` (ADR-010, post-install/post-upgrade) o reaplica em re-deploy. Issue #186.
+
 ### Adicionado
 
 - Keycloak realm `uniplus` ganha 3 confidential clients para fluxo M2M `client_credentials` — `uniplus-api-portal`, `uniplus-api-selecao`, `uniplus-api-ingresso`. Cada um com `serviceAccountsEnabled=true`, audience mapper para `apicurio-registry` e hardcoded-claim mapper que projeta `groups: ["/users/uniplus"]` (Apicurio mapeia → role `sr-developer`). Destrava `uniplus-api#358` (integração Apicurio Schema Registry). RUNBOOKS §15.6 documenta procedure de recuperação do `client_secret` pós-import. Issue #163.
