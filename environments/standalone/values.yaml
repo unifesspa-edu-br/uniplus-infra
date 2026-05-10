@@ -190,7 +190,11 @@ storage:
 #
 # Implicações operacionais do Shamir em standalone:
 # - Cada restart do Pod (e.g., upgrade do K3s, manutenção da VM) exige
-#   unseal manual via 3 das 5 recovery shares
+#   unseal manual via 3 das 5 unseal key shares (`vault operator unseal`)
+# - Terminologia importante: em Shamir mode são *unseal keys*; *recovery
+#   keys* só existem em auto-unseal mode (KMS/Transit) e atendem a outros
+#   comandos (`vault operator generate-root`, rekey, etc.). Confundir os
+#   dois leva o oncall a procurar o material errado durante incidente.
 # - Procedimento documentado em docs/RUNBOOKS.md §8.4
 # - 5 shares custodiadas em gestor institucional (ver Apêndice A)
 # - Aceitável para standalone (validação/demo); inaceitável para prod 3-DC
@@ -245,9 +249,11 @@ vault:
         # última tag pública do `wrappers/ocikms/v2`; Vault 2.0.0 ainda
         # vendor essa versão. Issue upstream a abrir.
         #
-        # Workaround: Shamir manual com 5 recovery shares, threshold 3.
+        # Workaround: Shamir manual com 5 unseal key shares, threshold 3.
         # Cada restart do pod exige `vault operator unseal` × 3.
-        # Procedimento em docs/RUNBOOKS.md §8.4.
+        # (Shamir gera unseal keys; recovery keys são exclusivas de
+        # auto-unseal — não confundir no runbook.) Procedimento em
+        # docs/RUNBOOKS.md §8.4.
         #
         # `service_registration "kubernetes"` permanece REMOVIDO:
         # K3s/flannel + service-account auth gera `nil response` no GET
