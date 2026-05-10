@@ -7,8 +7,13 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+### Alterado
+
+- Chart `keycloak-replica` passa a consumir a imagem composta `ghcr.io/unifesspa-edu-br/uniplus-keycloak:26.6.1-0` (Keycloak 26.6.1 + JAR `cpf-matcher`) em vez do upstream vanilla `quay.io/keycloak/keycloak:26.6.1`. Standalone passa a validar exatamente o binário que vai pra HML/PROD (production parity). `appVersion` do Chart sincronizada com a tag composta. Issue #192, depende de `unifesspa-edu-br/uniplus-keycloak-providers#13` (Release `v26.6.1-0` em 2026-05-10).
+
 ### Corrigido
 
+- Tag de `quay.io/adorsys/keycloak-config-cli` em `apps/keycloak-replica/values.yaml` corrigida de `6.4.0-26.0.6` (inexistente — typo histórico do PR #183) para `6.5.0-26.5.4` (mais recente publicada; mesma major do KC vivo, admin API estável). Sem essa correção o Job `realm-reconcile` (ADR-010) ficava em `ImagePullBackOff` indefinidamente, bloqueando reconciliação automática do realm em re-deploy. Issue #192.
 - Keycloak client `uniplus-portal` (public + PKCE, frontend Angular) recebe `protocolMapper` `audience-uniplus` (`oidc-audience-mapper` com `included.custom.audience=uniplus`, projetado apenas no access_token). Sem o mapper o token vinha com `aud: ["account"]` e as APIs Uni+ — que validam `Auth__Audience=uniplus` — respondiam 401 a qualquer chamada do frontend. Mitigação manual via `kcadm.sh` foi aplicada durante o smoke #166; agora o mapper está persistido em `apps/keycloak-replica/files/uniplus-realm.json` e o Job `realm-reconcile` (ADR-010, post-install/post-upgrade) o reaplica em re-deploy. Issue #186.
 
 ### Adicionado

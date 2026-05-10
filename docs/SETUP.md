@@ -488,7 +488,7 @@ services:
       - pa1-consensus-data:/etcd-data
 
   pa1-oidc-source:
-    image: ghcr.io/unifesspa-edu-br/uniplus-keycloak:1.0.2
+    image: ghcr.io/unifesspa-edu-br/uniplus-keycloak:26.6.1-0
     container_name: uniplus-pa1-oidc-source
     networks: [unifesspa-sim]
     ports:
