@@ -74,7 +74,7 @@
     {
       "clientId": "kafka-ui",
       "name": "AKHQ — Kafka Web UI (admin)",
-      "description": "Cliente OIDC do AKHQ (apps/kafka-ui). Confidential client — AKHQ é backend, mantém client_secret no Vault. Após import inicial, operador deve recuperar o secret gerado pelo Keycloak via kcadm.sh e custodiar em secret/standalone/keycloak/clients/kafka-ui (RUNBOOKS §14.1).",
+      "description": "Cliente OIDC do AKHQ (apps/kafka-ui). Confidential — secret em secret/standalone/keycloak/clients/kafka-ui via kcadm pós-import. RUNBOOKS §14.1.",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": false,
@@ -114,7 +114,7 @@
     {
       "clientId": "apicurio-registry",
       "name": "Apicurio Registry — Schema Registry (Confluent SR API)",
-      "description": "Cliente OIDC do Apicurio Registry (apps/apicurio-registry). Confidential client — Apicurio é backend Quarkus, mantém client_secret no Vault em secret/standalone/keycloak/clients/apicurio-registry (RUNBOOKS §15.1). Após import inicial, operador deve recuperar o secret gerado pelo Keycloak via kcadm.sh e custodiar. directAccessGrantsEnabled=true habilita password grant para smoke test documentado (§15.4); em prod o admin deve usar authorization code + PKCE via UI ou kcadm direto e este flag deve ser revisado.",
+      "description": "Cliente OIDC do Apicurio Registry (apps/apicurio-registry). Confidential — secret em secret/standalone/keycloak/clients/apicurio-registry via kcadm pós-import. directAccessGrantsEnabled=true para smoke (revisar em prod). RUNBOOKS §15.1.",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": false,
@@ -157,7 +157,7 @@
     {
       "clientId": "uniplus-api-portal",
       "name": "Uni+ API Portal — Service Account (M2M)",
-      "description": "Cliente OIDC confidencial da API Portal Uni+ para fluxo client_credentials (M2M). Usado pela API para obter access_token e chamar a Apicurio Registry REST API (Confluent SR). Não tem fluxo interativo: standardFlowEnabled=false, directAccessGrantsEnabled=false. client_secret gerado pelo Keycloak no import inicial; operador recupera via kcadm.sh e custodia em secret/standalone/keycloak/clients/uniplus-api-portal (RUNBOOKS §15.6). access_token tem aud=apicurio-registry e groups=[/users/uniplus] (via mappers abaixo) — Apicurio mapeia /users/uniplus → role sr-developer (apps/apicurio-registry/values.yaml).",
+      "description": "Service Account M2M da API Portal Uni+ → Apicurio SR. Confidential — secret em secret/standalone/keycloak/clients/uniplus-api-portal via kcadm pós-import. Mappers: aud=apicurio-registry + groups=[/users/uniplus]→sr-developer. RUNBOOKS §15.6.",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": false,
@@ -210,7 +210,7 @@
     {
       "clientId": "uniplus-api-selecao",
       "name": "Uni+ API Seleção — Service Account (M2M)",
-      "description": "Cliente OIDC confidencial da API Seleção Uni+ para fluxo client_credentials (M2M). Usado pela API para obter access_token e chamar a Apicurio Registry REST API (Confluent SR). Não tem fluxo interativo: standardFlowEnabled=false, directAccessGrantsEnabled=false. client_secret gerado pelo Keycloak no import inicial; operador recupera via kcadm.sh e custodia em secret/standalone/keycloak/clients/uniplus-api-selecao (RUNBOOKS §15.6). access_token tem aud=apicurio-registry e groups=[/users/uniplus] (via mappers abaixo) — Apicurio mapeia /users/uniplus → role sr-developer (apps/apicurio-registry/values.yaml).",
+      "description": "Service Account M2M da API Seleção Uni+ → Apicurio SR. Confidential — secret em secret/standalone/keycloak/clients/uniplus-api-selecao via kcadm pós-import. Mappers: aud=apicurio-registry + groups=[/users/uniplus]→sr-developer. RUNBOOKS §15.6.",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": false,
@@ -263,7 +263,7 @@
     {
       "clientId": "uniplus-api-ingresso",
       "name": "Uni+ API Ingresso — Service Account (M2M)",
-      "description": "Cliente OIDC confidencial da API Ingresso Uni+ para fluxo client_credentials (M2M). Usado pela API para obter access_token e chamar a Apicurio Registry REST API (Confluent SR). Não tem fluxo interativo: standardFlowEnabled=false, directAccessGrantsEnabled=false. client_secret gerado pelo Keycloak no import inicial; operador recupera via kcadm.sh e custodia em secret/standalone/keycloak/clients/uniplus-api-ingresso (RUNBOOKS §15.6). access_token tem aud=apicurio-registry e groups=[/users/uniplus] (via mappers abaixo) — Apicurio mapeia /users/uniplus → role sr-developer (apps/apicurio-registry/values.yaml).",
+      "description": "Service Account M2M da API Ingresso Uni+ → Apicurio SR. Confidential — secret em secret/standalone/keycloak/clients/uniplus-api-ingresso via kcadm pós-import. Mappers: aud=apicurio-registry + groups=[/users/uniplus]→sr-developer. RUNBOOKS §15.6.",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": false,
