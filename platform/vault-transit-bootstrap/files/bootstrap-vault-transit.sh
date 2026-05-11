@@ -66,27 +66,52 @@ retry_vault() {
 }
 
 # --- 1. Aguardar Vault unsealed -------------------------------------------
+#
+# `vault status` retorna 3 estados distintos por exit code (documentado em
+# https://developer.hashicorp.com/vault/docs/commands/status):
+#   0 = unsealed e acessível
+#   1 = erro (rede, URL inválida, auth, etc.) — retry
+#   2 = sealed mas alcançável — não retentar indefinidamente, abortar para
+#       que o operador atue (unseal Shamir manual ou aguardar auto-unseal
+#       OCI KMS/Transit). Vault pod com restart recente pode estar
+#       transitoriamente sealed; toleramos algumas tentativas mas falhamos
+#       em saturação.
 
 log "Aguardando Vault em $VAULT_ADDR ficar disponível e unsealed"
 
 attempts=0
-while ! vault status >/dev/null 2>&1; do
-    attempts=$((attempts + 1))
-    if [ "$attempts" -ge "$VAULT_WAIT_MAX_ATTEMPTS" ]; then
-        log "Vault não acessível após $VAULT_WAIT_MAX_ATTEMPTS tentativas. Estado:"
-        vault status || true
-        exit 1
+sealed_attempts=0
+sealed_max="${VAULT_SEALED_MAX_ATTEMPTS:-12}"  # ~1 min em sleep=5s
+
+while true; do
+    vault status >/dev/null 2>&1
+    rc=$?
+
+    if [ "$rc" -eq 0 ]; then
+        log "Vault disponível e unsealed."
+        break
     fi
+
+    attempts=$((attempts + 1))
+
+    if [ "$rc" -eq 2 ]; then
+        sealed_attempts=$((sealed_attempts + 1))
+        if [ "$sealed_attempts" -ge "$sealed_max" ]; then
+            log "Vault permanece SEALED após $sealed_max tentativas. Bootstrap aborted — operador precisa fazer unseal."
+            exit 1
+        fi
+        log "Vault sealed (tentativa sealed $sealed_attempts/$sealed_max); aguardando unseal..."
+    else
+        if [ "$attempts" -ge "$VAULT_WAIT_MAX_ATTEMPTS" ]; then
+            log "Vault não acessível após $VAULT_WAIT_MAX_ATTEMPTS tentativas (último exit code: $rc)."
+            vault status || true
+            exit 1
+        fi
+        log "Vault não acessível (exit code $rc, tentativa $attempts/$VAULT_WAIT_MAX_ATTEMPTS); retry em ${VAULT_WAIT_SLEEP_SECONDS}s..."
+    fi
+
     sleep "$VAULT_WAIT_SLEEP_SECONDS"
 done
-
-# Checagem explícita de sealed=false (vault status sai 0 também em standby).
-if vault status -format=json 2>/dev/null | grep -q '"sealed": *true'; then
-    log "Vault está SEALED. Bootstrap aborted."
-    exit 1
-fi
-
-log "Vault disponível e unsealed."
 
 # --- 2. Habilitar transit (idempotente) -----------------------------------
 
