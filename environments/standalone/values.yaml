@@ -181,7 +181,6 @@ loki:
       s3:
         # Endpoint vem via env var (LOKI_S3_ENDPOINT) sintetizado pelo ESO,
         # mas o bucketNames precisa ser literal (não suporta env-expand).
-        # Endpoint defaults no values.yaml: ${LOKI_S3_ENDPOINT}.
         s3ForcePathStyle: true
         insecure: true
 
@@ -197,30 +196,67 @@ loki:
           # release-name → CreateContainerConfigError em re-deploys.
           name: loki-s3-creds
 
-# Sintese do Secret K8s com credenciais MinIO via ESO.
-# Chave top-level (`uniplusExternalSecrets`) intencionalmente FORA do bloco
-# `loki:` para não colidir com nenhum value do subchart upstream.
-uniplusExternalSecrets:
-  enabled: true
-  s3:
-    vaultPath: secret/standalone/minio/loki
+# Wrapper Uni+ Loki — chave prefixada por chart name para isolamento entre
+# wrappers no environment compartilhado (vs chave top-level homônima que
+# colidiria com os blocos de Tempo/OTel etc abaixo).
+lokiWrapper:
+  externalSecrets:
+    enabled: true
+    s3:
+      vaultPath: secret/standalone/minio/loki
+  networkPolicy:
+    enabled: true
+    # Inclui o próprio NS para permitir tráfego entre pods do Loki (futuro
+    # SimpleScalable). Em SingleBinary single-replica não tem efeito.
+    ingressNamespaces:
+      - observability-grafana
+      - observability-otel-collector
+      - observability-loki
+    minioCIDR: "10.0.2.87/32"
+    minioPort: 9000
+    kubeApiCidrs:
+      - 10.43.0.0/16
+      - 10.0.1.0/24
 
-# NetworkPolicy do wrapper — apenas Grafana (consumidor query) e
-# observability-otel-collector (futuro push de logs em #30) podem alcançar.
-# Mesmo motivo de chave top-level fora de `loki:`.
-uniplusNetworkPolicy:
-  enabled: true
-  # Inclui o próprio NS para permitir tráfego entre pods do Loki (futuro
-  # SimpleScalable). Em SingleBinary single-replica não tem efeito.
-  ingressNamespaces:
-    - observability-grafana
-    - observability-otel-collector
-    - observability-loki
-  minioCIDR: "10.0.2.87/32"
-  minioPort: 9000
-  kubeApiCidrs:
-    - 10.43.0.0/16
-    - 10.0.1.0/24
+# ============================================================================
+# Wiring real do chart platform/observability/tempo/ — overrides standalone:
+# storage S3 (MinIO bucket tempo-traces), credenciais via ESO + envFrom,
+# StorageClass do PVC, NetworkPolicy escopada. Decisões em ADR-012.
+# ============================================================================
+tempo:
+  tempo:
+    tempo:
+      storage:
+        trace:
+          s3:
+            bucket: tempo-traces
+            forcepathstyle: true
+            insecure: true
+      extraEnvFrom:
+        - secretRef:
+            # Nome FIXO derivado de chart-name (helper uniplus-tempo.s3SecretName).
+            # Mesma justificativa do PR #221 (Loki Codex P2): release-independente.
+            name: tempo-s3-creds
+  persistence:
+    storageClass: standalone-local-nvme
+
+# Wrapper Uni+ Tempo — chave prefixada (mesmo motivo do lokiWrapper acima).
+tempoWrapper:
+  externalSecrets:
+    enabled: true
+    s3:
+      vaultPath: secret/standalone/minio/tempo
+  networkPolicy:
+    enabled: true
+    ingressNamespaces:
+      - observability-grafana
+      - observability-otel-collector
+      - observability-tempo
+    minioCIDR: "10.0.2.87/32"
+    minioPort: 9000
+    kubeApiCidrs:
+      - 10.43.0.0/16
+      - 10.0.1.0/24
 
 # ============================================================================
 # StorageClass do tier standalone (#74, ADR-008).

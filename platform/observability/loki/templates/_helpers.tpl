@@ -39,7 +39,7 @@ Para 2+ releases no mesmo NS, sobrescrever via uniplusExternalSecrets.s3SecretNa
 em values do environment + extraEnvFrom batendo com o mesmo nome.
 */}}
 {{- define "uniplus-loki.s3SecretName" -}}
-{{- default (printf "%s-s3-creds" .Chart.Name) .Values.uniplusExternalSecrets.s3SecretName -}}
+{{- default (printf "%s-s3-creds" .Chart.Name) .Values.lokiWrapper.externalSecrets.s3SecretName -}}
 {{- end -}}
 
 {{/*

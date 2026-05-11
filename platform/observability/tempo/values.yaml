@@ -1,0 +1,207 @@
+# Defaults para o Tempo no cluster Uni+.
+#
+# Topologia (ADR-012): single-binary (chart `grafana/tempo`, 1 réplica).
+# Em prod-{sp1,sp2} pode evoluir para tempo-distributed (chart separado)
+# quando volumetria justificar; PA1 fica desligado por default.
+#
+# Storage backend: S3-compatible. Em standalone aponta para MinIO local
+# (data-host 10.0.2.87:9000) com credenciais escopadas (user `tempo-svc`,
+# policy `tempo-rw`) custodiadas no Vault `secret/standalone/minio/tempo`
+# e injetadas via ExternalSecret + envFrom + `-config.expand-env=true`.
+#
+# Receivers: APENAS OTLP (gRPC :4317 + HTTP :4318). Os outros (jaeger,
+# opencensus) estão DESLIGADOS para reduzir surface — apps Uni+ usam
+# OTLP nativo via .NET OpenTelemetry SDK e o futuro OTel Collector
+# (#30) também emite só OTLP.
+#
+# Acesso pelo Grafana: ClusterIP do Tempo — datasource Grafana usa
+# http://<tempo-svc>.observability-tempo.svc.cluster.local:3200.
+#
+# Retention: 72h (3 dias) em standalone. Operacional para validação;
+# alinhado com `observability.tempo.retention` declarado em values do env.
+#
+# IMPORTANTE — toggles do subchart upstream ficam dentro do bloco `tempo:`
+# (sem alias). Configs próprias do wrapper Uni+ (ExternalSecret, NetworkPolicy)
+# ficam em chaves únicas `uniplusExternalSecrets:` e `uniplusNetworkPolicy:`
+# para evitar colisão com chaves homônimas do subchart upstream.
+
+tempo:
+  enabled: true
+
+  # ============================================================================
+  # Replicação
+  # ============================================================================
+  replicas: 1
+
+  # ============================================================================
+  # Tempo binary config (subchart top-level `tempo:` interno)
+  # ============================================================================
+  tempo:
+    # ----- Imagem (pinada via Chart.yaml appVersion) -----
+    repository: grafana/tempo
+    tag: ""                  # default = appVersion do Chart.yaml
+
+    # ----- Retention (block_retention no compactor) -----
+    # 72h em standalone; cobre 3 dias de incident postmortem sem inflar bucket.
+    retention: 72h
+
+    # ----- Multitenancy off (single-tenant em standalone) -----
+    multitenancyEnabled: false
+
+    # ----- Reporting upstream off (não enviar telemetria pro Grafana Labs) -----
+    reportingEnabled: false
+
+    # ----- Metrics generator off em standalone -----
+    # Geração de métricas a partir de traces requer Prometheus remote-write
+    # alvo. Só ligar quando o Prometheus consumidor + protocolo estiverem
+    # claros (sub-issue futura).
+    metricsGenerator:
+      enabled: false
+
+    # ----- Storage backend S3 -----
+    # Credenciais via env var (`-config.expand-env=true` em extraArgs).
+    # Bucket sobrescrito por environment.
+    storage:
+      trace:
+        backend: s3
+        # WAL local (PVC do StatefulSet) antes do flush para S3.
+        wal:
+          path: /var/tempo/wal
+        s3:
+          # Override por environment.
+          bucket: tempo-traces
+          endpoint: "${TEMPO_S3_ENDPOINT}"
+          region: "${TEMPO_S3_REGION}"
+          access_key: "${TEMPO_S3_ACCESS_KEY_ID}"
+          secret_key: "${TEMPO_S3_SECRET_ACCESS_KEY}"
+          # MinIO exige path-style (forcePathStyle no SDK Go AWS).
+          forcepathstyle: true
+          # MinIO standalone está em http (TLS no Traefik externo, não interno).
+          insecure: true
+
+    # ----- Server -----
+    server:
+      http_listen_port: 3200
+
+    # ----- Receivers: APENAS OTLP em standalone -----
+    # Apps usam OpenTelemetry SDK que emite OTLP gRPC ou HTTP. Jaeger e
+    # OpenCensus ficam off para reduzir surface de ataque e ports expostos.
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: "0.0.0.0:4317"
+          http:
+            endpoint: "0.0.0.0:4318"
+
+    # ----- Args extras: env-expand para credenciais -----
+    # Sem isso, ${TEMPO_S3_*} ficam literais e Tempo falha ao parsear endpoint.
+    # Formato MAPA (não lista) — o subchart upstream renderiza
+    # "-{{ $key }}{{ if $value }}={{ $value }}{{ end }}" no statefulset.
+    extraArgs:
+      config.expand-env: "true"
+
+    # ----- Env vars do Secret sintetizado pelo ESO -----
+    # Default vazio; environment popula com secretRef no Secret tempo-s3-creds.
+    extraEnvFrom: []
+
+    # ----- Recursos default lab — ajustar quando push real chegar -----
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+
+    # ----- SecurityContext: não-root (alinha com Loki, prática upstream) -----
+    securityContext:
+      allowPrivilegeEscalation: false
+      capabilities:
+        drop:
+          - ALL
+      readOnlyRootFilesystem: true
+      runAsNonRoot: true
+      runAsUser: 10001
+
+  # ============================================================================
+  # Persistence (PVC do StatefulSet — WAL antes de flush S3)
+  # ============================================================================
+  persistence:
+    enabled: true
+    accessModes:
+      - ReadWriteOnce
+    size: 10Gi
+    # storageClass definido por environment.
+
+  # ============================================================================
+  # Service: ClusterIP em standalone
+  # ============================================================================
+  service:
+    type: ClusterIP
+    annotations: {}
+
+  # ============================================================================
+  # NetworkPolicy do subchart upstream — DESLIGADA
+  # ============================================================================
+  # O wrapper Uni+ emite NetworkPolicy escopada própria (template
+  # `templates/networkpolicy.yaml`, gateado por `uniplusNetworkPolicy.enabled`).
+  # Manter as duas geraria conflito de regras.
+  networkPolicy:
+    enabled: false
+
+  # ============================================================================
+  # Tempo Query (UI Jaeger-like) — DESLIGADO
+  # ============================================================================
+  # Acesso a traces é feito pelo Grafana datasource. Tempo Query iria duplicar
+  # essa capacidade com nginx + UI separados.
+  tempoQuery:
+    enabled: false
+
+  # ============================================================================
+  # Pod-level pod security e fsGroup
+  # ============================================================================
+  podSecurityContext:
+    fsGroup: 10001
+    fsGroupChangePolicy: OnRootMismatch
+    runAsGroup: 10001
+    runAsNonRoot: true
+    runAsUser: 10001
+
+  # Service account dedicada — defaults do upstream.
+  serviceAccount:
+    create: true
+
+# ============================================================================
+# Wrapper Uni+ — ExternalSecret + NetworkPolicy próprios
+# ============================================================================
+# Bloco `tempoWrapper:` sob chave prefixada pelo chart name (mesma justificativa
+# do `lokiWrapper:` no chart Loki) — environment file standalone é compartilhado
+# entre todos os wrappers, e chaves top-level homônimas duplicariam.
+
+tempoWrapper:
+  externalSecrets:
+    enabled: false
+    refreshInterval: "1h"
+    secretStoreRef:
+      kind: ClusterSecretStore
+      name: vault-default
+    # Nome explícito do Secret. Vazio = derivar via helper uniplus-tempo.s3SecretName
+    # ("tempo-s3-creds"). Ver ADR-012 / ADR-011 §"Por que NÃO incluir release name".
+    s3SecretName: ""
+    s3:
+      vaultPath: "secret/standalone/minio/tempo"
+      accessKeyIdKey: "accesskey"
+      secretAccessKeyKey: "secretkey"
+      endpointKey: "endpoint"
+      regionKey: "region"
+
+  networkPolicy:
+    enabled: false
+    ingressNamespaces:
+      - observability-grafana
+      - observability-otel-collector
+    minioCIDR: "10.0.2.87/32"
+    minioPort: 9000
+    kubeApiCidrs:
+      - 10.43.0.0/16

@@ -1,5 +1,5 @@
-{{- if and .Values.loki.enabled .Values.uniplusNetworkPolicy.enabled -}}
-{{- $np := .Values.uniplusNetworkPolicy -}}
+{{- if and .Values.loki.enabled .Values.lokiWrapper.networkPolicy.enabled -}}
+{{- $np := .Values.lokiWrapper.networkPolicy -}}
 # NetworkPolicy do Loki SingleBinary.
 #
 # Princípio: ingress fechado por default, permitindo apenas:
@@ -49,6 +49,20 @@ spec:
         - port: 7946
           protocol: UDP
   egress:
+    # Memberlist gossip entre pods do próprio Loki (necessário quando
+    # replicas > 1 ou em SimpleScalable; em SingleBinary single-replica
+    # não tem efeito mas previne ring-join failure ao escalar). Achado
+    # Codex P1 reportado em PR #221 — mesmo bug que existia no Tempo
+    # antes do PR #29 (este).
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "uniplus-loki.selectorLabels" . | nindent 14 }}
+      ports:
+        - port: 7946
+          protocol: TCP
+        - port: 7946
+          protocol: UDP
     # MinIO (S3 storage backend)
     - to:
         - ipBlock:
