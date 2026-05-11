@@ -73,8 +73,15 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.uniplusApiIngresso.networkPolicy.keycloakPort }}
-    {{- if .Values.uniplusApiIngresso.oidc.enabled }}
-    # OIDC issuer público — JWT validation chama jwks endpoint (HTTPS).
+    {{- if or .Values.uniplusApiIngresso.oidc.enabled (eq .Values.uniplusApiIngresso.schemaRegistry.authType "OAuthBearer") }}
+    # Egress HTTPS para o IP público do k8s-host (Traefik), necessário para:
+    #   - JWT validation chama jwks endpoint do Keycloak quando oidc.enabled
+    #     (resource server bearer validation).
+    #   - Token endpoint OAuth + Apicurio Registry (Confluent-compat) quando
+    #     schemaRegistry.authType=OAuthBearer (publishing de schemas, ADR-0051).
+    # Em standalone os dois subdomínios (auth + schema-registry) resolvem para
+    # o mesmo IP público do k8s-host (Traefik termina TLS), então uma regra
+    # única cobre ambos consumidores.
     - to:
         - ipBlock:
             cidr: {{ .Values.uniplusApiIngresso.networkPolicy.oidcIssuerCIDR }}
