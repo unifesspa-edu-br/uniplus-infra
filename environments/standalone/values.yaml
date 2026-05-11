@@ -335,6 +335,7 @@ networkPolicy:
     - vault
     - keycloak
     - minio-console-proxy
+    - observability-grafana
 
   # Backends externos ao cluster — libera egress do Traefik para data-host.
   # Necessário para Services com Endpoints manuais cujo IP é externo (ex.:
