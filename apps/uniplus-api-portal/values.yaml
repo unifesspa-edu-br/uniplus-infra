@@ -15,7 +15,7 @@ uniplusApiPortal:
     registry: ghcr.io
     repository: unifesspa-edu-br/uniplus-api-portal
     # Sincronizar com tag publicada em GHCR.
-    tag: "v0.2.0"
+    tag: "v0.3.0"
     pullPolicy: IfNotPresent
 
   imagePullSecrets: []
