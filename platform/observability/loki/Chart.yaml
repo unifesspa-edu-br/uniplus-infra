@@ -1,0 +1,39 @@
+apiVersion: v2
+name: loki
+description: |
+  Loki — agregador de logs estruturados. Empacotado como chart wrapper sobre
+  grafana/loki em modo SingleBinary com storage S3 (MinIO em standalone,
+  futuramente per-DC em prod).
+
+  Decisão arquitetural: ver docs/adrs/ADR-011-loki-singlebinary-s3-standalone.md
+type: application
+
+# Versão do chart wrapper Uni+.
+version: 0.1.0
+
+# Versão do Loki upstream empacotado.
+appVersion: "3.6.7"
+
+home: https://github.com/unifesspa-edu-br/uniplus-infra
+sources:
+  - https://github.com/unifesspa-edu-br/uniplus-infra
+  - https://github.com/grafana/loki
+
+maintainers:
+  - name: CTIC Unifesspa
+    url: https://github.com/unifesspa-edu-br
+
+keywords:
+  - loki
+  - observability
+  - logging
+  - uniplus
+
+# Dependência do chart upstream oficial.
+# Sem alias — `loki` é nome válido como Go identifier; valores acessíveis via
+# .Values.loki.x diretamente. Pinar versão pra reproducibilidade do sync ArgoCD.
+dependencies:
+  - name: loki
+    version: 7.0.0
+    repository: https://grafana.github.io/helm-charts
+    condition: loki.enabled

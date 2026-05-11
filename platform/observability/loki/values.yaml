@@ -1,0 +1,271 @@
+# Defaults para o Loki no cluster Uni+.
+#
+# Topologia (ADR-011): SingleBinary em standalone (1 réplica, replication
+# factor 1, sem caches separados, sem gateway). Em prod-{sp1,sp2} pode
+# evoluir para SimpleScalable com `deploymentMode` override no environment;
+# PA1 fica desligado por default (agregação separada).
+#
+# Storage backend: S3-compatible. Em standalone aponta para MinIO local
+# (data-host 10.0.2.87:9000) com credenciais escopadas (user `loki-svc`,
+# policy `loki-rw`) custodiadas no Vault `secret/standalone/minio/loki`
+# e injetadas via ExternalSecret + envFrom.
+#
+# Acesso pelo Grafana: ClusterIP do Loki (sem gateway) — datasource
+# Grafana usa http://<loki-svc>.observability-loki.svc.cluster.local:3100.
+#
+# Retention: 168h (7 dias) em standalone (operacional). Override por
+# environment quando definirmos política de compliance — ver
+# docs/ARCHITECTURE.md §9 para padrão de retenção por DC.
+#
+# Push de logs: futura responsabilidade do OTel Collector (#30) em modo
+# DaemonSet com filelog receiver — Loki não precisa de Promtail próprio.
+#
+# IMPORTANTE — todos os toggles do subchart upstream ficam dentro do bloco
+# `loki:` (subchart sem alias; valores top-level com a chave do subchart
+# são passados a ele). Configs do wrapper Uni+ (ExternalSecret, NetworkPolicy
+# próprios) ficam em chaves únicas `uniplusExternalSecrets:` e
+# `uniplusNetworkPolicy:` para evitar colisão com chaves homônimas do subchart
+# (`networkPolicy:` upstream gera 5 NPs próprias se ativado).
+
+loki:
+  enabled: true
+
+  # ============================================================================
+  # Modo de deploy
+  # ============================================================================
+  # SingleBinary: tudo num pod só (ingester + querier + compactor + distributor
+  # + frontend). Apropriado para single-cluster com baixa volumetria (standalone
+  # POC, lab). Limita escala mas elimina complexidade de coordenação entre
+  # componentes. ADR-011 documenta trade-offs.
+  deploymentMode: SingleBinary
+
+  loki:
+    # auth_enabled=false: aceita push/query sem header X-Scope-OrgID.
+    # Standalone single-tenant — sem multi-tenancy.
+    auth_enabled: false
+
+    # ----- Storage S3 (creds vêm de env via singleBinary.extraEnvFrom) -----
+    # Loki suporta interpolação de env vars na config via flag CLI
+    # `-config.expand-env=true` (passada via singleBinary.extraArgs abaixo).
+    # Não commitamos accessKeyId/secretAccessKey aqui; eles vêm do Secret
+    # sintetizado pelo ESO a partir do path Vault.
+    storage:
+      type: s3
+      bucketNames:
+        # Override por environment com nomes reais. Defaults vazios pra
+        # forçar configuração explícita por env (subchart upstream emite
+        # warning se ficar vazio em values resolvido).
+        chunks: loki-chunks
+        ruler: loki-chunks
+        admin: loki-chunks
+      s3:
+        endpoint: "${LOKI_S3_ENDPOINT}"
+        region: "${LOKI_S3_REGION}"
+        accessKeyId: "${LOKI_S3_ACCESS_KEY_ID}"
+        secretAccessKey: "${LOKI_S3_SECRET_ACCESS_KEY}"
+        # MinIO exige path-style addressing (vs virtual-hosted da AWS).
+        s3ForcePathStyle: true
+        # MinIO standalone está em http (TLS terminado no Traefik para acesso
+        # externo, mas tráfego interno cluster→data-host é http puro pela
+        # subnet privada VCN). Em prod com TLS no MinIO, mudar para false.
+        insecure: true
+
+    # ----- Schema config: TSDB v13 (recomendação atual do Loki >= 2.8) -----
+    schemaConfig:
+      configs:
+        - from: "2026-01-01"
+          store: tsdb
+          object_store: s3
+          schema: v13
+          index:
+            prefix: loki_index_
+            period: 24h
+
+    # ----- Replication factor: 1 em standalone (1 ingester) -----
+    # Default upstream é 3 (assumindo SimpleScalable+). Standalone tem 1
+    # réplica do SingleBinary, então tem que ser 1; senão Loki quebra com
+    # "not enough ingesters" no startup.
+    commonConfig:
+      replication_factor: 1
+      path_prefix: /var/loki
+
+    # ----- Limits + retention -----
+    # retention_period define quanto tempo o compactor mantém streams antes
+    # de marcar para deleção. Aplicado pelo compactor (compactor.retention_enabled
+    # abaixo). Override por environment.
+    limits_config:
+      retention_period: 168h          # 7 dias — standalone POC
+      reject_old_samples: true
+      reject_old_samples_max_age: 168h
+      max_cache_freshness_per_query: 10m
+      split_queries_by_interval: 15m
+      query_timeout: 300s
+      volume_enabled: true
+      # ingestion_rate em MB/s por tenant. Default 4 é OK para standalone.
+      ingestion_rate_mb: 4
+      ingestion_burst_size_mb: 6
+
+    # ----- Compactor -----
+    # Retention ativada — compactor varre os índices e marca chunks fora
+    # da janela de retention para deleção. Sem isso, MinIO enche.
+    compactor:
+      retention_enabled: true
+      retention_delete_delay: 2h
+      retention_delete_worker_count: 150
+      delete_request_store: s3
+
+    # Pattern ingester ainda em alpha — desligar pra reduzir surface.
+    pattern_ingester:
+      enabled: false
+
+  # ============================================================================
+  # Componentes desligados em standalone (modo SingleBinary)
+  # ============================================================================
+  # Toggles ABAIXO ficam dentro do bloco `loki:` para serem propagados ao
+  # subchart upstream. Se ficarem no top-level, NÃO são lidos pelo subchart
+  # (vão para o scope do wrapper Uni+, que não os consome).
+
+  # SimpleScalable mode dispara componentes separados — desligar todos.
+  read:
+    replicas: 0
+  write:
+    replicas: 0
+  backend:
+    replicas: 0
+
+  # gateway: nginx que faz proxy multi-componente — não precisa em SingleBinary.
+  # `ingress.tls: {}` silencia warning cosmético do subchart (default upstream
+  # é lista vazia mas tipo declarado é mapa).
+  gateway:
+    enabled: false
+    ingress:
+      enabled: false
+      tls: {}
+
+  # caches memcached: overhead em single-node de baixa volumetria.
+  chunksCache:
+    enabled: false
+  resultsCache:
+    enabled: false
+
+  # test pod do upstream (smoke do chart) — adicionamos smoke próprio.
+  test:
+    enabled: false
+
+  # monitoring sub-chart upstream — gate por env quando consumidor Prometheus
+  # estiver pronto.
+  monitoring:
+    selfMonitoring:
+      enabled: false
+      grafanaAgent:
+        installOperator: false
+    lokiCanary:
+      enabled: false
+    serviceMonitor:
+      enabled: false
+
+  # lokiCanary top-level (extra além do monitoring.lokiCanary) — também off.
+  lokiCanary:
+    enabled: false
+
+  # NetworkPolicy do subchart upstream — DESLIGADA. O wrapper Uni+ emite
+  # uma NetworkPolicy escopada própria (template `templates/networkpolicy.yaml`,
+  # gateado por `uniplusNetworkPolicy.enabled`). Manter as duas geraria 5+
+  # NetworkPolicies upstream + 1 do wrapper, tornando a topologia ininteligível.
+  networkPolicy:
+    enabled: false
+
+  # Ingress nativo do subchart upstream (nginx Ingress/IngressRoute) — desligado.
+  # Loki não tem UI; acesso via Service ClusterIP pelo Grafana datasource.
+  # `tls: {}` (mapa vazio) silencia o warning "destination for loki.ingress.tls
+  # is a table. Ignoring non-table value ([])" que o subchart emite quando o
+  # default é uma lista mas o tipo declarado é mapa.
+  ingress:
+    enabled: false
+    tls: {}
+
+  # ============================================================================
+  # SingleBinary StatefulSet config
+  # ============================================================================
+  singleBinary:
+    replicas: 1
+
+    # Flag CLI -config.expand-env=true habilita interpolação ${VAR_NAME} dentro
+    # da config YAML montada como ConfigMap. Sem isso os ${LOKI_S3_*} acima
+    # ficam literais e Loki falha ao parsear endpoint do bucket.
+    extraArgs:
+      - -config.expand-env=true
+
+    # Env vars do Secret sintetizado pelo ESO com credenciais MinIO.
+    # Default vazio — environment standalone popula com secretRef do Secret
+    # cujo nome bate com o helper uniplus-loki.s3SecretName.
+    extraEnvFrom: []
+
+    # PVC do StatefulSet — armazena WAL + cache local de índices recentes.
+    # storageClass é definido por environment.
+    persistence:
+      enabled: true
+      size: 10Gi
+      accessModes:
+        - ReadWriteOnce
+      # storageClass: <definido por environment>
+
+    # Recursos default lab — Tabela 10.1 (Loki SingleBinary é leve em
+    # baixa volumetria; ajustar quando push real chegar).
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        cpu: 1000m
+        memory: 1Gi
+
+  # ServiceMonitor do subchart upstream — gate via monitoring.serviceMonitor
+  # acima. Mantido em sincronia.
+
+# ============================================================================
+# Wrapper Uni+ — ExternalSecret + NetworkPolicy próprios
+# ============================================================================
+# Chaves uniplus* para evitar colisão com chaves homônimas do subchart
+# upstream (que possui seus próprios `networkPolicy:` e nada nomeado
+# `externalSecrets:` mas convém manter o pattern unificado).
+
+# uniplusExternalSecrets: bloco que controla a sintese do Secret K8s com
+# credenciais MinIO via External Secrets Operator. Precisa de ESO instalado
+# e ClusterSecretStore `vault-default` apontando para o Vault standalone.
+uniplusExternalSecrets:
+  # Default off para o helm template standalone funcionar fora do cluster
+  # (lab K3s sem ESO + Vault). Environment standalone liga.
+  enabled: false
+  refreshInterval: "1h"
+  secretStoreRef:
+    kind: ClusterSecretStore
+    name: vault-default
+  s3:
+    # Path no Vault (KV v2). Override por environment.
+    vaultPath: "secret/standalone/minio/loki"
+    # Nomes dos campos no Vault (alinhado com o spike Fase 1).
+    accessKeyIdKey: "accesskey"
+    secretAccessKeyKey: "secretkey"
+    endpointKey: "endpoint"
+    regionKey: "region"
+
+# uniplusNetworkPolicy: emite uma NetworkPolicy ingress restrito + egress para
+# MinIO + DNS K8s. Default off para preservar templating fora de clusters com
+# NetworkPolicy controller (calico/cilium). Environments ativam.
+uniplusNetworkPolicy:
+  enabled: false
+  # Namespaces autorizados a fazer push/query de logs. Default cobre o NS
+  # do Grafana (consumidor de query) e o NS do OTel Collector (push de logs
+  # — futuro #30). Cada environment pode estender.
+  ingressNamespaces:
+    - observability-grafana
+    - observability-otel-collector
+  # CIDR do MinIO (data-host privado). Override por environment.
+  minioCIDR: "10.0.2.87/32"
+  minioPort: 9000
+  # Service CIDR do K3s para acesso ao kube-apiserver (DNS via CoreDNS no
+  # Service `kubernetes` em default). Override por environment se cluster
+  # diferente.
+  kubeApiCidrs:
+    - 10.43.0.0/16

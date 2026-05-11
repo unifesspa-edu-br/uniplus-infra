@@ -1,0 +1,80 @@
+{{- if and .Values.loki.enabled .Values.uniplusNetworkPolicy.enabled -}}
+{{- $np := .Values.uniplusNetworkPolicy -}}
+# NetworkPolicy do Loki SingleBinary.
+#
+# Princípio: ingress fechado por default, permitindo apenas:
+# - Push de logs e queries vindas dos namespaces declarados em ingressNamespaces
+#   (default cobre observability-grafana e observability-otel-collector;
+#   environment pode estender)
+# - Tráfego intra-NS (entre pods do próprio Loki, p.ex. probes do Service)
+#
+# Egress fechado por default, permitindo apenas:
+# - MinIO/S3 (CIDR + porta declarados via minioCIDR/minioPort)
+# - DNS K8s (CoreDNS no kube-system, porta 53 udp+tcp)
+# - kube-apiserver (CIDR do service via kubeApiCidrs) — Loki não usa hoje,
+#   mas mantemos disponível para futuro service-discovery e leader election
+#   se virar SimpleScalable.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "uniplus-loki.fullname" . }}
+  labels:
+    {{- include "uniplus-loki.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "uniplus-loki.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Push (3100/http API) + queries vindas dos NS autorizados.
+    - from:
+        {{- range $np.ingressNamespaces }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ . | quote }}
+        {{- end }}
+        # Tráfego entre pods do próprio Loki (probes, gRPC interno se aplicável).
+        - podSelector:
+            matchLabels:
+              {{- include "uniplus-loki.selectorLabels" . | nindent 14 }}
+      ports:
+        - port: 3100      # HTTP API (push, query, ready)
+          protocol: TCP
+        - port: 9095      # gRPC (interno; futuro SimpleScalable)
+          protocol: TCP
+        - port: 7946      # Memberlist (gossip; ativo mesmo em SingleBinary)
+          protocol: TCP
+        - port: 7946
+          protocol: UDP
+  egress:
+    # MinIO (S3 storage backend)
+    - to:
+        - ipBlock:
+            cidr: {{ $np.minioCIDR | quote }}
+      ports:
+        - port: {{ $np.minioPort }}
+          protocol: TCP
+    # DNS K8s (CoreDNS)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # kube-apiserver (futuro — SimpleScalable usa para leader election)
+    - to:
+        {{- range $np.kubeApiCidrs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        - port: 443
+          protocol: TCP
+        - port: 6443
+          protocol: TCP
+{{- end }}
