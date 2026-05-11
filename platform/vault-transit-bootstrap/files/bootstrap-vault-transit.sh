@@ -84,8 +84,11 @@ sealed_attempts=0
 sealed_max="${VAULT_SEALED_MAX_ATTEMPTS:-12}"  # ~1 min em sleep=5s
 
 while true; do
-    vault status >/dev/null 2>&1
-    rc=$?
+    # `set -e` aborta o script em qualquer comando non-zero; capturamos o exit
+    # code de `vault status` em rc via `|| rc=$?`, padrão POSIX que neutraliza
+    # o errexit para esta chamada específica sem desabilitar globalmente.
+    rc=0
+    vault status >/dev/null 2>&1 || rc=$?
 
     if [ "$rc" -eq 0 ]; then
         log "Vault disponível e unsealed."
