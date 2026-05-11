@@ -108,16 +108,26 @@ otelCollector:
       # k8sattributes é injetado pelo preset kubernetesAttributes.
 
     exporters:
-      # Loki via API HTTP nativa Loki (otelcol-contrib `lokiexporter` removido em
+      # Loki via API HTTP nativa (otelcol-contrib `lokiexporter` removido em
       # 0.108+; recomendação atual é `otlphttp/loki` apontando para o endpoint
       # OTLP do Loki — Loki 3.x suporta OTLP nativo em /otlp/v1/logs).
+      #
+      # Endpoint via env var `${env:LOKI_OTLP_ENDPOINT}` — populado pelo
+      # `extraEnvs` do environment (ver `environments/standalone/values.yaml`).
+      # Não usa `{{ }}` Helm template aqui porque `alternateConfig` é renderizado
+      # com `tpl` no scope do subchart, sem visibilidade de `.Values` do parent
+      # wrapper. Env var injection no DaemonSet contorna esse limite e ainda
+      # permite hot-reload do endpoint via Secret/ConfigMap se necessário.
+      # Codex P1 PR #224: release-name dos backends varia por cluster
+      # (`...uniplus-standalone`, `...lab-sp1`, etc.) — env var por
+      # environment é a solução robusta.
       otlphttp/loki:
-        endpoint: http://platform-observability-loki-uniplus-standalone.observability-loki.svc.cluster.local:3100/otlp
+        endpoint: ${env:LOKI_OTLP_ENDPOINT}
         tls:
           insecure: true
-      # Tempo via OTLP HTTP.
+      # Tempo via OTLP HTTP — mesma parametrização.
       otlphttp/tempo:
-        endpoint: http://platform-observability-tempo-uniplus-standalone.observability-tempo.svc.cluster.local:4318
+        endpoint: ${env:TEMPO_OTLP_ENDPOINT}
         tls:
           insecure: true
       # Debug (stdout) — útil em dev; manter para troubleshooting.
@@ -152,6 +162,17 @@ otelCollector:
     limits:
       cpu: 1000m
       memory: 1Gi
+
+  # ============================================================================
+  # Env vars do DaemonSet — populam as referências `${env:X}` no alternateConfig.
+  # Defaults vazios (collector falha clean ao iniciar). Environment popula com
+  # os endpoints reais dos backends Loki/Tempo nesse cluster.
+  # ============================================================================
+  extraEnvs:
+    - name: LOKI_OTLP_ENDPOINT
+      value: ""
+    - name: TEMPO_OTLP_ENDPOINT
+      value: ""
 
   # ============================================================================
   # Service — em mode=daemonset o chart upstream desativa Service por default
@@ -195,6 +216,10 @@ otelCollector:
 # Wrapper Uni+ — NetworkPolicy próprio
 # ============================================================================
 # Sem ExternalSecret (collector não consome credenciais externas).
+# Endpoints dos exporters Loki/Tempo são parametrizados via env vars no
+# DaemonSet (`otelCollector.extraEnvs`), NÃO via chave do wrapper aqui — o
+# `tpl` do alternateConfig roda no scope do subchart sem visibilidade de
+# `.Values` do parent.
 otelCollectorWrapper:
   networkPolicy:
     enabled: false
