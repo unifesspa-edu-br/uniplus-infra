@@ -3,14 +3,14 @@
 {{- fail "uniplusApiSelecao.networkPolicy.dataHostCIDR é obrigatório (egress para Postgres + Redis + Kafka + MinIO no data-host)." -}}
 {{- end -}}
 {{- /*
-  $srOAuth combina url não-vazia (feature off quando url=="") com authType=OAuthBearer.
-  Mesma guarda usada no deployment.yaml (env vars Schema Registry só renderizam
-  quando url está populado) — mantém consistência entre os templates: se a
-  feature está off no Deployment, o NetworkPolicy também ignora.
+  $srEnabled: feature flag real do Schema Registry — url não-vazia (mesma
+  guarda do deployment.yaml, que só renderiza envs SchemaRegistry__* quando
+  url está populado). Independente do authType (None/Basic/OAuthBearer), a
+  API precisa alcançar o registry HTTPS quando a feature está on.
 */}}
-{{- $srOAuth := and (ne .Values.uniplusApiSelecao.schemaRegistry.url "") (eq .Values.uniplusApiSelecao.schemaRegistry.authType "OAuthBearer") -}}
-{{- if and (or .Values.uniplusApiSelecao.oidc.enabled $srOAuth) (not .Values.uniplusApiSelecao.networkPolicy.oidcIssuerCIDR) -}}
-{{- fail "uniplusApiSelecao.networkPolicy.oidcIssuerCIDR é obrigatório quando oidc.enabled=true OU (schemaRegistry.url populado E schemaRegistry.authType=OAuthBearer) — egress HTTPS via Traefik para Keycloak/Apicurio no IP do k8s-host." -}}
+{{- $srEnabled := ne .Values.uniplusApiSelecao.schemaRegistry.url "" -}}
+{{- if and (or .Values.uniplusApiSelecao.oidc.enabled $srEnabled) (not .Values.uniplusApiSelecao.networkPolicy.oidcIssuerCIDR) -}}
+{{- fail "uniplusApiSelecao.networkPolicy.oidcIssuerCIDR é obrigatório quando oidc.enabled=true OU schemaRegistry.url populado — egress HTTPS via Traefik para Keycloak/Apicurio no IP do k8s-host (em standalone os 2 subdomínios resolvem para o mesmo IP)." -}}
 {{- end -}}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -80,15 +80,17 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.uniplusApiSelecao.networkPolicy.keycloakPort }}
-    {{- if or .Values.uniplusApiSelecao.oidc.enabled $srOAuth }}
+    {{- if or .Values.uniplusApiSelecao.oidc.enabled $srEnabled }}
     # Egress HTTPS para o IP público do k8s-host (Traefik), necessário para:
     #   - JWT validation chama jwks endpoint do Keycloak quando oidc.enabled
     #     (resource server bearer validation).
-    #   - Token endpoint OAuth + Apicurio Registry (Confluent-compat) quando
-    #     schemaRegistry.authType=OAuthBearer (publishing de schemas, ADR-0051).
-    # Em standalone os dois subdomínios (auth + schema-registry) resolvem para
+    #   - Schema Registry (Apicurio Confluent-compat) quando schemaRegistry.url
+    #     está populado — independente do authType. Token endpoint OAuth
+    #     adicional quando authType=OAuthBearer também roteia pelo mesmo IP.
+    # Em standalone os subdomínios (auth + schema-registry) resolvem para
     # o mesmo IP público do k8s-host (Traefik termina TLS), então uma regra
-    # única cobre ambos consumidores.
+    # única cobre ambos consumidores. Em environments com IPs distintos,
+    # adicionar regra extra via override de networkPolicy.
     - to:
         - ipBlock:
             cidr: {{ .Values.uniplusApiSelecao.networkPolicy.oidcIssuerCIDR }}

@@ -22,6 +22,14 @@
   {{- fail "uniplusApiSelecao.encryption.kubernetesRole é obrigatório quando encryption.provider=vault. A role precisa existir no Vault (uniplus-infra#219) com bound_service_account_names incluindo a SA deste chart." -}}
   {{- end -}}
 {{- end -}}
+{{- if and .Values.uniplusApiSelecao.schemaRegistry.url (eq .Values.uniplusApiSelecao.schemaRegistry.authType "OAuthBearer") -}}
+  {{- if not .Values.uniplusApiSelecao.schemaRegistry.oauth.tokenEndpoint -}}
+  {{- fail "uniplusApiSelecao.schemaRegistry.oauth.tokenEndpoint é obrigatório quando schemaRegistry.url está populado e authType=OAuthBearer. ADR-0051 exige endpoint /protocol/openid-connect/token do realm Keycloak para emissão do bearer token." -}}
+  {{- end -}}
+  {{- if not .Values.uniplusApiSelecao.schemaRegistry.oauth.clientId -}}
+  {{- fail "uniplusApiSelecao.schemaRegistry.oauth.clientId é obrigatório quando schemaRegistry.url está populado e authType=OAuthBearer. Tipicamente uniplus-api-<app>; client_secret correspondente custodiado no Vault em secret/<env>/keycloak/clients/<clientId>." -}}
+  {{- end -}}
+{{- end -}}
 {{- if not .Values.uniplusApiSelecao.externalSecrets.enabled -}}
 {{- fail "uniplusApiSelecao.enabled=true requer externalSecrets.enabled=true. Deployment depende dos Secrets sintetizados pelo ESO (Postgres password, Redis, MinIO, Kafka, OIDC)." -}}
 {{- end -}}
