@@ -2,9 +2,15 @@
 {{- if not .Values.uniplusApiPortal.networkPolicy.dataHostCIDR -}}
 {{- fail "uniplusApiPortal.networkPolicy.dataHostCIDR é obrigatório (egress para Postgres + Redis + Kafka + MinIO no data-host)." -}}
 {{- end -}}
-{{- $srOAuth := eq .Values.uniplusApiPortal.schemaRegistry.authType "OAuthBearer" -}}
+{{- /*
+  $srOAuth combina url não-vazia (feature off quando url=="") com authType=OAuthBearer.
+  Mesma guarda usada no deployment.yaml (env vars Schema Registry só renderizam
+  quando url está populado) — mantém consistência entre os templates: se a
+  feature está off no Deployment, o NetworkPolicy também ignora.
+*/}}
+{{- $srOAuth := and (ne .Values.uniplusApiPortal.schemaRegistry.url "") (eq .Values.uniplusApiPortal.schemaRegistry.authType "OAuthBearer") -}}
 {{- if and (or .Values.uniplusApiPortal.oidc.enabled $srOAuth) (not .Values.uniplusApiPortal.networkPolicy.oidcIssuerCIDR) -}}
-{{- fail "uniplusApiPortal.networkPolicy.oidcIssuerCIDR é obrigatório quando oidc.enabled=true OU schemaRegistry.authType=OAuthBearer (egress HTTPS via Traefik para Keycloak/Apicurio no IP do k8s-host)." -}}
+{{- fail "uniplusApiPortal.networkPolicy.oidcIssuerCIDR é obrigatório quando oidc.enabled=true OU (schemaRegistry.url populado E schemaRegistry.authType=OAuthBearer) — egress HTTPS via Traefik para Keycloak/Apicurio no IP do k8s-host." -}}
 {{- end -}}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -74,7 +80,7 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.uniplusApiPortal.networkPolicy.keycloakPort }}
-    {{- if or .Values.uniplusApiPortal.oidc.enabled (eq .Values.uniplusApiPortal.schemaRegistry.authType "OAuthBearer") }}
+    {{- if or .Values.uniplusApiPortal.oidc.enabled $srOAuth }}
     # Egress HTTPS para o IP público do k8s-host (Traefik), necessário para:
     #   - JWT validation chama jwks endpoint do Keycloak quando oidc.enabled
     #     (resource server bearer validation).
