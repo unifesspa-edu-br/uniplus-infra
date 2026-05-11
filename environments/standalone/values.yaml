@@ -224,19 +224,21 @@ lokiWrapper:
 # StorageClass do PVC, NetworkPolicy escopada. Decisões em ADR-012.
 # ============================================================================
 tempo:
+  # tempo.tempo = bloco config do binário Tempo (`.Values.tempo` no scope do
+  # subchart upstream). NÃO usar `tempo.tempo.tempo` — extra nesting é
+  # silenciosamente ignorado e o Tempo cai pros defaults do wrapper.
   tempo:
-    tempo:
-      storage:
-        trace:
-          s3:
-            bucket: tempo-traces
-            forcepathstyle: true
-            insecure: true
-      extraEnvFrom:
-        - secretRef:
-            # Nome FIXO derivado de chart-name (helper uniplus-tempo.s3SecretName).
-            # Mesma justificativa do PR #221 (Loki Codex P2): release-independente.
-            name: tempo-s3-creds
+    storage:
+      trace:
+        s3:
+          bucket: tempo-traces
+          forcepathstyle: true
+          insecure: true
+    extraEnvFrom:
+      - secretRef:
+          # Nome FIXO derivado de chart-name (helper uniplus-tempo.s3SecretName).
+          # Mesma justificativa do PR #221 (Loki Codex P2): release-independente.
+          name: tempo-s3-creds
   persistence:
     # ATENÇÃO: chart upstream tempo usa `storageClassName` (não `storageClass`
     # como Loki). Setar `storageClass` aqui seria ignorado pelo subchart.
