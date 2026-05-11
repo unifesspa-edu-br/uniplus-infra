@@ -14,6 +14,14 @@
 {{- if and .Values.uniplusApiIngresso.kafka.enabled (not .Values.uniplusApiIngresso.kafka.bootstrapServers) -}}
 {{- fail "uniplusApiIngresso.kafka.bootstrapServers é obrigatório quando kafka.enabled=true." -}}
 {{- end -}}
+{{- if eq .Values.uniplusApiIngresso.encryption.provider "vault" -}}
+  {{- if not .Values.uniplusApiIngresso.encryption.vaultAddress -}}
+  {{- fail "uniplusApiIngresso.encryption.vaultAddress é obrigatório quando encryption.provider=vault. Configurar em environments/<env>/values.yaml (ex.: http://platform-vault-uniplus-standalone.vault.svc.cluster.local:8200)." -}}
+  {{- end -}}
+  {{- if not .Values.uniplusApiIngresso.encryption.kubernetesRole -}}
+  {{- fail "uniplusApiIngresso.encryption.kubernetesRole é obrigatório quando encryption.provider=vault. A role precisa existir no Vault (uniplus-infra#219) com bound_service_account_names incluindo a SA deste chart." -}}
+  {{- end -}}
+{{- end -}}
 {{- if not .Values.uniplusApiIngresso.externalSecrets.enabled -}}
 {{- fail "uniplusApiIngresso.enabled=true requer externalSecrets.enabled=true. Deployment depende dos Secrets sintetizados pelo ESO (Postgres password, Redis, MinIO, Kafka, OIDC)." -}}
 {{- end -}}
@@ -40,6 +48,12 @@ spec:
         {{- include "uniplusApiIngresso.labels" . | nindent 8 }}
     spec:
       serviceAccountName: {{ include "uniplusApiIngresso.serviceAccountName" . }}
+      # automountServiceAccountToken=true é necessário quando Provider=vault:
+      # VaultTransitEncryptionService lê o JWT projetado em
+      # /var/run/secrets/kubernetes.io/serviceaccount/token e autentica no
+      # Vault via auth/kubernetes/login. Modo local não usa o token, mas
+      # manter true não tem custo prático e mantém simetria entre providers.
+      automountServiceAccountToken: true
       {{- with .Values.uniplusApiIngresso.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
@@ -130,6 +144,20 @@ spec:
               value: {{ .Values.uniplusApiIngresso.oidc.issuerUri | quote }}
             - name: Auth__Audience
               value: {{ .Values.uniplusApiIngresso.oidc.audience | quote }}
+            {{- end }}
+            # === Cifragem (UniPlus:Encryption — uniplus-api #400/#402/#404/#405) ===
+            # Provider=local exige LocalKey via env/Secret; Provider=vault exige
+            # VaultAddress + KubernetesRole bound à ServiceAccount deste Deployment.
+            # EncryptionOptionsValidator (uniplus-api) derruba o pod no boot se a
+            # combinação estiver inconsistente; EncryptionWarmupHostedService força
+            # a resolução do singleton em Host.StartAsync para fail-fast garantido.
+            - name: UniPlus__Encryption__Provider
+              value: {{ .Values.uniplusApiIngresso.encryption.provider | quote }}
+            {{- if eq .Values.uniplusApiIngresso.encryption.provider "vault" }}
+            - name: UniPlus__Encryption__VaultAddress
+              value: {{ .Values.uniplusApiIngresso.encryption.vaultAddress | quote }}
+            - name: UniPlus__Encryption__KubernetesRole
+              value: {{ .Values.uniplusApiIngresso.encryption.kubernetesRole | quote }}
             {{- end }}
             
             {{- range $i, $origin := .Values.uniplusApiIngresso.cors.allowedOrigins }}

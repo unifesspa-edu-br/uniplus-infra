@@ -58,7 +58,7 @@ sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml -n vault exec -i \
 | `vaultTransitBootstrap.key.allowPlaintextBackup` | bool | `false` | Snapshot inclui plaintext. |
 | `vaultTransitBootstrap.policy.name` | string | `uniplus-api-transit` | Nome da policy. |
 | `vaultTransitBootstrap.role.name` | string | `uniplus-api` | Nome da role K8s auth. |
-| `vaultTransitBootstrap.role.boundSa` | string | `uniplus-api` | ServiceAccount autorizada. |
+| `vaultTransitBootstrap.role.boundSa` | string | `uniplus-api-portal,uniplus-api-selecao,uniplus-api-ingresso` | ServiceAccounts autorizadas (CSV — Vault aceita múltiplas SAs na mesma role). |
 | `vaultTransitBootstrap.role.boundNs` | string | `uniplus` | Namespace da ServiceAccount. |
 | `vaultTransitBootstrap.role.ttl` | string | `1h` | TTL do token Vault emitido. |
 | `vaultTransitBootstrap.externalSecret.secretStoreName` | string | `vault-default` | ClusterSecretStore que materializa o token. |

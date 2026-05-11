@@ -32,8 +32,22 @@ uniplusApiIngresso:
       memory: 512Mi
 
   serviceAccount:
+    # Nome FIXO para que a role Vault Kubernetes auth (uniplus-api) — que
+    # vincula bound_service_account_names — encontre esta SA independente
+    # do release name gerado pelo ApplicationSet (`uniplus-api-ingresso-<env>`).
+    # Mesmo pattern usado em platform/external-secrets/values.yaml linha 31.
     create: true
-    name: ""
+    name: uniplus-api-ingresso
+
+  # Cifragem (UniPlus:Encryption). Default Provider=local exige LocalKey via
+  # appsettings/Vault — environment override pode trocar para vault em cluster
+  # onde platform/vault-transit-bootstrap está aplicado (uniplus-infra#219).
+  # Pré-requisito quando Provider=vault: kubernetesRole deve existir no Vault
+  # com bound_service_account_names incluindo serviceAccount.name acima.
+  encryption:
+    provider: local
+    vaultAddress: ""
+    kubernetesRole: ""
 
   aspnet:
     environment: Production

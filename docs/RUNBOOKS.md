@@ -3465,4 +3465,92 @@ O `ExternalSecret` deste chart consome o **root token** do Vault em standalone. 
 
 ---
 
+## 18. Wire-up uniplus-api → Vault Transit (standalone)
+
+Issue [#220](https://github.com/unifesspa-edu-br/uniplus-infra/issues/220). Os 3 charts `apps/uniplus-api-{portal,selecao,ingresso}` em standalone passam a usar `Provider=vault` por padrão, consumindo a key `uniplus-idempotency-aesgcm` provisionada pelo chart `platform/vault-transit-bootstrap` (§17).
+
+### 18.1 Topologia das ServiceAccounts
+
+Cada chart cria sua própria ServiceAccount com nome FIXO:
+
+- `uniplus-api-portal` (chart `apps/uniplus-api-portal`)
+- `uniplus-api-selecao` (chart `apps/uniplus-api-selecao`)
+- `uniplus-api-ingresso` (chart `apps/uniplus-api-ingresso`)
+
+A role Kubernetes auth `uniplus-api` no Vault tem `bound_service_account_names=uniplus-api-portal,uniplus-api-selecao,uniplus-api-ingresso` (CSV, namespace `uniplus`) e `policies=[uniplus-api-transit]` — única role para os 3 charts.
+
+### 18.2 Validar consumo via smoke E2E
+
+```bash
+export KEYCLOAK_CLIENT_SECRET=<apicurio-registry client_secret>
+export KEYCLOAK_USERNAME=jeferson.ferreira
+export KEYCLOAK_PASSWORD=<senha>
+
+./scripts/smoke-encryption-e2e.sh
+```
+
+O script:
+
+1. Obtém token OIDC do realm `uniplus` validando audience.
+2. POST `/api/v1/selecao/editais` com `Idempotency-Key` UUID — exercita o `IdempotencyFilter` da uniplus-api que toca cifragem.
+3. Espera HTTP 201/422 (ambos válidos — qualquer 5xx é regressão).
+4. Lê audit log do Vault buscando entrada `transit/encrypt/uniplus-idempotency-aesgcm`.
+
+Pré-requisito: audit device habilitado no Vault. Se ausente, o script pula o passo 4 com aviso. Para habilitar:
+
+```bash
+ssh -i ~/.ssh/id_ed25519 ubuntu@<k8s-host> "
+  sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml -n vault exec -i \
+    platform-vault-uniplus-standalone-0 -- \
+    env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=<root> \
+    vault audit enable file file_path=/vault/audit/audit.log"
+```
+
+### 18.3 Inspecionar o Pod da uniplus-api
+
+```bash
+sudo kubectl -n uniplus describe pod uniplus-api-selecao-uniplus-standalone-...
+# Confirmar:
+#   - serviceAccountName=uniplus-api-selecao
+#   - automountServiceAccountToken=true
+#   - env UniPlus__Encryption__Provider=vault
+#   - env UniPlus__Encryption__VaultAddress=http://platform-vault-uniplus-standalone.vault.svc.cluster.local:8200
+#   - env UniPlus__Encryption__KubernetesRole=uniplus-api
+
+sudo kubectl -n uniplus logs deploy/uniplus-api-selecao-uniplus-standalone-... | grep -i encryption
+# Esperado: log inicial mostra Provider=vault sendo selecionado. Sem mensagens
+# de fail-fast (CrashLoopBackOff indicaria validator/warmup bloqueando).
+```
+
+### 18.4 Rollback para Provider=local
+
+Trocar `encryption.provider` de `vault` para `local` em `environments/standalone/values.yaml` para cada um dos 3 blocos `uniplusApi{Portal,Selecao,Ingresso}` **não basta** — o pod entrará em `CrashLoopBackOff` porque `EncryptionOptionsValidator` da uniplus-api (PR #401) exige `LocalKey` quando Provider=local.
+
+Rollback completo é um PR separado, pois os charts atuais não têm wire-up de `UniPlus__Encryption__LocalKey` via Secret. Passos:
+
+1. **Gerar e custodiar a chave**:
+
+   ```bash
+   head -c 32 /dev/urandom | base64
+   # Custodiar em Vault: vault kv put secret/standalone/uniplus-api/encryption-local key=<gerada>
+   ```
+
+2. **No PR de rollback**:
+   - Adicionar `ExternalSecret` (`apps/uniplus-api-*/templates/externalsecret.yaml`) materializando Secret K8s com key `LOCAL_KEY` a partir de `secret/standalone/uniplus-api/encryption-local`.
+   - Adicionar env var no Deployment: `UniPlus__Encryption__LocalKey` referenciando o Secret via `secretKeyRef`.
+   - Trocar `encryption.provider: vault` para `local` no environments/standalone/values.yaml + zerar `vaultAddress`/`kubernetesRole`.
+
+3. **Aplicar via ArgoCD + verificar** que o pod não está mais consumindo Transit no audit log.
+
+Em emergência (rollback de produção sem PR), aplicar manualmente os 2 recursos via `kubectl apply -f` e setar override `--set encryption.provider=local --set encryption.localKey=<chave>` na próxima sync do ArgoCD. **Avisar o time** porque a mudança vai ser sobrescrita pelo próximo `argocd sync` se não for committada.
+
+### 18.5 Dependência da imagem
+
+O fail-fast completo (validator + warmup hosted service) está nos PRs uniplus-api#401, #403, #406, #407 — mergeados nesta sessão. A próxima imagem GHCR publicada (provavelmente `v0.2.x` após cut da release) terá esses bits. Até lá, em produção standalone:
+
+- Se a imagem atual NÃO tiver os bits do #400/#405, configurações inconsistentes ainda caem em "500 silencioso na primeira request cifrada" em vez de `CrashLoopBackOff`. O wire-up deste #220 funciona mesmo assim — apenas perde a defesa em profundidade.
+- Para validar fail-fast completo, executar smoke #220 contra imagem nova quando publicada.
+
+---
+
 *Documento mantido pelo CTIC/UNIFESSPA. Atualizações via Pull Request.*
