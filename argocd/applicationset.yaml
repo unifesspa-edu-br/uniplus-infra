@@ -113,6 +113,7 @@ spec:
                 - component: external-secrets
                 - component: vault
                 - component: vault-transit
+                - component: vault-transit-bootstrap
                 - component: cloudflared
                 - component: observability/prometheus
                 - component: observability/grafana

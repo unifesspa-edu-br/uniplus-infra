@@ -1,0 +1,25 @@
+apiVersion: v2
+name: vault-transit-bootstrap
+description: |
+  Bootstrap declarativo do Vault Transit no cluster local: habilita o engine
+  transit, cria a key uniplus-idempotency-aesgcm, a policy uniplus-api-transit
+  e a role Kubernetes auth uniplus-api. Executa como Helm hook reconciliando
+  em todo deploy. Pattern espelha apps/keycloak-replica realm-reconcile-job.
+type: application
+version: 0.1.0
+appVersion: "1.21.2"
+
+home: https://github.com/unifesspa-edu-br/uniplus-infra
+sources:
+  - https://github.com/unifesspa-edu-br/uniplus-infra
+
+maintainers:
+  - name: CTIC Unifesspa
+    url: https://github.com/unifesspa-edu-br
+
+keywords:
+  - vault
+  - transit
+  - bootstrap
+  - encryption
+  - uniplus

@@ -1,0 +1,96 @@
+{{- if .Values.vaultTransitBootstrap.enabled }}
+{{- $cfg := .Values.vaultTransitBootstrap -}}
+{{- if not $cfg.vault.address }}
+{{- fail "vaultTransitBootstrap.vault.address não pode ser vazio quando vaultTransitBootstrap.enabled=true. Defina em environments/<env>/values.yaml (ex.: http://platform-vault-uniplus-standalone.vault.svc.cluster.local:8200)." -}}
+{{- end }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "vault-transit-bootstrap.fullname" . }}
+  labels:
+    {{- include "vault-transit-bootstrap.labels" . | nindent 4 }}
+    uniplus.io/job-role: vault-transit-bootstrap
+  annotations:
+    # Job roda APÓS SA/ES/CM/NP (weight 0) — ordering garantida pelo Helm
+    # via hook-weight. hook-delete-policy preserva Job em falha para
+    # inspeção; remove-em-sucesso libera o ApplicationSet para sync limpa.
+    "helm.sh/hook": post-install,post-upgrade,post-rollback
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": hook-succeeded,before-hook-creation
+spec:
+  backoffLimit: {{ $cfg.job.backoffLimit }}
+  activeDeadlineSeconds: {{ $cfg.job.activeDeadlineSeconds }}
+  template:
+    metadata:
+      labels:
+        {{- include "vault-transit-bootstrap.labels" . | nindent 8 }}
+        uniplus.io/job-role: vault-transit-bootstrap
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: {{ include "vault-transit-bootstrap.fullname" . }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: vault-cli
+          image: "{{ $cfg.image.repository }}:{{ $cfg.image.tag }}"
+          imagePullPolicy: {{ $cfg.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          command:
+            - /bin/sh
+            - /scripts/bootstrap.sh
+          env:
+            - name: VAULT_ADDR
+              value: {{ $cfg.vault.address | quote }}
+            - name: VAULT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "vault-transit-bootstrap.tokenSecretName" . }}
+                  key: VAULT_TOKEN
+            - name: TRANSIT_PATH
+              value: {{ $cfg.transit.path | quote }}
+            - name: KEY_NAME
+              value: {{ $cfg.key.name | quote }}
+            - name: KEY_TYPE
+              value: {{ $cfg.key.type | quote }}
+            - name: KEY_DELETION_ALLOWED
+              value: {{ $cfg.key.deletionAllowed | quote }}
+            - name: KEY_EXPORTABLE
+              value: {{ $cfg.key.exportable | quote }}
+            - name: KEY_ALLOW_PLAINTEXT_BACKUP
+              value: {{ $cfg.key.allowPlaintextBackup | quote }}
+            - name: POLICY_NAME
+              value: {{ $cfg.policy.name | quote }}
+            - name: ROLE_NAME
+              value: {{ $cfg.role.name | quote }}
+            - name: ROLE_SA
+              value: {{ $cfg.role.boundSa | quote }}
+            - name: ROLE_NS
+              value: {{ $cfg.role.boundNs | quote }}
+            - name: ROLE_TTL
+              value: {{ $cfg.role.ttl | quote }}
+          volumeMounts:
+            - name: script
+              mountPath: /scripts
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            {{- toYaml $cfg.job.resources | nindent 12 }}
+      volumes:
+        - name: script
+          configMap:
+            name: {{ include "vault-transit-bootstrap.fullname" . }}-script
+            defaultMode: 0555
+        - name: tmp
+          emptyDir: {}
+{{- end }}

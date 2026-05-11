@@ -3386,4 +3386,83 @@ kc annotate -n uniplus externalsecret \
 
 ---
 
+## 17. Vault Transit bootstrap (standalone)
+
+Chart `platform/vault-transit-bootstrap/` (issue [#219](https://github.com/unifesspa-edu-br/uniplus-infra/issues/219)) reconcilia declarativamente o engine `transit` no Vault local em cada deploy.
+
+Recursos gerenciados:
+
+- Mount `transit/` no Vault.
+- Key `uniplus-idempotency-aesgcm` (AES-GCM-256, `deletion_allowed=false`, `exportable=false`).
+- Policy `uniplus-api-transit` (apenas `update` em `transit/encrypt|decrypt/uniplus-idempotency-aesgcm`).
+- Role K8s auth `uniplus-api` (bound à SA `uniplus-api`/ns `uniplus`, TTL token 1h).
+
+O Job roda no namespace `vault-transit-bootstrap`, consome `VAULT_TOKEN` via ExternalSecret (ClusterSecretStore `vault-default`, path `secret/standalone/vault/root`) e executa o script `files/bootstrap-vault-transit.sh` embarcado como ConfigMap.
+
+### 17.1 Verificar saúde
+
+Obter o root token previamente do cofre institucional (`~/configs/uniplus-standalone/` no host do operador, ou gestor de segredos corporativo); jamais embarcar literal em documento ou pipeline.
+
+```bash
+# Substituir <k8s-host> pelo endereço SSH do operador e <root-token> pelo
+# valor obtido localmente. Token nunca pode ser logado ou commitado.
+ssh -i ~/.ssh/id_ed25519 ubuntu@<k8s-host> "
+  sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml \
+    -n vault exec -i platform-vault-uniplus-standalone-0 -- \
+    sh -c 'export VAULT_TOKEN=<root-token>;
+           echo --- secrets list ---;
+           vault secrets list | grep transit;
+           echo --- transit key ---;
+           vault read transit/keys/uniplus-idempotency-aesgcm;
+           echo --- auth role ---;
+           vault read auth/kubernetes/role/uniplus-api;
+           echo --- policy ---;
+           vault policy read uniplus-api-transit'
+"
+```
+
+Saída esperada (excerto):
+
+- `transit/` aparece em `vault secrets list`.
+- `transit/keys/uniplus-idempotency-aesgcm` mostra `type=aes256-gcm96`, `deletion_allowed=false`, `exportable=false`.
+- `auth/kubernetes/role/uniplus-api` mostra `bound_service_account_names=[uniplus-api]`, `bound_service_account_namespaces=[uniplus]`, `policies=[uniplus-api-transit]`, `ttl=1h`.
+- `uniplus-api-transit` lista as duas capabilities `update` em `transit/encrypt|decrypt/uniplus-idempotency-aesgcm`.
+
+### 17.2 Rotacionar a key
+
+```bash
+vault write -f transit/keys/uniplus-idempotency-aesgcm/rotate
+```
+
+Vault Transit preserva todas as versões anteriores: requests de `decrypt` continuam decodificando ciphertexts antigos. Consumidores que querem re-encrypt para a versão mais nova podem chamar `vault write transit/rewrap/uniplus-idempotency-aesgcm ciphertext=...` ou aceitar que ciphertexts antigos permanecem na versão antiga até reescrita natural.
+
+### 17.3 Revogar a role em incidente
+
+```bash
+vault delete auth/kubernetes/role/uniplus-api
+```
+
+Efeito imediato: novos logins K8s auth falham com `permission denied`. Pods existentes da `uniplus-api` continuam com tokens já emitidos (TTL 1h, sem renovação possível). Restartar os pods força nova autenticação que falha, e o `EncryptionOptionsValidator` da uniplus-api (PR [#401](https://github.com/unifesspa-edu-br/uniplus-api/pull/401) / [#403](https://github.com/unifesspa-edu-br/uniplus-api/pull/403)) já garante que pods sem auth válido caem em `CrashLoopBackOff` em vez de servir 500 silencioso.
+
+Para reativar após mitigar o incidente: re-aplicar o chart (`argocd app sync platform-vault-transit-bootstrap-uniplus-standalone`).
+
+### 17.4 Limpar manualmente (não-GitOps)
+
+`helm uninstall` deleta o Job/CM/SA/ES/NP mas **não** remove o mount transit/key/policy/role do Vault — comportamento intencional para evitar perda de dados cifrados durante operações de manutenção do chart. Para cleanup completo (cenário raro: refactor da topologia de cifragem):
+
+```bash
+vault delete auth/kubernetes/role/uniplus-api
+vault policy delete uniplus-api-transit
+# Key só pode ser deletada após habilitar deletion_allowed:
+vault write transit/keys/uniplus-idempotency-aesgcm/config deletion_allowed=true
+vault delete transit/keys/uniplus-idempotency-aesgcm
+vault secrets disable transit
+```
+
+### 17.5 Trade-off do token bootstrap
+
+O `ExternalSecret` deste chart consome o **root token** do Vault em standalone. Isso é deliberadamente excessivo para o escopo de bootstrap (`sys/mounts`, `transit/*`, `sys/policies/acl`, `auth/kubernetes/role`) e deve ser reduzido antes da Fase 6. Plano em `platform/vault-transit-bootstrap/README.md`.
+
+---
+
 *Documento mantido pelo CTIC/UNIFESSPA. Atualizações via Pull Request.*
