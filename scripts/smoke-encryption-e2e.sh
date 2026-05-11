@@ -74,8 +74,30 @@ if [ -z "$access_token" ] || [ "$access_token" = "null" ]; then
     fail "Sem access_token"
 fi
 
-# Validar audience inclui 'uniplus' (sem isso a API rejeita 401)
-audiences=$(echo "$access_token" | cut -d. -f2 | base64 -d 2>/dev/null | jq -r '.aud | if type=="array" then join(",") else . end')
+# Validar audience inclui 'uniplus' (sem isso a API rejeita 401).
+# JWT segments são base64url (caracteres -/_ em vez de +/) e podem vir sem
+# padding. GNU base64 -d exige base64 standard e múltiplo de 4 bytes:
+# normalizamos antes de decodificar para evitar exit não-zero do `base64`
+# que sob `set -euo pipefail` abortaria o script.
+decode_jwt_segment() {
+    local seg="$1"
+    # base64url → base64 standard
+    seg=$(printf '%s' "$seg" | tr -- '-_' '+/')
+    # padding para múltiplo de 4
+    local mod=$(( ${#seg} % 4 ))
+    if [ "$mod" -ne 0 ]; then
+        seg="${seg}$(printf '%*s' $((4 - mod)) '' | tr ' ' '=')"
+    fi
+    printf '%s' "$seg" | base64 -d 2>/dev/null
+}
+
+jwt_payload=$(printf '%s' "$access_token" | cut -d. -f2)
+audiences=$(decode_jwt_segment "$jwt_payload" | jq -r '.aud | if type=="array" then join(",") else . end' 2>/dev/null || echo "")
+
+if [ -z "$audiences" ]; then
+    fail "Falha ao decodificar payload do JWT (segmento base64url do access_token). Token recebido começa com: ${access_token:0:30}..."
+fi
+
 case ",$audiences," in
     *,uniplus,*) ;;
     *) fail "Token não tem audience 'uniplus' (audiences=$audiences). Verificar audience mapper no client ${KEYCLOAK_CLIENT_ID}." ;;
