@@ -164,6 +164,13 @@ uniplusApiSelecao:
     keycloakPort: 8080
     oidcIssuerCIDR: ""          # ex.: 164.152.53.29/32
     oidcIssuerPort: 443
+    # CIDR adicional para Schema Registry (ADR-0051) quando o Apicurio
+    # estiver em IP público distinto do OIDC issuer. Vazio = assume
+    # co-locação com oidcIssuerCIDR (default standalone — ambos subdomínios
+    # resolvem via Traefik no mesmo k8s-host). Em environments com IPs
+    # distintos, definir aqui para liberar egress HTTPS separado.
+    schemaRegistryCIDR: ""
+    schemaRegistryPort: 443
 
   metrics:
     enabled: false
