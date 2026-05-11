@@ -155,7 +155,14 @@ log "Reconciliando policy '${POLICY_NAME}'"
 # Policy least-privilege: apenas update em encrypt/decrypt para a key
 # específica. Sem read, rewrap, datakey, export, backup, rotate — admin
 # fica separado (root ou política dedicada).
-policy_doc=$(cat <<EOF
+#
+# Escrevemos a policy em arquivo temp (em vez de pipe) porque vault policy
+# write consome stdin de forma single-use; o wrapper de retry, se chamado
+# via pipe, re-executa com EOF na segunda tentativa e produz policy vazia.
+# /tmp é uma emptyDir do Pod, removido com o ciclo de vida do container.
+policy_file="/tmp/uniplus-api-transit.hcl"
+trap 'rm -f "$policy_file"' EXIT INT TERM
+cat > "$policy_file" <<POLICY
 path "${TRANSIT_PATH}/encrypt/${KEY_NAME}" {
   capabilities = ["update"]
 }
@@ -163,11 +170,9 @@ path "${TRANSIT_PATH}/encrypt/${KEY_NAME}" {
 path "${TRANSIT_PATH}/decrypt/${KEY_NAME}" {
   capabilities = ["update"]
 }
-EOF
-)
+POLICY
 
-# vault policy write lê o conteúdo de stdin (uso de "-")
-printf '%s' "$policy_doc" | retry_vault vault policy write "$POLICY_NAME" -
+retry_vault vault policy write "$POLICY_NAME" "$policy_file"
 
 # --- 5. Escrever role K8s auth (idempotente) ------------------------------
 
