@@ -23,10 +23,23 @@ Reusa lógica padrão do Helm fullname (release-chart) com truncate em 63 chars
 
 {{/*
 Nome do Secret K8s sintetizado pelo ESO com credenciais MinIO.
-Convenção: <fullname>-s3-creds (alinhado com pattern de outros wrappers Uni+).
+Convenção: <chart-name>-s3-creds (sem release prefix).
+
+Por que NÃO incluir o release name (que muda entre clusters/AppSets):
+o `singleBinary.extraEnvFrom` é consumido pelo subchart upstream, que aceita
+APENAS valor literal — não suporta templating do nome no momento do render
+do StatefulSet. Se o helper retornasse `<release>-s3-creds`, cada environment
+teria que duplicar o release name no override, e qualquer drift entre o nome
+do AppSet e o literal causaria `CreateContainerConfigError` no pod (Codex P2
+no PR #221, achado real durante review).
+
+Solução: nome fixo derivado de `.Chart.Name`. Pattern presume 1 release Loki
+por namespace (padrão do uniplus-platform AppSet — namespace por componente).
+Para 2+ releases no mesmo NS, sobrescrever via uniplusExternalSecrets.s3SecretName
+em values do environment + extraEnvFrom batendo com o mesmo nome.
 */}}
 {{- define "uniplus-loki.s3SecretName" -}}
-{{ include "uniplus-loki.fullname" . }}-s3-creds
+{{- default (printf "%s-s3-creds" .Chart.Name) .Values.uniplusExternalSecrets.s3SecretName -}}
 {{- end -}}
 
 {{/*

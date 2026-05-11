@@ -241,6 +241,11 @@ uniplusExternalSecrets:
   secretStoreRef:
     kind: ClusterSecretStore
     name: vault-default
+  # Nome explícito do Secret K8s sintetizado. Vazio = derivar automaticamente
+  # via helper uniplus-loki.s3SecretName ("<chart-name>-s3-creds" = "loki-s3-creds").
+  # Sobrescrever apenas quando precisar de 2+ releases Loki no mesmo namespace
+  # (padrão do uniplus-platform AppSet é 1 release por NS, então default OK).
+  s3SecretName: ""
   s3:
     # Path no Vault (KV v2). Override por environment.
     vaultPath: "secret/standalone/minio/loki"
