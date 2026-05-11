@@ -98,4 +98,16 @@ spec:
         - protocol: TCP
           port: {{ .Values.uniplusApiSelecao.networkPolicy.oidcIssuerPort }}
     {{- end }}
+    {{- if and $srEnabled .Values.uniplusApiSelecao.networkPolicy.schemaRegistryCIDR }}
+    # Regra adicional para Schema Registry em IP público distinto do OIDC
+    # issuer (lab/prod-* podem ter Apicurio em outro host/cluster). Quando
+    # schemaRegistryCIDR está vazio assumimos co-locação com oidcIssuerCIDR
+    # (cobertura via regra acima) — caso default do standalone.
+    - to:
+        - ipBlock:
+            cidr: {{ .Values.uniplusApiSelecao.networkPolicy.schemaRegistryCIDR }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.uniplusApiSelecao.networkPolicy.schemaRegistryPort }}
+    {{- end }}
 {{- end }}
