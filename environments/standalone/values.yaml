@@ -268,6 +268,17 @@ tempoWrapper:
 # standalone: NetworkPolicy escopada permitindo ingress dos NS de apps Uni+
 # e egress para Loki/Tempo. Decisões em ADR-013.
 # ============================================================================
+otelCollector:
+  # Env vars dos exporters — populam ${env:LOKI_OTLP_ENDPOINT} e
+  # ${env:TEMPO_OTLP_ENDPOINT} no alternateConfig do wrapper. Cada environment
+  # seta os endpoints reais do release Loki/Tempo nesse cluster (release-name
+  # varia: `...uniplus-standalone`, `...lab-sp1`, etc.). Codex P1 PR #224.
+  extraEnvs:
+    - name: LOKI_OTLP_ENDPOINT
+      value: http://platform-observability-loki-uniplus-standalone.observability-loki.svc.cluster.local:3100/otlp
+    - name: TEMPO_OTLP_ENDPOINT
+      value: http://platform-observability-tempo-uniplus-standalone.observability-tempo.svc.cluster.local:4318
+
 otelCollectorWrapper:
   networkPolicy:
     enabled: true
