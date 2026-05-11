@@ -190,9 +190,12 @@ loki:
       storageClass: standalone-local-nvme
     extraEnvFrom:
       - secretRef:
-          # Nome bate com helper uniplus-loki.s3SecretName: <release>-s3-creds.
-          # Release name no standalone: platform-observability-loki-uniplus-standalone.
-          name: platform-observability-loki-uniplus-standalone-s3-creds
+          # Nome FIXO derivado de chart-name (ver helper uniplus-loki.s3SecretName).
+          # NÃO inclui release name — independente de qual cluster/AppSet renderiza,
+          # o Secret se chama sempre "loki-s3-creds" no namespace observability-loki.
+          # Mudança aplicada em resposta ao Codex P2 (PR #221) sobre acoplamento
+          # release-name → CreateContainerConfigError em re-deploys.
+          name: loki-s3-creds
 
 # Sintese do Secret K8s com credenciais MinIO via ESO.
 # Chave top-level (`uniplusExternalSecrets`) intencionalmente FORA do bloco
