@@ -210,7 +210,7 @@ lokiWrapper:
     # SimpleScalable). Em SingleBinary single-replica não tem efeito.
     ingressNamespaces:
       - observability-grafana
-      - observability-otel-collector
+      - observability-otelcol
       - observability-loki
     minioCIDR: "10.0.2.87/32"
     minioPort: 9000
@@ -255,10 +255,30 @@ tempoWrapper:
     enabled: true
     ingressNamespaces:
       - observability-grafana
-      - observability-otel-collector
+      - observability-otelcol
       - observability-tempo
     minioCIDR: "10.0.2.87/32"
     minioPort: 9000
+    kubeApiCidrs:
+      - 10.43.0.0/16
+      - 10.0.1.0/24
+
+# ============================================================================
+# Wiring real do chart platform/observability/otelcol/ — overrides
+# standalone: NetworkPolicy escopada permitindo ingress dos NS de apps Uni+
+# e egress para Loki/Tempo. Decisões em ADR-013.
+# ============================================================================
+otelCollectorWrapper:
+  networkPolicy:
+    enabled: true
+    ingressNamespaces:
+      - uniplus
+      - observability-otelcol
+      - kube-system
+      - traefik
+      - keycloak
+    egressLokiNamespace: observability-loki
+    egressTempoNamespace: observability-tempo
     kubeApiCidrs:
       - 10.43.0.0/16
       - 10.0.1.0/24

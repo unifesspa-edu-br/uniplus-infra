@@ -1,0 +1,213 @@
+# Defaults para o OpenTelemetry Collector no cluster Uni+.
+#
+# Topologia (ADR-013): single DaemonSet em standalone — atua simultaneamente
+# como agent (filelog receiver coleta logs do containerd em cada nó) E como
+# gateway (apps no mesmo nó enviam OTLP gRPC/HTTP para o collector local).
+# Em prod, separar em DaemonSet+Deployment é desejável; em standalone
+# single-node, 1 deployment evita complexidade.
+#
+# Pipelines:
+# - logs: filelog (containers do nó) + otlp (apps push direto) → loki
+# - traces: otlp (apps push) → tempo
+# - metrics: NÃO ativada — Prometheus já scrape direto (kube-prometheus-stack)
+#
+# IMPORTANTE — chart upstream tem alias `otelCollector` (definido em
+# Chart.yaml). Diferente do Loki/Tempo, aqui usamos alias para distinguir
+# `.Values.otelCollector.*` (subchart) de eventuais helpers/wrappers.
+#
+# Configs do wrapper Uni+ (NetworkPolicy) ficam em chave única
+# `otelCollectorWrapper:` (mesmo pattern do Loki/Tempo — evitar colisão
+# entre wrappers no environment compartilhado).
+#
+# Vault: NÃO usado — OTel Collector tem só endpoints internos (Loki+Tempo
+# do mesmo cluster); sem credenciais externas, sem ExternalSecret.
+
+otelCollector:
+  enabled: true
+
+  # ============================================================================
+  # Mode + image
+  # ============================================================================
+  # DaemonSet: 1 pod por nó, usa hostPath para tail dos /var/log/containers.
+  # Em standalone (1 nó) é equivalente a Deployment, mas pattern correto
+  # para presets logsCollection.
+  mode: daemonset
+
+  image:
+    # Distribution k8s — inclui contrib receivers/exporters (filelog, k8sattributes,
+    # otlphttp, etc.). Default upstream se vazio.
+    repository: otel/opentelemetry-collector-k8s
+
+  # ============================================================================
+  # Presets — chart configura volumes + RBAC + pipeline injection automaticamente.
+  # ============================================================================
+  presets:
+    # Adiciona filelog receiver + volume mount /var/log/containers + checkpoint
+    # storage. Coleta TODOS os logs de containers do nó.
+    logsCollection:
+      enabled: true
+      includeCollectorLogs: false        # evita loop (collector logando próprios eventos)
+      storeCheckpoints: true             # /var/lib/otelcol — resume from last position pós-restart
+      maxRecombineLogSize: 102400
+    # Adiciona k8sattributes processor (enriquece logs/traces com pod/namespace/etc)
+    # + RBAC mínimo (get/list/watch pods).
+    kubernetesAttributes:
+      enabled: true
+      extractAllPodLabels: false
+      extractAllPodAnnotations: false
+
+  # ============================================================================
+  # Configuração do collector — alternateConfig permite OVERRIDE COMPLETO
+  # ============================================================================
+  # IMPORTANTE: o chart upstream tem bug Helm conhecido onde `null` em sub-keys
+  # não remove receivers/exporters/pipelines do default merge (issue helm/helm#12879).
+  # `alternateConfig:` substitui COMPLETAMENTE o default — provê config
+  # autoritativa sem hash merge.
+  #
+  # Decisão: usar alternateConfig para excluir receivers que não usamos
+  # (jaeger, zipkin, prometheus interno) e adicionar exporters Loki+Tempo
+  # com pipelines explícitas.
+  #
+  # Presets continuam funcionando via injeção do chart no momento do render
+  # (filelog para logs pipeline; k8sattributes processor para todas pipelines).
+  alternateConfig:
+    extensions:
+      # Healthcheck obrigatório (probes do chart consomem).
+      health_check:
+        endpoint: ${env:MY_POD_IP}:13133
+
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: ${env:MY_POD_IP}:4317
+          http:
+            endpoint: ${env:MY_POD_IP}:4318
+      # filelog é injetado pelo preset logsCollection — não declarar aqui (preset
+      # mescla automaticamente).
+
+    processors:
+      # Memory limiter previne OOM kill — sempre primeiro no pipeline.
+      memory_limiter:
+        check_interval: 5s
+        limit_percentage: 80
+        spike_limit_percentage: 25
+      # Batch antes de exportar — economia de RPC/payloads.
+      batch:
+        timeout: 10s
+        send_batch_size: 8192
+      # Resource attrs constantes — env tag para filtragem por DC.
+      resource:
+        attributes:
+          - key: cluster
+            value: standalone
+            action: upsert
+          - key: dc
+            value: standalone
+            action: upsert
+      # k8sattributes é injetado pelo preset kubernetesAttributes.
+
+    exporters:
+      # Loki via API HTTP nativa Loki (otelcol-contrib `lokiexporter` removido em
+      # 0.108+; recomendação atual é `otlphttp/loki` apontando para o endpoint
+      # OTLP do Loki — Loki 3.x suporta OTLP nativo em /otlp/v1/logs).
+      otlphttp/loki:
+        endpoint: http://platform-observability-loki-uniplus-standalone.observability-loki.svc.cluster.local:3100/otlp
+        tls:
+          insecure: true
+      # Tempo via OTLP HTTP.
+      otlphttp/tempo:
+        endpoint: http://platform-observability-tempo-uniplus-standalone.observability-tempo.svc.cluster.local:4318
+        tls:
+          insecure: true
+      # Debug (stdout) — útil em dev; manter para troubleshooting.
+      debug:
+        verbosity: basic
+
+    service:
+      extensions:
+        - health_check
+      pipelines:
+        # Logs: filelog (preset) + otlp (apps push) → resource → memory_limiter → batch → loki
+        logs:
+          receivers: [otlp]                  # filelog adicionado pelo preset
+          processors: [memory_limiter, resource, batch]   # k8sattributes adicionado pelo preset
+          exporters: [otlphttp/loki, debug]
+        # Traces: otlp → resource → memory_limiter → batch → tempo
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, resource, batch]   # k8sattributes adicionado pelo preset
+          exporters: [otlphttp/tempo, debug]
+        # SEM metrics pipeline — Prometheus do platform/observability/prometheus/
+        # já scrape direto os apps via ServiceMonitor. Adicionar pipeline aqui
+        # seria redundante.
+
+  # ============================================================================
+  # Resources — DaemonSet pequeno em standalone
+  # ============================================================================
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+  # ============================================================================
+  # Service — em mode=daemonset o chart upstream desativa Service por default
+  # (presume que apps usam hostPort). Em standalone queremos Service ClusterIP
+  # como fallback consistente — apps podem usar
+  # http://platform-observability-otel-collector-uniplus-standalone.observability-otel-collector.svc:4317.
+  # ============================================================================
+  service:
+    enabled: true
+    type: ClusterIP
+
+  # ============================================================================
+  # Ports — apenas OTLP gRPC + HTTP
+  # ============================================================================
+  # Override do default que expõe jaeger, zipkin, prometheus etc.
+  ports:
+    otlp:
+      enabled: true
+      containerPort: 4317
+      servicePort: 4317
+      hostPort: 4317
+      protocol: TCP
+    otlp-http:
+      enabled: true
+      containerPort: 4318
+      servicePort: 4318
+      hostPort: 4318
+      protocol: TCP
+    jaeger-compact:
+      enabled: false
+    jaeger-thrift:
+      enabled: false
+    jaeger-grpc:
+      enabled: false
+    zipkin:
+      enabled: false
+    metrics:
+      enabled: false  # collector telemetry interna — não scrape externo por enquanto
+
+# ============================================================================
+# Wrapper Uni+ — NetworkPolicy próprio
+# ============================================================================
+# Sem ExternalSecret (collector não consome credenciais externas).
+otelCollectorWrapper:
+  networkPolicy:
+    enabled: false
+    # Apps Uni+ que enviam OTLP para o collector. Default cobre o NS principal
+    # da plataforma; environments podem estender.
+    ingressNamespaces:
+      - uniplus
+      - traefik              # Traefik métricas/traces (futuro)
+      - keycloak
+    # Loki + Tempo destinos dos exporters.
+    egressLokiNamespace: observability-loki
+    egressTempoNamespace: observability-tempo
+    # Service CIDR do K3s para acesso ao kube-apiserver (k8sattributes precisa
+    # de Watch em pods).
+    kubeApiCidrs:
+      - 10.43.0.0/16

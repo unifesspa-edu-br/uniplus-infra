@@ -204,7 +204,7 @@ tempoWrapper:
     enabled: false
     ingressNamespaces:
       - observability-grafana
-      - observability-otel-collector
+      - observability-otelcol
     minioCIDR: "10.0.2.87/32"
     minioPort: 9000
     kubeApiCidrs:

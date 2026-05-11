@@ -118,7 +118,10 @@ spec:
                 - component: observability/grafana
                 - component: observability/loki
                 - component: observability/tempo
-                - component: observability/otel-collector
+                # Nome curto `otelcol` (em vez de `otel-collector`) — evita
+                # release name > 53 chars (limite Helm) quando combinado com
+                # `platform-` prefix + `-uniplus-standalone` suffix.
+                - component: observability/otelcol
 
   template:
     metadata:

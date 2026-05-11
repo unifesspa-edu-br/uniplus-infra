@@ -1,0 +1,36 @@
+apiVersion: v2
+name: otelcol
+description: |
+  OpenTelemetry Collector — agente unificado para coleta de logs (filelog
+  receiver), traces (OTLP) e métricas (futuro). Empacotado como chart wrapper
+  sobre open-telemetry/opentelemetry-collector em modo DaemonSet (single-node
+  em standalone — atua simultaneamente como agent e gateway).
+
+  Decisão arquitetural: ver docs/adrs/ADR-013-otel-collector-daemonset-standalone.md
+type: application
+
+version: 0.1.0
+appVersion: "0.151.0"
+
+home: https://github.com/unifesspa-edu-br/uniplus-infra
+sources:
+  - https://github.com/unifesspa-edu-br/uniplus-infra
+  - https://github.com/open-telemetry/opentelemetry-helm-charts
+
+maintainers:
+  - name: CTIC Unifesspa
+    url: https://github.com/unifesspa-edu-br
+
+keywords:
+  - opentelemetry
+  - observability
+  - logs
+  - traces
+  - uniplus
+
+dependencies:
+  - name: opentelemetry-collector
+    version: 0.153.0
+    repository: https://open-telemetry.github.io/opentelemetry-helm-charts
+    alias: otelCollector
+    condition: otelCollector.enabled
