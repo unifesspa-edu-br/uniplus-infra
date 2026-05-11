@@ -2,8 +2,9 @@
 {{- if not .Values.uniplusApiIngresso.networkPolicy.dataHostCIDR -}}
 {{- fail "uniplusApiIngresso.networkPolicy.dataHostCIDR é obrigatório (egress para Postgres + Redis + Kafka + MinIO no data-host)." -}}
 {{- end -}}
-{{- if and .Values.uniplusApiIngresso.oidc.enabled (not .Values.uniplusApiIngresso.networkPolicy.oidcIssuerCIDR) -}}
-{{- fail "uniplusApiIngresso.networkPolicy.oidcIssuerCIDR é obrigatório quando oidc.enabled=true (issuer público resolvido via Traefik no IP do k8s-host)." -}}
+{{- $srOAuth := eq .Values.uniplusApiIngresso.schemaRegistry.authType "OAuthBearer" -}}
+{{- if and (or .Values.uniplusApiIngresso.oidc.enabled $srOAuth) (not .Values.uniplusApiIngresso.networkPolicy.oidcIssuerCIDR) -}}
+{{- fail "uniplusApiIngresso.networkPolicy.oidcIssuerCIDR é obrigatório quando oidc.enabled=true OU schemaRegistry.authType=OAuthBearer (egress HTTPS via Traefik para Keycloak/Apicurio no IP do k8s-host)." -}}
 {{- end -}}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
