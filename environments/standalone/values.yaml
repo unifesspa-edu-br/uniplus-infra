@@ -115,6 +115,21 @@ kubePrometheusStack:
 # K3s) e sobrescreve a URL do Prometheus datasource com o nome real do
 # Service (release name dinâmico do ApplicationSet).
 grafana:
+  # Substitui o init container `init-chown-data` (busybox 1.31.1 com
+  # capabilities.add=[CHOWN] que falha em subdirs criados pelo Grafana com
+  # mode 700 — sintoma "Permission denied" em /var/lib/grafana/{csv,pdf,png}
+  # mesmo rodando como root). Solução: kubelet faz chown nativo via
+  # fsGroupChangePolicy=OnRootMismatch durante o mount do PVC, evitando o
+  # init e o bug. Suportado em K8s ≥ 1.20 (k3s 1.31 OK).
+  initChownData:
+    enabled: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 472
+    runAsGroup: 472
+    fsGroup: 472
+    fsGroupChangePolicy: OnRootMismatch
+
   persistence:
     storageClassName: standalone-local-nvme
   grafana.ini:
