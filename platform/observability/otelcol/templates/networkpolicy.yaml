@@ -1,0 +1,84 @@
+{{- if and .Values.otelCollector.enabled .Values.otelCollectorWrapper.networkPolicy.enabled -}}
+{{- $np := .Values.otelCollectorWrapper.networkPolicy -}}
+# NetworkPolicy do OTel Collector DaemonSet.
+#
+# Princípio:
+# - Ingress: namespaces que mandam OTLP (apps, traefik, keycloak — declarado
+#   em ingressNamespaces) + tráfego intra-NS.
+# - Egress:
+#   - Loki (porta 3100/HTTP no NS observability-loki) — exporter logs
+#   - Tempo (porta 4318/HTTP no NS observability-tempo) — exporter traces
+#   - DNS K8s
+#   - kube-apiserver (k8sattributes processor watcha pods)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "uniplus-otel.fullname" . }}
+  labels:
+    {{- include "uniplus-otel.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "uniplus-otel.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        {{- range $np.ingressNamespaces }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ . | quote }}
+        {{- end }}
+        # Tráfego entre pods do próprio collector (gossip futuro).
+        - podSelector:
+            matchLabels:
+              {{- include "uniplus-otel.selectorLabels" . | nindent 14 }}
+      ports:
+        - port: 4317      # OTLP gRPC
+          protocol: TCP
+        - port: 4318      # OTLP HTTP
+          protocol: TCP
+        - port: 13133     # health_check extension
+          protocol: TCP
+  egress:
+    # Loki (logs)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $np.egressLokiNamespace | quote }}
+      ports:
+        - port: 3100
+          protocol: TCP
+    # Tempo (traces)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $np.egressTempoNamespace | quote }}
+      ports:
+        - port: 4318
+          protocol: TCP
+        - port: 4317
+          protocol: TCP
+    # DNS K8s
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # kube-apiserver (k8sattributes precisa watch pods)
+    - to:
+        {{- range $np.kubeApiCidrs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        - port: 443
+          protocol: TCP
+        - port: 6443
+          protocol: TCP
+{{- end }}

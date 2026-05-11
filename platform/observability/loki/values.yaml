@@ -274,7 +274,7 @@ lokiWrapper:
     # — futuro #30). Cada environment pode estender.
     ingressNamespaces:
       - observability-grafana
-      - observability-otel-collector
+      - observability-otelcol
     # CIDR do MinIO (data-host privado). Override por environment.
     minioCIDR: "10.0.2.87/32"
     minioPort: 9000

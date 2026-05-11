@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "platform/observability/otel-collector — wrapper schema",
+  "type": "object",
+  "properties": {
+    "otelCollector": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "mode": {
+          "type": "string",
+          "enum": ["daemonset", "deployment", "statefulset"]
+        },
+        "presets": {
+          "type": "object",
+          "properties": {
+            "logsCollection": {
+              "type": "object",
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "storeCheckpoints": { "type": "boolean" }
+              }
+            },
+            "kubernetesAttributes": {
+              "type": "object",
+              "properties": {
+                "enabled": { "type": "boolean" }
+              }
+            }
+          }
+        }
+      },
+      "required": ["enabled"]
+    },
+    "otelCollectorWrapper": {
+      "type": "object",
+      "description": "Configs do wrapper Uni+ — chave prefixada por chart name.",
+      "properties": {
+        "networkPolicy": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "ingressNamespaces": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 }
+            },
+            "egressLokiNamespace": { "type": "string", "minLength": 1 },
+            "egressTempoNamespace": { "type": "string", "minLength": 1 },
+            "kubeApiCidrs": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[0-9]{1,3}(\\.[0-9]{1,3}){3}/[0-9]{1,2}$"
+              }
+            }
+          },
+          "required": ["enabled"]
+        }
+      }
+    }
+  },
+  "additionalProperties": true
+}
