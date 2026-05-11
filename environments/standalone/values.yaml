@@ -167,6 +167,59 @@ grafana:
             timeInterval: 30s
 
 # ============================================================================
+# Wiring real do chart platform/observability/loki/ — overrides standalone:
+# StorageClass do PVC, bucket S3 (MinIO local), credenciais via ESO,
+# NetworkPolicy escopada. Decisões em ADR-011.
+# ============================================================================
+loki:
+  loki:
+    storage:
+      bucketNames:
+        chunks: loki-chunks
+        ruler: loki-chunks
+        admin: loki-chunks
+      s3:
+        # Endpoint vem via env var (LOKI_S3_ENDPOINT) sintetizado pelo ESO,
+        # mas o bucketNames precisa ser literal (não suporta env-expand).
+        # Endpoint defaults no values.yaml: ${LOKI_S3_ENDPOINT}.
+        s3ForcePathStyle: true
+        insecure: true
+
+  singleBinary:
+    persistence:
+      storageClass: standalone-local-nvme
+    extraEnvFrom:
+      - secretRef:
+          # Nome bate com helper uniplus-loki.s3SecretName: <release>-s3-creds.
+          # Release name no standalone: platform-observability-loki-uniplus-standalone.
+          name: platform-observability-loki-uniplus-standalone-s3-creds
+
+# Sintese do Secret K8s com credenciais MinIO via ESO.
+# Chave top-level (`uniplusExternalSecrets`) intencionalmente FORA do bloco
+# `loki:` para não colidir com nenhum value do subchart upstream.
+uniplusExternalSecrets:
+  enabled: true
+  s3:
+    vaultPath: secret/standalone/minio/loki
+
+# NetworkPolicy do wrapper — apenas Grafana (consumidor query) e
+# observability-otel-collector (futuro push de logs em #30) podem alcançar.
+# Mesmo motivo de chave top-level fora de `loki:`.
+uniplusNetworkPolicy:
+  enabled: true
+  # Inclui o próprio NS para permitir tráfego entre pods do Loki (futuro
+  # SimpleScalable). Em SingleBinary single-replica não tem efeito.
+  ingressNamespaces:
+    - observability-grafana
+    - observability-otel-collector
+    - observability-loki
+  minioCIDR: "10.0.2.87/32"
+  minioPort: 9000
+  kubeApiCidrs:
+    - 10.43.0.0/16
+    - 10.0.1.0/24
+
+# ============================================================================
 # StorageClass do tier standalone (#74, ADR-008).
 # rancher.io/local-path mapeado para /var/lib/uniplus/* no NVMe local da VM.
 # ============================================================================
