@@ -50,11 +50,16 @@ vaultTransitBootstrap:
   policy:
     name: uniplus-api-transit
 
-  # Role K8s auth que a uniplus-api usa para autenticar no Vault. boundSa
-  # e boundNs precisam corresponder à ServiceAccount real dos pods da API.
+  # Role K8s auth que as APIs uniplus-api-{portal,selecao,ingresso} usam para
+  # autenticar no Vault. boundSa é uma lista CSV (Vault aceita múltiplos
+  # bound_service_account_names em uma única role) — cada chart deployado
+  # cria sua própria ServiceAccount com nome FIXO `uniplus-api-<app>` para
+  # que esta role autorize as 3 SAs simultaneamente sem proliferar roles.
+  # boundNs continua único (uniplus) porque os 3 charts rodam no mesmo
+  # namespace conforme o ApplicationSet uniplus-apps.
   role:
     name: uniplus-api
-    boundSa: uniplus-api
+    boundSa: uniplus-api-portal,uniplus-api-selecao,uniplus-api-ingresso
     boundNs: uniplus
     # TTL do token Vault emitido pela role. 1h é compatível com o refresh
     # do JWT do K8s no volume projetado do ServiceAccount.

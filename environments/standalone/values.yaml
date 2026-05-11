@@ -949,6 +949,13 @@ uniplusApiPortal:
     enabled: true
     dataHostCIDR: 10.0.2.0/24
     oidcIssuerCIDR: 164.152.53.29/32
+  # Cifragem via Vault Transit local (uniplus-infra#219 + uniplus-api#400/#402/#404/#405).
+  # KubernetesRole=uniplus-api é a role criada pelo chart platform/vault-transit-bootstrap/
+  # com bound_service_account_names incluindo uniplus-api-portal/uniplus-api-selecao/uniplus-api-ingresso.
+  encryption:
+    provider: vault
+    vaultAddress: http://platform-vault-uniplus-standalone.vault.svc.cluster.local:8200
+    kubernetesRole: uniplus-api
 
 uniplusApiSelecao:
   enabled: true
@@ -983,6 +990,10 @@ uniplusApiSelecao:
     enabled: true
     dataHostCIDR: 10.0.2.0/24
     oidcIssuerCIDR: 164.152.53.29/32
+  encryption:
+    provider: vault
+    vaultAddress: http://platform-vault-uniplus-standalone.vault.svc.cluster.local:8200
+    kubernetesRole: uniplus-api
 
 uniplusApiIngresso:
   enabled: true
@@ -1017,6 +1028,10 @@ uniplusApiIngresso:
     enabled: true
     dataHostCIDR: 10.0.2.0/24
     oidcIssuerCIDR: 164.152.53.29/32
+  encryption:
+    provider: vault
+    vaultAddress: http://platform-vault-uniplus-standalone.vault.svc.cluster.local:8200
+    kubernetesRole: uniplus-api
 
 # ----------------------------------------------------------------------------
 # Frontends Uni+ (Angular SPAs servidas por nginx-unprivileged). 1 chart,
