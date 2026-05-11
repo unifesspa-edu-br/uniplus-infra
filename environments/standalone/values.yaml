@@ -238,7 +238,10 @@ tempo:
             # Mesma justificativa do PR #221 (Loki Codex P2): release-independente.
             name: tempo-s3-creds
   persistence:
-    storageClass: standalone-local-nvme
+    # ATENÇÃO: chart upstream tempo usa `storageClassName` (não `storageClass`
+    # como Loki). Setar `storageClass` aqui seria ignorado pelo subchart.
+    # Codex P1 PR #222 capturou — drift de convenção entre charts Grafana.
+    storageClassName: standalone-local-nvme
 
 # Wrapper Uni+ Tempo — chave prefixada (mesmo motivo do lokiWrapper acima).
 tempoWrapper:

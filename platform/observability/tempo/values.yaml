@@ -127,12 +127,16 @@ tempo:
   # ============================================================================
   # Persistence (PVC do StatefulSet — WAL antes de flush S3)
   # ============================================================================
+  # Atenção: chart upstream usa `storageClassName` (NÃO `storageClass` como
+  # outros charts Grafana — Loki, por exemplo). Setar `storageClass` aqui é
+  # silenciosamente ignorado e o PVC fica com default class do cluster.
+  # Codex P1 PR #222 capturou esse drift no override standalone.
   persistence:
     enabled: true
     accessModes:
       - ReadWriteOnce
     size: 10Gi
-    # storageClass definido por environment.
+    # storageClassName definido por environment.
 
   # ============================================================================
   # Service: ClusterIP em standalone
