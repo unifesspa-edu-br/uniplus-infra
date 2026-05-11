@@ -1,0 +1,44 @@
+{{- if and .Values.vaultTransitBootstrap.enabled .Values.vaultTransitBootstrap.networkPolicy.enabled }}
+{{- $np := .Values.vaultTransitBootstrap.networkPolicy -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "vault-transit-bootstrap.fullname" . }}
+  labels:
+    {{- include "vault-transit-bootstrap.labels" . | nindent 4 }}
+  annotations:
+    {{- include "vault-transit-bootstrap.hookAnnotations" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "vault-transit-bootstrap.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Egress
+  egress:
+    # Egress para os pods do Vault (chart hashicorp/vault põe `app.kubernetes.io/name=vault`
+    # + `component=server` no StatefulSet). namespaceSelector + podSelector
+    # restringe o egress aos pods do Vault apenas, não a qualquer pod no
+    # namespace `vault`.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $np.vaultNamespace | quote }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vault
+              component: server
+      ports:
+        - protocol: TCP
+          port: {{ $np.vaultPort }}
+    # DNS para resolver o ClusterIP do Service do Vault.
+    - to:
+        {{- range $cidr := $np.kubeDnsCidrs }}
+        - ipBlock:
+            cidr: {{ $cidr | quote }}
+        {{- end }}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+{{- end }}

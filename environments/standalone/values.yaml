@@ -431,6 +431,28 @@ vault:
 vaultTransit:
   enabled: false
 
+# ============================================================================
+# Vault Transit bootstrap (chart platform/vault-transit-bootstrap/, issue #219).
+# Habilita o engine transit no Vault local + cria key uniplus-idempotency-aesgcm
+# + policy uniplus-api-transit + role K8s auth uniplus-api. Reconciliado a cada
+# deploy via Helm hook (post-install,post-upgrade,post-rollback).
+#
+# Pré-requisitos satisfeitos em standalone:
+#   - Vault inicializado (Shamir, manual unseal) — root token custodiado em
+#     secret/standalone/vault/root via ClusterSecretStore vault-default.
+#   - kubernetes auth method habilitado (acessor auth_kubernetes_cdc9d2c3).
+#   - ClusterSecretStore vault-default Synced.
+#
+# Trade-off conhecido: o ExternalSecret consome o ROOT TOKEN em standalone.
+# Plano de redução para uma policy mínima dedicada ao bootstrap está em
+# platform/vault-transit-bootstrap/README.md (será aberta issue de
+# seguimento quando este chart entrar em produção real).
+# ============================================================================
+vaultTransitBootstrap:
+  enabled: true
+  vault:
+    address: http://platform-vault-uniplus-standalone.vault.svc.cluster.local:8200
+
 # NetworkPolicy do chart vault/ — sem egress Transit (vaultTransit.enabled=false).
 #
 # `kubeApiCidrs` consumido pelos charts platform/external-secrets/ e

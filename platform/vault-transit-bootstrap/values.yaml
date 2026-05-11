@@ -1,0 +1,107 @@
+# Bootstrap do Vault Transit no cluster local.
+#
+# Topologia: cada cluster que hospeda uma `uniplus-api` precisa do mount transit/
+# habilitado no Vault local, da key uniplus-idempotency-aesgcm criada, da policy
+# uniplus-api-transit (encrypt+decrypt apenas dessa key) e da role K8s auth
+# uniplus-api (bound à ServiceAccount uniplus-api/uniplus). Este chart entrega
+# os 4 recursos de forma idempotente, em um Helm hook reconciliado a cada deploy.
+#
+# Status por environment:
+#   standalone: enabled=true (Vault local com Shamir; root token via ESO).
+#   lab/prod:   enabled=false até que a feature uniplus-infra#45 fechar e
+#               cada environment ter sua role bootstrap dedicada.
+#
+# Documentação completa: docs/RUNBOOKS.md §9.X — Vault Transit bootstrap.
+
+vaultTransitBootstrap:
+  # Liga/desliga o chart inteiro. Default false; standalone seta true.
+  enabled: false
+
+  # Endereço HTTP(S) do Vault no cluster local. Sem default utilizável — cada
+  # environment DEVE sobrescrever explicitamente para o Service name correto.
+  #
+  # Pattern (igual ao clusterSecretStore.vaultServer):
+  #   standalone: http://platform-vault-uniplus-standalone.vault.svc.cluster.local:8200
+  #   lab-sp1:    https://platform-vault-lab-sp1.vault.svc.cluster.local:8200
+  vault:
+    address: ""
+
+  # Mount do engine Transit. Convenção HashiCorp = "transit".
+  transit:
+    path: transit
+
+  # Key AES-GCM-256 que cifra/decifra payloads da uniplus-api (rota
+  # Idempotency-Key + futuros campos do Domínio).
+  key:
+    name: uniplus-idempotency-aesgcm
+    type: aes256-gcm96
+    # deletion_allowed=false impede o operador de apagar a key acidentalmente
+    # via vault CLI (precisa um update explícito antes).
+    deletionAllowed: false
+    # exportable=false: a key NUNCA sai do Vault, mesmo para o root.
+    exportable: false
+    # allow_plaintext_backup=false: snapshot do Vault não inclui plaintext
+    # da key — apenas a forma cifrada pelo seal.
+    allowPlaintextBackup: false
+
+  # Policy least-privilege que será atribuída à role uniplus-api. Permite
+  # apenas update em encrypt/decrypt para a key acima. Sem read, rewrap,
+  # datakey, export, backup ou rotate (administração separada).
+  policy:
+    name: uniplus-api-transit
+
+  # Role K8s auth que a uniplus-api usa para autenticar no Vault. boundSa
+  # e boundNs precisam corresponder à ServiceAccount real dos pods da API.
+  role:
+    name: uniplus-api
+    boundSa: uniplus-api
+    boundNs: uniplus
+    # TTL do token Vault emitido pela role. 1h é compatível com o refresh
+    # do JWT do K8s no volume projetado do ServiceAccount.
+    ttl: 1h
+
+  # ExternalSecret consome ClusterSecretStore vault-default (já habilitado
+  # em standalone). Path relativo ao vaultPath do store (`secret` = KV v2
+  # mount). Em standalone hoje custodia o root token; trade-off documentado
+  # no README do chart (segurança em escopo a reduzir antes da Fase 6).
+  externalSecret:
+    secretStoreName: vault-default
+    secretStoreKind: ClusterSecretStore
+    vaultPath: standalone/vault/root
+    tokenKey: token
+    refreshInterval: 1h
+
+  # Imagem do Vault CLI usada pelo Job. Versão alinhada ao Vault server
+  # rodando em standalone para evitar incompatibilidade de auth/secrets API.
+  image:
+    repository: hashicorp/vault
+    tag: "1.21.2"
+    pullPolicy: IfNotPresent
+
+  # Limites/segurança do Job.
+  job:
+    backoffLimit: 3
+    activeDeadlineSeconds: 600
+    # ttlSecondsAfterFinished não é definido: TTL controller apaga succeed +
+    # failed indiscriminadamente, o que tira a janela de inspeção pós-falha.
+    # Hook-delete-policy (hook-succeeded,before-hook-creation) já cuida do
+    # cleanup em sucesso e mantém em falha para investigação.
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+
+  # NetworkPolicy do Job. Egress restrito ao Vault namespace (porta 8200)
+  # + DNS (porta 53). Sem ingress.
+  networkPolicy:
+    enabled: true
+    vaultNamespace: vault
+    vaultPort: 8200
+    # CIDR do kube-dns (CoreDNS) para resolução do Service do Vault.
+    # 10.43.0.0/16 é o service CIDR padrão do K3s; environments custom
+    # podem sobrescrever.
+    kubeDnsCidrs:
+      - 10.43.0.0/16
