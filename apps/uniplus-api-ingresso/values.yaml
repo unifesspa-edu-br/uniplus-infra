@@ -49,6 +49,18 @@ uniplusApiIngresso:
     vaultAddress: ""
     kubernetesRole: ""
 
+  # Schema Registry (ADR-0051) — feature off quando url está vazio. Em
+  # ambientes de produção com Kafka habilitado, Program.cs aborta o boot
+  # se url estiver vazio (publishing cross-módulo exige schema validation).
+  # Auth OAuthBearer: client_secret vem do Secret K8s sintetizado pelo
+  # ESO 5 (oidcSecretName) — mesmo Vault path do OIDC client da API.
+  schemaRegistry:
+    url: ""
+    authType: None
+    oauth:
+      tokenEndpoint: ""
+      clientId: ""
+
   aspnet:
     environment: Production
     urls: "http://+:8080"
