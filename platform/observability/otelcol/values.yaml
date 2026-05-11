@@ -25,6 +25,17 @@
 otelCollector:
   enabled: true
 
+  # fullnameOverride: força nome dos recursos do subchart como `otelcol-...`
+  # em vez de `<release>-otelCollector-...`. Necessário porque:
+  # 1. release-name `platform-observability-otelcol-uniplus-standalone` (49) +
+  #    `-otelCollector-agent` (19) excede 63 chars (limite RFC 1123 para
+  #    nomes de recursos K8s).
+  # 2. `otelCollector` em camelCase (do alias do Chart.yaml) viola DNS-1035
+  #    label que exige lowercase. Helm aceita o alias mas K8s rejeita.
+  #
+  # `otelcol` curto + lowercase satisfaz ambos os limites.
+  fullnameOverride: otelcol
+
   # ============================================================================
   # Mode + image
   # ============================================================================
