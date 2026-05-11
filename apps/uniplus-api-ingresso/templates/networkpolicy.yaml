@@ -5,17 +5,31 @@
 {{- /*
   $srEnabled: feature flag real do Schema Registry — url não-vazia (mesma
   guarda do deployment.yaml, que só renderiza envs SchemaRegistry__* quando
-  url está populado). Independente do authType (None/Basic/OAuthBearer), a
-  API precisa alcançar o registry HTTPS quando a feature está on.
+  url está populado). Independente do authType, a API precisa alcançar o
+  registry HTTPS quando a feature está on.
 
   $hasSrCIDR: CIDR dedicado do Schema Registry está configurado. Quando
   vazio, assumimos co-locação com o OIDC issuer e usamos oidcIssuerCIDR
   como fallback (default standalone via Traefik no k8s-host).
+
+  $srNeedsIssuerCIDR: a regra ipBlock=oidcIssuerCIDR ainda é necessária
+  para Schema Registry em 2 casos:
+    1. Co-locação (hasSrCIDR=false) — registry alcançável pelo IP do issuer.
+    2. authType=OAuthBearer — o oauth.tokenEndpoint tipicamente fica no
+       Keycloak (mesmo IP do issuer), independente do CIDR dedicado do
+       registry para chamadas Confluent-compat.
+  Só dispensamos oidcIssuerCIDR quando SR usa Basic/None E tem CIDR
+  dedicado (rota Confluent-compat 100% no registry, sem token endpoint).
 */}}
 {{- $srEnabled := ne .Values.uniplusApiIngresso.schemaRegistry.url "" -}}
 {{- $hasSrCIDR := ne .Values.uniplusApiIngresso.networkPolicy.schemaRegistryCIDR "" -}}
+{{- $srOAuth := eq .Values.uniplusApiIngresso.schemaRegistry.authType "OAuthBearer" -}}
+{{- $srNeedsIssuerCIDR := and $srEnabled (or (not $hasSrCIDR) $srOAuth) -}}
 {{- if and .Values.uniplusApiIngresso.oidc.enabled (not .Values.uniplusApiIngresso.networkPolicy.oidcIssuerCIDR) -}}
 {{- fail "uniplusApiIngresso.networkPolicy.oidcIssuerCIDR é obrigatório quando oidc.enabled=true (egress HTTPS para o issuer Keycloak / JWKS validation)." -}}
+{{- end -}}
+{{- if and $srNeedsIssuerCIDR (not .Values.uniplusApiIngresso.networkPolicy.oidcIssuerCIDR) -}}
+{{- fail "uniplusApiIngresso.networkPolicy.oidcIssuerCIDR é obrigatório quando schemaRegistry.url está populado E (schemaRegistryCIDR vazio OU authType=OAuthBearer) — o egress 443 do registry co-localizado OU do oauth.tokenEndpoint precisa alcançar o IP do issuer." -}}
 {{- end -}}
 {{- if and $srEnabled (not .Values.uniplusApiIngresso.networkPolicy.oidcIssuerCIDR) (not $hasSrCIDR) -}}
 {{- fail "uniplusApiIngresso.networkPolicy.oidcIssuerCIDR OU schemaRegistryCIDR é obrigatório quando schemaRegistry.url está populado (egress HTTPS para o Apicurio Registry). Em standalone os 2 subdomínios resolvem para o mesmo IP — basta oidcIssuerCIDR; em environments com IPs distintos, definir schemaRegistryCIDR." -}}
@@ -88,15 +102,15 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.uniplusApiIngresso.networkPolicy.keycloakPort }}
-    {{- if or .Values.uniplusApiIngresso.oidc.enabled (and $srEnabled (not $hasSrCIDR)) }}
+    {{- if or .Values.uniplusApiIngresso.oidc.enabled $srNeedsIssuerCIDR }}
     # Egress HTTPS para o IP do OIDC issuer (Keycloak via Traefik). Cobre:
     #   - JWT validation chama jwks endpoint quando oidc.enabled (bearer
     #     validation no resource server).
-    #   - Schema Registry quando schemaRegistry.url está populado E
-    #     schemaRegistryCIDR vazio (co-locação default do standalone — auth
-    #     e schema-registry subdomínios resolvem para o mesmo IP do k8s-host).
-    # Quando OIDC está desligado E schemaRegistryCIDR está populado, esta
-    # regra não é renderizada (caminho dedicado abaixo cobre).
+    #   - Schema Registry co-localizado (schemaRegistryCIDR vazio — default
+    #     standalone, auth e schema-registry subdomínios no mesmo IP).
+    #   - oauth.tokenEndpoint quando schemaRegistry.authType=OAuthBearer —
+    #     tipicamente fica no Keycloak, mesmo CIDR do issuer, independente
+    #     do CIDR dedicado do registry para chamadas Confluent-compat.
     - to:
         - ipBlock:
             cidr: {{ .Values.uniplusApiIngresso.networkPolicy.oidcIssuerCIDR }}
