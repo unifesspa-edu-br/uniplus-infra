@@ -3482,9 +3482,15 @@ A role Kubernetes auth `uniplus-api` no Vault tem `bound_service_account_names=u
 ### 18.2 Validar consumo via smoke E2E
 
 ```bash
+# Credenciais Keycloak (apicurio-registry client com directGrants habilitado)
 export KEYCLOAK_CLIENT_SECRET=<apicurio-registry client_secret>
 export KEYCLOAK_USERNAME=jeferson.ferreira
 export KEYCLOAK_PASSWORD=<senha>
+
+# Token Vault necessário para listar audit devices (sys/audit requer capability
+# sudo). Em standalone, usar root token; em ambientes onde uma policy bootstrap
+# mínima existir, usar o token dedicado.
+export VAULT_TOKEN_FOR_AUDIT=<root token ou token com sys/audit>
 
 ./scripts/smoke-encryption-e2e.sh
 ```

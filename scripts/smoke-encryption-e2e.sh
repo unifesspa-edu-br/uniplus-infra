@@ -47,6 +47,10 @@ fail() {
 : "${KEYCLOAK_CLIENT_SECRET:?KEYCLOAK_CLIENT_SECRET é obrigatório (apicurio-registry client_secret no realm uniplus)}"
 : "${KEYCLOAK_USERNAME:?KEYCLOAK_USERNAME é obrigatório (usuário no realm uniplus com directAccessGrants permitido)}"
 : "${KEYCLOAK_PASSWORD:?KEYCLOAK_PASSWORD é obrigatório}"
+# Token Vault necessário para listar audit devices (/sys/audit exige token
+# com `sudo` capability — root ou policy dedicada). Permanece em var
+# separada para que o operador rotacione independentemente do KEYCLOAK_*.
+: "${VAULT_TOKEN_FOR_AUDIT:?VAULT_TOKEN_FOR_AUDIT é obrigatório (Vault token com capability sudo em sys/audit; tipicamente root token em standalone). Exportar antes de rodar.}"
 
 command -v curl >/dev/null 2>&1 || fail "curl não encontrado"
 command -v jq >/dev/null 2>&1 || fail "jq não encontrado"
@@ -57,14 +61,18 @@ command -v ssh >/dev/null 2>&1 || fail "ssh não encontrado"
 
 log "Obtendo token OIDC para client=${KEYCLOAK_CLIENT_ID} user=${KEYCLOAK_USERNAME}"
 
+# `--data-urlencode` é obrigatório aqui: senhas/secrets podem conter `&`,
+# `=`, `+` ou `%` que `curl -d` envia literalmente, corrompendo o form e
+# gerando 401 enganoso. URL-encode garante que credenciais com caracteres
+# especiais sejam transmitidas íntegras.
 token_response=$(curl -sk -X POST \
     "${KEYCLOAK_BASE}/protocol/openid-connect/token" \
-    -d "grant_type=password" \
-    -d "client_id=${KEYCLOAK_CLIENT_ID}" \
-    -d "client_secret=${KEYCLOAK_CLIENT_SECRET}" \
-    -d "username=${KEYCLOAK_USERNAME}" \
-    -d "password=${KEYCLOAK_PASSWORD}" \
-    -d "scope=openid")
+    --data-urlencode "grant_type=password" \
+    --data-urlencode "client_id=${KEYCLOAK_CLIENT_ID}" \
+    --data-urlencode "client_secret=${KEYCLOAK_CLIENT_SECRET}" \
+    --data-urlencode "username=${KEYCLOAK_USERNAME}" \
+    --data-urlencode "password=${KEYCLOAK_PASSWORD}" \
+    --data-urlencode "scope=openid")
 
 access_token=$(echo "$token_response" | jq -r .access_token)
 
@@ -167,10 +175,13 @@ log "Procurando entrada transit/encrypt/${TRANSIT_KEY} no audit log desde epoch=
 
 # `set +e` localmente para distinguir erros de SSH/kubectl (rc!=0) de
 # "comando rodou mas devolveu vazio" (audit ausente).
+# VAULT_TOKEN_FOR_AUDIT é expandido AQUI (no shell local) — checado via `:?`
+# no topo do script. Sem esse expand a env var ficaria vazia dentro do
+# kubectl exec porque o shell remoto não tem a mesma var disponível.
 set +e
 audit_devices=$(ssh -i "$SSH_KEY" -o ConnectTimeout=10 "$SSH_HOST" "
 sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml -n ${VAULT_POD_NS} exec -i ${VAULT_POD_NAME} -- \
-  env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=\${VAULT_TOKEN_FOR_AUDIT:-} \
+  env VAULT_ADDR=http://127.0.0.1:8200 VAULT_TOKEN=${VAULT_TOKEN_FOR_AUDIT} \
   vault audit list -format=json
 " 2>&1)
 audit_rc=$?
@@ -179,7 +190,7 @@ set -e
 if [ "$audit_rc" -ne 0 ]; then
     log "ERRO: falha ao consultar Vault via SSH/kubectl (rc=${audit_rc}). Output:"
     echo "$audit_devices" | head -10 >&2
-    log "Definir VAULT_TOKEN_FOR_AUDIT no host remoto OU configurar SSH/kubectl. Não dá pra distinguir audit habilitado/desabilitado neste estado."
+    log "Verificar: (1) VAULT_TOKEN_FOR_AUDIT tem capability sudo em sys/audit; (2) SSH/kubectl funcionando; (3) Vault unsealed."
     fail "Comunicação com o Vault falhou"
 fi
 
