@@ -165,6 +165,51 @@ grafana:
           isDefault: true
           jsonData:
             timeInterval: 30s
+        # Loki — backend de logs (chart platform/observability/loki/, ADR-011).
+        - name: Loki
+          type: loki
+          uid: loki
+          access: proxy
+          url: http://platform-observability-loki-uniplus-standalone.observability-loki.svc.cluster.local:3100
+          jsonData:
+            # derivedFields: ao ver `traceID` (formato OTel) ou `trace_id` no log,
+            # Grafana renderiza link clicável que abre o trace no datasource Tempo.
+            # Habilita navegação log → trace (correlação via traceID dos apps
+            # .NET OpenTelemetry SDK).
+            derivedFields:
+              - name: TraceID
+                matcherRegex: "(?:traceID|trace_id|TraceId)\"?[=:]\\s*\"?([a-fA-F0-9]{32})"
+                url: "$${__value.raw}"
+                datasourceUid: tempo
+                urlDisplayLabel: "Ver trace no Tempo"
+        # Tempo — backend de traces (chart platform/observability/tempo/, ADR-012).
+        - name: Tempo
+          type: tempo
+          uid: tempo
+          access: proxy
+          url: http://platform-observability-tempo-uniplus-standalone.observability-tempo.svc.cluster.local:3200
+          jsonData:
+            # tracesToLogsV2: do trace, abre query no Loki filtrando pela
+            # mesma trace_id. Direção inversa da derivedFields acima — fecha
+            # o ciclo trace ↔ logs.
+            tracesToLogsV2:
+              datasourceUid: loki
+              spanStartTimeShift: "-5m"
+              spanEndTimeShift: "5m"
+              filterByTraceID: true
+              filterBySpanID: false
+              tags:
+                - key: service.name
+                  value: service_name
+            # Service Graph desligado — Tempo metricsGenerator off em standalone (ADR-012).
+            serviceMap:
+              datasourceUid: prometheus
+            nodeGraph:
+              enabled: true
+            search:
+              hide: false
+            lokiSearch:
+              datasourceUid: loki
 
 # ============================================================================
 # Wiring real do chart platform/observability/loki/ — overrides standalone:
