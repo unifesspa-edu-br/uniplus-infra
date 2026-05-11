@@ -159,7 +159,30 @@ spec:
             - name: UniPlus__Encryption__KubernetesRole
               value: {{ .Values.uniplusApiIngresso.encryption.kubernetesRole | quote }}
             {{- end }}
-            
+            # === Schema Registry (ADR-0051) — Apicurio Confluent-compat ===
+            # url vazio = feature off; em Production com Kafka habilitado, o
+            # Program.cs aborta o boot se url estiver vazio. AuthType OAuthBearer
+            # exige tokenEndpoint+clientId; client_secret é injetado via
+            # secretKeyRef do mesmo ESO 5 (oidcSecretName) já existente,
+            # alinhado ao Vault path secret/<env>/keycloak/clients/uniplus-api-<app>.
+            {{- if .Values.uniplusApiIngresso.schemaRegistry.url }}
+            - name: SchemaRegistry__Url
+              value: {{ .Values.uniplusApiIngresso.schemaRegistry.url | quote }}
+            - name: SchemaRegistry__AuthType
+              value: {{ .Values.uniplusApiIngresso.schemaRegistry.authType | quote }}
+            {{- if eq .Values.uniplusApiIngresso.schemaRegistry.authType "OAuthBearer" }}
+            - name: SchemaRegistry__OAuth__TokenEndpoint
+              value: {{ .Values.uniplusApiIngresso.schemaRegistry.oauth.tokenEndpoint | quote }}
+            - name: SchemaRegistry__OAuth__ClientId
+              value: {{ .Values.uniplusApiIngresso.schemaRegistry.oauth.clientId | quote }}
+            - name: SchemaRegistry__OAuth__ClientSecret
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "uniplusApiIngresso.oidcSecretName" . }}
+                  key: OIDC_CLIENT_SECRET
+            {{- end }}
+            {{- end }}
+
             {{- range $i, $origin := .Values.uniplusApiIngresso.cors.allowedOrigins }}
             - name: Cors__AllowedOrigins__{{ $i }}
               value: {{ $origin | quote }}

@@ -956,6 +956,15 @@ uniplusApiPortal:
     provider: vault
     vaultAddress: http://platform-vault-uniplus-standalone.vault.svc.cluster.local:8200
     kubernetesRole: uniplus-api
+  # Schema Registry (ADR-0051) — Apicurio Confluent-compat. Auth OAuthBearer
+  # consumindo client_secret materializado pelo ESO 5 a partir do Vault path
+  # secret/standalone/keycloak/clients/uniplus-api-portal.
+  schemaRegistry:
+    url: https://schema-registry.standalone.portaluni.com.br/apis/ccompat/v7
+    authType: OAuthBearer
+    oauth:
+      tokenEndpoint: https://standalone.portaluni.com.br/auth/realms/uniplus/protocol/openid-connect/token
+      clientId: uniplus-api-portal
 
 uniplusApiSelecao:
   enabled: true
@@ -994,6 +1003,12 @@ uniplusApiSelecao:
     provider: vault
     vaultAddress: http://platform-vault-uniplus-standalone.vault.svc.cluster.local:8200
     kubernetesRole: uniplus-api
+  schemaRegistry:
+    url: https://schema-registry.standalone.portaluni.com.br/apis/ccompat/v7
+    authType: OAuthBearer
+    oauth:
+      tokenEndpoint: https://standalone.portaluni.com.br/auth/realms/uniplus/protocol/openid-connect/token
+      clientId: uniplus-api-selecao
 
 uniplusApiIngresso:
   enabled: true
@@ -1032,6 +1047,12 @@ uniplusApiIngresso:
     provider: vault
     vaultAddress: http://platform-vault-uniplus-standalone.vault.svc.cluster.local:8200
     kubernetesRole: uniplus-api
+  schemaRegistry:
+    url: https://schema-registry.standalone.portaluni.com.br/apis/ccompat/v7
+    authType: OAuthBearer
+    oauth:
+      tokenEndpoint: https://standalone.portaluni.com.br/auth/realms/uniplus/protocol/openid-connect/token
+      clientId: uniplus-api-ingresso
 
 # ----------------------------------------------------------------------------
 # Frontends Uni+ (Angular SPAs servidas por nginx-unprivileged). 1 chart,
