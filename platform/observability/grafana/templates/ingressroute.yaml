@@ -62,10 +62,17 @@ spec:
         - name: {{ $svcName }}
           port: {{ $svcPort }}
     {{- end }}
-  {{- if $ing.tls.enabled }}
+  {{- if and $ing.tls.enabled $ing.tls.secretName }}
   tls:
-    {{- if $ing.tls.secretName }}
     secretName: {{ $ing.tls.secretName | quote }}
-    {{- end }}
   {{- end }}
+  {{/*
+    NOTA: quando tls.enabled=true mas tls.secretName="" (cert default do Traefik
+    via cert-manager no nível do IngressRoute root), o bloco `tls:` é OMITIDO
+    aqui — o Traefik CRD rejeita `spec.tls: null` (precisa ser objeto válido
+    ou ausente). Como o entryPoint websecure já termina TLS com o default cert
+    quando há um, omitir o bloco produz o mesmo efeito sem violar o schema.
+    Padrão validado em standalone após erro:
+      "IngressRoute ... is invalid: spec.tls: Invalid value: \"null\": ..."
+  */}}
 {{- end }}
