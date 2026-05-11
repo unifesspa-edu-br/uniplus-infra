@@ -39,9 +39,16 @@ platform/observability/loki/
 O subchart upstream `loki` é injetado **sem alias**. Valores top-level `loki:`
 no `values.yaml` deste wrapper passam diretamente ao subchart como
 `.Values.x`. Configurações próprias do wrapper Uni+ (ExternalSecret,
-NetworkPolicy) ficam em chaves únicas `uniplusExternalSecrets:` e
-`uniplusNetworkPolicy:` para evitar colisão com chaves homônimas do upstream
-(`networkPolicy:` upstream gera 5 NPs próprias se ativado — desligamos).
+NetworkPolicy) ficam em chave única **`lokiWrapper:`** para evitar:
+
+1. Colisão com chaves homônimas do upstream (`networkPolicy:` upstream gera 5
+   NPs próprias se ativado — desligamos).
+2. Colisão com configs de OUTROS wrappers (Tempo/OTel) que dividem o mesmo
+   environment file (`environments/<env>/values.yaml`). Chave prefixada por
+   chart name garante isolamento absoluto.
+
+O helper `_helpers.tpl` e os templates `externalsecret.yaml`/`networkpolicy.yaml`
+só leem `.Values.lokiWrapper.{externalSecrets,networkPolicy}`.
 
 ## Componentes desligados em standalone
 

@@ -1,0 +1,90 @@
+{{- if and .Values.tempo.enabled .Values.tempoWrapper.networkPolicy.enabled -}}
+{{- $np := .Values.tempoWrapper.networkPolicy -}}
+# NetworkPolicy do Tempo single-binary.
+#
+# Princípio:
+# - Ingress: apenas namespaces declarados em ingressNamespaces (default cobre
+#   observability-grafana para query e observability-otel-collector para push
+#   de traces — futuro #30) + tráfego intra-NS.
+# - Egress: MinIO/S3 (CIDR + porta) + DNS K8s + kube-apiserver (futuro,
+#   service-discovery se virar tempo-distributed).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "uniplus-tempo.fullname" . }}
+  labels:
+    {{- include "uniplus-tempo.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "uniplus-tempo.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        {{- range $np.ingressNamespaces }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ . | quote }}
+        {{- end }}
+        # Tráfego intra-NS (probes, gossip futuro).
+        - podSelector:
+            matchLabels:
+              {{- include "uniplus-tempo.selectorLabels" . | nindent 14 }}
+      ports:
+        - port: 3200      # HTTP API (query, ready)
+          protocol: TCP
+        - port: 4317      # OTLP gRPC (push de traces)
+          protocol: TCP
+        - port: 4318      # OTLP HTTP (push de traces)
+          protocol: TCP
+        - port: 9095      # gRPC interno (futuro tempo-distributed)
+          protocol: TCP
+        - port: 7946      # Memberlist (gossip)
+          protocol: TCP
+        - port: 7946
+          protocol: UDP
+  egress:
+    # Memberlist gossip entre pods do próprio Tempo (necessário quando
+    # replicas > 1 ou em tempo-distributed; em single-binary 1 réplica não
+    # tem efeito mas previne ring-join failure ao escalar). Mesmo achado
+    # do Codex P1 reportado no PR #221 / Loki networkpolicy.yaml.
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "uniplus-tempo.selectorLabels" . | nindent 14 }}
+      ports:
+        - port: 7946
+          protocol: TCP
+        - port: 7946
+          protocol: UDP
+    # MinIO (S3 storage backend)
+    - to:
+        - ipBlock:
+            cidr: {{ $np.minioCIDR | quote }}
+      ports:
+        - port: {{ $np.minioPort }}
+          protocol: TCP
+    # DNS K8s
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # kube-apiserver (futuro service-discovery)
+    - to:
+        {{- range $np.kubeApiCidrs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        - port: 443
+          protocol: TCP
+        - port: 6443
+          protocol: TCP
+{{- end }}

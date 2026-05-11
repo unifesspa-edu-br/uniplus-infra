@@ -1,0 +1,39 @@
+apiVersion: v2
+name: tempo
+description: |
+  Tempo — armazenamento de traces distribuídos. Empacotado como chart wrapper
+  sobre grafana/tempo (single-binary) com receivers OTLP e storage S3
+  (MinIO em standalone, futuramente per-DC em prod).
+
+  Decisão arquitetural: ver docs/adrs/ADR-012-tempo-singlebinary-s3-standalone.md
+type: application
+
+# Versão do chart wrapper Uni+.
+version: 0.1.0
+
+# Versão do Tempo upstream empacotado.
+appVersion: "2.9.0"
+
+home: https://github.com/unifesspa-edu-br/uniplus-infra
+sources:
+  - https://github.com/unifesspa-edu-br/uniplus-infra
+  - https://github.com/grafana/helm-charts
+
+maintainers:
+  - name: CTIC Unifesspa
+    url: https://github.com/unifesspa-edu-br
+
+keywords:
+  - tempo
+  - observability
+  - tracing
+  - opentelemetry
+  - uniplus
+
+# Dependência do chart upstream oficial — single-binary mode.
+# Sem alias: valores acessíveis via .Values.x no scope do subchart.
+dependencies:
+  - name: tempo
+    version: 1.24.4
+    repository: https://grafana.github.io/helm-charts
+    condition: tempo.enabled

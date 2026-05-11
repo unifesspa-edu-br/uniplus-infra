@@ -1,48 +1,48 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "platform/observability/loki — wrapper schema",
-  "description": "Validação dos campos críticos do wrapper Uni+ (subchart upstream NÃO validado aqui — schema cresce muito sem ganho).",
+  "title": "platform/observability/tempo — wrapper schema",
+  "description": "Validação dos campos críticos do wrapper Uni+. Subchart upstream NÃO validado aqui.",
   "type": "object",
   "properties": {
-    "loki": {
+    "tempo": {
       "type": "object",
       "properties": {
         "enabled": { "type": "boolean" },
-        "deploymentMode": {
-          "type": "string",
-          "enum": ["SingleBinary", "SimpleScalable", "Distributed"],
-          "description": "Modo de deploy do Loki. SingleBinary obrigatório em standalone (1 réplica)."
-        },
-        "loki": {
+        "replicas": { "type": "integer", "minimum": 1 },
+        "tempo": {
           "type": "object",
           "properties": {
-            "auth_enabled": { "type": "boolean" },
-            "commonConfig": {
+            "retention": {
+              "type": "string",
+              "pattern": "^[0-9]+(h|d|w)$",
+              "description": "Período de retenção dos blocks (compactor.compaction.block_retention)."
+            },
+            "multitenancyEnabled": { "type": "boolean" },
+            "storage": {
               "type": "object",
               "properties": {
-                "replication_factor": {
-                  "type": "integer",
-                  "minimum": 1,
-                  "description": "Em SingleBinary com 1 réplica, deve ser 1; senão Loki falha no startup."
+                "trace": {
+                  "type": "object",
+                  "properties": {
+                    "backend": {
+                      "type": "string",
+                      "enum": ["s3", "gcs", "azure", "local"]
+                    }
+                  },
+                  "required": ["backend"]
                 }
               }
             },
-            "limits_config": {
+            "receivers": {
               "type": "object",
-              "properties": {
-                "retention_period": {
-                  "type": "string",
-                  "pattern": "^[0-9]+(h|d|w)$",
-                  "description": "Período de retenção (ex: 168h, 7d, 1w). Aplicado pelo compactor."
-                }
-              }
+              "description": "Receivers OTLP (e opcionalmente jaeger/opencensus)."
             }
           }
         }
       },
       "required": ["enabled"]
     },
-    "lokiWrapper": {
+    "tempoWrapper": {
       "type": "object",
       "description": "Configs do wrapper Uni+ — chave prefixada por chart name para isolamento entre wrappers no environment compartilhado.",
       "properties": {

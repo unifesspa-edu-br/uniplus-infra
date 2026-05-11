@@ -23,7 +23,7 @@
 # IMPORTANTE — todos os toggles do subchart upstream ficam dentro do bloco
 # `loki:` (subchart sem alias; valores top-level com a chave do subchart
 # são passados a ele). Configs do wrapper Uni+ (ExternalSecret, NetworkPolicy
-# próprios) ficam em chaves únicas `uniplusExternalSecrets:` e
+# próprios) ficam em chaves únicas `lokiWrapper:` e
 # `uniplusNetworkPolicy:` para evitar colisão com chaves homônimas do subchart
 # (`networkPolicy:` upstream gera 5 NPs próprias se ativado).
 
@@ -226,51 +226,60 @@ loki:
 # ============================================================================
 # Wrapper Uni+ — ExternalSecret + NetworkPolicy próprios
 # ============================================================================
-# Chaves uniplus* para evitar colisão com chaves homônimas do subchart
-# upstream (que possui seus próprios `networkPolicy:` e nada nomeado
-# `externalSecrets:` mas convém manter o pattern unificado).
+# Bloco `lokiWrapper:` agrupa configs do wrapper SOB CHAVE PREFIXADA pelo
+# nome do chart. Por que não chave genérica `uniplusExternalSecrets:` ou
+# `uniplusNetworkPolicy:` no top-level? Porque o environment file standalone
+# é COMPARTILHADO entre todos os charts wrapper (Loki, Tempo, OTel Collector,
+# etc.) — chaves top-level homônimas seriam DUPLICADAS no YAML quando dois
+# wrappers configuram seus respectivos secrets+policies, com YAML duplicate
+# keys causando "last wins" silencioso (chart Loki acabaria lendo path Vault
+# do Tempo, ou vice-versa).
+#
+# Solução: cada wrapper consome `<chartName>Wrapper.*` no top-level. Helpers
+# e templates só leem `.Values.lokiWrapper.*`, garantindo isolamento absoluto.
 
-# uniplusExternalSecrets: bloco que controla a sintese do Secret K8s com
-# credenciais MinIO via External Secrets Operator. Precisa de ESO instalado
-# e ClusterSecretStore `vault-default` apontando para o Vault standalone.
-uniplusExternalSecrets:
-  # Default off para o helm template standalone funcionar fora do cluster
-  # (lab K3s sem ESO + Vault). Environment standalone liga.
-  enabled: false
-  refreshInterval: "1h"
-  secretStoreRef:
-    kind: ClusterSecretStore
-    name: vault-default
-  # Nome explícito do Secret K8s sintetizado. Vazio = derivar automaticamente
-  # via helper uniplus-loki.s3SecretName ("<chart-name>-s3-creds" = "loki-s3-creds").
-  # Sobrescrever apenas quando precisar de 2+ releases Loki no mesmo namespace
-  # (padrão do uniplus-platform AppSet é 1 release por NS, então default OK).
-  s3SecretName: ""
-  s3:
-    # Path no Vault (KV v2). Override por environment.
-    vaultPath: "secret/standalone/minio/loki"
-    # Nomes dos campos no Vault (alinhado com o spike Fase 1).
-    accessKeyIdKey: "accesskey"
-    secretAccessKeyKey: "secretkey"
-    endpointKey: "endpoint"
-    regionKey: "region"
+lokiWrapper:
+  # Sintese do Secret K8s com credenciais MinIO via External Secrets Operator.
+  # Precisa de ESO instalado e ClusterSecretStore `vault-default` apontando
+  # para o Vault standalone.
+  externalSecrets:
+    # Default off para o helm template standalone funcionar fora do cluster
+    # (lab K3s sem ESO + Vault). Environment standalone liga.
+    enabled: false
+    refreshInterval: "1h"
+    secretStoreRef:
+      kind: ClusterSecretStore
+      name: vault-default
+    # Nome explícito do Secret K8s sintetizado. Vazio = derivar automaticamente
+    # via helper uniplus-loki.s3SecretName ("<chart-name>-s3-creds" = "loki-s3-creds").
+    # Sobrescrever apenas quando precisar de 2+ releases Loki no mesmo namespace
+    # (padrão do uniplus-platform AppSet é 1 release por NS, então default OK).
+    s3SecretName: ""
+    s3:
+      # Path no Vault (KV v2). Override por environment.
+      vaultPath: "secret/standalone/minio/loki"
+      # Nomes dos campos no Vault (alinhado com o spike Fase 1).
+      accessKeyIdKey: "accesskey"
+      secretAccessKeyKey: "secretkey"
+      endpointKey: "endpoint"
+      regionKey: "region"
 
-# uniplusNetworkPolicy: emite uma NetworkPolicy ingress restrito + egress para
-# MinIO + DNS K8s. Default off para preservar templating fora de clusters com
-# NetworkPolicy controller (calico/cilium). Environments ativam.
-uniplusNetworkPolicy:
-  enabled: false
-  # Namespaces autorizados a fazer push/query de logs. Default cobre o NS
-  # do Grafana (consumidor de query) e o NS do OTel Collector (push de logs
-  # — futuro #30). Cada environment pode estender.
-  ingressNamespaces:
-    - observability-grafana
-    - observability-otel-collector
-  # CIDR do MinIO (data-host privado). Override por environment.
-  minioCIDR: "10.0.2.87/32"
-  minioPort: 9000
-  # Service CIDR do K3s para acesso ao kube-apiserver (DNS via CoreDNS no
-  # Service `kubernetes` em default). Override por environment se cluster
-  # diferente.
-  kubeApiCidrs:
-    - 10.43.0.0/16
+  # NetworkPolicy ingress restrito + egress para MinIO + DNS K8s. Default off
+  # para preservar templating fora de clusters com NetworkPolicy controller
+  # (calico/cilium). Environments ativam.
+  networkPolicy:
+    enabled: false
+    # Namespaces autorizados a fazer push/query de logs. Default cobre o NS
+    # do Grafana (consumidor de query) e o NS do OTel Collector (push de logs
+    # — futuro #30). Cada environment pode estender.
+    ingressNamespaces:
+      - observability-grafana
+      - observability-otel-collector
+    # CIDR do MinIO (data-host privado). Override por environment.
+    minioCIDR: "10.0.2.87/32"
+    minioPort: 9000
+    # Service CIDR do K3s para acesso ao kube-apiserver (DNS via CoreDNS no
+    # Service `kubernetes` em default). Override por environment se cluster
+    # diferente.
+    kubeApiCidrs:
+      - 10.43.0.0/16
