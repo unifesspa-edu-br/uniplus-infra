@@ -107,9 +107,14 @@ log "Token OIDC obtido com audience=${audiences}"
 
 # --- 2. Marcar timestamp ANTES do POST -------------------------------------
 
-# O audit log é JSON-lines com campo `time` em RFC3339. Vamos buscar entradas
-# emitidas a partir desse momento para evitar pegar lixo de runs anteriores.
-since_iso=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+# O audit log é JSON-lines com campo `time` em RFC3339 com fração de segundo
+# (`2026-05-11T11:21:45.123Z`). Comparação lexicográfica falha porque `.`
+# < `Z` em ASCII — `.123Z` ordena ANTES de `Z` puro, então entradas válidas
+# emitidas no mesmo segundo do POST seriam descartadas. Usamos epoch numérico
+# (segundo inteiro, com 1s de slack para absorver clock drift entre o
+# host local e o pod do Vault) e o jq converte `.time` removendo fração
+# antes de `fromdate`.
+since_epoch_minus_1=$(( $(date -u +%s) - 1 ))
 
 # --- 3. POST /api/v1/selecao/editais com Idempotency-Key -------------------
 
@@ -158,7 +163,7 @@ esac
 # de "audit device desabilitado". Em sucesso, ler audit log e filtrar por
 # entradas posteriores a $since_iso (lexicografic compare em RFC3339 funciona).
 
-log "Procurando entrada transit/encrypt/${TRANSIT_KEY} no audit log desde ${since_iso}"
+log "Procurando entrada transit/encrypt/${TRANSIT_KEY} no audit log desde epoch=${since_epoch_minus_1}"
 
 # `set +e` localmente para distinguir erros de SSH/kubectl (rc!=0) de
 # "comando rodou mas devolveu vazio" (audit ausente).
@@ -188,20 +193,23 @@ if [ -z "$audit_devices" ] \
     exit 0
 fi
 
-# Audit habilitado — buscar entrada DEPOIS de $since_iso usando jq para
-# parsear JSON-lines e filtrar por time + path. tail -500 dá folga para
-# bursts de tráfego concorrente.
+# Audit habilitado — buscar entrada DEPOIS de $since_epoch_minus_1 usando
+# jq para parsear JSON-lines, converter `.time` (RFC3339 com fração) em
+# epoch removendo fração com sub() e comparar numericamente com >=.
+# tail -500 dá folga para bursts de tráfego concorrente.
 set +e
 audit_hits=$(ssh -i "$SSH_KEY" -o ConnectTimeout=10 "$SSH_HOST" "
 sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml -n ${VAULT_POD_NS} exec -i ${VAULT_POD_NAME} -- \
   sh -c 'tail -500 ${AUDIT_LOG_PATH}'
-" 2>/dev/null | jq -c --arg since "$since_iso" --arg path "transit/encrypt/${TRANSIT_KEY}" \
-    'select(.time > $since and .request.path == $path)')
+" 2>/dev/null | jq -c \
+    --argjson since "$since_epoch_minus_1" \
+    --arg path "transit/encrypt/${TRANSIT_KEY}" \
+    'select((.time | sub("\\.[0-9]+Z$"; "Z") | fromdate) >= $since and .request.path == $path)')
 hits_rc=$?
 set -e
 
 if [ "$hits_rc" -ne 0 ] || [ -z "$audit_hits" ]; then
-    log "ERRO: nenhuma entrada transit/encrypt/${TRANSIT_KEY} no audit log emitida APÓS ${since_iso}"
+    log "ERRO: nenhuma entrada transit/encrypt/${TRANSIT_KEY} no audit log emitida APÓS epoch=${since_epoch_minus_1}"
     log "Verificar:"
     log "  - log do pod uniplus-api-selecao mostra Provider=vault"
     log "  - role uniplus-api existe com bound_service_account_names contendo uniplus-api-selecao"
@@ -212,4 +220,4 @@ fi
 log "Audit log confirma uso do Vault Transit:"
 echo "$audit_hits" | jq -r '"  \(.time) \(.request.path) (op=\(.request.operation))"'
 
-log "OK — smoke E2E verde: HTTP ${http_status} + transit/encrypt no audit do Vault (após ${since_iso})"
+log "OK — smoke E2E verde: HTTP ${http_status} + transit/encrypt no audit do Vault (após epoch=${since_epoch_minus_1})"
