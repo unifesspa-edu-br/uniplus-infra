@@ -130,4 +130,19 @@ spec:
         - protocol: TCP
           port: {{ .Values.uniplusApiPortal.networkPolicy.schemaRegistryPort }}
     {{- end }}
+    {{- if .Values.uniplusApiPortal.otel.enabled }}
+    # OTel Collector DaemonSet (ADR-013) — egress OTLP gRPC (4317) e HTTP (4318)
+    # cross-namespace. O collector já tem o namespace `uniplus` na whitelist
+    # ingressNamespaces (platform/observability/otelcol/values.yaml), então
+    # esta regra fecha a simetria do lado do consumidor.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.uniplusApiPortal.networkPolicy.otelCollectorNamespace }}
+      ports:
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 4318
+    {{- end }}
 {{- end }}

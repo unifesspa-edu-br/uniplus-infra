@@ -965,6 +965,15 @@ uniplusApiPortal:
     oauth:
       tokenEndpoint: https://standalone.portaluni.com.br/auth/realms/uniplus/protocol/openid-connect/token
       clientId: uniplus-api-portal
+  # OpenTelemetry — destino OTLP gRPC do collector DaemonSet do cluster.
+  # Service ClusterIP `<release>.<ns>.svc.cluster.local:4317`; o release name
+  # `platform-observability-otelcol-uniplus-standalone` é gerado pelo
+  # ApplicationSet (platform/observability/otelcol). Endpoint vivo desde
+  # PR uniplus-infra#224 — esta entrada destrava a issue #226.
+  otel:
+    exporter:
+      endpoint: http://platform-observability-otelcol-uniplus-standalone.observability-otelcol.svc.cluster.local:4317
+      protocol: grpc
 
 uniplusApiSelecao:
   enabled: true
@@ -1009,6 +1018,11 @@ uniplusApiSelecao:
     oauth:
       tokenEndpoint: https://standalone.portaluni.com.br/auth/realms/uniplus/protocol/openid-connect/token
       clientId: uniplus-api-selecao
+  # Ver comentário em uniplusApiPortal.otel.
+  otel:
+    exporter:
+      endpoint: http://platform-observability-otelcol-uniplus-standalone.observability-otelcol.svc.cluster.local:4317
+      protocol: grpc
 
 uniplusApiIngresso:
   enabled: true
@@ -1053,6 +1067,11 @@ uniplusApiIngresso:
     oauth:
       tokenEndpoint: https://standalone.portaluni.com.br/auth/realms/uniplus/protocol/openid-connect/token
       clientId: uniplus-api-ingresso
+  # Ver comentário em uniplusApiPortal.otel.
+  otel:
+    exporter:
+      endpoint: http://platform-observability-otelcol-uniplus-standalone.observability-otelcol.svc.cluster.local:4317
+      protocol: grpc
 
 # ----------------------------------------------------------------------------
 # Frontends Uni+ (Angular SPAs servidas por nginx-unprivileged). 1 chart,

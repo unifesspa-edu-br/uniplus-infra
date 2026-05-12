@@ -22,6 +22,9 @@
   {{- fail "uniplusApiPortal.encryption.kubernetesRole é obrigatório quando encryption.provider=vault. A role precisa existir no Vault (uniplus-infra#219) com bound_service_account_names incluindo a SA deste chart." -}}
   {{- end -}}
 {{- end -}}
+{{- if and .Values.uniplusApiPortal.otel.enabled (not .Values.uniplusApiPortal.otel.exporter.endpoint) -}}
+{{- fail "uniplusApiPortal.otel.exporter.endpoint é obrigatório quando otel.enabled=true. Configurar em environments/<env>/values.yaml apontando para o Service do OTel Collector do cluster (ex.: http://platform-observability-otelcol-uniplus-standalone.observability-otelcol.svc.cluster.local:4317). Sem isto, o SDK .NET cai no default localhost:4317 — drops silenciosos." -}}
+{{- end -}}
 {{- if and .Values.uniplusApiPortal.schemaRegistry.url (eq .Values.uniplusApiPortal.schemaRegistry.authType "OAuthBearer") -}}
   {{- if not .Values.uniplusApiPortal.schemaRegistry.oauth.tokenEndpoint -}}
   {{- fail "uniplusApiPortal.schemaRegistry.oauth.tokenEndpoint é obrigatório quando schemaRegistry.url está populado e authType=OAuthBearer. ADR-0051 exige endpoint /protocol/openid-connect/token do realm Keycloak para emissão do bearer token." -}}
@@ -191,6 +194,23 @@ spec:
             {{- end }}
             {{- end }}
 
+            {{- if .Values.uniplusApiPortal.otel.enabled }}
+            # === OpenTelemetry (ADR-0018) ===
+            # SDK .NET lê estas envs no boot — `AddOtlpExporter()` em
+            # AdicionarObservabilidade (uniplus-api Infrastructure.Core/Observability)
+            # respeita OTEL_EXPORTER_OTLP_ENDPOINT/PROTOCOL. service.name canônico
+            # é setado por Program.cs via UniPlusServiceNames (ADR-0052); o
+            # OTEL_SERVICE_NAME aqui só é renderizado quando o environment
+            # sobrescrever explicitamente (raro — útil em integrações externas).
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.uniplusApiPortal.otel.exporter.endpoint | quote }}
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: {{ .Values.uniplusApiPortal.otel.exporter.protocol | quote }}
+            {{- if .Values.uniplusApiPortal.otel.resource.serviceName }}
+            - name: OTEL_SERVICE_NAME
+              value: {{ .Values.uniplusApiPortal.otel.resource.serviceName | quote }}
+            {{- end }}
+            {{- end }}
             {{- range $i, $origin := .Values.uniplusApiPortal.cors.allowedOrigins }}
             - name: Cors__AllowedOrigins__{{ $i }}
               value: {{ $origin | quote }}
