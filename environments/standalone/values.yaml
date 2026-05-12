@@ -526,6 +526,10 @@ networkPolicy:
   enabled: true
   externalSecretsNamespace: external-secrets
   traefikNamespace: traefik
+  # Aplicações que consomem Vault via Transit/auth-kubernetes em standalone:
+  # uniplus-api-{selecao,portal,ingresso} no namespace `uniplus` (encryption.provider=vault).
+  appConsumerNamespaces:
+    - uniplus
   kubeApiCidrs:
     - 10.43.0.0/16
     - 10.0.1.0/24  # ajustar por cluster — ver bloco acima
