@@ -23,7 +23,7 @@
   {{- end -}}
 {{- end -}}
 {{- if and .Values.uniplusApiSelecao.otel.enabled (not .Values.uniplusApiSelecao.otel.exporter.endpoint) -}}
-{{- fail "uniplusApiSelecao.otel.exporter.endpoint é obrigatório quando otel.enabled=true. Configurar em environments/<env>/values.yaml apontando para o Service do OTel Collector do cluster (ex.: http://platform-observability-otelcol-uniplus-standalone.observability-otelcol.svc.cluster.local:4317). Sem isto, o SDK .NET cai no default localhost:4317 — drops silenciosos." -}}
+{{- fail "uniplusApiSelecao.otel.exporter.endpoint é obrigatório quando otel.enabled=true. Configurar em environments/<env>/values.yaml apontando para o Service do OTel Collector do cluster (ex.: http://otelcol.observability-otelcol.svc.cluster.local:4317). Sem isto, o SDK .NET cai no default localhost:4317 — drops silenciosos." -}}
 {{- end -}}
 {{- if and .Values.uniplusApiSelecao.schemaRegistry.url (eq .Values.uniplusApiSelecao.schemaRegistry.authType "OAuthBearer") -}}
   {{- if not .Values.uniplusApiSelecao.schemaRegistry.oauth.tokenEndpoint -}}
