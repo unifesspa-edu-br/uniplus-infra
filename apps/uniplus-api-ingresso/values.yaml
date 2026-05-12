@@ -153,6 +153,24 @@ uniplusApiIngresso:
         enabled: false
         clusterIssuer: ""       # ex.: letsencrypt-prod
 
+  # === OpenTelemetry (ADR-0018 uniplus-api + ADR-013 uniplus-infra) ===
+  # Exporta traces + metrics + logs via OTLP para o OTel Collector DaemonSet
+  # do cluster (namespace observability-otelcol). Endpoint vazio + enabled=true
+  # é rejeitado pelo guard do template — pod só sobe quando o environment
+  # popular o endpoint real (release name do collector varia entre standalone
+  # e demais ambientes). Sem este wiring, o SDK .NET cai no default
+  # http://localhost:4317 e drops silenciosos para um sink inexistente.
+  otel:
+    enabled: true
+    exporter:
+      endpoint: ""              # ex.: http://platform-observability-otelcol-uniplus-standalone.observability-otelcol.svc.cluster.local:4317
+      protocol: grpc            # "grpc" (porta 4317) ou "http/protobuf" (porta 4318)
+    resource:
+      # Vazio por default — Program.cs do uniplus-api passa o nome canônico
+      # de UniPlusServiceNames diretamente para AdicionarObservabilidade (ADR-0052).
+      # Setar aqui só quando integração externa exigir override via env (raro).
+      serviceName: ""
+
   # === NetworkPolicy ===
   networkPolicy:
     enabled: true
@@ -171,6 +189,11 @@ uniplusApiIngresso:
     # distintos, definir aqui para liberar egress HTTPS separado.
     schemaRegistryCIDR: ""
     schemaRegistryPort: 443
+    # OTel Collector DaemonSet (ADR-013) — namespace whitelist no
+    # collector já inclui `uniplus` por default (ver
+    # platform/observability/otelcol/values.yaml ingressNamespaces).
+    # Esta config libera o egress correspondente do lado da API.
+    otelCollectorNamespace: observability-otelcol
 
   metrics:
     enabled: false
