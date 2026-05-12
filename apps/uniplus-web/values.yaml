@@ -68,7 +68,7 @@ uniplusWeb:
       # prefixo `web-`) e os demais (com `web-`). Verificar tags em
       # https://github.com/unifesspa-edu-br/packages.
       image: uniplus-portal
-      tag: v0.2.0  # tag publicada em GHCR (override per-app possível)
+      tag: v0.2.1  # tag publicada em GHCR (override per-app possível)
       host: ""  # ex.: portal.standalone.portaluni.com.br
       # Conteúdo escrito em /assets/runtime-config.json via ConfigMap.
       # Schema é a interface AppConfig em libs/shared-data/lib/config/
@@ -91,7 +91,7 @@ uniplusWeb:
       enabled: false  # ativar em environments/<env>/values.yaml
       replicas: 2
       image: uniplus-web-selecao
-      tag: v0.2.0
+      tag: v0.2.1
       host: ""
       runtimeConfig:
         apiUrl: ""
@@ -111,7 +111,7 @@ uniplusWeb:
       enabled: false  # ativar em environments/<env>/values.yaml
       replicas: 2
       image: uniplus-web-ingresso
-      tag: v0.2.0
+      tag: v0.2.1
       host: ""
       runtimeConfig:
         apiUrl: ""
