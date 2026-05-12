@@ -123,6 +123,13 @@ networkPolicy:
   externalSecretsNamespace: external-secrets
   # Namespace do Traefik no mesmo cluster (acesso UI/API).
   traefikNamespace: traefik
+  # Namespaces de aplicações consumidoras do Vault (auth/kubernetes/login +
+  # transit/{encrypt,decrypt}). Cada entrada gera uma regra de ingress 8200.
+  # Vazio = sem regra; aplicações em namespaces fora desta lista não
+  # alcançarão o Vault server (mesmo com NetworkPolicy de egress permissiva
+  # do lado do consumidor). Em standalone, `uniplus` é o namespace dos pods
+  # uniplus-api-{selecao,portal,ingresso} (encryption.provider=vault).
+  appConsumerNamespaces: []
   # CIDRs restritos para egress ao Kubernetes API server (service registration).
   # Padrão: service CIDR do K3s (10.43.0.0/16) — cobre o ClusterIP do
   # serviço `kubernetes` em `default` sem permitir destinos externos em 443/6443.

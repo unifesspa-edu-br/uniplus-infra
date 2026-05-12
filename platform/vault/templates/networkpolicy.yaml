@@ -52,6 +52,20 @@ spec:
       ports:
         - protocol: TCP
           port: 8200
+    {{- range $ns := .Values.networkPolicy.appConsumerNamespaces }}
+    # Aplicações consumidoras (ex.: uniplus-api-* fazendo Transit
+    # encrypt/decrypt via auth/kubernetes/login + transit/{encrypt,decrypt}).
+    # Cada namespace listado em values.networkPolicy.appConsumerNamespaces
+    # ganha uma regra de ingress 8200. Restringe-se ao listener API (sem
+    # acesso ao listener interno 8201 reservado a Raft).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $ns | quote }}
+      ports:
+        - protocol: TCP
+          port: 8200
+    {{- end }}
   egress:
     # Auto-unseal cross-cluster: Vault chama o Transit em PA1.
     # IP e porta derivados de topology.{pa1HostIP,transitNodePort} — definidos
