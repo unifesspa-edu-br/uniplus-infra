@@ -976,7 +976,7 @@ uniplusApiPortal:
   # PR uniplus-infra#224 — esta entrada destrava a issue #226.
   otel:
     exporter:
-      endpoint: http://platform-observability-otelcol-uniplus-standalone.observability-otelcol.svc.cluster.local:4317
+      endpoint: http://otelcol.observability-otelcol.svc.cluster.local:4317
       protocol: grpc
 
 uniplusApiSelecao:
@@ -1025,7 +1025,7 @@ uniplusApiSelecao:
   # Ver comentário em uniplusApiPortal.otel.
   otel:
     exporter:
-      endpoint: http://platform-observability-otelcol-uniplus-standalone.observability-otelcol.svc.cluster.local:4317
+      endpoint: http://otelcol.observability-otelcol.svc.cluster.local:4317
       protocol: grpc
 
 uniplusApiIngresso:
@@ -1074,7 +1074,7 @@ uniplusApiIngresso:
   # Ver comentário em uniplusApiPortal.otel.
   otel:
     exporter:
-      endpoint: http://platform-observability-otelcol-uniplus-standalone.observability-otelcol.svc.cluster.local:4317
+      endpoint: http://otelcol.observability-otelcol.svc.cluster.local:4317
       protocol: grpc
 
 # ----------------------------------------------------------------------------
