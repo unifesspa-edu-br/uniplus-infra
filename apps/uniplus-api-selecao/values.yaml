@@ -194,6 +194,12 @@ uniplusApiSelecao:
     # platform/observability/otelcol/values.yaml ingressNamespaces).
     # Esta config libera o egress correspondente do lado da API.
     otelCollectorNamespace: observability-otelcol
+    # Vault Transit (ADR-0027) — namespace + port do servidor Vault.
+    # Regra de egress é renderizada apenas quando encryption.provider=vault.
+    # Em environments com Vault em outro cluster, manter encryption.provider=local
+    # ou expor o Vault via Service/Ingress in-cluster proxy.
+    vaultNamespace: vault
+    vaultPort: 8200
 
   metrics:
     enabled: false
