@@ -161,7 +161,13 @@ grafana:
           type: prometheus
           uid: prometheus
           access: proxy
-          url: http://platform-observability-prometheus-uniplus-standalone-prometheus.observability-prometheus.svc.cluster.local:9090
+          # Chart kube-prometheus-stack aplica fullnameOverride=platform-observability-pro,
+          # então o service real do Prometheus API (porta 9090) é
+          # platform-observability-pro-prometheus.observability-prometheus.svc.cluster.local:9090,
+          # não o nome composto com -uniplus-standalone-prometheus (esse último service
+          # existe mas expõe porta 9100 + endpoint diferente). Mesma origem da correção
+          # OTel em uniplus-infra#237/#238. Antes deste fix, HTTP 502 via Grafana proxy.
+          url: http://platform-observability-pro-prometheus.observability-prometheus.svc.cluster.local:9090
           isDefault: true
           jsonData:
             timeInterval: 30s
