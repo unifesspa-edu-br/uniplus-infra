@@ -145,4 +145,21 @@ spec:
         - protocol: TCP
           port: 4318
     {{- end }}
+    {{- if eq .Values.uniplusApiIngresso.encryption.provider "vault" }}
+    # Vault Transit (ADR-0027) — egress TCP 8200 para o pod do Vault quando
+    # encryption.provider=vault. Sem esta regra todo path que toca cifragem
+    # at-rest (idempotency_cache + chaves materializadas) falha com Connection
+    # refused. Padrão NamespaceSelector + PodSelector (mesmo do Keycloak)
+    # restringe ao Vault server e ignora pods auxiliares (agent-injector etc.).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.uniplusApiIngresso.networkPolicy.vaultNamespace }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vault
+      ports:
+        - protocol: TCP
+          port: {{ .Values.uniplusApiIngresso.networkPolicy.vaultPort }}
+    {{- end }}
 {{- end }}
