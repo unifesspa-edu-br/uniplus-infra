@@ -9,7 +9,7 @@
 # Pipelines:
 # - logs: filelog (containers do nó) + otlp (apps push direto) → loki
 # - traces: otlp (apps push) → tempo
-# - metrics: NÃO ativada — Prometheus já scrape direto (kube-prometheus-stack)
+# - metrics: otlp (apps .NET push OTLP) → prometheusremotewrite (Prometheus standalone)
 #
 # IMPORTANTE — chart upstream tem alias `otelCollector` (definido em
 # Chart.yaml). Diferente do Loki/Tempo, aqui usamos alias para distinguir
@@ -141,6 +141,14 @@ otelCollector:
         endpoint: ${env:TEMPO_OTLP_ENDPOINT}
         tls:
           insecure: true
+      # Prometheus remote write — recebe métricas OTLP dos apps .NET e encaminha
+      # para o Prometheus standalone via /api/v1/write.
+      # Endpoint via env var `${env:PROMETHEUS_REMOTE_WRITE_ENDPOINT}` —
+      # mesmo padrão do Loki/Tempo: valor real injetado por environment.
+      prometheusremotewrite:
+        endpoint: ${env:PROMETHEUS_REMOTE_WRITE_ENDPOINT}
+        tls:
+          insecure: true
       # Debug (stdout) — útil em dev; manter para troubleshooting.
       debug:
         verbosity: basic
@@ -159,9 +167,14 @@ otelCollector:
           receivers: [otlp]
           processors: [memory_limiter, resource, batch]   # k8sattributes adicionado pelo preset
           exporters: [otlphttp/tempo, debug]
-        # SEM metrics pipeline — Prometheus do platform/observability/prometheus/
-        # já scrape direto os apps via ServiceMonitor. Adicionar pipeline aqui
-        # seria redundante.
+        # Metrics: apps .NET emitem métricas OTLP → OTel Collector → Prometheus
+        # via remote_write. Complementar ao scrape do kube-prometheus-stack
+        # (que cobre K8s/infra); este pipeline cobre métricas de aplicação
+        # empurradas via OpenTelemetryConfiguration.cs (SDK .NET).
+        metrics:
+          receivers: [otlp]
+          processors: [memory_limiter, resource, batch]   # k8sattributes adicionado pelo preset
+          exporters: [prometheusremotewrite, debug]
 
   # ============================================================================
   # Resources — DaemonSet pequeno em standalone
@@ -183,6 +196,8 @@ otelCollector:
     - name: LOKI_OTLP_ENDPOINT
       value: ""
     - name: TEMPO_OTLP_ENDPOINT
+      value: ""
+    - name: PROMETHEUS_REMOTE_WRITE_ENDPOINT
       value: ""
 
   # ============================================================================
@@ -243,6 +258,7 @@ otelCollectorWrapper:
     # Loki + Tempo destinos dos exporters.
     egressLokiNamespace: observability-loki
     egressTempoNamespace: observability-tempo
+    egressPrometheusNamespace: observability-prometheus
     # Service CIDR do K3s para acesso ao kube-apiserver (k8sattributes precisa
     # de Watch em pods).
     kubeApiCidrs:
