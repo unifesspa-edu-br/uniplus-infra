@@ -75,7 +75,6 @@ OUTPUT_FILE="${VALIDACAO_DIR}/metrics-pipeline-$(date +%Y-%m-%d).md"
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
 NC='\033[0m'
 
 log()     { printf '%s [smoke-metrics] %s\n'       "$(date -u +%H:%M:%SZ)" "$1" >&2; }
@@ -216,7 +215,6 @@ prom_result_values() {
 log "Validação 1: existência de http_server_request_duration_seconds_count"
 
 Q_EXISTENCE='count({__name__="http_server_request_duration_seconds_count", service_name=~"uniplus-api-.+"})'
-EXISTENCE_COUNT=$(prom_result_count "$Q_EXISTENCE")
 EXISTENCE_VAL=$(prom_query "$Q_EXISTENCE" | jq -r '.data.result[0].value[1] // "0"')
 
 if [ "${EXISTENCE_VAL:-0}" != "0" ] && [[ "${EXISTENCE_VAL:-0}" =~ ^[0-9]+$ ]]; then
@@ -325,7 +323,6 @@ done
 
 # ── Geração do documento markdown ────────────────────────────────────────────
 RUN_DATE="$(date -u '+%Y-%m-%d %H:%M:%SZ')"
-RUN_DATE_SHORT="$(date +%Y-%m-%d)"
 
 cat > "$OUTPUT_FILE" <<MARKDOWN_EOF
 # Smoke — Pipeline Metrics OTLP → Prometheus (standalone)
