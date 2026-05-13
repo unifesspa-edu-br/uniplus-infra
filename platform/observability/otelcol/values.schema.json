@@ -46,6 +46,7 @@
             },
             "egressLokiNamespace": { "type": "string", "minLength": 1 },
             "egressTempoNamespace": { "type": "string", "minLength": 1 },
+            "egressPrometheusNamespace": { "type": "string", "minLength": 1 },
             "kubeApiCidrs": {
               "type": "array",
               "items": {

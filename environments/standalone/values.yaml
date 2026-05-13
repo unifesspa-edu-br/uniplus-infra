@@ -371,6 +371,10 @@ otelCollector:
       value: http://platform-observability-loki-uniplus-standalone.observability-loki.svc.cluster.local:3100/otlp
     - name: TEMPO_OTLP_ENDPOINT
       value: http://platform-observability-tempo-uniplus-standalone.observability-tempo.svc.cluster.local:4318
+    - name: PROMETHEUS_REMOTE_WRITE_ENDPOINT
+      # Service do Prometheus standalone (fullnameOverride=platform-observability-pro, porta 9090).
+      # Mesmo service usado no datasource do Grafana (environments/standalone/values.yaml §grafana.datasources).
+      value: http://platform-observability-pro-prometheus.observability-prometheus.svc.cluster.local:9090/api/v1/write
 
 otelCollectorWrapper:
   networkPolicy:
@@ -383,6 +387,7 @@ otelCollectorWrapper:
       - keycloak
     egressLokiNamespace: observability-loki
     egressTempoNamespace: observability-tempo
+    egressPrometheusNamespace: observability-prometheus
     kubeApiCidrs:
       - 10.43.0.0/16
       - 10.0.1.0/24

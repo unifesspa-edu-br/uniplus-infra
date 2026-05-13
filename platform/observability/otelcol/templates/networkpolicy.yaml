@@ -8,6 +8,7 @@
 # - Egress:
 #   - Loki (porta 3100/HTTP no NS observability-loki) — exporter logs
 #   - Tempo (porta 4318/HTTP no NS observability-tempo) — exporter traces
+#   - Prometheus (porta 9090/HTTP no NS observability-prometheus) — remote write metrics
 #   - DNS K8s
 #   - kube-apiserver (k8sattributes processor watcha pods)
 apiVersion: networking.k8s.io/v1
@@ -59,6 +60,14 @@ spec:
         - port: 4318
           protocol: TCP
         - port: 4317
+          protocol: TCP
+    # Prometheus (metrics remote write)
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $np.egressPrometheusNamespace | quote }}
+      ports:
+        - port: 9090
           protocol: TCP
     # DNS K8s
     - to:
