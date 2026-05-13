@@ -3498,7 +3498,7 @@ export VAULT_TOKEN_FOR_AUDIT=<root token ou token com sys/audit>
 O script:
 
 1. Obtém token OIDC do realm `uniplus` validando audience.
-2. POST `/api/v1/selecao/editais` com `Idempotency-Key` UUID — exercita o `IdempotencyFilter` da uniplus-api que toca cifragem.
+2. POST `/api/editais` com `Idempotency-Key` UUID — exercita o `IdempotencyFilter` da uniplus-api que toca cifragem. A rota não tem prefixo `/v1` porque o Uni+ resolve versionamento via vendor MIME no boundary (ADR-0031) e identidade do módulo via subdomínio.
 3. Espera HTTP 201/422 (ambos válidos — qualquer 5xx é regressão).
 4. Lê audit log do Vault buscando entrada `transit/encrypt/uniplus-idempotency-aesgcm`.
 
