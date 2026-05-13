@@ -149,6 +149,13 @@ otelCollector:
         endpoint: ${env:PROMETHEUS_REMOTE_WRITE_ENDPOINT}
         tls:
           insecure: true
+        retry_on_failure:
+          enabled: true
+          initial_interval: 5s
+          max_elapsed_time: 60s   # fail fast — não acumular por 5 min (default) se Prometheus indisponível
+        sending_queue:
+          enabled: true
+          num_consumers: 5        # standalone não precisa dos 10 workers do default
       # Debug (stdout) — útil em dev; manter para troubleshooting.
       debug:
         verbosity: basic
@@ -174,7 +181,7 @@ otelCollector:
         metrics:
           receivers: [otlp]
           processors: [memory_limiter, resource, batch]   # k8sattributes adicionado pelo preset
-          exporters: [prometheusremotewrite, debug]
+          exporters: [prometheusremotewrite]
 
   # ============================================================================
   # Resources — DaemonSet pequeno em standalone
