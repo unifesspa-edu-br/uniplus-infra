@@ -133,9 +133,44 @@ grafana:
       labelValue: "1"
       searchNamespace: ALL
 
-  # SSO via OIDC (Keycloak — ADR-003) — placeholder. Habilitar em env values
-  # apontando pro realm Uni+ depois que Keycloak (apps/keycloak-replica)
-  # tiver o client `grafana` configurado.
+  # SSO via OIDC (Keycloak — ADR-003). Em environments com Keycloak local
+  # (ex.: standalone) habilitar setando `oidc.enabled: true` + URLs reais
+  # + ExternalSecret materializando client_secret no Secret K8s referenciado.
+  # O bloco grafana.grafana.ini.auth.generic_oauth abaixo só deve ser ativado
+  # quando oidc.enabled=true. Login local admin/* permanece como fallback.
+  oidc:
+    enabled: false
+    # Identificação humana exibida no botão de login (auth.generic_oauth.name).
+    providerName: "Uni+ Keycloak"
+    clientId: grafana
+    # URLs Keycloak realm `uniplus`. Override em environments/<env>/values.yaml.
+    issuerBaseUrl: ""  # ex.: https://standalone.portaluni.com.br/auth/realms/uniplus
+    # JMESPath para mapear claim `groups` → role Grafana. Default canônico
+    # alinhado com pattern AKHQ (grupos /admins/<app> + /editors/<app>).
+    roleAttributePath: |
+      contains(groups[*], '/admins/grafana') && 'Admin' || contains(groups[*], '/editors/grafana') && 'Editor' || 'Viewer'
+    # Permite assignment como Server Admin via grupo (cuidado: ServerAdmin
+    # tem permissão total cross-org). Default true para alinhar com o
+    # mapping de `/admins/grafana` → Admin no role_attribute_path.
+    allowAssignGrafanaAdmin: true
+    # Auto-login redireciona direto para Keycloak sem mostrar o form local.
+    # Default false para preservar fallback admin local em incidente.
+    autoLogin: false
+
+  # ExternalSecret que materializa o client_secret do client OIDC `grafana`
+  # do realm uniplus no namespace observability-grafana. Consumido via env
+  # OIDC_CLIENT_SECRET pelo Pod Grafana e referenciado em
+  # `grafana.ini.auth.generic_oauth.client_secret` como ${OIDC_CLIENT_SECRET}.
+  externalSecrets:
+    enabled: false
+    refreshInterval: "1h"
+    secretStoreRef:
+      kind: ClusterSecretStore
+      name: vault-default
+    oidcClient:
+      vaultPath: ""  # ex.: secret/standalone/keycloak/clients/grafana
+      clientSecretKey: client_secret
+
   grafana.ini:
     server:
       root_url: ""  # override por env (ex.: https://standalone.portaluni.com.br/grafana/)

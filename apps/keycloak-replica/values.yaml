@@ -240,3 +240,23 @@ keycloak:
 
   # Env vars adicionais (lista de `{name, value}` ou `{name, valueFrom}`).
   extraEnv: []
+
+  # ExternalSecret consolidado de client_secrets de aplicações OIDC do realm.
+  # Cada entrada de `clients` vira uma key remota → key local consumida via
+  # ${ENV_NAME} no realm.json (IMPORT_VARSUBSTITUTION_ENABLED=true). Permite
+  # que o realm-reconcile-job e o pod KC inicial materializem `secret`
+  # automaticamente para clients confidential como `grafana`, sem precisar de
+  # kcadm pós-import. O Secret K8s resultante é montado via envFrom no
+  # deployment do KC e no Job realm-reconcile.
+  oidcClientSecrets:
+    enabled: false
+    refreshInterval: "1h"
+    secretStoreRef:
+      kind: ClusterSecretStore
+      name: vault-default
+    # Lista de clientes OIDC a sincronizar do Vault.
+    # Cada item: { envName, vaultPath, vaultKey }
+    #   envName  — variável injetada no Pod (referenciada como ${envName} no realm.json)
+    #   vaultPath — path no Vault (ex.: secret/standalone/keycloak/clients/grafana)
+    #   vaultKey — propriedade dentro do segredo (ex.: client_secret)
+    clients: []

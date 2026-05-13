@@ -152,6 +152,15 @@ spec:
               value: "{{ .Values.keycloak.realmReconcile.logLevel | default "INFO" }}"
             - name: LOGGING_LEVEL_DE_ADORSYS_KEYCLOAK_CONFIG
               value: "{{ .Values.keycloak.realmReconcile.logLevel | default "INFO" }}"
+          {{- if .Values.keycloak.oidcClientSecrets.enabled }}
+          envFrom:
+            # Client secrets OIDC consumidos pelas substituições ${envName}
+            # no realm.json (IMPORT_VARSUBSTITUTION_ENABLED=true). Sem isso,
+            # clients confidential ficam com secret literal "${GRAFANA_CLIENT_SECRET}",
+            # quebrando o handshake OIDC do consumidor.
+            - secretRef:
+                name: {{ include "keycloak-replica.oidcClientSecretsName" . }}
+          {{- end }}
           volumeMounts:
             - name: realm-config
               mountPath: /realm

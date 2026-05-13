@@ -111,6 +111,13 @@ spec:
             # Bootstrap admin (KC_BOOTSTRAP_ADMIN_USERNAME, _PASSWORD).
             - secretRef:
                 name: {{ include "keycloak-replica.adminSecretName" . }}
+            {{- if .Values.keycloak.oidcClientSecrets.enabled }}
+            # Client secrets de aplicações OIDC do realm (ex.: GRAFANA_CLIENT_SECRET).
+            # Referenciados via ${envName} no realm.json e substituídos no
+            # --import-realm inicial via IMPORT_VARSUBSTITUTION_ENABLED=true.
+            - secretRef:
+                name: {{ include "keycloak-replica.oidcClientSecretsName" . }}
+            {{- end }}
           ports:
             - name: http
               containerPort: {{ $kc.http.httpPort }}

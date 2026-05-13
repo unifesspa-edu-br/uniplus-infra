@@ -132,11 +132,53 @@ grafana:
 
   persistence:
     storageClassName: standalone-local-nvme
+
+  # === SSO OIDC via Keycloak realm uniplus ===
+  # Habilita o ExternalSecret + envValueFrom + bloco auth.generic_oauth do
+  # subchart Grafana. Client `grafana` no realm provisionado pelo
+  # apps/keycloak-replica via realm-reconcile-job + IMPORT_VARSUBSTITUTION
+  # (uniplus-infra#263).
+  oidc:
+    enabled: true
+    issuerBaseUrl: https://standalone.portaluni.com.br/auth/realms/uniplus
+  externalSecrets:
+    enabled: true
+    oidcClient:
+      vaultPath: secret/standalone/keycloak/clients/grafana
+
   grafana.ini:
     server:
       root_url: https://standalone.portaluni.com.br/grafana/
       # subpath ativo — Grafana reescreve URLs internas com /grafana/.
       serve_from_sub_path: true
+    auth.generic_oauth:
+      enabled: true
+      name: "Uni+ Keycloak"
+      client_id: grafana
+      client_secret: "${OIDC_CLIENT_SECRET}"
+      scopes: "openid profile email groups"
+      auth_url: https://standalone.portaluni.com.br/auth/realms/uniplus/protocol/openid-connect/auth
+      token_url: https://standalone.portaluni.com.br/auth/realms/uniplus/protocol/openid-connect/token
+      api_url: https://standalone.portaluni.com.br/auth/realms/uniplus/protocol/openid-connect/userinfo
+      signout_redirect_url: https://standalone.portaluni.com.br/auth/realms/uniplus/protocol/openid-connect/logout
+      role_attribute_path: contains(groups[*], '/admins/grafana') && 'Admin' || contains(groups[*], '/editors/grafana') && 'Editor' || 'Viewer'
+      role_attribute_strict: false
+      allow_assign_grafana_admin: true
+      use_pkce: true
+    auth:
+      # Mantém form local admin/* visível como fallback de incidente Keycloak.
+      disable_login_form: false
+      oauth_auto_login: false
+
+  # Injeta env OIDC_CLIENT_SECRET no Pod via Secret K8s sintetizado pelo
+  # ExternalSecret. Consumido no template do auth.generic_oauth acima como
+  # ${OIDC_CLIENT_SECRET}. Nome do Secret bate com o materializado por
+  # platform/observability/grafana/templates/externalsecret.yaml.
+  envValueFrom:
+    OIDC_CLIENT_SECRET:
+      secretKeyRef:
+        name: platform-observability-grafana-uniplus-standalone-grafana-oidc-client-secret
+        key: client_secret
   # IngressRoute Traefik via subpath /grafana/* no FQDN raiz (consistente
   # com Keycloak em /auth/*). Middleware StripPrefix /grafana é emitido
   # automaticamente pelo template do wrapper — Grafana recebe paths sem
@@ -747,6 +789,17 @@ keycloak:
   # ServiceMonitor desligado até platform/observability/prometheus/ subir.
   serviceMonitor:
     enabled: false
+
+  # ExternalSecret consolidado de client_secrets OIDC do realm. Cada entrada
+  # vira chave do Secret K8s consumido via envFrom em deployment.yaml e
+  # realm-reconcile-job.yaml — referenciada como ${envName} no realm.json
+  # via IMPORT_VARSUBSTITUTION_ENABLED=true. Pattern uniplus-infra#263.
+  oidcClientSecrets:
+    enabled: true
+    clients:
+      - envName: GRAFANA_CLIENT_SECRET
+        vaultPath: secret/standalone/keycloak/clients/grafana
+        vaultKey: client_secret
 
 # ----------------------------------------------------------------------------
 # kafka-ui (AKHQ) — Web UI de gerenciamento do cluster Kafka SASL_SSL.

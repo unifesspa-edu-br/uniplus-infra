@@ -76,3 +76,7 @@ Mesmo nome serve para os outros (admin, client) com sufixo distinto.
 {{- define "keycloak-replica.realmConfigMapName" -}}
 {{- printf "%s-realm-uniplus" (include "keycloak-replica.fullname" .) }}
 {{- end }}
+
+{{- define "keycloak-replica.oidcClientSecretsName" -}}
+{{- printf "%s-oidc-client-secrets" (include "keycloak-replica.fullname" .) }}
+{{- end }}
