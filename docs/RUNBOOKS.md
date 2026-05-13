@@ -3559,4 +3559,99 @@ O fail-fast completo (validator + warmup hosted service) está nos PRs uniplus-a
 
 ---
 
+## 19. Prometheus remote_write receiver (standalone)
+
+Habilitado em issue #244. O Prometheus standalone aceita séries empurradas pelo
+OTel Collector via exporter `prometheusremotewrite` em `POST /api/v1/write`.
+
+### 19.1 Estimativa de volume
+
+| Fonte | Séries estimadas | Observação |
+|---|---|---|
+| Métricas .NET runtime (GC, ThreadPool, etc.) | ~200/app | SDK OTLP padrão |
+| Métricas HTTP ASP.NET Core (por rota) | ~100–300/app | depende do nº de rotas |
+| Métricas custom de domínio | ~50/app | projeção inicial |
+| **Total (3 apps × ~550)** | **~1.650 séries** | conservador |
+
+Comparação com a capacidade configurada:
+
+- `retentionSize: 8GiB` — cada série TSDB consome ~1–2 KiB/amostras por hora; 1.650 séries × 2 KiB × 168h (7d) ≈ **540 MiB** adicionais.
+- Impacto: < 7% do headroom de 8 GiB — marginal. Se `otelcol_exporter_sent_metric_points` crescer acima de 50.000 pontos/min, reavaliar `retentionSize` e `retention`.
+
+### 19.2 Validar que o receiver está ativo
+
+```bash
+# 1) Identificar o pod do Prometheus:
+kubectl get pods -n observability-prometheus -l app.kubernetes.io/name=prometheus
+
+# 2) Verificar a flag via API de status:
+kubectl exec -n observability-prometheus <pod-name> -- \
+  wget -qO- localhost:9090/api/v1/status/flags \
+  | grep enable-remote-write-receiver
+# Esperado: "enable-remote-write-receiver": "true"
+
+# 3) Verificar que /api/v1/write aceita POST (HTTP 400 = endpoint existe, payload inválido;
+#    HTTP 404 = receiver NÃO habilitado):
+kubectl exec -n observability-prometheus <pod-name> -- \
+  wget -qO- --post-data='' localhost:9090/api/v1/write 2>&1 | head -5
+```
+
+### 19.3 Verificar séries OTel no TSDB
+
+Após o OTel Collector enviar o primeiro lote (intervalo de batch padrão: 10s):
+
+```bash
+# Confirmar que labels OTel resource estão presentes:
+kubectl exec -n observability-prometheus <pod-name> -- \
+  wget -qO- 'localhost:9090/api/v1/label/service_name/values'
+# Esperado: ["uniplus-api-ingresso","uniplus-api-portal","uniplus-api-selecao"]
+
+# Listar metric names com prefixo típico de apps .NET:
+kubectl exec -n observability-prometheus <pod-name> -- \
+  wget -qO- 'localhost:9090/api/v1/label/__name__/values' \
+  | python3 -c "import json,sys; [print(v) for v in json.load(sys.stdin)['data'] if any(p in v for p in ('http_server','dotnet','process_runtime'))]"
+```
+
+### 19.4 Monitorar volume de séries extras
+
+```bash
+# Total de séries ativas no TSDB:
+kubectl exec -n observability-prometheus <pod-name> -- \
+  wget -qO- 'localhost:9090/api/v1/query?query=prometheus_tsdb_head_series'
+
+# Pontos enviados pelo OTel Collector (taxa de ingestão):
+kubectl exec -n observability-prometheus <pod-name> -- \
+  wget -qO- 'localhost:9090/api/v1/query?query=rate(otelcol_exporter_sent_metric_points%5B5m%5D)'
+```
+
+Se `prometheus_tsdb_head_series` ultrapassar 100.000 ou `otelcol_exporter_sent_metric_points` superar
+50.000 pontos/min de forma consistente, aumentar `retentionSize` para 12 GiB via override no
+`environments/standalone/values.yaml` (bloco `kubePrometheusStack.prometheus.prometheusSpec`).
+
+### 19.5 Troubleshooting
+
+| Sintoma | Causa provável | Ação |
+|---|---|---|
+| OTelCol logs: `Permanent error: ... 404 Not Found` | `enableRemoteWriteReceiver` não habilitado | Verificar sync ArgoCD do chart `platform/observability/prometheus`; confirmar flag via §19.2 |
+| OTelCol logs: `Exporting failed ... retrying` | Prometheus indisponível ou TSDB compaction | `kubectl logs -n observability-prometheus <pod>` |
+| Séries `service_name` ausentes | Pipeline metrics do OTelCol desligado | `kubectl logs -n observability-otelcol <otelcol-pod>` por erros de export |
+| `retentionSize` atingido antes dos 7d | Volume acima da estimativa | Aumentar para 12 GiB; investigar cardinalidade via `topk(20, count by (__name__)({__name__!=""}))` |
+
+### 19.6 Rollback
+
+Para desabilitar o receiver sem derrubar o Prometheus, reverter no `platform/observability/prometheus/values.yaml`:
+
+```yaml
+kubePrometheusStack:
+  prometheus:
+    prometheusSpec:
+      enableRemoteWriteReceiver: false   # volta ao default upstream
+```
+
+O OTel Collector começará a falhar o exporter `prometheusremotewrite` com HTTP 404 após o próximo
+sync do ArgoCD e reinício do pod do Prometheus. Para parar retries imediatamente adicionar
+`retry_on_failure.max_elapsed_time: 0` no override do OTelCol em `environments/standalone/values.yaml`.
+
+---
+
 *Documento mantido pelo CTIC/UNIFESSPA. Atualizações via Pull Request.*
