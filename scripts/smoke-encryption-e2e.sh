@@ -7,7 +7,7 @@
 #   1. Obtém um token OIDC do realm `uniplus` via apicurio-registry client
 #      (directAccessGrantsEnabled=true documentado em
 #      configs/uniplus-standalone/11-uniplus-apis.md).
-#   2. Envia POST /api/v1/selecao/editais com header `Idempotency-Key`
+#   2. Envia POST /api/editais com header `Idempotency-Key`
 #      contendo um UUID v4 (mais portável que v7 em sh) — força a uniplus-api
 #      a invocar o `IdempotencyFilter`, que toca o `IUniPlusEncryptionService`.
 #   3. Espera HTTP 201 (criado) ou 422 (validation falhou pelo payload mínimo).
@@ -24,7 +24,10 @@ set -euo pipefail
 
 # Defaults — sobrescrevíveis via env vars
 API_HOST="${API_HOST:-api-selecao.standalone.portaluni.com.br}"
-API_PATH="${API_PATH:-/api/v1/selecao/editais}"
+# Rota canônica do módulo Seleção. O Uni+ resolve versionamento via vendor
+# MIME no boundary (ADR-0031), não por prefixo `/v1` no path; o módulo é
+# implícito no subdomínio `api-selecao.standalone.portaluni.com.br`.
+API_PATH="${API_PATH:-/api/editais}"
 KEYCLOAK_BASE="${KEYCLOAK_BASE:-https://standalone.portaluni.com.br/auth/realms/uniplus}"
 KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-apicurio-registry}"
 SSH_HOST="${SSH_HOST:-ubuntu@164.152.53.29}"
@@ -124,7 +127,7 @@ log "Token OIDC obtido com audience=${audiences}"
 # antes de `fromdate`.
 since_epoch_minus_1=$(( $(date -u +%s) - 1 ))
 
-# --- 3. POST /api/v1/selecao/editais com Idempotency-Key -------------------
+# --- 3. POST /api/editais com Idempotency-Key ------------------------------
 
 idempotency_key=$(uuidgen)
 log "POST https://${API_HOST}${API_PATH} Idempotency-Key=${idempotency_key}"
