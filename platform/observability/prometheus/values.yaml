@@ -114,6 +114,25 @@ kubePrometheusStack:
         platform: uniplus
         # cluster: <definido por environment>
 
+      # -----------------------------------------------------------------------
+      # Remote write receiver — habilita POST /api/v1/write no Prometheus para
+      # aceitar séries enviadas pelo OTel Collector via exporter
+      # `prometheusremotewrite` (ADR-013 + issue #244).
+      #
+      # Labels OTel preservados: `relabel_configs` do kube-prometheus-stack só
+      # afetam dados coletados via ServiceMonitor/PodMonitor (scrape path).
+      # Dados recebidos via remote_write entram no TSDB com os labels exatos do
+      # payload protobuf — service_name, service_namespace, service_version e
+      # http_route chegam intactos, sem nenhuma regra de relabeling intermediária.
+      #
+      # Impacto de volume: métricas OTLP das 3 apps .NET (runtime + HTTP +
+      # custom) estimado em ≤ 5.000 séries únicas — menos de 10% da capacidade
+      # da TSDB atual. Com retenção 7d / retentionSize 8GiB o impacto é
+      # marginal. Ver estimativa detalhada e comandos de monitoramento em
+      # docs/RUNBOOKS.md §19.
+      # -----------------------------------------------------------------------
+      enableRemoteWriteReceiver: true
+
   # ============================================================================
   # Alertmanager — placeholder (sem receivers reais).
   # Receivers de email/Slack/etc. serão adicionados em sub-issue separada.
