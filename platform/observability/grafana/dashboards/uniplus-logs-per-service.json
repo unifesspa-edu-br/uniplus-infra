@@ -54,7 +54,15 @@
     },
     {
       "datasource": { "type": "loki", "uid": "loki" },
-      "fieldConfig": { "defaults": { "unit": "short" }, "overrides": [] },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Value" },
+            "properties": [{ "id": "displayName", "value": "volume" }]
+          }
+        ]
+      },
       "gridPos": { "h": 8, "w": 10, "x": 14, "y": 10 },
       "id": 3,
       "options": {
@@ -62,13 +70,13 @@
         "showHeader": true,
         "sortBy": [{ "desc": true, "displayName": "volume" }]
       },
-      "title": "Top 10 services por volume",
+      "title": "Top 10 services por volume (últimos 5min)",
       "type": "table",
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
           "expr": "topk(10, sum by (service_name) (count_over_time({k8s_namespace_name=\"uniplus\"}[5m])))",
-          "legendFormat": "{{service_name}}",
+          "legendFormat": "",
           "refId": "A",
           "instant": true
         }
@@ -94,7 +102,7 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "{k8s_namespace_name=\"uniplus\",service_name=~\"$service\"} |~ \"(?i)(\\\\[ERR\\\\]|exception)\"",
+          "expr": "{k8s_namespace_name=\"uniplus\",service_name=~\"$service\"} |~ \"(?i)(\\[(ERR|WRN)\\]|exception)\"",
           "legendFormat": "",
           "refId": "A"
         }
@@ -147,5 +155,5 @@
   "timezone": "browser",
   "title": "Uni+ — Logs por service",
   "uid": "uniplus-logs-per-service",
-  "version": 1
+  "version": 2
 }
