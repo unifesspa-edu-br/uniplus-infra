@@ -87,4 +87,14 @@ spec:
           protocol: TCP
         - port: 6443
           protocol: TCP
+    {{- if $np.egressPrometheusNamespace }}
+    # Prometheus remote_write — necessário quando metricsGenerator.enabled=true
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $np.egressPrometheusNamespace | quote }}
+      ports:
+        - port: 9090
+          protocol: TCP
+    {{- end }}
 {{- end }}

@@ -51,12 +51,50 @@ tempo:
     # ----- Reporting upstream off (não enviar telemetria pro Grafana Labs) -----
     reportingEnabled: false
 
-    # ----- Metrics generator off em standalone -----
-    # Geração de métricas a partir de traces requer Prometheus remote-write
-    # alvo. Só ligar quando o Prometheus consumidor + protocolo estiverem
-    # claros (sub-issue futura).
+    # ----- Metrics generator -----
+    # Gera métricas RED (request rate/error/duration) e service graph a partir
+    # dos spans recebidos, publicando via Prometheus remote_write.
+    # Pré-requisito: Prometheus com `enableRemoteWriteReceiver: true` (issue #244).
+    # Environments que habilitam devem sobrescrever `metricsGenerator.enabled: true`
+    # e setar `remoteWriteUrl` apontando para o endpoint /api/v1/write do Prometheus.
     metricsGenerator:
       enabled: false
+      # remoteWriteUrl: "http://prometheus-svc.namespace.svc.cluster.local:9090/api/v1/write"
+      processor:
+        service_graphs:
+          # Janela de espera por spans client/server do mesmo trace.
+          # 10s cobre p99 de latências dentro do cluster.
+          wait: 10s
+          max_items: 10000
+        span_metrics:
+          # Inclui dimensão target_info (biblioteca, runtime, OS) — enriquece
+          # o USE dashboard de .NET Runtime.
+          enable_target_info: true
+      registry:
+        # Cadência de publicação das métricas no Prometheus.
+        collection_interval: 15s
+        external_labels:
+          source: tempo
+          # cluster: <definido por environment>
+      storage:
+        # PVC-backed (WAL do metrics generator). Evitar /tmp — não sobrevive
+        # a restart do pod em clusters com PVC de StatefulSet.
+        path: /var/tempo/generator/wal
+      traces_storage:
+        # WAL de traces consumidos pelo metrics generator (local blocks).
+        path: /var/tempo/generator/traces
+
+    # ----- Overrides (processors ativos por tenant) -----
+    # Em Tempo 2.x os processors do metrics generator precisam ser habilitados
+    # aqui OU em per_tenant_overrides para que o generator comece a emitir.
+    # Environments que habilitam metricsGenerator devem sobrescrever este bloco.
+    overrides:
+      defaults: {}
+      # defaults:
+      #   metrics_generator:
+      #     processors:
+      #       - service-graphs
+      #       - span-metrics
 
     # ----- Storage backend S3 -----
     # Credenciais via env var (`-config.expand-env=true` em extraArgs).
@@ -207,5 +245,8 @@ tempoWrapper:
       - observability-otelcol
     minioCIDR: "10.0.2.87/32"
     minioPort: 9000
+    # Quando metricsGenerator.enabled=true, setar este campo com o namespace
+    # do Prometheus para liberar egress :9090 (remote_write do generator).
+    egressPrometheusNamespace: ""
     kubeApiCidrs:
       - 10.43.0.0/16

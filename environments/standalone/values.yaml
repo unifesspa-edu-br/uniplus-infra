@@ -249,7 +249,8 @@ grafana:
               tags:
                 - key: service.name
                   value: service_name
-            # Service Graph desligado — Tempo metricsGenerator off em standalone (ADR-012).
+            # Service Map habilitado — Tempo metricsGenerator ativo (issue #246, ADR-012).
+            # Consome traces_service_graph_request_total do Prometheus via remote_write.
             serviceMap:
               datasourceUid: prometheus
             nodeGraph:
@@ -332,6 +333,35 @@ tempo:
           # Nome FIXO derivado de chart-name (helper uniplus-tempo.s3SecretName).
           # Mesma justificativa do PR #221 (Loki Codex P2): release-independente.
           name: tempo-s3-creds
+    # ---- Metrics generator (issue #246, Feature #243) ----
+    # Ativado com o Prometheus standalone após enableRemoteWriteReceiver (issue #244).
+    # Gera traces_service_graph_request_total + traces_span_metrics_* via remote_write.
+    metricsGenerator:
+      enabled: true
+      remoteWriteUrl: "http://platform-observability-pro-prometheus.observability-prometheus.svc.cluster.local:9090/api/v1/write"
+      processor:
+        service_graphs:
+          wait: 10s
+          max_items: 10000
+        span_metrics:
+          enable_target_info: true
+      registry:
+        collection_interval: 15s
+        external_labels:
+          source: tempo
+          cluster: standalone
+      storage:
+        # PVC-backed via StatefulSet — sobrevive a restart.
+        path: /var/tempo/generator/wal
+      traces_storage:
+        path: /var/tempo/generator/traces
+    # Habilitar processors para o tenant padrão (multitenancy off em standalone).
+    overrides:
+      defaults:
+        metrics_generator:
+          processors:
+            - service-graphs
+            - span-metrics
   persistence:
     # ATENÇÃO: chart upstream tempo usa `storageClassName` (não `storageClass`
     # como Loki). Setar `storageClass` aqui seria ignorado pelo subchart.
@@ -352,6 +382,8 @@ tempoWrapper:
       - observability-tempo
     minioCIDR: "10.0.2.87/32"
     minioPort: 9000
+    # Libera egress :9090 para Prometheus (remote_write do metricsGenerator).
+    egressPrometheusNamespace: observability-prometheus
     kubeApiCidrs:
       - 10.43.0.0/16
       - 10.0.1.0/24
