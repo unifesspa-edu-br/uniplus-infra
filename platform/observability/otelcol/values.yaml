@@ -45,9 +45,12 @@ otelCollector:
   mode: daemonset
 
   image:
-    # Distribution k8s — inclui contrib receivers/exporters (filelog, k8sattributes,
-    # otlphttp, etc.). Default upstream se vazio.
-    repository: otel/opentelemetry-collector-k8s
+    # Distribution contrib — necessária para o exporter `prometheusremotewrite`
+    # (pipeline metrics → Prometheus). A distribuição `k8s` não inclui esse
+    # exporter; a `contrib` inclui tudo da k8s + todos os contrib components.
+    # Diferença de tamanho: ~80 MB (k8s) → ~450 MB (contrib); aceitável em
+    # standalone onde o DaemonSet roda em 1 nó apenas.
+    repository: otel/opentelemetry-collector-contrib
 
   # ============================================================================
   # Presets — chart configura volumes + RBAC + pipeline injection automaticamente.
