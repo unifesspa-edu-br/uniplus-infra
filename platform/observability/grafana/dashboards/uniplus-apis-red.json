@@ -78,7 +78,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "1 - (sum(rate(http_server_request_duration_seconds_count{service_namespace=\"uniplus\",service_name=~\"$service\",http_response_status_code=~\"5..\"}[30m])) / sum(rate(http_server_request_duration_seconds_count{service_namespace=\"uniplus\",service_name=~\"$service\"}[30m])))",
+          "expr": "1 - (sum(rate(http_server_request_duration_seconds_count{service_namespace=\"uniplus\",service_name=~\"$service\",http_response_status_code=~\"5..\"}[$__rate_interval])) / (sum(rate(http_server_request_duration_seconds_count{service_namespace=\"uniplus\",service_name=~\"$service\"}[$__rate_interval])) > 0))",
           "legendFormat": "disponibilidade",
           "refId": "A"
         }
@@ -117,7 +117,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(rate(http_server_request_duration_seconds_count{service_namespace=\"uniplus\",service_name=~\"$service\",http_response_status_code=~\"5..\"}[5m])) / sum(rate(http_server_request_duration_seconds_count{service_namespace=\"uniplus\",service_name=~\"$service\"}[5m]))",
+          "expr": "sum(rate(http_server_request_duration_seconds_count{service_namespace=\"uniplus\",service_name=~\"$service\",http_response_status_code=~\"5..\"}[$__rate_interval])) / (sum(rate(http_server_request_duration_seconds_count{service_namespace=\"uniplus\",service_name=~\"$service\"}[$__rate_interval])) > 0)",
           "legendFormat": "erro 5xx",
           "refId": "A"
         }
@@ -176,29 +176,32 @@
         "showHeader": true,
         "sortBy": [{ "desc": true, "displayName": "p95" }]
       },
-      "title": "p50 / p95 / p99 por route",
+      "title": "p50 / p95 / p99 por route (últimos 5min)",
       "type": "table",
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "histogram_quantile(0.50, sum by (le, service_name, http_route) (rate(http_server_request_duration_seconds_bucket{service_namespace=\"uniplus\",service_name=~\"$service\",http_route=~\"$route\"}[5m])))",
-          "legendFormat": "{{service_name}} {{http_route}} p50",
+          "legendFormat": "p50",
           "refId": "A",
-          "instant": true
+          "instant": true,
+          "format": "table"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "histogram_quantile(0.95, sum by (le, service_name, http_route) (rate(http_server_request_duration_seconds_bucket{service_namespace=\"uniplus\",service_name=~\"$service\",http_route=~\"$route\"}[5m])))",
-          "legendFormat": "{{service_name}} {{http_route}} p95",
+          "legendFormat": "p95",
           "refId": "B",
-          "instant": true
+          "instant": true,
+          "format": "table"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
           "expr": "histogram_quantile(0.99, sum by (le, service_name, http_route) (rate(http_server_request_duration_seconds_bucket{service_namespace=\"uniplus\",service_name=~\"$service\",http_route=~\"$route\"}[5m])))",
-          "legendFormat": "{{service_name}} {{http_route}} p99",
+          "legendFormat": "p99",
           "refId": "C",
-          "instant": true
+          "instant": true,
+          "format": "table"
         }
       ]
     }
@@ -249,5 +252,5 @@
   "timezone": "browser",
   "title": "Uni+ APIs — RED",
   "uid": "uniplus-apis-red",
-  "version": 1
+  "version": 2
 }
