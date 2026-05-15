@@ -5,9 +5,15 @@
   (requer `sidecar.dashboards.folderAnnotation: grafana_folder` no values).
   Naming: nome composto truncado em 63 chars (limite Kubernetes).
 */}}
+{{/*
+  Prefix: "gf-db-" (6) + hash[6] + "-" (1) = 13 chars → 50 chars de budget para o slug.
+  Usar hash do release name (em vez do fullname completo) garante unicidade por release
+  sem estourar o limite de 63 chars do Kubernetes, independente do tamanho do release name.
+*/}}
+{{- $hash := $.Release.Name | sha256sum | trunc 6 }}
+{{- $prefix := printf "gf-db-%s-" $hash }}
 {{- range $path, $content := .Files.Glob "dashboards/*.json" }}
 {{- $slug := base $path | trimSuffix ".json" }}
-{{- $prefix := printf "%s-db-" (include "grafana.fullname" $) }}
 {{- $budget := int (sub 63 (len $prefix)) }}
 ---
 apiVersion: v1
