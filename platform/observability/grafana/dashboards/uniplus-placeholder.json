@@ -1,0 +1,32 @@
+{
+  "annotations": { "list": [] },
+  "description": "Dashboard temporário para validar pipeline GitOps do sidecar (remover após S3.2).",
+  "editable": false,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "options": {
+        "content": "## Uni+ — Standalone\n\nPipeline GitOps de dashboards validado com sucesso.\nEste dashboard temporário será removido após S3.2.",
+        "mode": "markdown"
+      },
+      "title": "Pipeline GitOps OK",
+      "type": "text"
+    }
+  ],
+  "refresh": "",
+  "schemaVersion": 38,
+  "tags": ["uniplus", "placeholder"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Uni+ — Placeholder",
+  "uid": "uniplus-placeholder",
+  "version": 1
+}
