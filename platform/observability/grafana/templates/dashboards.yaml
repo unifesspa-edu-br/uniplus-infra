@@ -1,26 +1,33 @@
 {{/*
   Gera um ConfigMap por arquivo JSON em dashboards/.
   O sidecar grafana/grafana detecta a label `grafana_dashboard: "1"` e
-  provisiona cada dashboard na folder indicada pela annotation `grafana_folder`.
-  Naming: <release>-db-<slug> (truncado em 63 chars).
+  provisiona cada dashboard na folder indicada pela annotation `grafana_folder`
+  (requer `sidecar.dashboards.folderAnnotation: grafana_folder` no values).
+  Naming: nome composto truncado em 63 chars (limite Kubernetes).
 */}}
 {{- range $path, $content := .Files.Glob "dashboards/*.json" }}
 {{- $slug := base $path | trimSuffix ".json" }}
+{{- $prefix := printf "%s-db-" (include "grafana.fullname" $) }}
+{{- $budget := int (sub 63 (len $prefix)) }}
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "grafana.fullname" $ }}-db-{{ $slug | trunc 40 | trimSuffix "-" }}
+  name: {{ printf "%s%s" $prefix ($slug | trunc $budget | trimSuffix "-") }}
   namespace: {{ $.Release.Namespace }}
   labels:
+    app.kubernetes.io/name: grafana-dashboard
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+    app.kubernetes.io/version: {{ $.Chart.AppVersion | quote }}
     app.kubernetes.io/part-of: uniplus
     app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: {{ printf "%s-%s" $.Chart.Name $.Chart.Version }}
     grafana_dashboard: "1"
   annotations:
     meta.helm.sh/release-name: {{ $.Release.Name }}
     meta.helm.sh/release-namespace: {{ $.Release.Namespace }}
-    grafana_folder: "Uni+ — Standalone"
+    grafana_folder: "Uni+ Standalone"
 data:
-  {{ base $path }}: |-
-    {{ $content | toString | trim | nindent 4 }}
+  {{ base $path }}: |
+{{ $content | toString | trim | indent 4 }}
 {{- end }}

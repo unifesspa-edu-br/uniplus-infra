@@ -127,6 +127,9 @@ grafana:
       labelValue: "1"
       folder: /tmp/dashboards
       searchNamespace: ALL
+      # Nome da annotation nos ConfigMaps que define a folder de destino no Grafana.
+      # Deve bater com a annotation `grafana_folder` emitida por templates/dashboards.yaml.
+      folderAnnotation: grafana_folder
     datasources:
       enabled: true
       label: grafana_datasource
