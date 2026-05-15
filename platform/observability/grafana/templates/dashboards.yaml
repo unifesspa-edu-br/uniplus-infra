@@ -1,0 +1,26 @@
+{{/*
+  Gera um ConfigMap por arquivo JSON em dashboards/.
+  O sidecar grafana/grafana detecta a label `grafana_dashboard: "1"` e
+  provisiona cada dashboard na folder indicada pela annotation `grafana_folder`.
+  Naming: <release>-db-<slug> (truncado em 63 chars).
+*/}}
+{{- range $path, $content := .Files.Glob "dashboards/*.json" }}
+{{- $slug := base $path | trimSuffix ".json" }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "grafana.fullname" $ }}-db-{{ $slug | trunc 40 | trimSuffix "-" }}
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    app.kubernetes.io/part-of: uniplus
+    app.kubernetes.io/managed-by: Helm
+    grafana_dashboard: "1"
+  annotations:
+    meta.helm.sh/release-name: {{ $.Release.Name }}
+    meta.helm.sh/release-namespace: {{ $.Release.Namespace }}
+    grafana_folder: "Uni+ — Standalone"
+data:
+  {{ base $path }}: |-
+    {{ $content | toString | trim | nindent 4 }}
+{{- end }}
