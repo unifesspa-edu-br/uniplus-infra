@@ -1,6 +1,6 @@
 {
   "annotations": { "list": [] },
-  "description": "Métricas de runtime .NET: GC, heap, threadpool e exceptions via OpenTelemetry.Instrumentation.Runtime.",
+  "description": "Métricas de runtime .NET 10 via System.Runtime meter (dotnet.*): GC, heap, threadpool e exceptions.",
   "editable": true,
   "graphTooltip": 1,
   "id": null,
@@ -15,13 +15,13 @@
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
       "id": 1,
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } },
-      "title": "Heap size por service (working set)",
+      "title": "Heap size por geração (último GC)",
       "type": "timeseries",
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "process_runtime_dotnet_gc_heap_size_bytes{service_namespace=\"uniplus\",service_name=~\"$service\"}",
-          "legendFormat": "{{service_name}} {{generation}}",
+          "expr": "sum by (service_name, dotnet_gc_heap_generation) (dotnet_gc_last_collection_heap_size{service_namespace=\"uniplus\",service_name=~\"$service\"})",
+          "legendFormat": "{{service_name}} gen{{dotnet_gc_heap_generation}}",
           "refId": "A"
         }
       ]
@@ -40,8 +40,8 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (generation, service_name) (rate(process_runtime_dotnet_gc_collections_count{service_namespace=\"uniplus\",service_name=~\"$service\"}[$__rate_interval]))",
-          "legendFormat": "{{service_name}} gen{{generation}}",
+          "expr": "sum by (service_name, dotnet_gc_heap_generation) (rate(dotnet_gc_collections_total{service_namespace=\"uniplus\",service_name=~\"$service\"}[$__rate_interval]))",
+          "legendFormat": "{{service_name}} gen{{dotnet_gc_heap_generation}}",
           "refId": "A"
         }
       ]
@@ -49,19 +49,19 @@
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "fieldConfig": {
-        "defaults": { "color": { "mode": "palette-classic" }, "unit": "s" },
+        "defaults": { "color": { "mode": "palette-classic" }, "unit": "percentunit" },
         "overrides": []
       },
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
       "id": 3,
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } },
-      "title": "GC pause time p95",
+      "title": "GC pause — fração do tempo (s/s)",
       "type": "timeseries",
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "histogram_quantile(0.95, sum by (le, service_name) (rate(process_runtime_dotnet_gc_pause_time_seconds_bucket{service_namespace=\"uniplus\",service_name=~\"$service\"}[$__rate_interval])))",
-          "legendFormat": "{{service_name}} p95",
+          "expr": "sum by (service_name) (rate(dotnet_gc_pause_time_seconds_total{service_namespace=\"uniplus\",service_name=~\"$service\"}[$__rate_interval]))",
+          "legendFormat": "{{service_name}}",
           "refId": "A"
         }
       ]
@@ -80,7 +80,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "process_runtime_dotnet_thread_pool_queue_length{service_namespace=\"uniplus\",service_name=~\"$service\"}",
+          "expr": "max by (service_name) (dotnet_thread_pool_queue_length{service_namespace=\"uniplus\",service_name=~\"$service\"})",
           "legendFormat": "{{service_name}}",
           "refId": "A"
         }
@@ -100,7 +100,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (service_name) (rate(process_runtime_dotnet_thread_pool_completed_items_count{service_namespace=\"uniplus\",service_name=~\"$service\"}[$__rate_interval]))",
+          "expr": "sum by (service_name) (rate(dotnet_thread_pool_work_item_count_total{service_namespace=\"uniplus\",service_name=~\"$service\"}[$__rate_interval]))",
           "legendFormat": "{{service_name}}",
           "refId": "A"
         }
@@ -115,13 +115,13 @@
       "gridPos": { "h": 7, "w": 12, "x": 12, "y": 16 },
       "id": 6,
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" }, "tooltip": { "mode": "multi", "sort": "desc" } },
-      "title": "Exceptions/s",
+      "title": "Exceptions/s por tipo",
       "type": "timeseries",
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (service_name) (rate(process_runtime_dotnet_exceptions_count{service_namespace=\"uniplus\",service_name=~\"$service\"}[$__rate_interval]))",
-          "legendFormat": "{{service_name}}",
+          "expr": "sum by (service_name, error_type) (rate(dotnet_exceptions_total{service_namespace=\"uniplus\",service_name=~\"$service\"}[$__rate_interval]))",
+          "legendFormat": "{{service_name}} {{error_type}}",
           "refId": "A"
         }
       ]
@@ -135,14 +135,14 @@
       {
         "current": {},
         "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "definition": "label_values(process_runtime_dotnet_gc_heap_size_bytes{service_namespace=\"uniplus\"}, service_name)",
+        "definition": "label_values(dotnet_gc_last_collection_heap_size{service_namespace=\"uniplus\"}, service_name)",
         "hide": 0,
         "includeAll": true,
         "multi": true,
         "name": "service",
         "options": [],
         "query": {
-          "query": "label_values(process_runtime_dotnet_gc_heap_size_bytes{service_namespace=\"uniplus\"}, service_name)",
+          "query": "label_values(dotnet_gc_last_collection_heap_size{service_namespace=\"uniplus\"}, service_name)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 2,
@@ -156,5 +156,5 @@
   "timezone": "browser",
   "title": "Uni+ — .NET Runtime",
   "uid": "uniplus-dotnet-runtime",
-  "version": 1
+  "version": 2
 }
