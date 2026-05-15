@@ -12,9 +12,9 @@
 */}}
 {{- $hash := $.Release.Name | sha256sum | trunc 6 }}
 {{- $prefix := printf "gf-db-%s-" $hash }}
+{{- $budget := int (sub 63 (len $prefix)) }}
 {{- range $path, $content := .Files.Glob "dashboards/*.json" }}
 {{- $slug := base $path | trimSuffix ".json" }}
-{{- $budget := int (sub 63 (len $prefix)) }}
 ---
 apiVersion: v1
 kind: ConfigMap
