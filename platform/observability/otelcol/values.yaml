@@ -152,6 +152,12 @@ otelCollector:
         endpoint: ${env:PROMETHEUS_REMOTE_WRITE_ENDPOINT}
         tls:
           insecure: true
+        # Converte Resource attributes (service.name, service.namespace, etc.) em
+        # labels Prometheus. Sem isso os dashboards que filtram por
+        # service_namespace="uniplus" retornam vazio — o job label é gerado
+        # por default mas os demais resource attrs são descartados.
+        resource_to_telemetry_conversion:
+          enabled: true
         retry_on_failure:
           enabled: true
           initial_interval: 5s
