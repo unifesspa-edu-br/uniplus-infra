@@ -78,7 +78,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "1 - (sum(rate(http_server_request_duration_seconds_count{service_namespace=\"uniplus\",service_name=~\"$service\",http_response_status_code=~\"5..\"}[$__rate_interval])) / (sum(rate(http_server_request_duration_seconds_count{service_namespace=\"uniplus\",service_name=~\"$service\"}[$__rate_interval])) > 0))",
+          "expr": "1 - ((sum(rate(http_server_request_duration_seconds_count{service_namespace=\"uniplus\",service_name=~\"$service\",http_response_status_code=~\"5..\"}[$__rate_interval])) or vector(0)) / (sum(rate(http_server_request_duration_seconds_count{service_namespace=\"uniplus\",service_name=~\"$service\"}[$__rate_interval])) > 0))",
           "legendFormat": "disponibilidade",
           "refId": "A"
         }
@@ -117,7 +117,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(rate(http_server_request_duration_seconds_count{service_namespace=\"uniplus\",service_name=~\"$service\",http_response_status_code=~\"5..\"}[$__rate_interval])) / (sum(rate(http_server_request_duration_seconds_count{service_namespace=\"uniplus\",service_name=~\"$service\"}[$__rate_interval])) > 0)",
+          "expr": "(sum(rate(http_server_request_duration_seconds_count{service_namespace=\"uniplus\",service_name=~\"$service\",http_response_status_code=~\"5..\"}[$__rate_interval])) or vector(0)) / (sum(rate(http_server_request_duration_seconds_count{service_namespace=\"uniplus\",service_name=~\"$service\"}[$__rate_interval])) > 0)",
           "legendFormat": "erro 5xx",
           "refId": "A"
         }
