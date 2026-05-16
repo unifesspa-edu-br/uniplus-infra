@@ -56,7 +56,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "kube_deployment_status_replicas_available{namespace=\"traefik\",deployment=\"platform-traefik-uniplus-standalone\"}",
+          "expr": "kube_deployment_status_replicas_available{namespace=\"traefik\",deployment=~\"platform-traefik-.*\"}",
           "legendFormat": "traefik",
           "refId": "A"
         }
@@ -86,7 +86,7 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "sum(rate({service_name=\"platform-traefik-uniplus-standalone-traefik\"}[$__rate_interval]))",
+          "expr": "sum(rate({service_name=~\"platform-traefik-.*\"}[$__rate_interval]))",
           "refId": "A"
         }
       ]
@@ -122,7 +122,7 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "sum(count_over_time({service_name=\"platform-traefik-uniplus-standalone-traefik\"} | json | DownstreamStatus >= 500 [$__range]))",
+          "expr": "sum(count_over_time({service_name=~\"platform-traefik-.*\"} | json | DownstreamStatus >= 500 [$__range]))",
           "refId": "A",
           "instant": true
         }
@@ -159,7 +159,7 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "sum(count_over_time({service_name=\"platform-traefik-uniplus-standalone-traefik\"} | json | DownstreamStatus >= 400 | DownstreamStatus < 500 [$__range]))",
+          "expr": "sum(count_over_time({service_name=~\"platform-traefik-.*\"} | json | DownstreamStatus >= 400 | DownstreamStatus < 500 [$__range]))",
           "refId": "A",
           "instant": true
         }
@@ -202,25 +202,25 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "sum(rate({service_name=\"platform-traefik-uniplus-standalone-traefik\"} | json | DownstreamStatus >= 200 | DownstreamStatus < 300 [$__rate_interval]))",
+          "expr": "sum(rate({service_name=~\"platform-traefik-.*\"} | json | DownstreamStatus >= 200 | DownstreamStatus < 300 [$__rate_interval]))",
           "legendFormat": "2xx",
           "refId": "A"
         },
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "sum(rate({service_name=\"platform-traefik-uniplus-standalone-traefik\"} | json | DownstreamStatus >= 300 | DownstreamStatus < 400 [$__rate_interval]))",
+          "expr": "sum(rate({service_name=~\"platform-traefik-.*\"} | json | DownstreamStatus >= 300 | DownstreamStatus < 400 [$__rate_interval]))",
           "legendFormat": "3xx",
           "refId": "B"
         },
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "sum(rate({service_name=\"platform-traefik-uniplus-standalone-traefik\"} | json | DownstreamStatus >= 400 | DownstreamStatus < 500 [$__rate_interval]))",
+          "expr": "sum(rate({service_name=~\"platform-traefik-.*\"} | json | DownstreamStatus >= 400 | DownstreamStatus < 500 [$__rate_interval]))",
           "legendFormat": "4xx",
           "refId": "C"
         },
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "sum(rate({service_name=\"platform-traefik-uniplus-standalone-traefik\"} | json | DownstreamStatus >= 500 [$__rate_interval]))",
+          "expr": "sum(rate({service_name=~\"platform-traefik-.*\"} | json | DownstreamStatus >= 500 [$__rate_interval]))",
           "legendFormat": "5xx",
           "refId": "D"
         }
@@ -247,19 +247,19 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "quantile_over_time(0.50, {service_name=\"platform-traefik-uniplus-standalone-traefik\"} | json | unwrap Duration [$__rate_interval])",
+          "expr": "quantile_over_time(0.50, {service_name=~\"platform-traefik-.*\"} | json | unwrap Duration [$__rate_interval])",
           "legendFormat": "p50",
           "refId": "A"
         },
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "quantile_over_time(0.95, {service_name=\"platform-traefik-uniplus-standalone-traefik\"} | json | unwrap Duration [$__rate_interval])",
+          "expr": "quantile_over_time(0.95, {service_name=~\"platform-traefik-.*\"} | json | unwrap Duration [$__rate_interval])",
           "legendFormat": "p95",
           "refId": "B"
         },
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "quantile_over_time(0.99, {service_name=\"platform-traefik-uniplus-standalone-traefik\"} | json | unwrap Duration [$__rate_interval])",
+          "expr": "quantile_over_time(0.99, {service_name=~\"platform-traefik-.*\"} | json | unwrap Duration [$__rate_interval])",
           "legendFormat": "p99",
           "refId": "C"
         }
@@ -292,7 +292,7 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "{service_name=\"platform-traefik-uniplus-standalone-traefik\"} | json | DownstreamStatus >= $min_status",
+          "expr": "{service_name=~\"platform-traefik-.*\"} | json | DownstreamStatus >= $min_status",
           "refId": "A"
         }
       ]
