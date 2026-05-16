@@ -1,0 +1,66 @@
+# Copiar para terraform.tfvars (ignorado pelo .gitignore) e ajustar.
+#
+# Este módulo provisiona o lab Uni+ em us-ashburn-1 sobre VM.Standard.A1.Flex
+# (ARM Ampere) — alvo da migração descrita no Epic uniplus-infra#317.
+
+# Compartment raiz da tenancy unifesspa-edu-br (no iad-arm POC, recursos vivem
+# direto no compartment raiz, mesma topologia do standalone).
+compartment_ocid = "ocid1.tenancy.oc1..REPLACE_WITH_TENANCY_OCID"
+
+# Região destino fixada — não alterar sem revisar Epic #317. A escolha de IAD
+# foi binding (latência ~140ms BR + melhor capacidade A1 histórica).
+region = "us-ashburn-1"
+
+# Availability Domain de IAD — descobrir após assinar a região via Task #320:
+#   oci iam availability-domain list --region us-ashburn-1
+# IAD tem 3 ADs; pegar a primeira retornada (geralmente "<prefix>:US-ASHBURN-AD-1").
+availability_domain = "REPLACE_AFTER_T1_1_2"
+
+fault_domain = "FAULT-DOMAIN-1"
+
+# Topologia da VCN. Defaults (10.1.0.0/16, subnets 10.1.{1,2}.0/24) evitam
+# conflito com o lab GRU (10.0.0.0/16) durante a janela paralela de migração.
+# vcn_cidr = "10.1.0.0/16"
+# subnet_cidrs = {
+#   public  = "10.1.1.0/24"
+#   private = "10.1.2.0/24"
+# }
+
+# Imagem Ubuntu 24.04 LTS aarch64 em us-ashburn-1 — descobrir via Task #321:
+#   oci compute image list --region us-ashburn-1 \
+#     --compartment-id <tenancy> \
+#     --operating-system "Canonical Ubuntu" \
+#     --operating-system-version 24.04 \
+#     --shape VM.Standard.A1.Flex \
+#     --sort-by TIMECREATED --sort-order DESC \
+#     --query 'data[0].id' --raw-output
+# IMPORTANTE: imagem aarch64 ≠ amd64; verificar `display-name` contém "aarch64".
+image_ocid = "REPLACE_AFTER_T1_1_2"
+
+# Chave SSH pública (uma por linha) que será injetada via metadata.
+# Ubuntu cria ~/.ssh/authorized_keys automaticamente no usuário `ubuntu`.
+ssh_authorized_keys = <<-EOT
+  ssh-ed25519 AAAA... operador@host
+EOT
+
+# Perfil de capacidade A1.Flex:
+#   - "poc_arm" (default, RECOMENDADO): 3 OCPU / 16 GB — cabe Always Free, $0/mês
+#   - "hml_arm": 6 OCPU / 40 GB — EXTRAPOLA Always Free, cobra ~$25/mês de A1 paga
+# Mudar e aplicar `tofu apply` REBOOTA as VMs.
+profile = "poc_arm"
+
+# Tamanho dos 4 block volumes do data-host. Defaults somam EXATAMENTE 200 GB
+# para caber no Always Free OCI Block Volume (sem cobrança).
+# Aumentar é IN-PLACE online (sem reboot, sem perder dados), mas começa a cobrar
+# ~$0.0085/GB-extra/mês. Pós-apply, rodar `growpart` + `resize2fs` no data-host.
+# Diminuir NÃO é suportado pela OCI — só via `tofu destroy && tofu apply`.
+volume_sizes_gbs = {
+  postgres = 80
+  kafka    = 40
+  minio    = 60
+  vault    = 20
+}
+
+# 0 = Lower Cost (sem IOPS dedicado; suficiente para POC e mantém $0 dentro
+# do Always Free). 10 = Balanced (cobra). Manter 0 para o lab.
+volume_vpus_per_gb = 0
