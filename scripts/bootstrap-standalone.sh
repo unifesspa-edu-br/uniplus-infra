@@ -12,10 +12,16 @@
 # Este script é exclusivo para o ambiente standalone OCI (Ubuntu 24.04 LTS).
 #
 # Pré-requisitos:
-#   - Ubuntu 24.04 LTS
+#   - Ubuntu 24.04 LTS (amd64 ou arm64/aarch64 — arquitetura auto-detectada)
 #   - Não executar como root (usa sudo internamente)
-#   - standalone-data: 4 block volumes OCI anexados (postgres 200GB, kafka 100GB,
-#                      minio 200GB, vault 50GB) — rodar lsblk antes para confirmar
+#   - standalone-data: 4 block volumes OCI anexados — rodar lsblk antes
+#     para confirmar (tamanhos variam entre lab GRU/standalone e IAD/iad-arm)
+#
+# Suporte multi-arch:
+#   amd64 (x86_64)  — lab GRU sobre VM.Standard.E5.Flex
+#   arm64 (aarch64) — lab IAD sobre VM.Standard.A1.Flex (Epic #317)
+#   k3s, ArgoCD e docker.io detectam arquitetura nativamente; apenas o
+#   download tarball do Helm exige variável ARCH explícita.
 # ============================================================================
 
 set -euo pipefail
@@ -52,6 +58,18 @@ log_info()    { echo -e "${BLUE}[INFO]${NC} $*"; }
 log_success() { echo -e "${GREEN}[ OK ]${NC} $*"; }
 log_warn()    { echo -e "${YELLOW}[WARN]${NC} $*"; }
 log_error()   { echo -e "${RED}[ERROR]${NC} $*" >&2; }
+
+# ============== Arquitetura ==============
+# Auto-detecção da arquitetura do host para downloads de binários multi-arch.
+# Padrão usado pelos releases oficiais (Helm, kubectl, mc, etc.):
+# `uname -m=x86_64` -> `amd64`; `uname -m=aarch64` -> `arm64`.
+# k3s installer e o `kubectl apply` do ArgoCD detectam arquitetura sozinhos
+# (manifest install puxa imagem multi-arch da imagem do controlador).
+case "$(uname -m)" in
+    x86_64)  ARCH="amd64" ;;
+    aarch64) ARCH="arm64" ;;
+    *)       log_error "Arquitetura não suportada: $(uname -m). Esperado x86_64 ou aarch64."; exit 1 ;;
+esac
 
 usage() {
     cat <<EOF
@@ -287,15 +305,15 @@ step_install_helm() {
         return
     fi
 
-    log_info "Instalando Helm $HELM_VERSION..."
-    local helm_tar="/tmp/helm-${HELM_VERSION}-linux-amd64.tar.gz"
-    local helm_sha="/tmp/helm-${HELM_VERSION}-linux-amd64.tar.gz.sha256sum"
-    run "curl -fsSL https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz -o $helm_tar"
-    run "curl -fsSL https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz.sha256sum -o $helm_sha"
+    log_info "Instalando Helm $HELM_VERSION (linux-$ARCH)..."
+    local helm_tar="/tmp/helm-${HELM_VERSION}-linux-${ARCH}.tar.gz"
+    local helm_sha="/tmp/helm-${HELM_VERSION}-linux-${ARCH}.tar.gz.sha256sum"
+    run "curl -fsSL https://get.helm.sh/helm-${HELM_VERSION}-linux-${ARCH}.tar.gz -o $helm_tar"
+    run "curl -fsSL https://get.helm.sh/helm-${HELM_VERSION}-linux-${ARCH}.tar.gz.sha256sum -o $helm_sha"
     run "echo \"\$(awk '{print \$1}' $helm_sha)  $helm_tar\" | sha256sum -c"
-    run "tar -xzf $helm_tar -C /tmp linux-amd64/helm"
-    run "sudo install /tmp/linux-amd64/helm /usr/local/bin/helm"
-    run "rm -rf $helm_tar $helm_sha /tmp/linux-amd64"
+    run "tar -xzf $helm_tar -C /tmp linux-${ARCH}/helm"
+    run "sudo install /tmp/linux-${ARCH}/helm /usr/local/bin/helm"
+    run "rm -rf $helm_tar $helm_sha /tmp/linux-${ARCH}"
     log_success "Helm $HELM_VERSION instalado."
 }
 
