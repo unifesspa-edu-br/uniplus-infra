@@ -1,0 +1,246 @@
+{
+  "annotations": { "list": [] },
+  "description": "Correlação Logs ↔ Traces para as APIs Uni+. Filtre por serviço, nível e Trace ID para navegar entre logs e traces (Issue #302).",
+  "editable": true,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [
+    {
+      "icon": "external link",
+      "tags": ["uniplus", "logs"],
+      "title": "Logs por service",
+      "type": "dashboards",
+      "url": "/d/uniplus-logs-per-service"
+    }
+  ],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 10,
+      "title": "Volume de logs",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "fillOpacity": 15,
+            "lineWidth": 1,
+            "stacking": { "group": "A", "mode": "normal" }
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "Error" },      "properties": [{ "id": "color", "value": { "fixedColor": "red",    "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "error" },      "properties": [{ "id": "color", "value": { "fixedColor": "red",    "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "Warning" },    "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "warn" },       "properties": [{ "id": "color", "value": { "fixedColor": "orange", "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "Information" },"properties": [{ "id": "color", "value": { "fixedColor": "blue",   "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "info" },       "properties": [{ "id": "color", "value": { "fixedColor": "blue",   "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "Debug" },      "properties": [{ "id": "color", "value": { "fixedColor": "green",  "mode": "fixed" } }] },
+          { "matcher": { "id": "byName", "options": "unknown" },    "properties": [{ "id": "color", "value": { "fixedColor": "gray",   "mode": "fixed" } }] }
+        ]
+      },
+      "gridPos": { "h": 6, "w": 18, "x": 0, "y": 1 },
+      "id": 1,
+      "options": {
+        "legend": { "calcs": ["sum"], "displayMode": "table", "placement": "right", "showLegend": true },
+        "tooltip": { "mode": "multi", "sort": "desc" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "sum by (detected_level) (count_over_time({k8s_namespace_name=\"uniplus\", service_name=~\"$service\"}[$__interval]))",
+          "legendFormat": "{{detected_level}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Logs por nível — $service",
+      "type": "timeseries"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "fixedColor": "red", "mode": "fixed" },
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red",   "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 3, "w": 6, "x": 18, "y": 1 },
+      "id": 2,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["sum"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "sum (count_over_time({k8s_namespace_name=\"uniplus\", service_name=~\"$service\", detected_level=~\"Error|error\"}[$__range]))",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "title": "Erros no período",
+      "type": "stat"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "fixedColor": "orange", "mode": "fixed" },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 3, "w": 6, "x": 18, "y": 4 },
+      "id": 3,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["sum"], "fields": "", "values": false },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "sum (count_over_time({k8s_namespace_name=\"uniplus\", service_name=~\"$service\", detected_level=~\"Warning|warn\"}[$__range]))",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "title": "Warnings no período",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 7 },
+      "id": 11,
+      "title": "Logs${trace_id:raw} — filtro por Trace ID${trace_id:raw}",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "loki", "uid": "loki" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 8 },
+      "id": 4,
+      "options": {
+        "dedupStrategy": "none",
+        "enableLogDetails": true,
+        "prettifyLogMessage": false,
+        "showCommonLabels": false,
+        "showLabels": false,
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": false
+      },
+      "targets": [
+        {
+          "datasource": { "type": "loki", "uid": "loki" },
+          "expr": "{k8s_namespace_name=\"uniplus\", service_name=~\"$service\", detected_level=~\"$level\"} |= `$trace_id`",
+          "legendFormat": "",
+          "refId": "A"
+        }
+      ],
+      "title": "Logs — $service",
+      "type": "logs"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 22 },
+      "id": 12,
+      "title": "Traces (Tempo)",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "tempo", "uid": "tempo" },
+      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 23 },
+      "id": 5,
+      "options": {},
+      "targets": [
+        {
+          "datasource": { "type": "tempo", "uid": "tempo" },
+          "queryType": "traceql",
+          "query": "{resource.service.name=~\"$service\"}",
+          "tableType": "traces",
+          "refId": "A",
+          "limit": 20
+        }
+      ],
+      "title": "Traces recentes — $service",
+      "type": "traces"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "tags": ["uniplus", "logs", "traces", "observabilidade"],
+  "templating": {
+    "list": [
+      {
+        "current": {},
+        "datasource": { "type": "loki", "uid": "loki" },
+        "definition": "label_values({k8s_namespace_name=\"uniplus\"}, service_name)",
+        "hide": 0,
+        "includeAll": true,
+        "multi": true,
+        "name": "service",
+        "options": [],
+        "query": "label_values({k8s_namespace_name=\"uniplus\"}, service_name)",
+        "refresh": 2,
+        "regex": "uniplus-.*",
+        "type": "query",
+        "label": "Serviço"
+      },
+      {
+        "current": { "selected": true, "text": "All", "value": "$__all" },
+        "hide": 0,
+        "includeAll": true,
+        "multi": true,
+        "name": "level",
+        "options": [
+          { "selected": false, "text": "Information", "value": "Information" },
+          { "selected": false, "text": "Warning",     "value": "Warning"     },
+          { "selected": false, "text": "Error",        "value": "Error"       },
+          { "selected": false, "text": "Debug",        "value": "Debug"       },
+          { "selected": false, "text": "unknown",      "value": "unknown"     }
+        ],
+        "query": "Information,Warning,Error,Debug,unknown",
+        "allValue": ".*",
+        "type": "custom",
+        "label": "Nível"
+      },
+      {
+        "current": { "selected": true, "text": "", "value": "" },
+        "hide": 0,
+        "name": "trace_id",
+        "options": [{ "selected": true, "text": "", "value": "" }],
+        "query": "",
+        "type": "textbox",
+        "label": "Trace ID"
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Uni+ — Logs & Traces",
+  "uid": "uniplus-logs-traces",
+  "version": 1
+}
