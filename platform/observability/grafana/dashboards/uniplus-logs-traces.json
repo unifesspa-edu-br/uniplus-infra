@@ -204,7 +204,7 @@
         "options": [],
         "query": "label_values({k8s_namespace_name=\"uniplus\"}, service_name)",
         "refresh": 2,
-        "regex": "uniplus-.*",
+        "regex": "^uniplus-",
         "type": "query",
         "label": "Serviço"
       },

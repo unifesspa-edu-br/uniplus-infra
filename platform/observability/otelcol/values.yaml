@@ -138,6 +138,19 @@ otelCollector:
               - 'set(severity_number, SEVERITY_NUMBER_WARN) where severity_text == "Warning"'
               - 'set(severity_number, SEVERITY_NUMBER_ERROR) where severity_text == "Error"'
               - 'set(severity_number, SEVERITY_NUMBER_FATAL) where severity_text == "Fatal"'
+      # Descarta logs de serviços de plataforma que geram ruído sem valor para
+      # monitoração das APIs Uni+. Filtros aplicados antes do batch/exporter
+      # para evitar custo de armazenamento no Loki.
+      #
+      # Apicurio Registry: probe K8s em /apis/registry/v3/system/info a cada ~4s
+      # via JBossLoggingAccessLogReceiver — representava 89% do volume do namespace.
+      # ClamAV: saída de texto não estruturado do scanner, detected_level=unknown.
+      filter/drop-platform-noise:
+        error_mode: ignore
+        logs:
+          log_record:
+            - 'resource.attributes["service.name"] == "apicurio-registry-uniplus-standalone" and IsMatch(body, "system/info")'
+            - 'resource.attributes["service.name"] == "clamav-scanner-uniplus-standalone"'
       # k8sattributes é injetado pelo preset kubernetesAttributes.
 
     exporters:
@@ -192,7 +205,7 @@ otelCollector:
         # Logs: filelog (preset) + otlp (apps push) → memory_limiter → severity → resource → batch → loki
         logs:
           receivers: [otlp]                  # filelog adicionado pelo preset
-          processors: [memory_limiter, transform/serilog-severity, resource, batch]   # k8sattributes adicionado pelo preset
+          processors: [memory_limiter, filter/drop-platform-noise, transform/serilog-severity, resource, batch]   # k8sattributes adicionado pelo preset
           exporters: [otlphttp/loki, debug]
         # Traces: otlp → resource → memory_limiter → batch → tempo
         traces:
