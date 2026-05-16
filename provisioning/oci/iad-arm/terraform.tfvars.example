@@ -49,16 +49,31 @@ EOT
 # Mudar e aplicar `tofu apply` REBOOTA as VMs.
 profile = "poc_arm"
 
-# Tamanho dos 4 block volumes do data-host. Defaults somam EXATAMENTE 200 GB
-# para caber no Always Free OCI Block Volume (sem cobrança).
-# Aumentar é IN-PLACE online (sem reboot, sem perder dados), mas começa a cobrar
-# ~$0.0085/GB-extra/mês. Pós-apply, rodar `growpart` + `resize2fs` no data-host.
-# Diminuir NÃO é suportado pela OCI — só via `tofu destroy && tofu apply`.
+# Tamanho dos 4 block volumes do data-host. Defaults somam 150 GB com
+# alocação priorizando MinIO (logs + artefatos). 50 GB de folga sob o
+# limite Always Free de 200 GB. Folga serve para:
+#   1. Crescer um volume in-place quando o serviço precisar (até 200 GB
+#      total ainda fica grátis).
+#   2. Provisionar volume novo para serviço futuro sem precisar reduzir os
+#      existentes (reduzir NÃO é suportado pela OCI — só via destroy+recreate).
+# Aumentar acima de 200 GB total passa a cobrar ~$0.0085/GB-extra/mês.
+# Pós-apply, rodar `growpart` + `resize2fs` no data-host para o FS reconhecer.
+#
+# Distribuição esperada na operação:
+#   postgres = 15 GB  → base do app fica em ~2 GB durante testes; 15 GB cobre
+#                       WAL + índices + vacuum bloat com folga de 7x.
+#   kafka    = 15 GB  → event topics curtos (commands/events de domínio);
+#                       logs de aplicação NÃO passam por Kafka.
+#   minio    = 110 GB → bulk de logs da plataforma + artefatos (uploads de
+#                       candidatos, exports). Sem retention configurada, este
+#                       é o primeiro a encher — definir lifecycle policy no
+#                       bucket de logs antes de produção real.
+#   vault    = 10 GB  → secrets do app, KV store; nunca grande.
 volume_sizes_gbs = {
-  postgres = 80
-  kafka    = 40
-  minio    = 60
-  vault    = 20
+  postgres = 15
+  kafka    = 15
+  minio    = 110
+  vault    = 10
 }
 
 # 0 = Lower Cost (sem IOPS dedicado; suficiente para POC e mantém $0 dentro

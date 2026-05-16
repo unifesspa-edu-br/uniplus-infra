@@ -69,7 +69,7 @@ variable "profile" {
 }
 
 variable "volume_sizes_gbs" {
-  description = "Tamanho em GB de cada block volume anexado ao data-host. Defaults somam 200 GB exatos (limite Always Free OCI Block Volume). Aumentar passa a cobrar ~$0.0085/GB-extra/mês."
+  description = "Tamanho em GB de cada block volume anexado ao data-host. Defaults somam 150 GB priorizando MinIO (110 GB) que recebe logs da plataforma além de artefatos. Postgres fica em 15 GB (~7.5x o teto esperado de 2 GB durante testes, cobrindo WAL + índices + vacuum bloat). Limite Always Free OCI Block Volume é 200 GB — restam 50 GB de folga para crescer in-place ou provisionar volume novo sem sair do free tier. Aumentar acima de 200 GB total passa a cobrar ~$0.0085/GB-extra/mês."
   type = object({
     postgres = number
     kafka    = number
@@ -77,10 +77,10 @@ variable "volume_sizes_gbs" {
     vault    = number
   })
   default = {
-    postgres = 80
-    kafka    = 40
-    minio    = 60
-    vault    = 20
+    postgres = 15
+    kafka    = 15
+    minio    = 110
+    vault    = 10
   }
 }
 

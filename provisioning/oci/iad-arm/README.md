@@ -28,7 +28,7 @@ KMS Vault + Master Encryption Key, Dynamic Group, IAM Policy.
 | Imagem | Ubuntu 24.04 LTS x86_64 | Ubuntu 24.04 LTS **aarch64** |
 | Profile default | `poc` (3 OCPU / 16 GB E5) | `poc_arm` (3 OCPU / 16 GB A1) |
 | VCN CIDR | 10.0.0.0/16 | 10.1.0.0/16 |
-| Block volumes | 550 GB total (postgres 200 + kafka 100 + minio 200 + vault 50) | 200 GB total (postgres 80 + kafka 40 + minio 60 + vault 20) — cabe Always Free |
+| Block volumes | 550 GB total (postgres 200 + kafka 100 + minio 200 + vault 50) | 150 GB total (postgres 15 + kafka 15 + minio 110 + vault 10) — prioriza MinIO para logs; 50 GB de folga sob o limite Always Free de 200 GB |
 | Tag `uniplus_environment` | `standalone` | `iad-arm` |
 | DNS subdomínio | `*.standalone.portaluni.com.br` | `*.iad-arm.portaluni.com.br` |
 | Custo (PAYG estimado) | ~$108/mês | ~$0-3/mês (compute + storage Always Free) |
