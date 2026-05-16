@@ -119,6 +119,25 @@ otelCollector:
           - key: dc
             value: standalone
             action: upsert
+      # Extrai severidade dos logs Serilog (formato bracket) para alimentar
+      # o Loki detected_level. Sem isso, logs do stdout das APIs (coletados
+      # via filelog) chegam sem severity_text e o Loki classifica como
+      # 'unknown'. Aplica somente quando severity_text não está preenchido
+      # — logs OTLP das apps já chegam com severity setada pelo SDK .NET.
+      #
+      # Formato Serilog (após fix Issue #513 — {Level} sem :u3):
+      #   [14:59:54 Information] End processing HTTP request...
+      # Regex extrai o nivel e seta severity_text + severity_number.
+      transform/serilog-severity:
+        log_statements:
+          - context: log
+            statements:
+              - 'set(severity_text, ExtractPatterns(body, "^\\[\\d{2}:\\d{2}:\\d{2} (?P<level>\\w+)\\]")["level"]) where severity_text == "" and IsMatch(body, "^\\[\\d{2}:\\d{2}:\\d{2} \\w+\\]")'
+              - 'set(severity_number, SEVERITY_NUMBER_DEBUG) where severity_text == "Debug"'
+              - 'set(severity_number, SEVERITY_NUMBER_INFO) where severity_text == "Information"'
+              - 'set(severity_number, SEVERITY_NUMBER_WARN) where severity_text == "Warning"'
+              - 'set(severity_number, SEVERITY_NUMBER_ERROR) where severity_text == "Error"'
+              - 'set(severity_number, SEVERITY_NUMBER_FATAL) where severity_text == "Fatal"'
       # k8sattributes é injetado pelo preset kubernetesAttributes.
 
     exporters:
@@ -170,10 +189,10 @@ otelCollector:
       extensions:
         - health_check
       pipelines:
-        # Logs: filelog (preset) + otlp (apps push) → resource → memory_limiter → batch → loki
+        # Logs: filelog (preset) + otlp (apps push) → memory_limiter → severity → resource → batch → loki
         logs:
           receivers: [otlp]                  # filelog adicionado pelo preset
-          processors: [memory_limiter, resource, batch]   # k8sattributes adicionado pelo preset
+          processors: [memory_limiter, transform/serilog-severity, resource, batch]   # k8sattributes adicionado pelo preset
           exporters: [otlphttp/loki, debug]
         # Traces: otlp → resource → memory_limiter → batch → tempo
         traces:
