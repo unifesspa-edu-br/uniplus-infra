@@ -236,7 +236,7 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "sum(count_over_time({service_name=\"uniplus-web-uniplus-standalone\"}[$__range]))",
+          "expr": "sum(count_over_time({service_name=\"uniplus-web-uniplus-standalone\",k8s_deployment_name=~\".*-($app)\"}[$__range]))",
           "refId": "A",
           "instant": true
         }
@@ -268,12 +268,12 @@
         "reduceOptions": { "calcs": ["sum"], "fields": "", "values": false },
         "textMode": "auto"
       },
-      "title": "Erros no período (Error/Warning)",
+      "title": "Erros HTTP 4xx/5xx (período)",
       "type": "stat",
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "sum(count_over_time({service_name=\"uniplus-web-uniplus-standalone\", detected_level=~\"Error|error|Warning|warn\"}[$__range]))",
+          "expr": "sum(count_over_time({service_name=\"uniplus-web-uniplus-standalone\",k8s_deployment_name=~\".*-($app)\"} |~ `\" [45][0-9]{2} ` [$__range]))",
           "refId": "A",
           "instant": true
         }
@@ -309,7 +309,7 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "sum by (detected_level) (count_over_time({service_name=\"uniplus-web-uniplus-standalone\"}[$__interval]))",
+          "expr": "sum by (detected_level) (count_over_time({service_name=\"uniplus-web-uniplus-standalone\",k8s_deployment_name=~\".*-($app)\"}[$__rate_interval]))",
           "legendFormat": "{{detected_level}}",
           "refId": "A"
         }
@@ -330,12 +330,12 @@
         "sortOrder": "Descending",
         "wrapLogMessage": false
       },
-      "title": "Logs nginx — frontends",
+      "title": "Logs nginx — frontends ($app)",
       "type": "logs",
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "{service_name=\"uniplus-web-uniplus-standalone\"}",
+          "expr": "{service_name=\"uniplus-web-uniplus-standalone\",k8s_deployment_name=~\".*-($app)\"}",
           "refId": "A"
         }
       ]
