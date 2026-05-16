@@ -20,7 +20,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (service_name, dotnet_gc_heap_generation) (dotnet_gc_last_collection_heap_size{service_namespace=\"uniplus\",service_name=~\"$service\"})",
+          "expr": "sum by (service_name, dotnet_gc_heap_generation) (dotnet_gc_last_collection_heap_size_bytes{service_namespace=\"uniplus\",service_name=~\"$service\"})",
           "legendFormat": "{{service_name}} gen{{dotnet_gc_heap_generation}}",
           "refId": "A"
         }
@@ -80,7 +80,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "max by (service_name) (dotnet_thread_pool_queue_length{service_namespace=\"uniplus\",service_name=~\"$service\"})",
+          "expr": "max by (service_name) (dotnet_thread_pool_queue_length_total{service_namespace=\"uniplus\",service_name=~\"$service\"})",
           "legendFormat": "{{service_name}}",
           "refId": "A"
         }
@@ -135,14 +135,14 @@
       {
         "current": {},
         "datasource": { "type": "prometheus", "uid": "prometheus" },
-        "definition": "label_values(dotnet_gc_last_collection_heap_size{service_namespace=\"uniplus\"}, service_name)",
+        "definition": "label_values(dotnet_gc_last_collection_heap_size_bytes{service_namespace=\"uniplus\"}, service_name)",
         "hide": 0,
         "includeAll": true,
         "multi": true,
         "name": "service",
         "options": [],
         "query": {
-          "query": "label_values(dotnet_gc_last_collection_heap_size{service_namespace=\"uniplus\"}, service_name)",
+          "query": "label_values(dotnet_gc_last_collection_heap_size_bytes{service_namespace=\"uniplus\"}, service_name)",
           "refId": "PrometheusVariableQueryEditor-VariableQuery"
         },
         "refresh": 2,
