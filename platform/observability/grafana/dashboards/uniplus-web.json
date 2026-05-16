@@ -56,7 +56,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "kube_deployment_status_replicas_available{namespace=\"uniplus\",deployment=\"uniplus-web-uniplus-standalone-uniplus-web-selecao\"}",
+          "expr": "kube_deployment_status_replicas_available{namespace=\"uniplus\",deployment=~\".*-uniplus-web-selecao\"}",
           "legendFormat": "selecao",
           "refId": "A"
         }
@@ -97,7 +97,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "kube_deployment_status_replicas_available{namespace=\"uniplus\",deployment=\"uniplus-web-uniplus-standalone-uniplus-web-ingresso\"}",
+          "expr": "kube_deployment_status_replicas_available{namespace=\"uniplus\",deployment=~\".*-uniplus-web-ingresso\"}",
           "legendFormat": "ingresso",
           "refId": "A"
         }
@@ -138,7 +138,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "kube_deployment_status_replicas_available{namespace=\"uniplus\",deployment=\"uniplus-web-uniplus-standalone-uniplus-web-portal\"}",
+          "expr": "kube_deployment_status_replicas_available{namespace=\"uniplus\",deployment=~\".*-uniplus-web-portal\"}",
           "legendFormat": "portal",
           "refId": "A"
         }
@@ -157,7 +157,7 @@
         "defaults": {
           "color": { "mode": "palette-classic" },
           "custom": { "lineWidth": 1 },
-          "unit": "percentunit"
+          "unit": "short"
         },
         "overrides": []
       },
@@ -167,12 +167,12 @@
         "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" },
         "tooltip": { "mode": "multi", "sort": "desc" }
       },
-      "title": "CPU — frontends web",
+      "title": "CPU — frontends web (cores)",
       "type": "timeseries",
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"uniplus\",pod=~\"uniplus-web-uniplus-standalone-uniplus-web-($app)-.*\",container!=\"POD\",container!=\"\"}[$__rate_interval]))",
+          "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=\"uniplus\",pod=~\".*-uniplus-web-($app)-.*\",container!=\"POD\",container!=\"\"}[$__rate_interval]))",
           "legendFormat": "{{ pod }}",
           "refId": "A"
         }
@@ -199,7 +199,7 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=\"uniplus\",pod=~\"uniplus-web-uniplus-standalone-uniplus-web-($app)-.*\",container!=\"POD\",container!=\"\"})",
+          "expr": "sum by (pod) (container_memory_working_set_bytes{namespace=\"uniplus\",pod=~\".*-uniplus-web-($app)-.*\",container!=\"POD\",container!=\"\"})",
           "legendFormat": "{{ pod }}",
           "refId": "A"
         }
@@ -236,7 +236,7 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "sum(count_over_time({service_name=\"uniplus-web-uniplus-standalone\",k8s_deployment_name=~\".*-($app)\"}[$__range]))",
+          "expr": "sum(count_over_time({k8s_namespace_name=\"uniplus\",k8s_deployment_name=~\".*-uniplus-web-($app)\"}[$__range]))",
           "refId": "A",
           "instant": true
         }
@@ -273,7 +273,7 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "sum(count_over_time({service_name=\"uniplus-web-uniplus-standalone\",k8s_deployment_name=~\".*-($app)\"} |~ `\" [45][0-9]{2} ` [$__range]))",
+          "expr": "sum(count_over_time({k8s_namespace_name=\"uniplus\",k8s_deployment_name=~\".*-uniplus-web-($app)\"} |~ `\" [45][0-9]{2} ` [$__range]))",
           "refId": "A",
           "instant": true
         }
@@ -309,7 +309,7 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "sum by (detected_level) (count_over_time({service_name=\"uniplus-web-uniplus-standalone\",k8s_deployment_name=~\".*-($app)\"}[$__rate_interval]))",
+          "expr": "sum by (detected_level) (count_over_time({k8s_namespace_name=\"uniplus\",k8s_deployment_name=~\".*-uniplus-web-($app)\"}[$__rate_interval]))",
           "legendFormat": "{{detected_level}}",
           "refId": "A"
         }
@@ -335,7 +335,7 @@
       "targets": [
         {
           "datasource": { "type": "loki", "uid": "loki" },
-          "expr": "{service_name=\"uniplus-web-uniplus-standalone\",k8s_deployment_name=~\".*-($app)\"}",
+          "expr": "{k8s_namespace_name=\"uniplus\",k8s_deployment_name=~\".*-uniplus-web-($app)\"}",
           "refId": "A"
         }
       ]
