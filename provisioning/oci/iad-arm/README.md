@@ -113,7 +113,17 @@ ssh ubuntu@<k8s-host-ip> "ssh ubuntu@10.1.2.x 'sudo growpart /dev/sdb 1 && sudo 
 $EDITOR terraform.tfvars   # profile = "hml_arm"  (cobra ~$25/mês de A1 paga)
 tofu apply
 
-# Recriar do zero (cuidado — destrutivo total; preserva apenas Reserved Public IP)
+# Recriar do zero (CUIDADO — destrutivo total: destroi VMs, volumes, VCN
+# E o Reserved Public IP). Apos `tofu apply` subsequente, o RESERVED IP
+# alocado sera DIFERENTE — DNS records, callback URLs do gov.br,
+# Let's Encrypt certs e KC_HOSTNAME precisam ser reconfigurados.
+#
+# Para preservar o IP entre destroy/apply, ha duas opcoes:
+#   1. Adicionar `lifecycle { prevent_destroy = true }` ao
+#      `oci_core_public_ip.k8s_host` (forca destroy parcial — exclui o IP)
+#   2. `tofu state rm oci_core_public_ip.k8s_host` antes do destroy +
+#      `tofu import oci_core_public_ip.k8s_host <ocid>` apos o apply
+# Em qualquer caso, o IP nao volta automaticamente.
 tofu destroy
 tofu apply
 ```
