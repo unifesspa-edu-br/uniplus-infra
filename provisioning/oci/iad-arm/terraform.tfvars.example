@@ -7,6 +7,14 @@
 # direto no compartment raiz, mesma topologia do standalone).
 compartment_ocid = "ocid1.tenancy.oc1..REPLACE_WITH_TENANCY_OCID"
 
+# OCID da tenancy (compartment raiz). Necessário separadamente de
+# `compartment_ocid` porque IAM Dynamic Groups e Policies tenancy-scoped
+# DEVEM residir no compartment raiz, independente do compartment escolhido
+# para compute/network. No iad-arm POC ambos apontam para o mesmo OCID
+# (tenancy raiz). Em ambiente futuro com isolamento por compartment, manter
+# `tenancy_ocid` apontando para o root e `compartment_ocid` para o child.
+tenancy_ocid = "ocid1.tenancy.oc1..REPLACE_WITH_TENANCY_OCID"
+
 # Região destino fixada — não alterar sem revisar Epic #317. A escolha de IAD
 # foi binding (latência ~140ms BR + melhor capacidade A1 histórica).
 region = "us-ashburn-1"

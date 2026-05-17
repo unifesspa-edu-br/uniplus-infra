@@ -3,6 +3,11 @@ variable "compartment_ocid" {
   type        = string
 }
 
+variable "tenancy_ocid" {
+  description = "OCID da tenancy (compartment raiz). Necessário separadamente de `compartment_ocid` porque IAM Dynamic Groups e Policies tenancy-scoped DEVEM residir no compartment raiz, independente do compartment onde compute/network vivem. No iad-arm POC esse valor é igual a `compartment_ocid` (tudo na raiz); em ambientes com isolamento por compartment, manter este aqui apontando para o root e `compartment_ocid` para o child."
+  type        = string
+}
+
 variable "region" {
   description = "Região OCI alvo. iad-arm é fixado em us-ashburn-1 (IAD) — maior capacidade A1 ARM histórica nos EUA e menor latência do Brasil entre as regiões PAYG-disponíveis."
   type        = string

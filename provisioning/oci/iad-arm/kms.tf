@@ -45,8 +45,13 @@ resource "oci_kms_key" "unseal" {
 }
 
 resource "oci_identity_dynamic_group" "k8s_host" {
-  # Dynamic Groups vivem no tenancy raiz (não no compartment do recurso).
-  compartment_id = var.compartment_ocid
+  # IAM Dynamic Groups são tenancy-scoped: a OCI exige que o
+  # `compartment_id` aponte para a raiz da tenancy, não para um
+  # child compartment onde compute/network vivam. Apply falha com
+  # "InvalidParameter: dynamic group must be created at the tenancy
+  # level" se o operador colocar infra em child e passar o mesmo OCID
+  # aqui. `var.tenancy_ocid` é variável dedicada por isso.
+  compartment_id = var.tenancy_ocid
   name           = "uniplus-iad-arm-k8s-host-dg"
   description    = "Dynamic Group para o k8s-host do ambiente iad-arm — permite auto-unseal do Vault via OCI KMS"
   matching_rule  = "ANY {instance.id = '${oci_core_instance.k8s_host.id}'}"
@@ -55,7 +60,11 @@ resource "oci_identity_dynamic_group" "k8s_host" {
 }
 
 resource "oci_identity_policy" "vault_unseal" {
-  compartment_id = var.compartment_ocid
+  # Policy com statements tenancy-scoped (`... in tenancy where ...`)
+  # também precisa morar no compartment raiz para que o engine IAM
+  # avalie os recursos referenciados em qualquer parte da tenancy.
+  # Mesmo argumento de `var.tenancy_ocid` do dynamic group acima.
+  compartment_id = var.tenancy_ocid
   name           = "uniplus-iad-arm-vault-unseal-policy"
   description    = "Permite que o k8s-host use a chave KMS para auto-unseal do HashiCorp Vault"
   statements = [
