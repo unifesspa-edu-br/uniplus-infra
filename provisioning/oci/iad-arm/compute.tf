@@ -19,8 +19,16 @@ resource "oci_core_instance" "k8s_host" {
   }
 
   create_vnic_details {
-    subnet_id        = oci_core_subnet.public.id
-    assign_public_ip = true
+    subnet_id = oci_core_subnet.public.id
+    # `assign_public_ip = false`: o IP público do k8s-host vem do
+    # `oci_core_public_ip.k8s_host` (RESERVED, definido em public_ip.tf),
+    # anexado ao primary private IP via `private_ip_id`. Setar `true`
+    # aqui criaria um IP EPHEMERAL e o `oci_core_public_ip` falharia
+    # depois com "private IP already has a public IP assigned" — diferente
+    # do `standalone/` (que tem `true` mas só funciona porque foi
+    # importado após promoção manual EPHEMERAL→RESERVED via OCI CLI;
+    # `iad-arm` é apply from zero).
+    assign_public_ip = false
     hostname_label   = "k8s-host"
   }
 

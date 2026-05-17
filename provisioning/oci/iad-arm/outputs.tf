@@ -4,8 +4,8 @@ output "k8s_host_ocid" {
 }
 
 output "k8s_host_public_ip" {
-  description = "IP público do k8s-host (não-Reserved no momento; pode mudar em recreate)."
-  value       = oci_core_instance.k8s_host.public_ip
+  description = "IP público do k8s-host. No iad-arm é o mesmo valor de `k8s_host_reserved_ip` porque a `k8s_host` é criada com `assign_public_ip = false` (sem EPHEMERAL) e o IP vem do `oci_core_public_ip.k8s_host` (RESERVED). Schema preservado para compatibilidade com `scripts/sync-tofu-outputs.sh` e outros consumidores que leem ambos os outputs do `standalone/`."
+  value       = oci_core_public_ip.k8s_host.ip_address
 }
 
 output "k8s_host_private_ip" {
