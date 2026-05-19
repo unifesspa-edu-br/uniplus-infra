@@ -177,7 +177,7 @@ grafana:
   envValueFrom:
     OIDC_CLIENT_SECRET:
       secretKeyRef:
-        name: platform-observability-grafana-uniplus-standalone-grafana-oidc-client-secret
+        name: platform-observability-grafana-in-cluster-grafana-oidc-client-secret
         key: client_secret
   # IngressRoute Traefik via subpath /grafana/* no FQDN raiz (consistente
   # com Keycloak em /auth/*). Middleware StripPrefix /grafana é emitido
@@ -206,7 +206,7 @@ grafana:
           # Chart kube-prometheus-stack aplica fullnameOverride=platform-observability-pro,
           # então o service real do Prometheus API (porta 9090) é
           # platform-observability-pro-prometheus.observability-prometheus.svc.cluster.local:9090,
-          # não o nome composto com -uniplus-standalone-prometheus (esse último service
+          # não o nome composto com -in-cluster-prometheus (esse último service
           # existe mas expõe porta 9100 + endpoint diferente). Mesma origem da correção
           # OTel em uniplus-infra#237/#238. Antes deste fix, HTTP 502 via Grafana proxy.
           url: http://platform-observability-pro-prometheus.observability-prometheus.svc.cluster.local:9090
@@ -218,7 +218,7 @@ grafana:
           type: loki
           uid: loki
           access: proxy
-          url: http://platform-observability-loki-uniplus-standalone.observability-loki.svc.cluster.local:3100
+          url: http://platform-observability-loki-in-cluster.observability-loki.svc.cluster.local:3100
           jsonData:
             # derivedFields: ao ver `traceID` (formato OTel) ou `trace_id` no log,
             # Grafana renderiza link clicável que abre o trace no datasource Tempo.
@@ -235,7 +235,7 @@ grafana:
           type: tempo
           uid: tempo
           access: proxy
-          url: http://platform-observability-tempo-uniplus-standalone.observability-tempo.svc.cluster.local:3200
+          url: http://platform-observability-tempo-in-cluster.observability-tempo.svc.cluster.local:3200
           jsonData:
             # tracesToLogsV2: do trace, abre query no Loki filtrando pela
             # mesma trace_id. Direção inversa da derivedFields acima — fecha
@@ -397,12 +397,12 @@ otelCollector:
   # Env vars dos exporters — populam ${env:LOKI_OTLP_ENDPOINT} e
   # ${env:TEMPO_OTLP_ENDPOINT} no alternateConfig do wrapper. Cada environment
   # seta os endpoints reais do release Loki/Tempo nesse cluster (release-name
-  # varia: `...uniplus-standalone`, `...lab-sp1`, etc.). Codex P1 PR #224.
+  # varia: `...in-cluster`, `...lab-sp1`, etc.). Codex P1 PR #224.
   extraEnvs:
     - name: LOKI_OTLP_ENDPOINT
-      value: http://platform-observability-loki-uniplus-standalone.observability-loki.svc.cluster.local:3100/otlp
+      value: http://platform-observability-loki-in-cluster.observability-loki.svc.cluster.local:3100/otlp
     - name: TEMPO_OTLP_ENDPOINT
-      value: http://platform-observability-tempo-uniplus-standalone.observability-tempo.svc.cluster.local:4318
+      value: http://platform-observability-tempo-in-cluster.observability-tempo.svc.cluster.local:4318
     - name: PROMETHEUS_REMOTE_WRITE_ENDPOINT
       # Service do Prometheus standalone (fullnameOverride=platform-observability-pro, porta 9090).
       # Mesmo service usado no datasource do Grafana (environments/standalone/values.yaml §grafana.datasources).
@@ -659,7 +659,7 @@ clamavScanner:
 
 # ----------------------------------------------------------------------------
 # External Secrets (chart platform/external-secrets/) — endpoint do Vault.
-# Standalone usa Application name `platform-vault-uniplus-standalone` no
+# Standalone usa Application name `platform-vault-in-cluster` no
 # ApplicationSet, então o Vault Service ClusterIP leva esse mesmo nome.
 # Sem fullnameOverride no chart vault/, é necessário apontar explicitamente
 # aqui. Habilitar `clusterSecretStore.enabled` só após Vault init (#64) e
@@ -876,7 +876,7 @@ kafkaUi:
     # brokers num cluster HA).
     dataHostCIDR: 10.2.2.0/24
     dataHostPort: 9092
-    keycloakService: keycloak-replica-uniplus-standalone
+    keycloakService: keycloak-replica-in-cluster
     keycloakNamespace: uniplus
     keycloakPort: 8080
     # IP público do k8s-host OCI standalone (137.131.131.6) /32. AKHQ chama
@@ -929,7 +929,7 @@ apicurioRegistry:
     # neste chart, mas mantemos o mesmo bloco por consistência).
     dataHostCIDR: 10.2.2.0/24
     dataHostPort: 5432
-    keycloakService: keycloak-replica-uniplus-standalone
+    keycloakService: keycloak-replica-in-cluster
     keycloakNamespace: uniplus
     keycloakPort: 8080
     # IP público do k8s-host OCI standalone — Quarkus OIDC chama
@@ -1067,7 +1067,7 @@ uniplusApiPortal:
       clientId: uniplus-api-portal
   # OpenTelemetry — destino OTLP gRPC do collector DaemonSet do cluster.
   # Service ClusterIP `<release>.<ns>.svc.cluster.local:4317`; o release name
-  # `platform-observability-otelcol-uniplus-standalone` é gerado pelo
+  # `platform-observability-otelcol-in-cluster` é gerado pelo
   # ApplicationSet (platform/observability/otelcol). Endpoint vivo desde
   # PR uniplus-infra#224 — esta entrada destrava a issue #226.
   otel:
