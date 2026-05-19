@@ -74,7 +74,7 @@ variable "profile" {
 }
 
 variable "volume_sizes_gbs" {
-  description = "Tamanho em GB de cada block volume anexado ao data-host. OCI rejeita volumes <50 GB no `CreateVolume` (mínimo documentado: 50 GB, máximo 32 TB, incrementos de 1 GB). Defaults distribuem 4×50 GB = 200 GB total — bate exato no teto histórico da decisão binding do Epic #317. ATENÇÃO: o Always Free Block Volume (200 GB) é amarrado à HOME REGION da tenancy (GRU, no caso da unifesspa-edu-br); volumes em IAD são cobrados em PAYG a ~$0.0255/GB-mês (VPU 0). Custo estimado em IAD: 4×50 GB = ~$5.10/mês."
+  description = "Tamanho em GB de cada block volume anexado ao data-host. OCI rejeita volumes <50 GB no `CreateVolume` (mínimo documentado: 50 GB, máximo 32 TB, incrementos de 1 GB). Defaults distribuem 4×50 GB = 200 GB total — bate exato no teto histórico da decisão binding do Epic #317. ATENÇÃO: o Always Free Block Volume (200 GB) é amarrado à HOME REGION da tenancy (GRU, no caso da unifesspa-edu-br); volumes em IAD são cobrados em PAYG a ~$0.0255/GB-mês (VPU 0). Custo estimado em IAD: 4×50 GB = ~$5.10/mês. **DEPENDÊNCIA**: `scripts/bootstrap-standalone.sh` hoje identifica papéis dos block volumes por tamanho (45-55 → vault; 95-105 → kafka; 190-210 → postgres+minio). Com 4×50 GB todos os disks colidem na faixa do vault, e o bootstrap aborta na função `discover_disks`. A refatoração para identificação por display_name/LUN/OCI metadata é PRÉ-REQUISITO da Story #329 (apply em IAD) e está rastreada como follow-up do Epic #317 (ver thread Codex em PR #374)."
   type = object({
     postgres = number
     kafka    = number

@@ -26,7 +26,12 @@
 # ==============================================================================
 
 data "oci_dns_zones" "portaluni" {
-  compartment_id = var.compartment_ocid
+  # A zona é um recurso de plataforma compartilhada — vive no tenancy root,
+  # não no compartment de workload (mesmo quando ambos coincidem hoje no POC).
+  # Usar `var.tenancy_ocid` garante o lookup correto se algum operador isolar
+  # workload em child compartment no futuro. Caso contrário, `zones[0]` virá
+  # vazio e `tofu plan` quebra antes de criar qualquer registro.
+  compartment_id = var.tenancy_ocid
   name           = "portaluni.com.br"
   scope          = "GLOBAL"
 }
