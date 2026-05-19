@@ -581,7 +581,7 @@ vaultTransit:
 vaultTransitBootstrap:
   enabled: true
   vault:
-    address: http://platform-vault-uniplus-standalone.vault.svc.cluster.local:8200
+    address: http://platform-vault-in-cluster.vault.svc.cluster.local:8200
 
 # NetworkPolicy do chart vault/ — sem egress Transit (vaultTransit.enabled=false).
 #
@@ -667,7 +667,7 @@ clamavScanner:
 # ----------------------------------------------------------------------------
 clusterSecretStore:
   enabled: true
-  vaultServer: http://platform-vault-uniplus-standalone.vault.svc.cluster.local:8200
+  vaultServer: http://platform-vault-in-cluster.vault.svc.cluster.local:8200
 
 # ----------------------------------------------------------------------------
 # cert-manager ClusterIssuers — HTTP-01 via Traefik (chart platform/traefik/).
@@ -1054,7 +1054,7 @@ uniplusApiPortal:
   # com bound_service_account_names incluindo uniplus-api-portal/uniplus-api-selecao/uniplus-api-ingresso.
   encryption:
     provider: vault
-    vaultAddress: http://platform-vault-uniplus-standalone.vault.svc.cluster.local:8200
+    vaultAddress: http://platform-vault-in-cluster.vault.svc.cluster.local:8200
     kubernetesRole: uniplus-api
   # Schema Registry (ADR-0051) — Apicurio Confluent-compat. Auth OAuthBearer
   # consumindo client_secret materializado pelo ESO 5 a partir do Vault path
@@ -1110,7 +1110,7 @@ uniplusApiSelecao:
     oidcIssuerCIDR: 137.131.131.6/32
   encryption:
     provider: vault
-    vaultAddress: http://platform-vault-uniplus-standalone.vault.svc.cluster.local:8200
+    vaultAddress: http://platform-vault-in-cluster.vault.svc.cluster.local:8200
     kubernetesRole: uniplus-api
   schemaRegistry:
     url: https://schema-registry.standalone.portaluni.com.br/apis/ccompat/v7
@@ -1159,7 +1159,7 @@ uniplusApiIngresso:
     oidcIssuerCIDR: 137.131.131.6/32
   encryption:
     provider: vault
-    vaultAddress: http://platform-vault-uniplus-standalone.vault.svc.cluster.local:8200
+    vaultAddress: http://platform-vault-in-cluster.vault.svc.cluster.local:8200
     kubernetesRole: uniplus-api
   schemaRegistry:
     url: https://schema-registry.standalone.portaluni.com.br/apis/ccompat/v7
