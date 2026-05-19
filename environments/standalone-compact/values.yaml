@@ -1,0 +1,1232 @@
+# Ambiente: standalone
+# Topologia paralela provider-agnostic — ADR-008.
+#
+# Modelo single-DC, single-host para K8s + 1 host externo para componentes
+# stateful (Postgres, Kafka, MinIO, Redis) gerenciados por systemd. NÃO valida
+# resiliência geográfica nem failover entre DCs — ver environments/standalone/README.md.
+#
+# Provider de referência: OCI (issue #47, Epic #40). O único campo provider-
+# specific é `vault.server.ha.raft.config` (bloco `seal "ocikms"`); para outro
+# provider, substituir por `seal "awskms"`, `seal "azurekeyvault"`, etc.
+# Nenhum OCID/ARN/endpoint entra neste arquivo — esses valores chegam via
+# External Secrets / variáveis de ambiente injetadas no Pod do Vault.
+
+cluster:
+  name: standalone-compact
+  region: standalone
+  dc: standalone-compact
+
+# Hostname público único — todos os apps (web, APIs, Keycloak, Vault UI) sob
+# o mesmo FQDN com pathing no Traefik. Override de host concreto fica fora
+# deste arquivo provider-agnostic; o operador injeta via External Secret ou
+# parametriza por --set ao registrar o cluster no ArgoCD.
+ingress:
+  host: standalone.portaluni.com.br
+  tls:
+    enabled: true
+    issuer: letsencrypt-prod  # cert-manager emite via HTTP-01 (single-host simplifica DNS-01); chart cria letsencrypt-{staging,prod}
+
+# Postgres single-primary por banco — sem replica (data-host é único).
+# Patroni é dispensado nesta topologia; chart consumidor deve interpretar
+# `role: primary` sem replica peer como deploy single-instance.
+postgres:
+  portal:
+    role: primary
+  selecao:
+    role: primary
+  ingresso:
+    role: primary
+
+# Recursos enxutos — VMs OCI E4.Flex de referência (k8s-host: 4 OCPU/24GB,
+# data-host: 2 OCPU/16GB). Suficiente para sanidade integrada e demos.
+resources:
+  api:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  frontend:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+  clamav:
+    requests:
+      cpu: 200m
+      memory: 1Gi
+    limits:
+      cpu: 1500m
+      memory: 2Gi
+
+# 1 réplica de tudo — single-point por design (ADR-008).
+replicas:
+  apis: 1
+  frontends: 1
+  clamav: 1
+  keycloak: 1
+  redis: 1
+
+# Observabilidade single-stack com retenção curta — standalone não substitui
+# a observabilidade do lab/prod 3-DC, serve apenas para validação local.
+#
+# NOTA: o bloco `observability:` abaixo é DOCUMENTAÇÃO de intenção (alinha
+# com ADR-008) e NÃO é consumido por nenhum chart. Os charts wrapper
+# (`platform/observability/prometheus/`, `loki/`, `tempo/`) consomem suas
+# values próprias (ex.: `kubePrometheusStack.*`). Os defaults dos wrappers
+# já refletem esses números — overrides reais ficam nos blocos abaixo.
+observability:
+  prometheus:
+    retention: 7d
+    storage: 10Gi
+  loki:
+    retention: 7d
+    storage: 15Gi
+  tempo:
+    retention: 3d
+    storage: 5Gi
+
+# Wiring real do chart platform/observability/prometheus/ — força a
+# StorageClass standalone-local-nvme nos PVCs do Prometheus + Alertmanager
+# (default-class do cluster é local-path do K3s, não a tier do projeto)
+# e adiciona o cluster name no external_labels para identificação em
+# alertas e federation.
+kubePrometheusStack:
+  prometheus:
+    prometheusSpec:
+      storageSpec:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: standalone-local-nvme
+      externalLabels:
+        cluster: standalone
+  alertmanager:
+    alertmanagerSpec:
+      storage:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: standalone-local-nvme
+
+# Wiring real do chart platform/observability/grafana/ — força StorageClass
+# `standalone-local-nvme` no PVC (sem isso fica no `local-path` default do
+# K3s) e sobrescreve a URL do Prometheus datasource com o nome real do
+# Service (release name dinâmico do ApplicationSet).
+grafana:
+  # Substitui o init container `init-chown-data` (busybox 1.31.1 com
+  # capabilities.add=[CHOWN] que falha em subdirs criados pelo Grafana com
+  # mode 700 — sintoma "Permission denied" em /var/lib/grafana/{csv,pdf,png}
+  # mesmo rodando como root). Solução: kubelet faz chown nativo via
+  # fsGroupChangePolicy=OnRootMismatch durante o mount do PVC, evitando o
+  # init e o bug. Suportado em K8s ≥ 1.20 (k3s 1.31 OK).
+  initChownData:
+    enabled: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 472
+    runAsGroup: 472
+    fsGroup: 472
+    fsGroupChangePolicy: OnRootMismatch
+
+  persistence:
+    storageClassName: standalone-local-nvme
+
+  # === SSO OIDC via Keycloak realm uniplus ===
+  # Habilita o ExternalSecret + envValueFrom + bloco auth.generic_oauth do
+  # subchart Grafana. Client `grafana` no realm provisionado pelo
+  # apps/keycloak-replica via realm-reconcile-job + IMPORT_VARSUBSTITUTION
+  # (uniplus-infra#263).
+  oidc:
+    enabled: true
+    issuerBaseUrl: https://standalone.portaluni.com.br/auth/realms/uniplus
+  externalSecrets:
+    enabled: true
+    oidcClient:
+      vaultPath: secret/standalone/keycloak/clients/grafana
+
+  grafana.ini:
+    server:
+      root_url: https://standalone.portaluni.com.br/grafana/
+      # subpath ativo — Grafana reescreve URLs internas com /grafana/.
+      serve_from_sub_path: true
+    auth.generic_oauth:
+      enabled: true
+      name: "Uni+ Keycloak"
+      client_id: grafana
+      client_secret: "${OIDC_CLIENT_SECRET}"
+      scopes: "openid profile email groups"
+      auth_url: https://standalone.portaluni.com.br/auth/realms/uniplus/protocol/openid-connect/auth
+      token_url: https://standalone.portaluni.com.br/auth/realms/uniplus/protocol/openid-connect/token
+      api_url: https://standalone.portaluni.com.br/auth/realms/uniplus/protocol/openid-connect/userinfo
+      signout_redirect_url: https://standalone.portaluni.com.br/auth/realms/uniplus/protocol/openid-connect/logout
+      role_attribute_path: contains(groups[*], '/admins/grafana') && 'Admin' || contains(groups[*], '/editors/grafana') && 'Editor' || 'Viewer'
+      role_attribute_strict: false
+      allow_assign_grafana_admin: true
+      use_pkce: true
+    auth:
+      # Mantém form local admin/* visível como fallback de incidente Keycloak.
+      disable_login_form: false
+      oauth_auto_login: false
+
+  # Injeta env OIDC_CLIENT_SECRET no Pod via Secret K8s sintetizado pelo
+  # ExternalSecret. Consumido no template do auth.generic_oauth acima como
+  # ${OIDC_CLIENT_SECRET}. Nome do Secret bate com o materializado por
+  # platform/observability/grafana/templates/externalsecret.yaml.
+  envValueFrom:
+    OIDC_CLIENT_SECRET:
+      secretKeyRef:
+        name: platform-observability-grafana-uniplus-standalone-grafana-oidc-client-secret
+        key: client_secret
+  # IngressRoute Traefik via subpath /grafana/* no FQDN raiz (consistente
+  # com Keycloak em /auth/*). Middleware StripPrefix /grafana é emitido
+  # automaticamente pelo template do wrapper — Grafana recebe paths sem
+  # o prefix, conforme serve_from_sub_path=true espera. Issue #179.
+  ingressRoute:
+    enabled: true
+    entryPoint: websecure
+    host: standalone.portaluni.com.br
+    pathPrefix: /grafana
+    servicePort: 80
+    tls:
+      enabled: true
+      # secretName vazio → Traefik usa default cert (LE prod via cert-manager +
+      # Certificate emitido pelo chart raiz quando ingress.host == FQDN). Em
+      # standalone o cert raiz já é compartilhado com Keycloak/Apicurio.
+      secretName: ""
+  datasources:
+    datasources.yaml:
+      apiVersion: 1
+      datasources:
+        - name: Prometheus
+          type: prometheus
+          uid: prometheus
+          access: proxy
+          # Chart kube-prometheus-stack aplica fullnameOverride=platform-observability-pro,
+          # então o service real do Prometheus API (porta 9090) é
+          # platform-observability-pro-prometheus.observability-prometheus.svc.cluster.local:9090,
+          # não o nome composto com -uniplus-standalone-prometheus (esse último service
+          # existe mas expõe porta 9100 + endpoint diferente). Mesma origem da correção
+          # OTel em uniplus-infra#237/#238. Antes deste fix, HTTP 502 via Grafana proxy.
+          url: http://platform-observability-pro-prometheus.observability-prometheus.svc.cluster.local:9090
+          isDefault: true
+          jsonData:
+            timeInterval: 30s
+        # Loki — backend de logs (chart platform/observability/loki/, ADR-011).
+        - name: Loki
+          type: loki
+          uid: loki
+          access: proxy
+          url: http://platform-observability-loki-uniplus-standalone.observability-loki.svc.cluster.local:3100
+          jsonData:
+            # derivedFields: ao ver `traceID` (formato OTel) ou `trace_id` no log,
+            # Grafana renderiza link clicável que abre o trace no datasource Tempo.
+            # Habilita navegação log → trace (correlação via traceID dos apps
+            # .NET OpenTelemetry SDK).
+            derivedFields:
+              - name: TraceID
+                matcherRegex: "(?:traceID|trace_id|TraceId)\"?[=:]\\s*\"?([a-fA-F0-9]{32})"
+                url: "$${__value.raw}"
+                datasourceUid: tempo
+                urlDisplayLabel: "Ver trace no Tempo"
+        # Tempo — backend de traces (chart platform/observability/tempo/, ADR-012).
+        - name: Tempo
+          type: tempo
+          uid: tempo
+          access: proxy
+          url: http://platform-observability-tempo-uniplus-standalone.observability-tempo.svc.cluster.local:3200
+          jsonData:
+            # tracesToLogsV2: do trace, abre query no Loki filtrando pela
+            # mesma trace_id. Direção inversa da derivedFields acima — fecha
+            # o ciclo trace ↔ logs.
+            tracesToLogsV2:
+              datasourceUid: loki
+              spanStartTimeShift: "-5m"
+              spanEndTimeShift: "5m"
+              filterByTraceID: true
+              filterBySpanID: false
+              tags:
+                - key: service.name
+                  value: service_name
+            # Service Map habilitado — Tempo metricsGenerator ativo (issue #246, ADR-012).
+            # Consome traces_service_graph_request_total do Prometheus via remote_write.
+            serviceMap:
+              datasourceUid: prometheus
+            nodeGraph:
+              enabled: true
+            search:
+              hide: false
+            lokiSearch:
+              datasourceUid: loki
+
+# ============================================================================
+# Wiring real do chart platform/observability/loki/ — overrides standalone:
+# StorageClass do PVC, bucket S3 (MinIO local), credenciais via ESO,
+# NetworkPolicy escopada. Decisões em ADR-011.
+# ============================================================================
+loki:
+  loki:
+    storage:
+      bucketNames:
+        chunks: loki-chunks
+        ruler: loki-chunks
+        admin: loki-chunks
+      s3:
+        # Endpoint vem via env var (LOKI_S3_ENDPOINT) sintetizado pelo ESO,
+        # mas o bucketNames precisa ser literal (não suporta env-expand).
+        s3ForcePathStyle: true
+        insecure: true
+
+  singleBinary:
+    persistence:
+      storageClass: standalone-local-nvme
+    extraEnvFrom:
+      - secretRef:
+          # Nome FIXO derivado de chart-name (ver helper uniplus-loki.s3SecretName).
+          # NÃO inclui release name — independente de qual cluster/AppSet renderiza,
+          # o Secret se chama sempre "loki-s3-creds" no namespace observability-loki.
+          # Mudança aplicada em resposta ao Codex P2 (PR #221) sobre acoplamento
+          # release-name → CreateContainerConfigError em re-deploys.
+          name: loki-s3-creds
+
+# Wrapper Uni+ Loki — chave prefixada por chart name para isolamento entre
+# wrappers no environment compartilhado (vs chave top-level homônima que
+# colidiria com os blocos de Tempo/OTel etc abaixo).
+lokiWrapper:
+  externalSecrets:
+    enabled: true
+    s3:
+      vaultPath: secret/standalone/minio/loki
+  networkPolicy:
+    enabled: true
+    # Inclui o próprio NS para permitir tráfego entre pods do Loki (futuro
+    # SimpleScalable). Em SingleBinary single-replica não tem efeito.
+    ingressNamespaces:
+      - observability-grafana
+      - observability-otelcol
+      - observability-loki
+    minioCIDR: "10.2.2.193/32"
+    minioPort: 9000
+    kubeApiCidrs:
+      - 10.43.0.0/16
+      - 10.2.1.0/24
+
+# ============================================================================
+# Wiring real do chart platform/observability/tempo/ — overrides standalone:
+# storage S3 (MinIO bucket tempo-traces), credenciais via ESO + envFrom,
+# StorageClass do PVC, NetworkPolicy escopada. Decisões em ADR-012.
+# ============================================================================
+tempo:
+  # tempo.tempo = bloco config do binário Tempo (`.Values.tempo` no scope do
+  # subchart upstream). NÃO usar `tempo.tempo.tempo` — extra nesting é
+  # silenciosamente ignorado e o Tempo cai pros defaults do wrapper.
+  tempo:
+    storage:
+      trace:
+        s3:
+          bucket: tempo-traces
+          forcepathstyle: true
+          insecure: true
+    extraEnvFrom:
+      - secretRef:
+          # Nome FIXO derivado de chart-name (helper uniplus-tempo.s3SecretName).
+          # Mesma justificativa do PR #221 (Loki Codex P2): release-independente.
+          name: tempo-s3-creds
+    # ---- Metrics generator (issue #246, Feature #243) ----
+    # Ativado com o Prometheus standalone após enableRemoteWriteReceiver (issue #244).
+    # Gera traces_service_graph_request_total + traces_span_metrics_* via remote_write.
+    metricsGenerator:
+      enabled: true
+      remoteWriteUrl: "http://platform-observability-pro-prometheus.observability-prometheus.svc.cluster.local:9090/api/v1/write"
+      processor:
+        service_graphs:
+          wait: 10s
+          max_items: 10000
+        span_metrics:
+          enable_target_info: true
+      registry:
+        collection_interval: 15s
+        external_labels:
+          source: tempo
+          cluster: standalone
+      storage:
+        # PVC-backed via StatefulSet — sobrevive a restart.
+        path: /var/tempo/generator/wal
+      traces_storage:
+        path: /var/tempo/generator/traces
+    # Habilitar processors para o tenant padrão (multitenancy off em standalone).
+    overrides:
+      defaults:
+        metrics_generator:
+          processors:
+            - service-graphs
+            - span-metrics
+  persistence:
+    # ATENÇÃO: chart upstream tempo usa `storageClassName` (não `storageClass`
+    # como Loki). Setar `storageClass` aqui seria ignorado pelo subchart.
+    # Codex P1 PR #222 capturou — drift de convenção entre charts Grafana.
+    storageClassName: standalone-local-nvme
+
+# Wrapper Uni+ Tempo — chave prefixada (mesmo motivo do lokiWrapper acima).
+tempoWrapper:
+  externalSecrets:
+    enabled: true
+    s3:
+      vaultPath: secret/standalone/minio/tempo
+  networkPolicy:
+    enabled: true
+    ingressNamespaces:
+      - observability-grafana
+      - observability-otelcol
+      - observability-tempo
+    minioCIDR: "10.2.2.193/32"
+    minioPort: 9000
+    # Libera egress :9090 para Prometheus (remote_write do metricsGenerator).
+    egressPrometheusNamespace: observability-prometheus
+    kubeApiCidrs:
+      - 10.43.0.0/16
+      - 10.2.1.0/24
+
+# ============================================================================
+# Wiring real do chart platform/observability/otelcol/ — overrides
+# standalone: NetworkPolicy escopada permitindo ingress dos NS de apps Uni+
+# e egress para Loki/Tempo. Decisões em ADR-013.
+# ============================================================================
+otelCollector:
+  # Env vars dos exporters — populam ${env:LOKI_OTLP_ENDPOINT} e
+  # ${env:TEMPO_OTLP_ENDPOINT} no alternateConfig do wrapper. Cada environment
+  # seta os endpoints reais do release Loki/Tempo nesse cluster (release-name
+  # varia: `...uniplus-standalone`, `...lab-sp1`, etc.). Codex P1 PR #224.
+  extraEnvs:
+    - name: LOKI_OTLP_ENDPOINT
+      value: http://platform-observability-loki-uniplus-standalone.observability-loki.svc.cluster.local:3100/otlp
+    - name: TEMPO_OTLP_ENDPOINT
+      value: http://platform-observability-tempo-uniplus-standalone.observability-tempo.svc.cluster.local:4318
+    - name: PROMETHEUS_REMOTE_WRITE_ENDPOINT
+      # Service do Prometheus standalone (fullnameOverride=platform-observability-pro, porta 9090).
+      # Mesmo service usado no datasource do Grafana (environments/standalone/values.yaml §grafana.datasources).
+      value: http://platform-observability-pro-prometheus.observability-prometheus.svc.cluster.local:9090/api/v1/write
+
+otelCollectorWrapper:
+  networkPolicy:
+    enabled: true
+    ingressNamespaces:
+      - uniplus
+      - observability-otelcol
+      - kube-system
+      - traefik
+      - keycloak
+    egressLokiNamespace: observability-loki
+    egressTempoNamespace: observability-tempo
+    egressPrometheusNamespace: observability-prometheus
+    kubeApiCidrs:
+      - 10.43.0.0/16
+      - 10.2.1.0/24
+
+# ============================================================================
+# StorageClass do tier standalone (#74, ADR-008).
+# rancher.io/local-path mapeado para /var/lib/uniplus/* no NVMe local da VM.
+# ============================================================================
+storage:
+  enabled: true
+  storageClass:
+    name: standalone-local-nvme
+    isDefault: false
+    provisioner: rancher.io/local-path
+    # Standalone é monolocal e descartável (re-bootstrap via Tofu); Delete
+    # evita acúmulo de PVs órfãos. Re-init do Vault re-gera Shamir keys —
+    # decisão consciente: standalone NÃO é cofre durável.
+    reclaimPolicy: Delete
+
+# ============================================================================
+# Vault HA Raft single-replica em standalone — SEAL SHAMIR (manual unseal).
+#
+# Replicas=1 na topologia single-host (StatefulSet 3-réplica ficaria Pending).
+# Mantém Raft como storage backend para preservar fidelidade arquitetural
+# com lab/prod 3-DC — só o número de peers difere.
+#
+# DECISÃO TEMPORÁRIA: usar Shamir seal (unseal manual) em vez de OCI KMS
+# auto-unseal. Tentamos OCI KMS auto-unseal (Resource Principal e API Key)
+# e Vault 1.20.4/1.21.2/1.21.4 panicam consistentemente em
+# `go-kms-wrapping@v2.0.9/ocikms.go:290` (`getRequestMetadata.func1`
+# durante OCI SDK Retry) na pre-flight encrypt validation. OCI CLI direto
+# funciona perfeitamente — o bug está no Vault, não na infra OCI.
+#
+# OCI KMS provisionado e pronto pra uso quando Vault 1.22+ chegar com
+# go-kms-wrapping atualizado:
+# - Vault: ocid1.vault.oc1.sa-saopaulo-1.ffu7qdsmaacrc.abtxeljrt474vzf6foogf6ynpk2pjns5sitgpqka3sayivj6bnnbeaindt5q
+# - Master Key: ocid1.key.oc1.sa-saopaulo-1.ffu7qdsmaacrc.abtxeljrla5jj43336ws3ft64utong33y4qdh3jquenq7id3yzl6mcvvssta
+# - Dynamic Group + Policy criados, prontos pra Resource Principal
+# - Para reativar: adicionar bloco `seal "ocikms"` no config + restaurar
+#   extraSecretEnvironmentVars + atualizar Secret vault-ocikms-config
+#
+# Implicações operacionais do Shamir em standalone:
+# - Cada restart do Pod (e.g., upgrade do K3s, manutenção da VM) exige
+#   unseal manual via 3 das 5 unseal key shares (`vault operator unseal`)
+# - Terminologia importante: em Shamir mode são *unseal keys*; *recovery
+#   keys* só existem em auto-unseal mode (KMS/Transit) e atendem a outros
+#   comandos (`vault operator generate-root`, rekey, etc.). Confundir os
+#   dois leva o oncall a procurar o material errado durante incidente.
+# - Procedimento documentado em docs/RUNBOOKS.md §8.4
+# - 5 shares custodiadas em gestor institucional (ver Apêndice A)
+# - Aceitável para standalone (validação/demo); inaceitável para prod 3-DC
+#   onde o Transit auto-unseal é a solução (não afetada pelo bug acima).
+# ============================================================================
+vault:
+  enabled: true
+
+  global:
+    tlsDisable: true  # TLS terminado no Traefik até cert-manager (#15)
+
+  server:
+    ha:
+      enabled: true
+      replicas: 1
+
+      # Com replicas=1 o chart upstream renderiza PDB com maxUnavailable=0,
+      # o que bloqueia kubectl drain do k8s-host (upgrade K3s, manutenção)
+      # sem benefício real — não há outro Pod para preservar. Desligamos o
+      # PDB neste overlay; lab/prod 3-DC mantêm o default (enabled=true).
+      disruptionBudget:
+        enabled: false
+
+      raft:
+        enabled: true
+        setNodeId: true
+        # CONFIRMADO em 2026-05-10 que o bug `go-kms-wrapping@v2.0.9`
+        # EXISTE e é REAL — depois de:
+        #
+        #   1. Validar empiricamente que NetworkPolicy ANTES bloqueava
+        #      egress para IMDS (curl: timeout 0ms) e KMS endpoint
+        #      (timeout 0ms);
+        #   2. Liberar egress via networkPolicy.cloudKmsEgressEnabled
+        #      (IMDS responde 200/3ms; KMS endpoint responde 401/78ms
+        #      — alcançável);
+        #   3. Reaplicar config OCI KMS, restart pod;
+        #   4. Vault PANICA EXATAMENTE no mesmo lugar
+        #      (`getRequestMetadata.func1` em `ocikms.go:290`).
+        #
+        # Causa raiz upstream identificada (linha 288-290 do source):
+        #
+        #     retryOn5xxFunc := func(r common.OCIOperationResponse) bool {
+        #         return r.Error != nil && r.Response.HTTPResponse().StatusCode >= 500
+        #     }
+        #
+        # `r.Response.HTTPResponse()` é chamado SEM verificar se
+        # `r.Response` é nil. Quando algo falha antes do HTTP layer
+        # (auth signer com problema, conn refused), `r.Error != nil`
+        # mas `r.Response` pode ser nil → nil pointer dereference.
+        #
+        # Fix upstream trivial (short-circuit em nil), mas v2.0.9 é a
+        # última tag pública do `wrappers/ocikms/v2`; Vault 2.0.0 ainda
+        # vendor essa versão. Issue upstream a abrir.
+        #
+        # Workaround: Shamir manual com 5 unseal key shares, threshold 3.
+        # Cada restart do pod exige `vault operator unseal` × 3.
+        # (Shamir gera unseal keys; recovery keys são exclusivas de
+        # auto-unseal — não confundir no runbook.) Procedimento em
+        # docs/RUNBOOKS.md §8.4.
+        #
+        # `service_registration "kubernetes"` permanece REMOVIDO:
+        # K3s/flannel + service-account auth gera `nil response` no GET
+        # do Pod, e Vault BLOQUEIA a resposta HTTP de qualquer request
+        # síncrono enquanto retry-loop service_registration está ativo.
+        config: |
+          ui = true
+
+          listener "tcp" {
+            tls_disable     = 1
+            address         = "0.0.0.0:8200"
+            cluster_address = "0.0.0.0:8201"
+          }
+
+          storage "raft" {
+            path = "/vault/data"
+          }
+
+    dataStorage:
+      size: 5Gi
+      storageClass: standalone-local-nvme
+    auditStorage:
+      size: 5Gi
+      storageClass: standalone-local-nvme
+
+# Vault Transit não roda em standalone — auto-unseal usa KMS do provider
+# (ADR-008), e o cluster não tem peer PA1 para hospedar o Transit. Desligar
+# o chart faz o ApplicationSet pular o sync; com pa1HostIP="" (default do
+# chart vault/) o egress de NetworkPolicy para PA1 fica inerte e o Secret
+# vault-transit-endpoint não é consumido. transitNodePort=8200 default
+# satisfaz o values.schema.json sem efeito prático.
+vaultTransit:
+  enabled: false
+
+# ============================================================================
+# Vault Transit bootstrap (chart platform/vault-transit-bootstrap/, issue #219).
+# Habilita o engine transit no Vault local + cria key uniplus-idempotency-aesgcm
+# + policy uniplus-api-transit + role K8s auth uniplus-api. Reconciliado a cada
+# deploy via Helm hook (post-install,post-upgrade,post-rollback).
+#
+# Pré-requisitos satisfeitos em standalone:
+#   - Vault inicializado (Shamir, manual unseal) — root token custodiado em
+#     secret/standalone/vault/root via ClusterSecretStore vault-default.
+#   - kubernetes auth method habilitado (acessor auth_kubernetes_cdc9d2c3).
+#   - ClusterSecretStore vault-default Synced.
+#
+# Trade-off conhecido: o ExternalSecret consome o ROOT TOKEN em standalone.
+# Plano de redução para uma policy mínima dedicada ao bootstrap está em
+# platform/vault-transit-bootstrap/README.md (será aberta issue de
+# seguimento quando este chart entrar em produção real).
+# ============================================================================
+vaultTransitBootstrap:
+  enabled: true
+  vault:
+    address: http://platform-vault-uniplus-standalone.vault.svc.cluster.local:8200
+
+# NetworkPolicy do chart vault/ — sem egress Transit (vaultTransit.enabled=false).
+#
+# `kubeApiCidrs` consumido pelos charts platform/external-secrets/ e
+# platform/cert-manager/ — egress permitido para o K8s API server. Inclui
+# o CIDR do host K8s além do service CIDR (10.43.0.0/16):
+# em K3s, o API server roda como processo no host (não como Pod K8s) e o
+# kube-proxy faz DNAT do Service IP 10.43.0.1:443 para <node-ip>:6443. O
+# kube-router (default NP enforcer do K3s) avalia a regra de egress
+# *após* o DNAT, então o ipBlock 10.43.0.0/16 sozinho não basta — bloqueia
+# o pacote já reescrito para o IP do nó. Sem o CIDR do host, ESO controller,
+# ESO cert-controller e cert-manager-cainjector ficam em CrashLoopBackOff
+# com `dial tcp 10.43.0.1:443: connect: connection refused` no init().
+#
+# IMPORTANTE — host CIDR é provider-/cluster-specific:
+# O CIDR `10.2.1.0/24` abaixo corresponde à subnet OCI VCN do cluster
+# standalone de referência (Epic #40, VM em sa-saopaulo-1). Para QUALQUER
+# outro cluster standalone (outra VCN/subnet, outra região, outro provider
+# como AWS/Azure/bare-metal) o operator DEVE substituir esse CIDR pelo
+# range real do nó K8s antes de registrar o cluster no ArgoCD. Inspecionar
+# com `ip -4 addr` no host ou conferir o output Tofu da rede provisionada
+# (ver provisioning/<provider>/standalone/network.tf quando disponível).
+# Procedimento e exemplos por provider em environments/standalone/README.md.
+# Em prod 3-DC com IPs de control plane em ranges diferentes, override
+# por env reflete a rede real (ex.: 10.20.0.0/16 em prod-sp1).
+networkPolicy:
+  enabled: true
+  externalSecretsNamespace: external-secrets
+  traefikNamespace: traefik
+  # Aplicações que consomem Vault via Transit/auth-kubernetes em standalone:
+  # uniplus-api-{selecao,portal,ingresso} no namespace `uniplus` (encryption.provider=vault).
+  appConsumerNamespaces:
+    - uniplus
+  kubeApiCidrs:
+    - 10.43.0.0/16
+    - 10.2.1.0/24  # ajustar por cluster — ver bloco acima
+  # Egress IMDS+HTTPS:443 desligado em 2026-05-10 — bug do
+  # go-kms-wrapping@v2.0.9 confirmado (ver bloco do vault.server.ha.raft
+  # acima). Standalone volta a Shamir manual. Re-ligar quando a lib
+  # tiver o nil check em ocikms.go:290 corrigido.
+  cloudKmsEgressEnabled: false
+
+  # Namespaces das apps que o Traefik proxa para. Inclui `minio-console-proxy`
+  # do chart platform/minio-console-proxy (Issue #153) — embora o backend
+  # principal seja externo (data-host via Endpoints manuais), o ACME HTTP-01
+  # solver pode nascer nesse namespace e o IngressRoute também vive lá.
+  # Aplicado pelo chart platform/traefik via .Values.networkPolicy.appNamespaces.
+  appNamespaces:
+    - uniplus
+    - vault
+    - keycloak
+    - minio-console-proxy
+    - observability-grafana
+
+  # Backends externos ao cluster — libera egress do Traefik para data-host.
+  # Necessário para Services com Endpoints manuais cujo IP é externo (ex.:
+  # MinIO Console em 10.2.2.193:9001). Sem isso, Traefik retorna 502 Bad
+  # Gateway silenciosamente. Code-reviewer P0 do platform/minio-console-proxy.
+  externalBackends:
+    - cidr: 10.2.2.193/32
+      ports:
+        - 9001  # MinIO Console (Issue #153)
+
+# ----------------------------------------------------------------------------
+# ClamAV daemon (chart apps/clamav-scanner/) — `clamav/clamav` oficial
+# expondo clamd TCP 3310 via Service ClusterIP. Apps Uni+ que precisarem
+# scan de uploads chamam clamd via INSTREAM. Issue #178 — habilitado em
+# standalone para fechar gap visual do ArgoCD App "Synced/Healthy mas
+# sem Pod" e cobrir item 9 do Cenário 13.
+# ----------------------------------------------------------------------------
+clamavScanner:
+  enabled: true
+  persistence:
+    storageClassName: standalone-local-nvme
+
+# ----------------------------------------------------------------------------
+# External Secrets (chart platform/external-secrets/) — endpoint do Vault.
+# Standalone usa Application name `platform-vault-uniplus-standalone` no
+# ApplicationSet, então o Vault Service ClusterIP leva esse mesmo nome.
+# Sem fullnameOverride no chart vault/, é necessário apontar explicitamente
+# aqui. Habilitar `clusterSecretStore.enabled` só após Vault init (#64) e
+# provisionamento da policy + role no Vault.
+# ----------------------------------------------------------------------------
+clusterSecretStore:
+  enabled: true
+  vaultServer: http://platform-vault-uniplus-standalone.vault.svc.cluster.local:8200
+
+# ----------------------------------------------------------------------------
+# cert-manager ClusterIssuers — HTTP-01 via Traefik (chart platform/traefik/).
+# Standalone tem IP público + DNS A `standalone.portaluni.com.br → 137.131.131.6`
+# resolvendo. HTTP-01 é mais simples que DNS-01 (não precisa de credencial OCI
+# DNS / registrar). Defaults do chart (staging + production both enabled,
+# email `ctic@unifesspa.edu.br`, servers oficiais Let's Encrypt) são adequados.
+# ----------------------------------------------------------------------------
+clusterIssuers:
+  enabled: true
+
+# ----------------------------------------------------------------------------
+# Traefik (chart platform/traefik/) — exposição externa em standalone.
+# Single-host com IP público bindando hostPort 80/443 direto na VM,
+# evitando dependência de NodePort range > 30000 e LoadBalancer (provider
+# OCI cobraria por LB). NodePort dá fallback de descoberta interna.
+# Em prod 3-DC, override seria service.type: LoadBalancer + remover hostPort.
+# ----------------------------------------------------------------------------
+traefik:
+  service:
+    type: NodePort
+  ports:
+    web:
+      hostPort: 80
+      # Desligar redirect global HTTP→HTTPS no entryPoint `web` em standalone.
+      # O default do chart wrapper redireciona toda request HTTP, o que quebra
+      # o ACME HTTP-01 challenge (Let's Encrypt requer GET HTTP em
+      # `/.well-known/acme-challenge/*` SEM redirect — antes do cert existir
+      # não há HTTPS válido para servir). Em standalone, IngressRoutes
+      # individuais aplicam Middleware redirect-https quando precisarem
+      # (apps reais quando aterrissarem; Vault UI já é exposto só em
+      # `websecure`). Em prod 3-DC, redirect global é mantido (LE via
+      # DNS-01 com cert-manager-webhook OCI/AWS/Azure quando aterrissar,
+      # ou cert manual — sem dependência de HTTP-01).
+      http:
+        redirections: null
+    websecure:
+      hostPort: 443
+
+  # === Args adicionais do Traefik ===
+  # `--providers.kubernetescrd.allowExternalNameServices=true` permite que
+  # IngressRoutes apontem para Services do tipo ExternalName. NÃO usado pelo
+  # minio-console-proxy (que migrou para ClusterIP + Endpoints manuais por
+  # incompatibilidade de IP literal em ExternalName), mas mantém-se para
+  # casos futuros (ex.: backends com FQDN externo onde ExternalName é a
+  # ferramenta certa). Desligado por default no chart upstream.
+  additionalArguments:
+    - "--providers.kubernetescrd.allowExternalNameServices=true"
+
+# ----------------------------------------------------------------------------
+# Keycloak local (apps/keycloak-replica) — sem federação Gov.br no MVP.
+# 1 réplica, valida apenas o contrato OIDC/JWT entre frontends e APIs.
+# Federação Gov.br fica fora do escopo standalone (depende de cadastro
+# institucional do client OIDC; demos podem usar usuários locais).
+#
+# DB persiste no Postgres systemd do data-host (10.2.2.193:5432, base
+# `keycloak`, role `keycloak`) — empacotado pelo PR #127 em
+# scripts/bootstrap-standalone.sh::step_data_setup_postgres. Senha em
+# Vault `secret/standalone/postgres/keycloak`. Bootstrap admin do
+# Keycloak e client_secret do uniplus-portal também em Vault.
+#
+# Exposição: `https://standalone.portaluni.com.br/auth/*` via Traefik
+# IngressRoute (cert TLS emitido pelo cert-manager — issuer staging por
+# enquanto; trocar para `letsencrypt-prod` após smoke test pós-Fase 6).
+# ----------------------------------------------------------------------------
+keycloak:
+  enabled: true
+  govbr:
+    enabled: false
+
+  hostname:
+    url: https://standalone.portaluni.com.br/auth
+    strict: true
+
+  database:
+    vendor: postgres
+    host: 10.2.2.193
+    port: 5432
+    name: keycloak
+
+  realmImport:
+    enabled: true
+    realmName: uniplus
+    portalClient:
+      clientId: uniplus-portal
+      rootUrl: https://standalone.portaluni.com.br
+      # Cliente público compartilhado pelas 3 SPAs Uni+ (1 client, 3
+      # redirectUris) — pattern definido na story uniplus-infra#162. Cada
+      # SPA roda no próprio subdomain (PR #171); o silent-check-sso do
+      # keycloak-js exige que cada origem esteja autorizada explicitamente.
+      redirectUris:
+        - https://standalone.portaluni.com.br/*
+        - https://portal.standalone.portaluni.com.br/*
+        - https://selecao.standalone.portaluni.com.br/*
+        - https://ingresso.standalone.portaluni.com.br/*
+      # "+" deriva Web Origins automaticamente dos redirectUris acima
+      # (Keycloak preenche cada host como origem permitida). Isso libera
+      # tanto CORS quanto frame-ancestors para o iframe silent-check-sso.
+      webOrigins:
+        - "+"
+
+  # Realm reconcile via keycloak-config-cli (Story #177) — habilitado em
+  # standalone para fechar o gap descoberto durante o smoke #181: clients
+  # M2M com mappers ausentes em realm vivo (Keycloak 26.x skipa re-import).
+  # Job Helm hook roda a cada deploy, idempotente, sem destruir users/sessões.
+  realmReconcile:
+    enabled: true
+
+  externalSecrets:
+    enabled: true
+    refreshInterval: "1h"
+    secretStoreRef:
+      kind: ClusterSecretStore
+      name: vault-default
+    db:
+      vaultPath: secret/standalone/postgres/keycloak
+      usernameKey: username
+      passwordKey: password
+    bootstrapAdmin:
+      vaultPath: secret/standalone/keycloak/admin
+      usernameKey: username
+      passwordKey: password
+
+  ingress:
+    enabled: true
+    entryPoint: websecure
+    host: standalone.portaluni.com.br
+    pathPrefix: /auth
+    tls:
+      enabled: true
+      # Secret TLS emitido pelo cert-manager via Certificate criado pelo
+      # próprio chart (template certificate.yaml). cert-manager preenche o
+      # Secret automaticamente após HTTP-01 challenge contra o Traefik.
+      secretName: keycloak-replica-tls
+      certManager:
+        enabled: true
+        # Promovido para LE prod em 2026-05-07 após smoke test E2E completo
+        # (RUNBOOKS §10.6). Resolve issue #144: AKHQ JDK não confiava em LE
+        # staging CA (não está nos cacerts default do Java) — pod ficava em
+        # CrashLoopBackOff com `PKIX path building failed` durante OIDC
+        # discovery. LE prod CA (ISRG Root X1) é trustada por todos os
+        # clientes nativamente. Rate limit 50 certs/week por domain registrado
+        # — folga grande em standalone (1 cert Keycloak + 1 cert kafka-ui).
+        clusterIssuer: letsencrypt-prod
+
+  networkPolicy:
+    enabled: true
+    traefikNamespace: traefik
+    monitoringNamespace: observability-prometheus
+    # CIDR /32 do data-host. Cluster-specific — em outro standalone OCI
+    # com data-host em outro IP/subnet, ajustar este valor (ver
+    # environments/standalone/README.md, seção provider-specifics).
+    dataHostCIDR: 10.2.2.193/32
+    dataHostPort: 5432
+
+  # ServiceMonitor desligado até platform/observability/prometheus/ subir.
+  serviceMonitor:
+    enabled: false
+
+  # ExternalSecret consolidado de client_secrets OIDC do realm. Cada entrada
+  # vira chave do Secret K8s consumido via envFrom em deployment.yaml e
+  # realm-reconcile-job.yaml — referenciada como ${envName} no realm.json
+  # via IMPORT_VARSUBSTITUTION_ENABLED=true. Pattern uniplus-infra#263.
+  oidcClientSecrets:
+    enabled: true
+    clients:
+      - envName: GRAFANA_CLIENT_SECRET
+        vaultPath: secret/standalone/keycloak/clients/grafana
+        vaultKey: client_secret
+
+# ----------------------------------------------------------------------------
+# kafka-ui (AKHQ) — Web UI de gerenciamento do cluster Kafka SASL_SSL.
+# Conecta ao broker no data-host (10.2.2.193:9092 SASL_SSL) e autentica
+# usuários via OIDC do realm `uniplus` no Keycloak local. Issue #139.
+# ----------------------------------------------------------------------------
+kafkaUi:
+  enabled: true
+
+  kafka:
+    bootstrapServers: 10.2.2.193:9092
+
+  oidc:
+    enabled: true
+    issuerUri: https://standalone.portaluni.com.br/auth/realms/uniplus
+
+  ingress:
+    enabled: true
+    entryPoint: websecure
+    host: kafka-ui.standalone.portaluni.com.br
+    tls:
+      enabled: true
+      secretName: kafka-ui-tls
+      certManager:
+        enabled: true
+        # Promovido para LE prod em 2026-05-07 (mesmo PR que promoveu o
+        # Keycloak — coerência). Cert real é trustado por browsers ao acessar
+        # https://kafka-ui.standalone.portaluni.com.br sem warning.
+        clusterIssuer: letsencrypt-prod
+
+  networkPolicy:
+    enabled: true
+    traefikNamespace: traefik
+    monitoringNamespace: observability-prometheus
+    # /24 da subnet privada VCN onde o Kafka data-host vive (mais permissivo
+    # que o /32 do Keycloak porque AKHQ pode futuramente alcançar múltiplos
+    # brokers num cluster HA).
+    dataHostCIDR: 10.2.2.0/24
+    dataHostPort: 9092
+    keycloakService: keycloak-replica-uniplus-standalone
+    keycloakNamespace: uniplus
+    keycloakPort: 8080
+    # IP público do k8s-host OCI standalone (137.131.131.6) /32. AKHQ chama
+    # OIDC discovery + token endpoints contra `standalone.portaluni.com.br`
+    # que resolve para esse IP e entra via Traefik IngressRoute do Keycloak.
+    # Sem essa entrada o egress fica em default-deny (Codex P1 round 1).
+    oidcIssuerCIDR: 137.131.131.6/32
+    oidcIssuerPort: 443
+
+  serviceMonitor:
+    enabled: false
+
+# ----------------------------------------------------------------------------
+# Apicurio Registry — schema/API artifact registry, Confluent SR API compatível.
+# Integração: Postgres data-host (DB `apicurio`) + Keycloak realm uniplus
+# (client `apicurio-registry`). Reusa groups /admins/kafka e /users/uniplus
+# para mapping de roles sr-admin/sr-developer.
+# ----------------------------------------------------------------------------
+apicurioRegistry:
+  enabled: true
+
+  storage:
+    # Mesmo data-host dos demais services. DB `apicurio` provisionado pelo
+    # step_data_setup_apicurio_db do bootstrap-standalone.sh.
+    host: 10.2.2.193
+
+  oidc:
+    enabled: true
+    issuerUri: https://standalone.portaluni.com.br/auth/realms/uniplus
+
+  ingress:
+    enabled: true
+    entryPoint: websecure
+    host: schema-registry.standalone.portaluni.com.br
+    tls:
+      enabled: true
+      secretName: apicurio-registry-tls
+      certManager:
+        enabled: true
+        # LE prod desde o primeiro deploy (LE staging já foi promovido para
+        # Keycloak + AKHQ; novo subdomínio entra direto em prod sem warning
+        # de browser).
+        clusterIssuer: letsencrypt-prod
+
+  networkPolicy:
+    enabled: true
+    traefikNamespace: traefik
+    monitoringNamespace: observability-prometheus
+    # /24 da subnet privada VCN. Mesmo CIDR do kafkaUi (egress só para 5432
+    # neste chart, mas mantemos o mesmo bloco por consistência).
+    dataHostCIDR: 10.2.2.0/24
+    dataHostPort: 5432
+    keycloakService: keycloak-replica-uniplus-standalone
+    keycloakNamespace: uniplus
+    keycloakPort: 8080
+    # IP público do k8s-host OCI standalone — Quarkus OIDC chama
+    # `.well-known/openid-configuration` contra standalone.portaluni.com.br
+    # que resolve para esse IP. Mesmo pattern do kafkaUi (Codex P1 round 1).
+    oidcIssuerCIDR: 137.131.131.6/32
+    oidcIssuerPort: 443
+
+  serviceMonitor:
+    enabled: false
+
+# ----------------------------------------------------------------------------
+# RedisInsight — UI para Redis standalone (10.2.2.193:6379). Auth via Traefik
+# basicAuth middleware (htpasswd em Vault). Connection pré-setup via env vars.
+# Issue #154.
+# ----------------------------------------------------------------------------
+redisUi:
+  enabled: true
+
+  backend:
+    host: 10.2.2.193
+    port: 6379
+    alias: standalone
+    username: default
+
+  ingress:
+    enabled: true
+    entryPoint: websecure
+    host: redis-ui.standalone.portaluni.com.br
+    tls:
+      enabled: true
+      secretName: redis-ui-tls
+      certManager:
+        enabled: true
+        clusterIssuer: letsencrypt-prod
+
+  networkPolicy:
+    enabled: true
+    traefikNamespace: traefik
+    # /24 da subnet privada VCN — Redis listening em 10.2.2.193:6379.
+    dataHostCIDR: 10.2.2.0/24
+    dataHostPort: 6379
+
+# ----------------------------------------------------------------------------
+# MinIO Console proxy — expõe o Console (port 9001) do MinIO standalone
+# (rodando como systemd no data-host) via HTTPS público com cert LE prod.
+# Apenas Service ExternalName + IngressRoute Traefik. Issue #153.
+# ----------------------------------------------------------------------------
+minioConsoleProxy:
+  enabled: true
+
+  backend:
+    # MinIO no data-host — mesmo IP usado pelos apps via NetworkPolicy
+    # privada. ExternalName aceita IP literal sem DNS lookup adicional.
+    host: 10.2.2.193
+    consolePort: 9001
+
+  ingress:
+    enabled: true
+    entryPoint: websecure
+    host: minio.standalone.portaluni.com.br
+    tls:
+      enabled: true
+      secretName: minio-console-proxy-tls
+      certManager:
+        enabled: true
+        # LE prod direto (kafka-ui/keycloak já promovidos; novo subdomínio
+        # entra sem warning de browser).
+        clusterIssuer: letsencrypt-prod
+
+# ----------------------------------------------------------------------------
+# Apps Uni+ API (portal, seleção, ingresso) — backends .NET 10 ASP.NET Core
+# publicados em ghcr.io/unifesspa-edu-br/uniplus-api-{portal,selecao,ingresso}.
+# Resource servers (bearer-only) que validam JWT contra realm uniplus,
+# audience=uniplus. Conectam Postgres (DB dedicado), Redis, Kafka SASL_SSL,
+# MinIO S3.
+# ----------------------------------------------------------------------------
+uniplusApiPortal:
+  enabled: true
+  database:
+    host: 10.2.2.193
+  redis:
+    host: 10.2.2.193
+  kafka:
+    # Habilitado em 2026-05-09 (#165) — bind nativo Kafka:SecurityProtocol/
+    # SaslMechanism/SaslUsername/SaslPassword/SslCaLocation entregue por
+    # uniplus-api#343 (PR #351) e KafkaHealthCheck refatorado para usar
+    # IOptions<KafkaSettings> em uniplus-api#345 (PR #356), publicados em
+    # GHCR como v0.2.0 e puxados pela Epic uniplus-infra#164 (PR #168).
+    # Pré-requisito Vault: secret/standalone/kafka/admin com keys
+    # `username`, `password`, `ca_cert` (ESO refresha o Secret kafka-admin).
+    enabled: true
+    bootstrapServers: 10.2.2.193:9092
+  storage:
+    endpoint: 10.2.2.193:9000
+  oidc:
+    issuerUri: https://standalone.portaluni.com.br/auth/realms/uniplus
+  cors:
+    # APIs validam Cors:AllowedOrigins não-vazio em ASPNETCORE_ENVIRONMENT=Production
+    # (StartupValidator do .NET); pod CrashLoopBackOff sem isso.
+    # Frontend Uni+ Portal SPA ainda não deployado (uniplus-web#217 OPEN);
+    # placeholder pré-configurado para o domínio futuro.
+    allowedOrigins:
+      - https://standalone.portaluni.com.br
+      - https://portal.standalone.portaluni.com.br
+  ingress:
+    enabled: true
+    entryPoint: websecure
+    host: api-portal.standalone.portaluni.com.br
+    tls:
+      enabled: true
+      secretName: uniplus-api-portal-tls
+      certManager:
+        enabled: true
+        clusterIssuer: letsencrypt-prod
+  networkPolicy:
+    enabled: true
+    dataHostCIDR: 10.2.2.0/24
+    oidcIssuerCIDR: 137.131.131.6/32
+  # Cifragem via Vault Transit local (uniplus-infra#219 + uniplus-api#400/#402/#404/#405).
+  # KubernetesRole=uniplus-api é a role criada pelo chart platform/vault-transit-bootstrap/
+  # com bound_service_account_names incluindo uniplus-api-portal/uniplus-api-selecao/uniplus-api-ingresso.
+  encryption:
+    provider: vault
+    vaultAddress: http://platform-vault-uniplus-standalone.vault.svc.cluster.local:8200
+    kubernetesRole: uniplus-api
+  # Schema Registry (ADR-0051) — Apicurio Confluent-compat. Auth OAuthBearer
+  # consumindo client_secret materializado pelo ESO 5 a partir do Vault path
+  # secret/standalone/keycloak/clients/uniplus-api-portal.
+  schemaRegistry:
+    url: https://schema-registry.standalone.portaluni.com.br/apis/ccompat/v7
+    authType: OAuthBearer
+    oauth:
+      tokenEndpoint: https://standalone.portaluni.com.br/auth/realms/uniplus/protocol/openid-connect/token
+      clientId: uniplus-api-portal
+  # OpenTelemetry — destino OTLP gRPC do collector DaemonSet do cluster.
+  # Service ClusterIP `<release>.<ns>.svc.cluster.local:4317`; o release name
+  # `platform-observability-otelcol-uniplus-standalone` é gerado pelo
+  # ApplicationSet (platform/observability/otelcol). Endpoint vivo desde
+  # PR uniplus-infra#224 — esta entrada destrava a issue #226.
+  otel:
+    exporter:
+      endpoint: http://otelcol.observability-otelcol.svc.cluster.local:4317
+      protocol: grpc
+
+uniplusApiSelecao:
+  enabled: true
+  database:
+    host: 10.2.2.193
+  redis:
+    host: 10.2.2.193
+  kafka:
+    # Ver comentário em uniplusApiPortal.kafka — habilitado em #165.
+    enabled: true
+    bootstrapServers: 10.2.2.193:9092
+  storage:
+    endpoint: 10.2.2.193:9000
+  oidc:
+    issuerUri: https://standalone.portaluni.com.br/auth/realms/uniplus
+  cors:
+    allowedOrigins:
+      - https://standalone.portaluni.com.br
+      - https://portal.standalone.portaluni.com.br
+      - https://selecao.standalone.portaluni.com.br
+  ingress:
+    enabled: true
+    entryPoint: websecure
+    host: api-selecao.standalone.portaluni.com.br
+    tls:
+      enabled: true
+      secretName: uniplus-api-selecao-tls
+      certManager:
+        enabled: true
+        clusterIssuer: letsencrypt-prod
+  networkPolicy:
+    enabled: true
+    dataHostCIDR: 10.2.2.0/24
+    oidcIssuerCIDR: 137.131.131.6/32
+  encryption:
+    provider: vault
+    vaultAddress: http://platform-vault-uniplus-standalone.vault.svc.cluster.local:8200
+    kubernetesRole: uniplus-api
+  schemaRegistry:
+    url: https://schema-registry.standalone.portaluni.com.br/apis/ccompat/v7
+    authType: OAuthBearer
+    oauth:
+      tokenEndpoint: https://standalone.portaluni.com.br/auth/realms/uniplus/protocol/openid-connect/token
+      clientId: uniplus-api-selecao
+  # Ver comentário em uniplusApiPortal.otel.
+  otel:
+    exporter:
+      endpoint: http://otelcol.observability-otelcol.svc.cluster.local:4317
+      protocol: grpc
+
+uniplusApiIngresso:
+  enabled: true
+  database:
+    host: 10.2.2.193
+  redis:
+    host: 10.2.2.193
+  kafka:
+    # Ver comentário em uniplusApiPortal.kafka — habilitado em #165.
+    enabled: true
+    bootstrapServers: 10.2.2.193:9092
+  storage:
+    endpoint: 10.2.2.193:9000
+  oidc:
+    issuerUri: https://standalone.portaluni.com.br/auth/realms/uniplus
+  cors:
+    allowedOrigins:
+      - https://standalone.portaluni.com.br
+      - https://portal.standalone.portaluni.com.br
+      - https://ingresso.standalone.portaluni.com.br
+  ingress:
+    enabled: true
+    entryPoint: websecure
+    host: api-ingresso.standalone.portaluni.com.br
+    tls:
+      enabled: true
+      secretName: uniplus-api-ingresso-tls
+      certManager:
+        enabled: true
+        clusterIssuer: letsencrypt-prod
+  networkPolicy:
+    enabled: true
+    dataHostCIDR: 10.2.2.0/24
+    oidcIssuerCIDR: 137.131.131.6/32
+  encryption:
+    provider: vault
+    vaultAddress: http://platform-vault-uniplus-standalone.vault.svc.cluster.local:8200
+    kubernetesRole: uniplus-api
+  schemaRegistry:
+    url: https://schema-registry.standalone.portaluni.com.br/apis/ccompat/v7
+    authType: OAuthBearer
+    oauth:
+      tokenEndpoint: https://standalone.portaluni.com.br/auth/realms/uniplus/protocol/openid-connect/token
+      clientId: uniplus-api-ingresso
+  # Ver comentário em uniplusApiPortal.otel.
+  otel:
+    exporter:
+      endpoint: http://otelcol.observability-otelcol.svc.cluster.local:4317
+      protocol: grpc
+
+# ----------------------------------------------------------------------------
+# Frontends Uni+ (Angular SPAs servidas por nginx-unprivileged). 1 chart,
+# 3 deployments — cada um no próprio subdomain (pattern subdomain, ADR-018
+# infra). runtime-config.json é montado via ConfigMap sobre o placeholder
+# embutido na imagem e contém apiUrl + Keycloak (ADR-0021 web). Chart
+# uniplus-infra#162.
+#
+# Realm Keycloak `uniplus`. clientId `uniplus-portal` é compartilhado pelos
+# 3 SPAs (1 client público com 3 redirectUri configurados) — alinhado ao
+# uniplusApiPortal.oidc.audience.
+# ----------------------------------------------------------------------------
+uniplusWeb:
+  enabled: true
+
+  apps:
+    portal:
+      enabled: true
+      replicas: 1  # standalone single-node — anti-affinity é preferred, então 1 replica não conflita
+      image: uniplus-portal
+      host: portal.standalone.portaluni.com.br
+      runtimeConfig:
+        apiUrl: https://api-portal.standalone.portaluni.com.br
+        keycloak:
+          url: https://standalone.portaluni.com.br/auth
+          realm: uniplus
+          clientId: uniplus-portal
+
+    selecao:
+      enabled: true
+      replicas: 1
+      image: uniplus-web-selecao
+      host: selecao.standalone.portaluni.com.br
+      runtimeConfig:
+        apiUrl: https://api-selecao.standalone.portaluni.com.br
+        keycloak:
+          url: https://standalone.portaluni.com.br/auth
+          realm: uniplus
+          clientId: uniplus-portal
+
+    ingresso:
+      enabled: true
+      replicas: 1
+      image: uniplus-web-ingresso
+      host: ingresso.standalone.portaluni.com.br
+      runtimeConfig:
+        apiUrl: https://api-ingresso.standalone.portaluni.com.br
+        keycloak:
+          url: https://standalone.portaluni.com.br/auth
+          realm: uniplus
+          clientId: uniplus-portal
+
+# ----------------------------------------------------------------------------
+# Componentes stateful no data-host (Postgres, Kafka, MinIO, Redis) rodam
+# FORA do K8s, gerenciados por systemd em /var/lib/uniplus/* (ADR-002 +
+# ADR-005). Endpoints chegam às apps via External Secrets sintetizados a
+# partir do bootstrap; não são valores deste arquivo.
+# ----------------------------------------------------------------------------
