@@ -39,10 +39,22 @@ ROLE=""
 DRY_RUN=false
 SKIP_K3S=false
 SKIP_DOCKER=false
+SKIP_SERVICES=false
 
-# TLS SANs para o k8s-host — ajustar se o IP ou domínio mudar
-K8S_PUBLIC_IP="164.152.53.29"
-K8S_DOMAIN="standalone.portaluni.com.br"
+# ============== Configuração por env var (defaults = legacy standalone) ==============
+# Override via env vars antes do script. Para o lab standalone-compact:
+#   export VCN_CIDR=10.2.0.0/16
+#   export K8S_PUBLIC_IP=137.131.131.6
+#   export DATA_HOST_IP=10.2.2.193  (ou deixa auto-detectar via hostname -I no data-host)
+
+VCN_CIDR="${VCN_CIDR:-10.0.0.0/16}"
+K8S_PUBLIC_IP="${K8S_PUBLIC_IP:-164.152.53.29}"
+K8S_DOMAIN="${K8S_DOMAIN:-standalone.portaluni.com.br}"
+
+if [[ -z "${DATA_HOST_IP:-}" ]] && command -v hostname &>/dev/null; then
+    DATA_HOST_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+fi
+DATA_HOST_IP="${DATA_HOST_IP:-10.0.2.87}"
 
 # Mount base para os volumes de dados
 DATA_BASE="/var/lib/uniplus"
@@ -103,6 +115,7 @@ while [[ $# -gt 0 ]]; do
         --dry-run)       DRY_RUN=true; shift ;;
         --skip-k3s)      SKIP_K3S=true; shift ;;
         --skip-docker)   SKIP_DOCKER=true; shift ;;
+        --skip-services) SKIP_SERVICES=true; shift ;;
         -h|--help)       usage ;;
         *) log_error "Opção inválida: $1"; usage ;;
     esac
@@ -414,8 +427,15 @@ step_data_check_prerequisites() {
     local disk_count
     disk_count=$(lsblk -b -d -o NAME,TYPE,FSTYPE | awk -v boot="$root_disk" '$2=="disk" && ($3=="" || $3=="LVM2_member") && $1!=boot && $1!~/^loop/' | wc -l)
 
-    if [[ "$disk_count" -lt 4 ]]; then
-        log_warn "Encontrado $disk_count disco(s) de dados (esperado 4)."
+    # Aceita 2 topologias:
+    #   compact (1 disco LVM-particionado): standalone-compact Always Free
+    #   legacy (>=4 discos distintos por papel): standalone original
+    if [[ "$disk_count" -eq 1 ]]; then
+        log_info "Topologia COMPACT detectada (1 disco — LVM particionado em 4 LVs)."
+    elif [[ "$disk_count" -ge 4 ]]; then
+        log_info "Topologia LEGACY detectada ($disk_count discos distintos)."
+    else
+        log_warn "Encontrado $disk_count disco(s) de dados (esperado 1 [compact] ou >=4 [legacy])."
         log_warn "Verifique se os block volumes OCI estão anexados: lsblk -o NAME,SIZE,FSTYPE"
         if ! $DRY_RUN; then
             log_error "Pré-requisito não atendido. Corrija antes de continuar."
@@ -478,7 +498,25 @@ discover_disks() {
     DISK_KAFKA=""
     DISK_MINIO=""
     DISK_VAULT=""
+    DISK_COMPACT=""
+    DISK_MODE=""
     local count_50=0 count_100=0 count_200=0
+
+    # Modo COMPACT: 1 disco único — particionado via LVM em 4 LVs
+    if [[ ${#raw_disks[@]} -eq 1 ]]; then
+        DISK_MODE="compact"
+        local cname csize_bytes csize_gb
+        cname=$(echo "${raw_disks[0]}" | awk '{print $1}')
+        csize_bytes=$(echo "${raw_disks[0]}" | awk '{print $2}')
+        csize_gb=$(( csize_bytes / 1024 / 1024 / 1024 ))
+        DISK_COMPACT="/dev/$cname"
+        printf "  %-8s %-12s %s\n" "/dev/$cname" "${csize_gb}GB" "compact (LVM: postgres+kafka+minio+vault)"
+        echo ""
+        log_info "Modo COMPACT: 1 disco -> uniplus-vg -> 4 LVs"
+        log_warn "Confirme o mapeamento acima antes de prosseguir (--dry-run para revisar)."
+        return
+    fi
+    DISK_MODE="legacy"
 
     for entry in "${raw_disks[@]}"; do
         local name size_bytes size_gb
@@ -586,6 +624,47 @@ setup_lvm_volume() {
     log_success "$mount_point pronto."
 }
 
+setup_lvm_sized() {
+    # 1 LV de tamanho fixo num VG existente; format XFS + mount + fstab persist.
+    local vg_name="$1" lv_name="$2" size="$3" mount_point="$4"
+
+    log_info "Configurando LV: $vg_name/$lv_name ($size) -> $mount_point"
+    if sudo lvs "$vg_name/$lv_name" &>/dev/null; then
+        if sudo blkid "/dev/$vg_name/$lv_name" &>/dev/null; then
+            log_success "$vg_name/$lv_name já existe com filesystem."
+        else
+            run "sudo mkfs.xfs /dev/$vg_name/$lv_name"
+        fi
+    else
+        run "sudo lvcreate -L $size -n $lv_name $vg_name"
+        run "sudo mkfs.xfs /dev/$vg_name/$lv_name"
+    fi
+    run "sudo mkdir -p $mount_point"
+    if ! mountpoint -q "$mount_point" 2>/dev/null; then
+        run "sudo mount /dev/$vg_name/$lv_name $mount_point"
+    fi
+    if ! grep -qF "/dev/$vg_name/$lv_name" /etc/fstab 2>/dev/null; then
+        run "echo '/dev/$vg_name/$lv_name $mount_point xfs defaults,nofail 0 2' | sudo tee -a /etc/fstab"
+    fi
+    run "sudo chown $USER:$USER $mount_point"
+    log_success "$mount_point pronto."
+}
+
+setup_lvm_compact() {
+    # Modo compact: 1 disco -> uniplus-vg -> 4 LVs (30+20+40+5 = 95 GB de 100 GB)
+    local disk="$1" vg_name="uniplus-vg"
+    if ! sudo vgs "$vg_name" &>/dev/null; then
+        run "sudo pvcreate $disk"
+        run "sudo vgcreate $vg_name $disk"
+    else
+        log_success "VG $vg_name já existe"
+    fi
+    setup_lvm_sized "$vg_name" "lv-postgres" "30G" "$DATA_BASE/postgres"
+    setup_lvm_sized "$vg_name" "lv-kafka"    "20G" "$DATA_BASE/kafka"
+    setup_lvm_sized "$vg_name" "lv-minio"    "40G" "$DATA_BASE/minio"
+    setup_lvm_sized "$vg_name" "lv-vault"    "5G"  "$DATA_BASE/vault"
+}
+
 step_setup_lvm() {
     if ! command -v lvcreate &>/dev/null || ! command -v mkfs.xfs &>/dev/null; then
         log_info "Instalando LVM2..."
@@ -595,10 +674,21 @@ step_setup_lvm() {
         log_success "LVM2 já instalado. Pulando apt."
     fi
 
-    setup_lvm_volume "$DISK_POSTGRES" "vg-postgres" "lv-postgres" "$DATA_BASE/postgres"
-    setup_lvm_volume "$DISK_KAFKA"   "vg-kafka"    "lv-kafka"    "$DATA_BASE/kafka"
-    setup_lvm_volume "$DISK_MINIO"   "vg-minio"    "lv-minio"    "$DATA_BASE/minio"
-    setup_lvm_volume "$DISK_VAULT"   "vg-vault"    "lv-vault"    "$DATA_BASE/vault"
+    case "$DISK_MODE" in
+        compact)
+            setup_lvm_compact "$DISK_COMPACT"
+            ;;
+        legacy)
+            setup_lvm_volume "$DISK_POSTGRES" "vg-postgres" "lv-postgres" "$DATA_BASE/postgres"
+            setup_lvm_volume "$DISK_KAFKA"   "vg-kafka"    "lv-kafka"    "$DATA_BASE/kafka"
+            setup_lvm_volume "$DISK_MINIO"   "vg-minio"    "lv-minio"    "$DATA_BASE/minio"
+            setup_lvm_volume "$DISK_VAULT"   "vg-vault"    "lv-vault"    "$DATA_BASE/vault"
+            ;;
+        *)
+            log_error "DISK_MODE inválido: '$DISK_MODE'. Esperado 'compact' ou 'legacy'."
+            exit 1
+            ;;
+    esac
 
     log_success "LVM configurado. Volumes montados em $DATA_BASE/."
 }
@@ -627,7 +717,7 @@ step_data_configure_iptables() {
     # bootstrap manual do Postgres em 2026-05-05, codificado por #124.
     #
     # Posição detectada dinamicamente; re-runs após reordenação reposicionam.
-    iptables_ensure_before_reject INPUT -s 10.0.0.0/16 -p tcp -j ACCEPT
+    iptables_ensure_before_reject INPUT -s "$VCN_CIDR" -p tcp -j ACCEPT
     install_iptables_persistent
     log_success "iptables INPUT configurado e persistido."
 }
@@ -1034,10 +1124,10 @@ EOF
     if $DRY_RUN; then
         echo "[DRY-RUN] Escreveria $redis_conf"
     else
-        sudo tee "$redis_conf" >/dev/null <<'CONF'
+        sudo tee "$redis_conf" >/dev/null <<CONF
 # Listeners — bind explícito (protected-mode default `yes` em 7+ exige
 # bind + auth; sem bind o redis recusa conexões não-loopback)
-bind 10.0.2.87 127.0.0.1 -::1
+bind $DATA_HOST_IP 127.0.0.1 -::1
 port 6379
 protected-mode yes
 
@@ -1248,7 +1338,7 @@ EOF
     if $DRY_RUN; then
         echo "[DRY-RUN] Escreveria $unit_file"
     else
-        sudo tee "$unit_file" >/dev/null <<'UNIT'
+        sudo tee "$unit_file" >/dev/null <<UNIT
 [Unit]
 Description=Uni+ MinIO 2025-09 (standalone data-host)
 Documentation=https://github.com/unifesspa-edu-br/uniplus-infra/blob/main/docs/RUNBOOKS.md
@@ -1274,7 +1364,7 @@ ExecStart=/usr/bin/docker run --rm --name uniplus-minio \
   -e MINIO_GID \
   -v /var/lib/uniplus/minio/data:/data \
   quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z \
-  server --address 10.0.2.87:9000 --console-address 10.0.2.87:9001 /data
+  server --address $DATA_HOST_IP:9000 --console-address $DATA_HOST_IP:9001 /data
 
 ExecStop=/usr/bin/docker stop -t 30 uniplus-minio
 
@@ -1294,7 +1384,7 @@ UNIT
         sudo systemctl start uniplus-minio
         log_info "Aguardando MinIO aceitar conexões..."
         local attempts=0
-        until curl -sf --max-time 2 http://10.0.2.87:9000/minio/health/live >/dev/null 2>&1; do
+        until curl -sf --max-time 2 http://$DATA_HOST_IP:9000/minio/health/live >/dev/null 2>&1; do
             attempts=$(( attempts + 1 ))
             if (( attempts >= 18 )); then
                 log_error "MinIO não respondeu /minio/health/live em 90s. Ver: sudo journalctl -u uniplus-minio -n 50"
@@ -1364,7 +1454,7 @@ step_data_bootstrap_minio_buckets() {
             set -e
             read -r U
             read -r P
-            mc --quiet alias set local http://10.0.2.87:9000 "$U" "$P"
+            mc --quiet alias set local http://'"$DATA_HOST_IP"':9000 "$U" "$P"
             for b in keycloak-backups loki-chunks tempo-traces app-uploads; do
                 mc mb --ignore-existing "local/$b"
             done
@@ -1513,11 +1603,11 @@ EOF
     elif $DRY_RUN; then
         log_warn "Dry-run: cert self-signed seria gerado em $certs_dir/"
     else
-        log_info "Gerando cert self-signed PEM (10 anos, SAN: 10.0.2.87 + kafka.standalone.portaluni.com.br)..."
+        log_info "Gerando cert self-signed PEM (10 anos, SAN: $DATA_HOST_IP + kafka.standalone.portaluni.com.br)..."
         # OpenSSL config inline com SAN multi-tipo (DNS + IP). Self-signed →
         # CA = cert (cadeia de 1 nível); ca.crt é cópia do server.crt.
         local ssl_cnf="$certs_dir/openssl.cnf"
-        sudo tee "$ssl_cnf" >/dev/null <<'CNF'
+        sudo tee "$ssl_cnf" >/dev/null <<CNF
 [req]
 distinguished_name = req_distinguished_name
 prompt = no
@@ -1535,7 +1625,7 @@ subjectAltName = @alt_names
 [alt_names]
 DNS.1 = kafka.standalone.portaluni.com.br
 DNS.2 = localhost
-IP.1 = 10.0.2.87
+IP.1 = $DATA_HOST_IP
 IP.2 = 127.0.0.1
 CNF
         sudo openssl req -x509 -newkey rsa:2048 \
@@ -1585,9 +1675,9 @@ CNF
         sudo tee "$fmt_props" >/dev/null <<EOF
 process.roles=broker,controller
 node.id=1
-controller.quorum.voters=1@10.0.2.87:9093
-listeners=SASL_SSL://10.0.2.87:9092,CONTROLLER://10.0.2.87:9093
-advertised.listeners=SASL_SSL://10.0.2.87:9092
+controller.quorum.voters=1@$DATA_HOST_IP:9093
+listeners=SASL_SSL://$DATA_HOST_IP:9092,CONTROLLER://$DATA_HOST_IP:9093
+advertised.listeners=SASL_SSL://$DATA_HOST_IP:9092
 controller.listener.names=CONTROLLER
 inter.broker.listener.name=SASL_SSL
 listener.security.protocol.map=CONTROLLER:SASL_SSL,SASL_SSL:SASL_SSL
@@ -1634,9 +1724,9 @@ EOF
 # === KRaft topology (single-node combined) ===
 process.roles=broker,controller
 node.id=1
-controller.quorum.voters=1@10.0.2.87:9093
-listeners=SASL_SSL://10.0.2.87:9092,CONTROLLER://10.0.2.87:9093
-advertised.listeners=SASL_SSL://10.0.2.87:9092
+controller.quorum.voters=1@$DATA_HOST_IP:9093
+listeners=SASL_SSL://$DATA_HOST_IP:9092,CONTROLLER://$DATA_HOST_IP:9093
+advertised.listeners=SASL_SSL://$DATA_HOST_IP:9092
 controller.listener.names=CONTROLLER
 inter.broker.listener.name=SASL_SSL
 listener.security.protocol.map=CONTROLLER:SASL_SSL,SASL_SSL:SASL_SSL
@@ -1779,7 +1869,7 @@ UNIT
                 -v "$certs_dir/ca.crt:$certs_dir/ca.crt:ro" \
                 --entrypoint /opt/kafka/bin/kafka-broker-api-versions.sh \
                 apache/kafka:4.2.0 \
-                --bootstrap-server 10.0.2.87:9092 \
+                --bootstrap-server $DATA_HOST_IP:9092 \
                 --command-config /tmp/admin.properties &>/dev/null; do
             attempts=$(( attempts + 1 ))
             if (( attempts >= 36 )); then
@@ -1981,12 +2071,12 @@ summary_data() {
     echo "  sudo docker exec uniplus-postgres pg_isready -U postgres"
     echo "  sudo docker exec -i uniplus-redis sh -c 'read -r P; REDISCLI_AUTH=\$P redis-cli ping' \\"
     echo "    <<<\"\$(sudo grep ^default_pw= $DATA_BASE/redis/.bootstrap-creds | cut -d= -f2)\""
-    echo "  curl -sf http://10.0.2.87:9000/minio/health/live && echo ' — MinIO health OK'"
+    echo "  curl -sf http://$DATA_HOST_IP:9000/minio/health/live && echo ' — MinIO health OK'"
     echo "  sudo docker run --rm --network host \\"
     echo "    -v $DATA_BASE/kafka/admin.properties:/tmp/admin.properties:ro \\"
     echo "    -v /etc/uniplus-kafka/certs/ca.crt:/etc/uniplus-kafka/certs/ca.crt:ro \\"
     echo "    --entrypoint /opt/kafka/bin/kafka-broker-api-versions.sh \\"
-    echo "    apache/kafka:4.2.0 --bootstrap-server 10.0.2.87:9092 --command-config /tmp/admin.properties | head -3"
+    echo "    apache/kafka:4.2.0 --bootstrap-server $DATA_HOST_IP:9092 --command-config /tmp/admin.properties | head -3"
 }
 
 # ============================================================================
@@ -2015,12 +2105,16 @@ case "$ROLE" in
         discover_disks
         step_setup_lvm
         step_create_placeholder_dirs
-        step_data_setup_postgres
-        step_data_setup_redis
-        step_data_setup_minio
-        step_data_bootstrap_minio_buckets
-        step_data_setup_kafka
-        step_data_setup_apicurio_db
+        if $SKIP_SERVICES; then
+            log_warn "Pulando setup de serviços stateful (--skip-services). Apenas infra (LVM + Docker + iptables) preparada."
+        else
+            step_data_setup_postgres
+            step_data_setup_redis
+            step_data_setup_minio
+            step_data_bootstrap_minio_buckets
+            step_data_setup_kafka
+            step_data_setup_apicurio_db
+        fi
         summary_data
         ;;
 esac
