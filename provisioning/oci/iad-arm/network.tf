@@ -148,6 +148,21 @@ resource "oci_core_security_list" "public" {
     }
   }
 
+  # ICMP type 3 code 4 (Path MTU Discovery — "Destination Unreachable /
+  # Fragmentation Needed"). Source 0.0.0.0/0 porque essas mensagens são
+  # geradas por ROTEADORES no caminho da internet, não por hosts dentro
+  # da VCN. Necessário no k8s-host para conexões egress (apt-get, helm,
+  # docker pull) e ingress HTTP/HTTPS que atravessam paths com MTU < 1500.
+  ingress_security_rules {
+    source      = "0.0.0.0/0"
+    protocol    = "1"
+    description = "Path MTU Discovery (ICMP type 3 code 4) from internet routers"
+    icmp_options {
+      type = 3
+      code = 4
+    }
+  }
+
   freeform_tags = local.common_tags
 }
 
@@ -213,10 +228,15 @@ resource "oci_core_security_list" "private" {
 
   # ICMP type 3 code 4 (Path MTU Discovery — "Destination Unreachable /
   # Fragmentation Needed"). Necessário para hosts atrás do NAT GW
-  # negociarem MSS quando o caminho tem MTU menor.
+  # negociarem MSS quando o caminho tem MTU menor. Source 0.0.0.0/0 porque
+  # essas mensagens são geradas por ROTEADORES no caminho da internet
+  # (com IPs públicos arbitrários fora da VCN), não por hosts dentro da VCN.
+  # Restringir a `var.vcn_cidr` faz pacotes/imagens travarem em paths com
+  # MTU < 1500 mesmo com TCP egress aberto.
   ingress_security_rules {
-    source   = var.vcn_cidr
-    protocol = "1"
+    source      = "0.0.0.0/0"
+    protocol    = "1"
+    description = "Path MTU Discovery (ICMP type 3 code 4) from internet routers"
     icmp_options {
       type = 3
       code = 4
