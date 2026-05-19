@@ -63,7 +63,7 @@ variable "ssh_authorized_keys" {
 }
 
 variable "profile" {
-  description = "Perfil de capacidade das VMs A1.Flex. 'poc_arm' (default) = 3 OCPU / 16 GB total, cabe em Always Free A1 (4 OCPU / 24 GB). 'hml_arm' = 6 OCPU / 40 GB total — EXTRAPOLA Always Free, cobra ~$25/mês. Mapeamento em locals.tf."
+  description = "Perfil de capacidade das VMs A1.Flex. 'poc_arm' (default) = 3 OCPU / 16 GB total. 'hml_arm' = 6 OCPU / 40 GB total. ATENÇÃO: Always Free A1 é home-region-only segundo doc Oracle (a tenancy unifesspa-edu-br tem home = GRU); em IAD, ambos perfis são PAYG. Custos estimados: poc_arm ~$39/mês compute (3×$0.01/h + 16×$0.0015/h), hml_arm ~$86/mês compute (6×$0.01/h + 40×$0.0015/h). Mapeamento em locals.tf. Smoke test do gate de validação em README.md pode reverter premissa caso billing mostre Always Free aplicando cross-region."
   type        = string
   default     = "poc_arm"
 
