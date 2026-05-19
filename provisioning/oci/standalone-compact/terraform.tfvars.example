@@ -1,0 +1,34 @@
+# Copiar para terraform.tfvars (ignorado pelo .gitignore) e ajustar.
+#
+# standalone-compact: lab Uni+ em sa-saopaulo-1 (home region) sobre A1.Flex
+# Always Free, sem NAT Gateway, single block 100 GB no data-host.
+
+# Compartment raiz da tenancy unifesspa-edu-br
+compartment_ocid = "ocid1.tenancy.oc1..REPLACE_WITH_TENANCY_OCID"
+tenancy_ocid     = "ocid1.tenancy.oc1..REPLACE_WITH_TENANCY_OCID"
+
+# Região fixa em GRU (home) — não alterar sem reescrever cost model do módulo
+region              = "sa-saopaulo-1"
+availability_domain = "mixQ:SA-SAOPAULO-1-AD-1"
+fault_domain        = "FAULT-DOMAIN-1"
+
+# Imagem Ubuntu 24.04 LTS aarch64 mais recente em GRU
+# Descobrir com:
+#   oci compute image list --region sa-saopaulo-1 \
+#     --compartment-id <tenancy> \
+#     --operating-system "Canonical Ubuntu" \
+#     --operating-system-version 24.04 \
+#     --shape VM.Standard.A1.Flex \
+#     --sort-by TIMECREATED --sort-order DESC \
+#     --query 'data[0].id' --raw-output
+image_ocid = "ocid1.image.oc1.sa-saopaulo-1.REPLACE_WITH_IMAGE_OCID"
+
+# Chave SSH pública injetada via metadata
+ssh_authorized_keys = <<-EOT
+  ssh-ed25519 AAAA... operador@host
+EOT
+
+# Block volume size — default 100 GB cabe Always Free junto com 2 boot
+# volumes (47 GB cada = 94 + 100 = 194 GB ≤ 200 GB cap).
+volume_size_gbs    = 100
+volume_vpus_per_gb = 0
