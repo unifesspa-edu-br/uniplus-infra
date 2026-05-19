@@ -52,9 +52,12 @@ ssh_authorized_keys = <<-EOT
 EOT
 
 # Perfil de capacidade A1.Flex:
-#   - "poc_arm" (default, RECOMENDADO): 3 OCPU / 16 GB — cabe Always Free A1
-#     (válido em qualquer região com A1, INCLUSIVE não-home), custo $0/mês
-#   - "hml_arm": 6 OCPU / 40 GB — EXTRAPOLA Always Free, cobra ~$25/mês de A1 paga
+#   - "poc_arm" (default): 3 OCPU / 16 GB. ATENÇÃO: doc Oracle diz que Always
+#     Free Compute é home-region-only — para esta tenancy (home=GRU), A1 em
+#     IAD provavelmente vai PAYG (~$39/mês para 3 OCPU/16 GB). Ver gate de
+#     validação no README.md → seção "Gate de validação operacional".
+#   - "hml_arm": 6 OCPU / 40 GB — sempre cobra mesmo se Always Free aplicasse
+#     em IAD (~$50/mês PAYG).
 # Mudar e aplicar `tofu apply` REBOOTA as VMs.
 profile = "poc_arm"
 

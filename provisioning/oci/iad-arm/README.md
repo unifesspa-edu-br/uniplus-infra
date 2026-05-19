@@ -32,24 +32,46 @@ Key, Dynamic Group, IAM Policy.
 | Block volumes | 550 GB total (postgres 200 + kafka 100 + minio 200 + vault 50) | 200 GB total (4×50, mínimo OCI) — Always Free Block Volume é só na home region (GRU); em IAD os volumes são PAYG ~$5/mês |
 | Tag `uniplus_environment` | `standalone` | `iad-arm` |
 | DNS subdomínio | `*.standalone.portaluni.com.br` | `*.iad-arm.portaluni.com.br` |
-| Custo (PAYG estimado) | ~$108/mês | **~$42/mês** (detalhamento abaixo) |
+| Custo (PAYG estimado) | ~$108/mês | **~$80/mês** (detalhamento abaixo) |
 
 ### Detalhamento do custo IAD
 
 | Recurso | Custo/mês | Observação |
 |---|---|---|
-| Compute A1 (3 OCPU / 16 GB) | **$0** | Always Free A1 vale em qualquer região com A1, independente da home region |
-| Block volumes (4×50 GB = 200 GB, VPU 0) | **~$5,10** | Always Free Block Volume é **amarrado à home region** (GRU). IAD é PAYG ~$0,0255/GB-mês |
+| Compute A1 (3 OCPU / 16 GB) | **~$39,40** | Oracle docs: "You must create the Always Free compute instances in your home region". Home = GRU, então A1 em IAD vai para PAYG (3 OCPU × $0,01/h + 16 GB × $0,0015/h ≈ $39,40/mês). Ver gate de validação abaixo |
+| Block volumes (4×50 GB = 200 GB, VPU 0) | **~$5,10** | Always Free Block Volume também é home-region-only — IAD é PAYG $0,0255/GB-mês |
 | Boot volumes (2× ~47 GB ≈ 94 GB) | **~$2,40** | Mesma regra dos block volumes |
 | NAT Gateway | **~$33** | Cobrado mesmo em Always Free; eliminação é follow-up |
-| **Total** | **~$40-42/mês** | Economia vs GRU (~$108): ~$66/mês (~61%) |
+| **Total** | **~$79-80/mês** | Economia vs GRU (~$108): ~$28/mês (~26%) |
 
-> A premissa original do Epic #317 era $0-3/mês em IAD assumindo Always Free
-> total. A documentação da Oracle confirma que o **Always Free Block Volume é
-> regional (home region only)** — a tenancy unifesspa-edu-br tem home em
-> sa-saopaulo-1 (GRU). A migração ainda compensa pelo compute A1 grátis,
-> mas a redução real é ~61%, não ~97%. Story #366 (ajuste do Budget OCI)
-> precisa revisar a meta de USD 10/mês para algo entre USD 25-50/mês.
+> **Premissa que mudou:** O Epic #317 foi escrito assumindo `~$0-3/mês em IAD`
+> com base na interpretação de que Always Free A1 valeria cross-region.
+> Re-leitura da [doc oficial Oracle](https://docs.oracle.com/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm)
+> mostra que o texto `"In regions with multiple availability domains: You can
+> create OCI Ampere A1 Compute instances in any availability domain"`
+> qualifica a flexibilidade **dentro de uma única região** (a home region),
+> não cross-region. A regra geral `"must create in home region"` se aplica
+> a A1 e a AMD Micro. Story #366 (ajuste do Budget OCI) mantém USD 50/mês
+> em vez de reduzir para USD 10-25 — a frente do NAT GW elimination ganha
+> prioridade para recuperar economia.
+
+### Gate de validação operacional (Story #319/T1.1.3)
+
+Como a documentação Oracle é literal mas a prática da comunidade reporta A1
+cross-region funcionando sem cobrança, validar empiricamente ANTES de
+provisionar o lab completo:
+
+1. Após `oci compute image list` em IAD (T1.1.2), criar **1** instância A1
+   small (1 OCPU / 6 GB) no console OCI ou via `oci compute instance launch`
+2. Aguardar 30 min e checar `OCI Console → Cost Management → Cost Analysis`
+   filtrando por `Service=Compute Always Free` vs `Service=Compute`
+3. **Se cobrar PAYG**: docs estão corretas, custo do README ~$80/mês confirmado
+4. **Se aparecer como Always Free**: docs estão desatualizadas vs prática, revisar
+   README de volta para ~$42/mês e atualizar Epic #317
+5. Tear down a instância de teste antes de prosseguir com Story #329
+
+PAYG já ativo na tenancy desde a Feature #43, então qualquer cobrança aparece
+no billing imediatamente.
 
 ## Pré-requisitos
 
