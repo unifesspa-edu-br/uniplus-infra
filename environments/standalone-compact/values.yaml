@@ -306,7 +306,7 @@ lokiWrapper:
       - observability-grafana
       - observability-otelcol
       - observability-loki
-    minioCIDR: "10.2.2.193/32"
+    minioCIDR: "10.2.2.11/32"
     minioPort: 9000
     kubeApiCidrs:
       - 10.43.0.0/16
@@ -380,7 +380,7 @@ tempoWrapper:
       - observability-grafana
       - observability-otelcol
       - observability-tempo
-    minioCIDR: "10.2.2.193/32"
+    minioCIDR: "10.2.2.11/32"
     minioPort: 9000
     # Libera egress :9090 para Prometheus (remote_write do metricsGenerator).
     egressPrometheusNamespace: observability-prometheus
@@ -638,10 +638,10 @@ networkPolicy:
 
   # Backends externos ao cluster — libera egress do Traefik para data-host.
   # Necessário para Services com Endpoints manuais cujo IP é externo (ex.:
-  # MinIO Console em 10.2.2.193:9001). Sem isso, Traefik retorna 502 Bad
+  # MinIO Console em 10.2.2.11:9001). Sem isso, Traefik retorna 502 Bad
   # Gateway silenciosamente. Code-reviewer P0 do platform/minio-console-proxy.
   externalBackends:
-    - cidr: 10.2.2.193/32
+    - cidr: 10.2.2.11/32
       ports:
         - 9001  # MinIO Console (Issue #153)
 
@@ -723,7 +723,7 @@ traefik:
 # Federação Gov.br fica fora do escopo standalone (depende de cadastro
 # institucional do client OIDC; demos podem usar usuários locais).
 #
-# DB persiste no Postgres systemd do data-host (10.2.2.193:5432, base
+# DB persiste no Postgres systemd do data-host (10.2.2.11:5432, base
 # `keycloak`, role `keycloak`) — empacotado pelo PR #127 em
 # scripts/bootstrap-standalone.sh::step_data_setup_postgres. Senha em
 # Vault `secret/standalone/postgres/keycloak`. Bootstrap admin do
@@ -744,7 +744,7 @@ keycloak:
 
   database:
     vendor: postgres
-    host: 10.2.2.193
+    host: 10.2.2.11
     port: 5432
     name: keycloak
 
@@ -820,7 +820,7 @@ keycloak:
     # CIDR /32 do data-host. Cluster-specific — em outro standalone OCI
     # com data-host em outro IP/subnet, ajustar este valor (ver
     # environments/standalone/README.md, seção provider-specifics).
-    dataHostCIDR: 10.2.2.193/32
+    dataHostCIDR: 10.2.2.11/32
     dataHostPort: 5432
 
   # ServiceMonitor desligado até platform/observability/prometheus/ subir.
@@ -840,14 +840,14 @@ keycloak:
 
 # ----------------------------------------------------------------------------
 # kafka-ui (AKHQ) — Web UI de gerenciamento do cluster Kafka SASL_SSL.
-# Conecta ao broker no data-host (10.2.2.193:9092 SASL_SSL) e autentica
+# Conecta ao broker no data-host (10.2.2.11:9092 SASL_SSL) e autentica
 # usuários via OIDC do realm `uniplus` no Keycloak local. Issue #139.
 # ----------------------------------------------------------------------------
 kafkaUi:
   enabled: true
 
   kafka:
-    bootstrapServers: 10.2.2.193:9092
+    bootstrapServers: 10.2.2.11:9092
 
   oidc:
     enabled: true
@@ -901,7 +901,7 @@ apicurioRegistry:
   storage:
     # Mesmo data-host dos demais services. DB `apicurio` provisionado pelo
     # step_data_setup_apicurio_db do bootstrap-standalone.sh.
-    host: 10.2.2.193
+    host: 10.2.2.11
 
   oidc:
     enabled: true
@@ -942,7 +942,7 @@ apicurioRegistry:
     enabled: false
 
 # ----------------------------------------------------------------------------
-# RedisInsight — UI para Redis standalone (10.2.2.193:6379). Auth via Traefik
+# RedisInsight — UI para Redis standalone (10.2.2.11:6379). Auth via Traefik
 # basicAuth middleware (htpasswd em Vault). Connection pré-setup via env vars.
 # Issue #154.
 # ----------------------------------------------------------------------------
@@ -950,7 +950,7 @@ redisUi:
   enabled: true
 
   backend:
-    host: 10.2.2.193
+    host: 10.2.2.11
     port: 6379
     alias: standalone
     username: default
@@ -969,7 +969,7 @@ redisUi:
   networkPolicy:
     enabled: true
     traefikNamespace: traefik
-    # /24 da subnet privada VCN — Redis listening em 10.2.2.193:6379.
+    # /24 da subnet privada VCN — Redis listening em 10.2.2.11:6379.
     dataHostCIDR: 10.2.2.0/24
     dataHostPort: 6379
 
@@ -984,7 +984,7 @@ minioConsoleProxy:
   backend:
     # MinIO no data-host — mesmo IP usado pelos apps via NetworkPolicy
     # privada. ExternalName aceita IP literal sem DNS lookup adicional.
-    host: 10.2.2.193
+    host: 10.2.2.11
     consolePort: 9001
 
   ingress:
@@ -1010,9 +1010,9 @@ minioConsoleProxy:
 uniplusApiPortal:
   enabled: true
   database:
-    host: 10.2.2.193
+    host: 10.2.2.11
   redis:
-    host: 10.2.2.193
+    host: 10.2.2.11
   kafka:
     # Habilitado em 2026-05-09 (#165) — bind nativo Kafka:SecurityProtocol/
     # SaslMechanism/SaslUsername/SaslPassword/SslCaLocation entregue por
@@ -1022,9 +1022,9 @@ uniplusApiPortal:
     # Pré-requisito Vault: secret/standalone/kafka/admin com keys
     # `username`, `password`, `ca_cert` (ESO refresha o Secret kafka-admin).
     enabled: true
-    bootstrapServers: 10.2.2.193:9092
+    bootstrapServers: 10.2.2.11:9092
   storage:
-    endpoint: 10.2.2.193:9000
+    endpoint: 10.2.2.11:9000
   oidc:
     issuerUri: https://standalone.portaluni.com.br/auth/realms/uniplus
   cors:
@@ -1078,15 +1078,15 @@ uniplusApiPortal:
 uniplusApiSelecao:
   enabled: true
   database:
-    host: 10.2.2.193
+    host: 10.2.2.11
   redis:
-    host: 10.2.2.193
+    host: 10.2.2.11
   kafka:
     # Ver comentário em uniplusApiPortal.kafka — habilitado em #165.
     enabled: true
-    bootstrapServers: 10.2.2.193:9092
+    bootstrapServers: 10.2.2.11:9092
   storage:
-    endpoint: 10.2.2.193:9000
+    endpoint: 10.2.2.11:9000
   oidc:
     issuerUri: https://standalone.portaluni.com.br/auth/realms/uniplus
   cors:
@@ -1127,15 +1127,15 @@ uniplusApiSelecao:
 uniplusApiIngresso:
   enabled: true
   database:
-    host: 10.2.2.193
+    host: 10.2.2.11
   redis:
-    host: 10.2.2.193
+    host: 10.2.2.11
   kafka:
     # Ver comentário em uniplusApiPortal.kafka — habilitado em #165.
     enabled: true
-    bootstrapServers: 10.2.2.193:9092
+    bootstrapServers: 10.2.2.11:9092
   storage:
-    endpoint: 10.2.2.193:9000
+    endpoint: 10.2.2.11:9000
   oidc:
     issuerUri: https://standalone.portaluni.com.br/auth/realms/uniplus
   cors:
