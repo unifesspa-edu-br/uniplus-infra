@@ -163,20 +163,68 @@ ssh ubuntu@<k8s-host-ip> "ssh ubuntu@10.1.2.x 'sudo growpart /dev/sdb 1 && sudo 
 $EDITOR terraform.tfvars   # profile = "hml_arm"
 tofu apply
 
-# Recriar do zero (CUIDADO — destrutivo total: destroi VMs, volumes, VCN
-# E o Reserved Public IP). Apos `tofu apply` subsequente, o RESERVED IP
-# alocado sera DIFERENTE — DNS records, callback URLs do gov.br,
-# Let's Encrypt certs e KC_HOSTNAME precisam ser reconfigurados.
-#
-# Para preservar o IP entre destroy/apply, ha duas opcoes:
-#   1. Adicionar `lifecycle { prevent_destroy = true }` ao
-#      `oci_core_public_ip.k8s_host` (forca destroy parcial — exclui o IP)
-#   2. `tofu state rm oci_core_public_ip.k8s_host` antes do destroy +
-#      `tofu import oci_core_public_ip.k8s_host <ocid>` apos o apply
-# Em qualquer caso, o IP nao volta automaticamente.
-tofu destroy
+# Recriar do zero — caminho INGÊNUO destrói o Reserved Public IP junto com
+# tudo, e o `tofu apply` subsequente aloca IP DIFERENTE (rotacionando DNS,
+# callbacks gov.br, certs Let's Encrypt e KC_HOSTNAME):
+tofu destroy   # ⚠️ destrói TUDO, IP incluso
+tofu apply     # IP novo, diferente do anterior
+```
+
+#### Recriar do zero PRESERVANDO o Reserved IP
+
+Duas sequências corretas para preservar o IP entre rebuilds (a ingênua
+`tofu destroy && tofu apply` rotaciona). OpenTofu ≥ 1.7 obrigatório para
+`-exclude`.
+
+**Opção A (preferida) — `--exclude` no destroy** (OpenTofu ≥ 1.7):
+
+```bash
+# 1. Destrói TUDO menos o IP. Restante das resources e data sources que
+#    dependem do VNIC do k8s-host serão destruídas; o IP fica em state
+#    mas sem private_ip_id atrelado a um VNIC vivo (estado AVAILABLE no OCI).
+tofu destroy -exclude=oci_core_public_ip.k8s_host
+
+# 2. Apply normal recria as VMs; Tofu UPDATE o `private_ip_id` do IP
+#    para apontar para o VNIC primário da nova k8s-host — mesma OCID
+#    de IP, novo VNIC anexado.
 tofu apply
 ```
+
+Combine com `lifecycle { prevent_destroy = true }` no resource do IP se
+quiser uma trava extra contra destroy acidental sem `-exclude`:
+
+```hcl
+resource "oci_core_public_ip" "k8s_host" {
+  # ...
+  lifecycle { prevent_destroy = true }
+}
+```
+
+> ⚠️ Com `prevent_destroy`, `tofu destroy` SEM `-exclude=...` falha com
+> `Instance cannot be destroyed`. Não é "exclusão automática" — apenas
+> aborta o destroy se você esquecer do `-exclude`.
+
+**Opção B — `state rm` + `import` (compatível com OpenTofu < 1.7)**:
+
+```bash
+# 1. Salvar OCID atual do IP antes de mexer
+OLD_IP_OCID=$(tofu output -raw public_ip_ocid 2>/dev/null || tofu state show oci_core_public_ip.k8s_host | awk '/^[[:space:]]*id[[:space:]]/{gsub(/"/,""); print $3}')
+echo "IP a preservar: $OLD_IP_OCID"
+
+# 2. Remover IP do state — fica órfão (vivo na OCI, fora do tracking Tofu)
+tofu state rm oci_core_public_ip.k8s_host
+
+# 3. Destroy normal (não toca no IP porque ele não está mais no state)
+tofu destroy
+
+# 4. CRÍTICO: importar o IP de volta ao state ANTES do próximo apply.
+#    Se rodar `apply` direto, Tofu aloca IP novo (recurso declarado no .tf).
+tofu import oci_core_public_ip.k8s_host "$OLD_IP_OCID"
+
+# 5. Apply — Tofu já reconhece o IP, atualiza private_ip_id para o novo VNIC
+tofu apply
+```
+
 
 ## Bridge para os charts Helm
 
