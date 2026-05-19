@@ -52,38 +52,41 @@ ssh_authorized_keys = <<-EOT
 EOT
 
 # Perfil de capacidade A1.Flex:
-#   - "poc_arm" (default, RECOMENDADO): 3 OCPU / 16 GB — cabe Always Free, $0/mês
+#   - "poc_arm" (default, RECOMENDADO): 3 OCPU / 16 GB — cabe Always Free A1
+#     (válido em qualquer região com A1, INCLUSIVE não-home), custo $0/mês
 #   - "hml_arm": 6 OCPU / 40 GB — EXTRAPOLA Always Free, cobra ~$25/mês de A1 paga
 # Mudar e aplicar `tofu apply` REBOOTA as VMs.
 profile = "poc_arm"
 
-# Tamanho dos 4 block volumes do data-host. Defaults somam 150 GB com
-# alocação priorizando MinIO (logs + artefatos). 50 GB de folga sob o
-# limite Always Free de 200 GB. Folga serve para:
-#   1. Crescer um volume in-place quando o serviço precisar (até 200 GB
-#      total ainda fica grátis).
-#   2. Provisionar volume novo para serviço futuro sem precisar reduzir os
-#      existentes (reduzir NÃO é suportado pela OCI — só via destroy+recreate).
-# Aumentar acima de 200 GB total passa a cobrar ~$0.0085/GB-extra/mês.
-# Pós-apply, rodar `growpart` + `resize2fs` no data-host para o FS reconhecer.
+# Tamanho dos 4 block volumes do data-host. OCI exige mínimo de 50 GB por
+# volume — defaults usam exato 4×50 = 200 GB. Limites e custo:
 #
-# Distribuição esperada na operação:
-#   postgres = 15 GB  → base do app fica em ~2 GB durante testes; 15 GB cobre
-#                       WAL + índices + vacuum bloat com folga de 7x.
-#   kafka    = 15 GB  → event topics curtos (commands/events de domínio);
-#                       logs de aplicação NÃO passam por Kafka.
-#   minio    = 110 GB → bulk de logs da plataforma + artefatos (uploads de
-#                       candidatos, exports). Sem retention configurada, este
-#                       é o primeiro a encher — definir lifecycle policy no
-#                       bucket de logs antes de produção real.
-#   vault    = 10 GB  → secrets do app, KV store; nunca grande.
+#   1. Always Free Block Volume (200 GB total) é amarrado à HOME REGION da
+#      tenancy. A unifesspa-edu-br tem home = sa-saopaulo-1 (GRU), então
+#      em IAD os volumes saem em PAYG normal: $0.0255/GB-mês (VPU 0).
+#      Custo estimado dos defaults: 200 GB × $0.0255 = ~$5.10/mês.
+#   2. Reduzir abaixo de 50 GB NÃO é possível — `CreateVolume` rejeita.
+#   3. Aumentar é in-place online (`tofu apply` chama UpdateVolume); pós-apply,
+#      rodar `growpart` + `resize2fs` no data-host para o FS reconhecer.
+#
+# Distribuição (todos no mínimo de 50 GB; serviços com menos demanda real
+# desperdiçam capacidade mas não há como compactar abaixo do floor da OCI):
+#   postgres = 50 GB  → base do app fica em ~2 GB durante testes; 50 GB é
+#                       muito mais do que necessário, mas é o mínimo OCI.
+#   kafka    = 50 GB  → event topics curtos (commands/events de domínio).
+#   minio    = 50 GB  → logs + artefatos; em POC sem volume real de uso.
+#                       Para HML/PROD, considerar aumentar para 100+ GB e
+#                       configurar lifecycle policy no bucket de logs.
+#   vault    = 50 GB  → secrets do app + KV store; nunca grande em POC.
 volume_sizes_gbs = {
-  postgres = 15
-  kafka    = 15
-  minio    = 110
-  vault    = 10
+  postgres = 50
+  kafka    = 50
+  minio    = 50
+  vault    = 50
 }
 
-# 0 = Lower Cost (sem IOPS dedicado; suficiente para POC e mantém $0 dentro
-# do Always Free). 10 = Balanced (cobra). Manter 0 para o lab.
+# 0 = Lower Cost (sem IOPS dedicado, $0.0255/GB-mês PAYG); 10 = Balanced
+# ($0.0425/GB-mês PAYG). Manter 0 no lab — IAD não tem Always Free Block
+# Volume (home = GRU), então o tier afeta custo direto. Em POC os volumes
+# não precisam de IOPS dedicado.
 volume_vpus_per_gb = 0

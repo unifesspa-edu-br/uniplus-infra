@@ -8,9 +8,10 @@ migração do lab de GRU/E5 para IAD/A1 antes do trial OCI expirar em
 2026-06-03).
 
 Cobertura: VCN (10.1.0.0/16), 2 subnets, IGW, NAT GW, 2 route tables, 2
-security lists, 2 VMs A1.Flex (k8s-host + data-host), 4 block volumes ≤200 GB
-total, Reserved Public IP, 11 DNS records sob `iad-arm.portaluni.com.br`,
-KMS Vault + Master Encryption Key, Dynamic Group, IAM Policy.
+security lists, 2 VMs A1.Flex (k8s-host + data-host), 4 block volumes
+(4×50 GB = 200 GB total — 50 GB é o mínimo da OCI), Reserved Public IP,
+11 DNS records sob `iad-arm.portaluni.com.br`, KMS Vault + Master Encryption
+Key, Dynamic Group, IAM Policy.
 
 > **Paralelo a `provisioning/oci/standalone/`:** este módulo NÃO substitui o
 > lab GRU enquanto a migração não completar. Os dois coexistem durante a
@@ -28,10 +29,27 @@ KMS Vault + Master Encryption Key, Dynamic Group, IAM Policy.
 | Imagem | Ubuntu 24.04 LTS x86_64 | Ubuntu 24.04 LTS **aarch64** |
 | Profile default | `poc` (3 OCPU / 16 GB E5) | `poc_arm` (3 OCPU / 16 GB A1) |
 | VCN CIDR | 10.0.0.0/16 | 10.1.0.0/16 |
-| Block volumes | 550 GB total (postgres 200 + kafka 100 + minio 200 + vault 50) | 150 GB total (postgres 15 + kafka 15 + minio 110 + vault 10) — prioriza MinIO para logs; 50 GB de folga sob o limite Always Free de 200 GB |
+| Block volumes | 550 GB total (postgres 200 + kafka 100 + minio 200 + vault 50) | 200 GB total (4×50, mínimo OCI) — Always Free Block Volume é só na home region (GRU); em IAD os volumes são PAYG ~$5/mês |
 | Tag `uniplus_environment` | `standalone` | `iad-arm` |
 | DNS subdomínio | `*.standalone.portaluni.com.br` | `*.iad-arm.portaluni.com.br` |
-| Custo (PAYG estimado) | ~$108/mês | ~$0-3/mês (compute + storage Always Free) |
+| Custo (PAYG estimado) | ~$108/mês | **~$42/mês** (detalhamento abaixo) |
+
+### Detalhamento do custo IAD
+
+| Recurso | Custo/mês | Observação |
+|---|---|---|
+| Compute A1 (3 OCPU / 16 GB) | **$0** | Always Free A1 vale em qualquer região com A1, independente da home region |
+| Block volumes (4×50 GB = 200 GB, VPU 0) | **~$5,10** | Always Free Block Volume é **amarrado à home region** (GRU). IAD é PAYG ~$0,0255/GB-mês |
+| Boot volumes (2× ~47 GB ≈ 94 GB) | **~$2,40** | Mesma regra dos block volumes |
+| NAT Gateway | **~$33** | Cobrado mesmo em Always Free; eliminação é follow-up |
+| **Total** | **~$40-42/mês** | Economia vs GRU (~$108): ~$66/mês (~61%) |
+
+> A premissa original do Epic #317 era $0-3/mês em IAD assumindo Always Free
+> total. A documentação da Oracle confirma que o **Always Free Block Volume é
+> regional (home region only)** — a tenancy unifesspa-edu-br tem home em
+> sa-saopaulo-1 (GRU). A migração ainda compensa pelo compute A1 grátis,
+> mas a redução real é ~61%, não ~97%. Story #366 (ajuste do Budget OCI)
+> precisa revisar a meta de USD 10/mês para algo entre USD 25-50/mês.
 
 ## Pré-requisitos
 
@@ -106,8 +124,10 @@ tofu apply
 # Pós-apply, estender o FS dentro da VM:
 ssh ubuntu@<k8s-host-ip> "ssh ubuntu@10.1.2.x 'sudo growpart /dev/sdb 1 && sudo resize2fs /dev/sdb1'"
 
-# IMPORTANTE: aumentar volumes além de 200 GB total passa a cobrar
-# ~$0.0085/GB-extra/mês — verificar Budget USD 50/mês via OCI Console.
+# IMPORTANTE: block volumes em IAD são PAYG (Always Free é home-region-only,
+# = GRU para esta tenancy). Custo VPU 0: ~$0.0255/GB-mês. Cada 50 GB extras
+# = ~$1.28/mês — verificar Budget OCI via Console antes de aumentar.
+# Reduzir abaixo do mínimo de 50 GB NÃO é possível (CreateVolume rejeita).
 
 # Mudar perfil de capacidade
 $EDITOR terraform.tfvars   # profile = "hml_arm"  (cobra ~$25/mês de A1 paga)

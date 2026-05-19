@@ -74,7 +74,7 @@ variable "profile" {
 }
 
 variable "volume_sizes_gbs" {
-  description = "Tamanho em GB de cada block volume anexado ao data-host. Defaults somam 150 GB priorizando MinIO (110 GB) que recebe logs da plataforma além de artefatos. Postgres fica em 15 GB (~7.5x o teto esperado de 2 GB durante testes, cobrindo WAL + índices + vacuum bloat). Limite Always Free OCI Block Volume é 200 GB — restam 50 GB de folga para crescer in-place ou provisionar volume novo sem sair do free tier. Aumentar acima de 200 GB total passa a cobrar ~$0.0085/GB-extra/mês."
+  description = "Tamanho em GB de cada block volume anexado ao data-host. OCI rejeita volumes <50 GB no `CreateVolume` (mínimo documentado: 50 GB, máximo 32 TB, incrementos de 1 GB). Defaults distribuem 4×50 GB = 200 GB total — bate exato no teto histórico da decisão binding do Epic #317. ATENÇÃO: o Always Free Block Volume (200 GB) é amarrado à HOME REGION da tenancy (GRU, no caso da unifesspa-edu-br); volumes em IAD são cobrados em PAYG a ~$0.0255/GB-mês (VPU 0). Custo estimado em IAD: 4×50 GB = ~$5.10/mês."
   type = object({
     postgres = number
     kafka    = number
@@ -82,15 +82,15 @@ variable "volume_sizes_gbs" {
     vault    = number
   })
   default = {
-    postgres = 15
-    kafka    = 15
-    minio    = 110
-    vault    = 10
+    postgres = 50
+    kafka    = 50
+    minio    = 50
+    vault    = 50
   }
 }
 
 variable "volume_vpus_per_gb" {
-  description = "VPUs por GB nos block volumes. 0 = Lower Cost (mínimo, sem IOPS dedicado); 10 = Balanced default OCI. iad-arm usa 0 (suficiente para POC e mantém custo em zero dentro do Always Free)."
+  description = "VPUs por GB nos block volumes. 0 = Lower Cost (mínimo, sem IOPS dedicado, $0.0255/GB-mês PAYG); 10 = Balanced default OCI ($0.0425/GB-mês PAYG). iad-arm usa 0 (suficiente para POC e minimiza custo já que IAD não tem Always Free Block Volume — home region = GRU)."
   type        = number
   default     = 0
 }
