@@ -56,8 +56,9 @@ EOT
 #     Free Compute é home-region-only — para esta tenancy (home=GRU), A1 em
 #     IAD provavelmente vai PAYG (~$39/mês para 3 OCPU/16 GB). Ver gate de
 #     validação no README.md → seção "Gate de validação operacional".
-#   - "hml_arm": 6 OCPU / 40 GB — sempre cobra mesmo se Always Free aplicasse
-#     em IAD (~$50/mês PAYG).
+#   - "hml_arm": 6 OCPU / 40 GB → ~$86/mês compute em IAD (6 × $0.01/h +
+#     40 × $0.0015/h × 730h). Total com storage + NAT ~$127/mês — já
+#     ULTRAPASSA o GRU atual. Só faz sentido pós elimination do NAT GW.
 # Mudar e aplicar `tofu apply` REBOOTA as VMs.
 profile = "poc_arm"
 
