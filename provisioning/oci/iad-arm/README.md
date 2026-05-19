@@ -170,7 +170,7 @@ tofu destroy   # ⚠️ destrói TUDO, IP incluso
 tofu apply     # IP novo, diferente do anterior
 ```
 
-#### Recriar do zero PRESERVANDO o Reserved IP
+### Recriar do zero PRESERVANDO o Reserved IP
 
 Duas sequências corretas para preservar o IP entre rebuilds (a ingênua
 `tofu destroy && tofu apply` rotaciona). OpenTofu ≥ 1.7 obrigatório para
@@ -224,7 +224,6 @@ tofu import oci_core_public_ip.k8s_host "$OLD_IP_OCID"
 # 5. Apply — Tofu já reconhece o IP, atualiza private_ip_id para o novo VNIC
 tofu apply
 ```
-
 
 ## Bridge para os charts Helm
 
