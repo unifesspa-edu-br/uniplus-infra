@@ -103,6 +103,18 @@ kubePrometheusStack:
             storageClassName: standalone-local-nvme
       externalLabels:
         cluster: standalone
+      # Scrape estático do node-exporter no data-host (fora do cluster K8s).
+      # O DaemonSet do kube-prometheus-stack já cobre o k8s-host nativamente
+      # como job=node-exporter; aqui adicionamos a VM data-host com o mesmo
+      # job para que o dashboard "Node Exporter Full" (id 1860) liste as
+      # duas VMs na variável $instance sem ajustes adicionais.
+      additionalScrapeConfigs:
+        - job_name: node-exporter
+          static_configs:
+            - targets:
+                - 10.2.2.11:9100
+              labels:
+                nodename: data-host
   alertmanager:
     alertmanagerSpec:
       storage:

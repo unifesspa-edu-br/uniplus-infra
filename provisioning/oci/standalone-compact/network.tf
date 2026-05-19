@@ -206,6 +206,17 @@ resource "oci_core_security_list" "data_host" {
     }
   }
 
+  # Prometheus node-exporter (scrape from k8s-host)
+  ingress_security_rules {
+    source      = var.vcn_cidr
+    protocol    = "6"
+    description = "Prometheus node-exporter scrape"
+    tcp_options {
+      min = 9100
+      max = 9100
+    }
+  }
+
   # Path MTU Discovery
   ingress_security_rules {
     source      = "0.0.0.0/0"
