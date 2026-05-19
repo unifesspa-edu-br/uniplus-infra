@@ -45,12 +45,20 @@ resource "oci_kms_key" "unseal" {
 }
 
 resource "oci_identity_dynamic_group" "k8s_host" {
-  # IAM Dynamic Groups são tenancy-scoped: a OCI exige que o
-  # `compartment_id` aponte para a raiz da tenancy, não para um
-  # child compartment onde compute/network vivam. Apply falha com
-  # "InvalidParameter: dynamic group must be created at the tenancy
-  # level" se o operador colocar infra em child e passar o mesmo OCID
-  # aqui. `var.tenancy_ocid` é variável dedicada por isso.
+  # IAM Dynamic Groups são tenancy-scoped em duas dimensões:
+  #
+  # 1. `compartment_id` precisa apontar para a raiz da tenancy (não um
+  #    child compartment). Apply falha com "InvalidParameter: dynamic
+  #    group must be created at the tenancy level" se o operador colocar
+  #    infra em child e passar o mesmo OCID aqui. `var.tenancy_ocid` é
+  #    variável dedicada por isso.
+  #
+  # 2. A criação/alteração precisa ir contra o IAM endpoint da HOME
+  #    REGION da tenancy. Como o provider default deste módulo aponta
+  #    para us-ashburn-1 (IAD), usar `provider = oci.home_region` aqui.
+  #    Sem isso, apply em tenancy cujo home_region != IAD retorna 404
+  #    no IAM endpoint do IAD. Detalhe e refs em versions.tf.
+  provider       = oci.home_region
   compartment_id = var.tenancy_ocid
   name           = "uniplus-iad-arm-k8s-host-dg"
   description    = "Dynamic Group para o k8s-host do ambiente iad-arm — permite auto-unseal do Vault via OCI KMS"
@@ -64,6 +72,10 @@ resource "oci_identity_policy" "vault_unseal" {
   # também precisa morar no compartment raiz para que o engine IAM
   # avalie os recursos referenciados em qualquer parte da tenancy.
   # Mesmo argumento de `var.tenancy_ocid` do dynamic group acima.
+  #
+  # Idem para `provider = oci.home_region` — IAM master só aceita
+  # mutações via endpoint da home region da tenancy.
+  provider       = oci.home_region
   compartment_id = var.tenancy_ocid
   name           = "uniplus-iad-arm-vault-unseal-policy"
   description    = "Permite que o k8s-host use a chave KMS para auto-unseal do HashiCorp Vault"
