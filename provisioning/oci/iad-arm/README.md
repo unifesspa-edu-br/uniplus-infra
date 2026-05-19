@@ -57,21 +57,23 @@ Key, Dynamic Group, IAM Policy.
 
 ### Gate de validação operacional (Story #319/T1.1.3)
 
-Como a documentação Oracle é literal mas a prática da comunidade reporta A1
-cross-region funcionando sem cobrança, validar empiricamente ANTES de
-provisionar o lab completo:
+Validação parcial executada em 2026-05-19 02:03-02:11 UTC via OCI CLI:
 
-1. Após `oci compute image list` em IAD (T1.1.2), criar **1** instância A1
-   small (1 OCPU / 6 GB) no console OCI ou via `oci compute instance launch`
-2. Aguardar 30 min e checar `OCI Console → Cost Management → Cost Analysis`
-   filtrando por `Service=Compute Always Free` vs `Service=Compute`
-3. **Se cobrar PAYG**: docs estão corretas, custo do README ~$80/mês confirmado
-4. **Se aparecer como Always Free**: docs estão desatualizadas vs prática, revisar
-   README de volta para ~$42/mês e atualizar Epic #317
-5. Tear down a instância de teste antes de prosseguir com Story #329
+| Etapa | Resultado |
+|---|---|
+| `oci iam region-subscription list` | IAD já READY (subscrita) |
+| `oci compute image list --shape VM.Standard.A1.Flex` em IAD | imagem Ubuntu 24.04 aarch64 encontrada |
+| `oci compute instance launch` 1 OCPU / 1 GB em `mixQ:US-ASHBURN-AD-1` | ✓ **API aceitou sem rejeitar por home region** |
+| Instance lifecycle até `RUNNING` | ✓ ~30s, normal |
+| `oci usage-api request-summarized-usages` | inconclusivo — Usage API tem delay ~1h, dados não disponíveis no momento do teste |
 
-PAYG já ativo na tenancy desde a Feature #43, então qualquer cobrança aparece
-no billing imediatamente.
+**Achado parcial:** A doc Oracle diz literalmente `"must create in home region"` mas o API **não bloqueia** a criação em região não-home. Resta confirmar via billing se A1 em IAD é classificado como Always Free ou PAYG.
+
+**Próximo passo (Story #319/T1.1.3 ou follow-up):** repetir o teste deixando a instância rodar por ≥1h e re-query `oci usage-api` filtrando por `region=us-ashburn-1` e `service=Compute`:
+- Se aparecer com `computed-amount > 0` → PAYG confirmado, README ~$80/mês mantido
+- Se aparecer com `computed-amount = 0` ou ausente → Always Free aplica cross-region, revisar README para ~$42/mês e atualizar Epic #317
+
+PAYG já ativo na tenancy desde a Feature #43, então qualquer cobrança aparece no billing imediatamente após o flush (~1-2h).
 
 ## Pré-requisitos
 
@@ -152,7 +154,13 @@ ssh ubuntu@<k8s-host-ip> "ssh ubuntu@10.1.2.x 'sudo growpart /dev/sdb 1 && sudo 
 # Reduzir abaixo do mínimo de 50 GB NÃO é possível (CreateVolume rejeita).
 
 # Mudar perfil de capacidade
-$EDITOR terraform.tfvars   # profile = "hml_arm"  (cobra ~$25/mês de A1 paga)
+# poc_arm (default): 3 OCPU / 16 GB → ~$39/mês compute em IAD (PAYG, ver
+#                    cost table no topo do README)
+# hml_arm:           6 OCPU / 40 GB → ~$86/mês compute em IAD
+#                    (6 × $0.01/h + 40 × $0.0015/h ≈ $86.40/mês), total
+#                    com storage e NAT ~$127/mês — JÁ ULTRAPASSA o GRU
+#                    atual; só fazer sentido pós elimination do NAT GW.
+$EDITOR terraform.tfvars   # profile = "hml_arm"
 tofu apply
 
 # Recriar do zero (CUIDADO — destrutivo total: destroi VMs, volumes, VCN
