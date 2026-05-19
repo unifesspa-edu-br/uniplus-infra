@@ -1,13 +1,13 @@
 # ==============================================================================
-# 2 VMs A1.Flex Always Free em GRU
+# 2 VMs E4.Flex AMD PAYG em GRU (home region)
 #
-# Always Free A1 Compute (home region only): 4 OCPU + 24 GB total per tenancy.
-# Aloca-se 2/2 OCPU + 12/12 GB entre os 2 hosts. Mensal: ~2920 OCPU-hours
-# (limite 3000) + ~17520 GB-hours (limite 18000). Margem 2.7%.
+# Pivot ARM→AMD (2026-05-19): A1 Always Free indisponível em GRU para esta
+# tenancy; A1 PAYG em região não-home perdia o benefício free. Voltamos para
+# AMD E4.Flex (PAYG GRU) com footprint reduzido (~$9,60/mês compute total).
 #
-# Boot volumes Ubuntu 24.04 LTS aarch64 47 GB (mínimo). 2 × 47 = 94 GB.
+# Boot volumes Ubuntu 24.04 LTS x86_64 47 GB (mínimo). 2 × 47 = 94 GB.
 # Combinado com 1 block 100 GB, total = 194 GB, dentro do Always Free Block
-# Volume cap de 200 GB (também home region only).
+# Volume cap de 200 GB (home region — ainda aplica para esta tenancy em GRU).
 # ==============================================================================
 
 resource "oci_core_instance" "k8s_host" {
@@ -15,7 +15,7 @@ resource "oci_core_instance" "k8s_host" {
   availability_domain = var.availability_domain
   fault_domain        = var.fault_domain
   display_name        = "uniplus-compact-k8s-host"
-  shape               = "VM.Standard.A1.Flex"
+  shape               = "VM.Standard.E4.Flex"
 
   shape_config {
     ocpus         = local.shapes.k8s_host.ocpus
@@ -51,7 +51,7 @@ resource "oci_core_instance" "data_host" {
   availability_domain = var.availability_domain
   fault_domain        = var.fault_domain
   display_name        = "uniplus-compact-data-host"
-  shape               = "VM.Standard.A1.Flex"
+  shape               = "VM.Standard.E4.Flex"
 
   shape_config {
     ocpus         = local.shapes.data_host.ocpus
