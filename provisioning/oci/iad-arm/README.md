@@ -69,11 +69,35 @@ Validação parcial executada em 2026-05-19 02:03-02:11 UTC via OCI CLI:
 
 **Achado parcial:** A doc Oracle diz literalmente `"must create in home region"` mas o API **não bloqueia** a criação em região não-home. Resta confirmar via billing se A1 em IAD é classificado como Always Free ou PAYG.
 
-**Próximo passo (Story #319/T1.1.3 ou follow-up):** repetir o teste deixando a instância rodar por ≥1h e re-query `oci usage-api` filtrando por `region=us-ashburn-1` e `service=Compute`:
-- Se aparecer com `computed-amount > 0` → PAYG confirmado, README ~$80/mês mantido
-- Se aparecer com `computed-amount = 0` ou ausente → Always Free aplica cross-region, revisar README para ~$42/mês e atualizar Epic #317
+**Próximo passo (Story #319/T1.1.3 ou follow-up):** repetir o teste deixando a instância rodar por ≥1h, depois consultar o billing report. Há duas formas equivalentes de identificar Always Free na billing OCI (mecanismo confirmado via inspeção do report de GRU 18-19/05):
 
-PAYG já ativo na tenancy desde a Feature #43, então qualquer cobrança aparece no billing imediatamente após o flush (~1-2h).
+1. **Pelo `product/resource` SKU**: SKUs Always Free têm sufixo `_FREE`. Exemplos do report de GRU:
+   - `PIC_BLOCK_STORAGE_STANDARD_FREE` → Always Free
+   - `PIC_STANDARD_STORAGE` → PAYG
+
+2. **Pela tag `orcl-cloud.free-tier-retained`**: `true` indica linha contada como Always Free; vazio indica PAYG.
+
+Comando para consultar via CLI:
+
+```bash
+# Baixar report mais recente (CSV horário) via Console:
+# OCI Console → Billing → Cost Analysis → Reports → Generate Usage Report
+# ou usar oci usage-api request-summarized-usages (delay ~1h):
+oci usage-api usage-summary request-summarized-usages \
+  --tenant-id "$TENANCY" \
+  --time-usage-started "2026-05-19T02:00:00Z" \
+  --time-usage-ended   "2026-05-19T03:00:00Z" \
+  --granularity HOURLY --query-type COST \
+  --group-by '["service","skuName","region"]' \
+  | jq '.data.items[] | select(.region=="us-ashburn-1")'
+```
+
+Veredictos possíveis:
+
+- SKU `PIC_COMPUTE_A1_FREE` (ou tag `free-tier-retained=true`) para A1 em IAD → **Always Free cross-region funciona** → reverter README para ~$42/mês e atualizar Epic #317
+- SKU `PIC_COMPUTE_VM_STANDARD_A1_FLEX` (sem `_FREE`, sem tag) → **PAYG confirmado** → README ~$80/mês mantido
+
+PAYG já ativo na tenancy desde a Feature #43, então qualquer cobrança aparece no billing após o flush (~1-2h via usage-api, ~24h via Usage Report CSV diário).
 
 ## Pré-requisitos
 
