@@ -1124,10 +1124,13 @@ EOF
     if $DRY_RUN; then
         echo "[DRY-RUN] Escreveria $redis_conf"
     else
-        sudo tee "$redis_conf" >/dev/null <<CONF
+        # Heredoc quoted preserva literal (backticks no comentário não
+        # disparam command substitution). __DATA_HOST_IP__ é placeholder
+        # substituído por sed depois.
+        sudo tee "$redis_conf" >/dev/null <<'CONF'
 # Listeners — bind explícito (protected-mode default `yes` em 7+ exige
 # bind + auth; sem bind o redis recusa conexões não-loopback)
-bind $DATA_HOST_IP 127.0.0.1 -::1
+bind __DATA_HOST_IP__ 127.0.0.1 -::1
 port 6379
 protected-mode yes
 
@@ -1152,6 +1155,7 @@ dir /data
 logfile ""
 loglevel notice
 CONF
+        sudo sed -i "s|__DATA_HOST_IP__|$DATA_HOST_IP|g" "$redis_conf"
         sudo chown root:root "$redis_conf"
         sudo chmod 644 "$redis_conf"
     fi
@@ -1338,7 +1342,7 @@ EOF
     if $DRY_RUN; then
         echo "[DRY-RUN] Escreveria $unit_file"
     else
-        sudo tee "$unit_file" >/dev/null <<UNIT
+        sudo tee "$unit_file" >/dev/null <<'UNIT'
 [Unit]
 Description=Uni+ MinIO 2025-09 (standalone data-host)
 Documentation=https://github.com/unifesspa-edu-br/uniplus-infra/blob/main/docs/RUNBOOKS.md
@@ -1364,13 +1368,14 @@ ExecStart=/usr/bin/docker run --rm --name uniplus-minio \
   -e MINIO_GID \
   -v /var/lib/uniplus/minio/data:/data \
   quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z \
-  server --address $DATA_HOST_IP:9000 --console-address $DATA_HOST_IP:9001 /data
+  server --address __DATA_HOST_IP__:9000 --console-address __DATA_HOST_IP__:9001 /data
 
 ExecStop=/usr/bin/docker stop -t 30 uniplus-minio
 
 [Install]
 WantedBy=multi-user.target
 UNIT
+        sudo sed -i "s|__DATA_HOST_IP__|$DATA_HOST_IP|g" "$unit_file"
     fi
 
     run "sudo systemctl daemon-reload"
@@ -1607,7 +1612,7 @@ EOF
         # OpenSSL config inline com SAN multi-tipo (DNS + IP). Self-signed →
         # CA = cert (cadeia de 1 nível); ca.crt é cópia do server.crt.
         local ssl_cnf="$certs_dir/openssl.cnf"
-        sudo tee "$ssl_cnf" >/dev/null <<CNF
+        sudo tee "$ssl_cnf" >/dev/null <<'CNF'
 [req]
 distinguished_name = req_distinguished_name
 prompt = no
@@ -1625,9 +1630,10 @@ subjectAltName = @alt_names
 [alt_names]
 DNS.1 = kafka.standalone.portaluni.com.br
 DNS.2 = localhost
-IP.1 = $DATA_HOST_IP
+IP.1 = __DATA_HOST_IP__
 IP.2 = 127.0.0.1
 CNF
+        sudo sed -i "s|__DATA_HOST_IP__|$DATA_HOST_IP|g" "$ssl_cnf"
         sudo openssl req -x509 -newkey rsa:2048 \
             -keyout "$certs_dir/server.key" \
             -out "$certs_dir/server.crt" \
