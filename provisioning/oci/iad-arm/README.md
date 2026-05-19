@@ -197,10 +197,10 @@ tofu apply     # IP novo, diferente do anterior
 ### Recriar do zero PRESERVANDO o Reserved IP
 
 Duas sequências corretas para preservar o IP entre rebuilds (a ingênua
-`tofu destroy && tofu apply` rotaciona). OpenTofu ≥ 1.7 obrigatório para
+`tofu destroy && tofu apply` rotaciona). OpenTofu ≥ 1.9 obrigatório para
 `-exclude`.
 
-**Opção A (preferida) — `--exclude` no destroy** (OpenTofu ≥ 1.7):
+**Opção A (preferida) — `--exclude` no destroy** (OpenTofu ≥ 1.9):
 
 ```bash
 # 1. Destrói TUDO menos o IP. Restante das resources e data sources que
@@ -228,7 +228,7 @@ resource "oci_core_public_ip" "k8s_host" {
 > `Instance cannot be destroyed`. Não é "exclusão automática" — apenas
 > aborta o destroy se você esquecer do `-exclude`.
 
-**Opção B — `state rm` + `import` (compatível com OpenTofu < 1.7)**:
+**Opção B — `state rm` + `import` (compatível com OpenTofu < 1.9)**:
 
 ```bash
 # 1. Salvar OCID atual do IP antes de mexer
