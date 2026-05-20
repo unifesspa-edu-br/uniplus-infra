@@ -159,7 +159,7 @@ otelCollector:
       # OTLP do Loki — Loki 3.x suporta OTLP nativo em /otlp/v1/logs).
       #
       # Endpoint via env var `${env:LOKI_OTLP_ENDPOINT}` — populado pelo
-      # `extraEnvs` do environment (ver `environments/standalone/values.yaml`).
+      # `extraEnvs` do environment (ver `environments/standalone-compact/values.yaml`).
       # Não usa `{{ }}` Helm template aqui porque `alternateConfig` é renderizado
       # com `tpl` no scope do subchart, sem visibilidade de `.Values` do parent
       # wrapper. Env var injection no DaemonSet contorna esse limite e ainda

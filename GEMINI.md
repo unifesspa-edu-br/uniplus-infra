@@ -42,7 +42,7 @@ make help              # lista atualizada de alvos
 
 ### Bootstrap do standalone-compact
 
-O cloud-init das VMs em `provisioning/oci/standalone-compact/` chama o `bootstrap-standalone.sh` automaticamente. Para reexecutar manualmente:
+Após o `tofu apply` em `provisioning/oci/standalone-compact/`, rode o `bootstrap-standalone.sh` **manualmente via SSH** em cada VM (sem cloud-init ainda — issue #387):
 
 ```bash
 ./scripts/bootstrap-standalone.sh --role=standalone-k8s [--dry-run]

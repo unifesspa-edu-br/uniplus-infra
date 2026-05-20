@@ -52,7 +52,7 @@ helm dependency update platform/observability/otelcol
 helm lint platform/observability/otelcol
 helm template platform-observability-otelcol-uniplus-standalone \
   platform/observability/otelcol \
-  -f environments/standalone/values.yaml \
+  -f environments/standalone-compact/values.yaml \
   --namespace observability-otelcol
 ```
 
@@ -61,7 +61,7 @@ Esperado: 7 recursos (ServiceAccount, ConfigMap, ClusterRole, ClusterRoleBinding
 ## Smoke pós-sync (standalone)
 
 ```bash
-ssh ubuntu@164.152.53.29
+ssh ubuntu@137.131.131.6
 sudo k3s kubectl -n observability-otelcol get pods                 # 1/1 Running
 
 # Push de log via OTLP HTTP (de outro pod no NS uniplus)
@@ -75,7 +75,7 @@ sudo k3s kubectl -n uniplus run otel-smoke --rm -i --restart=Never \
 
 ## Pendências (próximos PRs)
 
-- **Datasources Loki + Tempo no Grafana** — habilitar via override em `environments/standalone/values.yaml` no bloco `grafana.datasources` (Fase 3 do plano).
+- **Datasources Loki + Tempo no Grafana** — habilitar via override em `environments/standalone-compact/values.yaml` no bloco `grafana.datasources` (Fase 3 do plano).
 - **MetricsGenerator + ServiceMonitor** — quando o Prometheus consumidor estiver pronto.
 - **Pipeline `metrics`** — se algum app passar a expor métricas só via OTLP.
 

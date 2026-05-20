@@ -4,7 +4,7 @@ Scripts de operação do ambiente `standalone-compact` (1 cluster K3s + 1 data-h
 
 | Script | Função |
 |--------|--------|
-| `bootstrap-standalone.sh` | Provisiona o ambiente standalone OCI (roles `standalone-k8s` e `standalone-data`); chamado pelo cloud-init das VMs |
+| `bootstrap-standalone.sh` | Provisiona o ambiente standalone OCI (roles `standalone-k8s` e `standalone-data`); executado manualmente via SSH após o `tofu apply` |
 | `validate-standalone.sh` | Valida saúde do ambiente (k8s-host + data-host) — usado após o bootstrap |
 | `validate-cluster.sh` | Smoke pós-bootstrap focado no K3s (Pods Running, ArgoCD Synced, IngressRoute respondendo) |
 | `resize-standalone-oci.sh` | Hot-resize dos shapes (OCPU + RAM) das 2 VMs OCI; perfis pré-definidos para POC/HML |
@@ -18,7 +18,10 @@ Scripts de operação do ambiente `standalone-compact` (1 cluster K3s + 1 data-h
 
 Topologia: 1 `k8s-host` (K3s + Helm + ArgoCD) + 1 `data-host` (Docker + volumes LVM para Postgres, Kafka, MinIO, Vault e Redis).
 
-O `bootstrap-standalone.sh` é executado **automaticamente pelo cloud-init** das VMs durante o `tofu apply` em `provisioning/oci/standalone-compact/`. Para reexecutar manualmente:
+Após o `tofu apply` em `provisioning/oci/standalone-compact/`, o
+`bootstrap-standalone.sh` é executado **manualmente via SSH** em cada VM (o
+`compute.tf` ainda não injeta `user_data`/cloud-init — automatizar isso é a
+issue #387). Copie o script para a VM (ou faça `git clone` do repo) e rode:
 
 ```bash
 # No k8s-host — K3s + Helm + ArgoCD

@@ -38,4 +38,4 @@ Se a latência de `PA1` inviabilizar quorum KRaft saudável, a alternativa aceit
 
 ## Validação
 
-Veja [docs/VALIDATION-PLAN.md](../../docs/VALIDATION-PLAN.md) Cenário 6.
+Validação atual (standalone-compact): smoke pós-bootstrap em `scripts/validate-standalone.sh` + relatórios em `docs/validacao/`. O Cenário 6 (3-DC, replicação entre brokers cross-DC) era do plano 3-DC removido em 2026-05-19 e ainda não foi executado.

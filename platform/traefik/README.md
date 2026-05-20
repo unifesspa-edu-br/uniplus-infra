@@ -4,7 +4,7 @@ Traefik IngressController v3 — entrypoints HTTP/HTTPS, IngressRoute CRDs, midd
 
 ## Visão geral
 
-Wrapper do chart oficial [traefik/traefik-helm-chart](https://github.com/traefik/traefik-helm-chart). Roda em cada cluster (lab-{sp1,sp2}, prod-{sp1,sp2}, standalone). Em PA1 pode ficar desligado — não há ingress público lá.
+Wrapper do chart oficial [traefik/traefik-helm-chart](https://github.com/traefik/traefik-helm-chart). Roda no cluster do ambiente operacional (`standalone-compact`); o design multi-cluster permanece válido para o modelo 3-DC quando revivido.
 
 **Upstream:** https://github.com/traefik/traefik-helm-chart
 **Versão upstream empacotada:** v3.6.15 (chart 39.0.9)

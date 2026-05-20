@@ -16,7 +16,7 @@ Browser (admin Uni+)
                  ├── OIDC client `kafka-ui` no realm `uniplus` (confidential)
                  ├── SCRAM admin via ESO (`secret/standalone/kafka/admin`)
                  ├── CA cert PEM via projected volume (mesmo Secret ESO)
-                 └── conexão SASL_SSL → 10.0.2.87:9092
+                 └── conexão SASL_SSL → 10.2.2.11:9092
 ```
 
 ## Permissões via groups Keycloak → roles AKHQ
@@ -39,7 +39,7 @@ Sem esses 3, ESOs ficam em `SecretNotFound` e o pod entra em `CreateContainerCon
 
 ## Configuração mínima para habilitar
 
-Em `environments/standalone/values.yaml`:
+Em `environments/standalone-compact/values.yaml`:
 
 ```yaml
 kafkaUi:

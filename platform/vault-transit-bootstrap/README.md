@@ -27,7 +27,7 @@ token do Vault). Isso é deliberadamente excessivo para este escopo
    uma policy `vault-transit-bootstrap-policy` mínima e emitir um token bootstrap
    periódico vinculado.
 2. O token bootstrap é custodiado em `secret/standalone/vault-transit-bootstrap/token`.
-3. Override em `environments/standalone/values.yaml`:
+3. Override em `environments/standalone-compact/values.yaml`:
    `vaultTransitBootstrap.externalSecret.vaultPath` aponta para o novo path.
 4. Root token volta para offline-only.
 

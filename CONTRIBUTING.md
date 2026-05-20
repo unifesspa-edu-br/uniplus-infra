@@ -89,7 +89,7 @@ Descrição do PR deve incluir:
 
 ### 6. Aguarde revisão
 
-Pelo menos 1 aprovação do time CTIC é obrigatória. Mudanças em produção (`environments/prod-*`) requerem 2 aprovações.
+Pelo menos 1 aprovação do time CTIC é obrigatória. Mudanças no ambiente operacional (`environments/standalone-compact/`, `provisioning/oci/standalone-compact/`) ou no bootstrap exigem atenção redobrada do revisor e plano de rollback no PR. Quando o modelo 3-DC for revivido, mudanças em produção voltam a requerer 2 aprovações.
 
 ## Padrões de código
 

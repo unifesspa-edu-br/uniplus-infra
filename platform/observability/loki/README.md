@@ -10,7 +10,7 @@ em modo `SingleBinary` com storage S3-compatible (MinIO em standalone).
 - **Modo**: `SingleBinary` (1 réplica, replication_factor 1) — apropriado para
   single-cluster com baixa volumetria (standalone POC, lab).
 - **Storage**: S3-compatible. Em standalone aponta para MinIO local
-  (`10.0.2.87:9000`, bucket `loki-chunks`, credencial dedicada `loki-svc`
+  (`10.2.2.11:9000`, bucket `loki-chunks`, credencial dedicada `loki-svc`
   custodiada em Vault `secret/standalone/minio/loki`).
 - **Schema**: TSDB v13 com índice `loki_index_` período 24h.
 - **Retention**: 168h (7 dias) em standalone, ativada via compactor.
@@ -73,14 +73,14 @@ helm dependency update platform/observability/loki
 helm lint platform/observability/loki
 helm template platform-observability-loki-uniplus-standalone \
   platform/observability/loki \
-  -f environments/standalone/values.yaml \
+  -f environments/standalone-compact/values.yaml \
   --namespace observability-loki
 ```
 
 ## Smoke pós-sync (standalone)
 
 ```bash
-ssh ubuntu@164.152.53.29
+ssh ubuntu@137.131.131.6
 sudo k3s kubectl -n observability-loki get pods           # 1/1 Running
 sudo k3s kubectl -n observability-loki port-forward svc/platform-observability-loki-uniplus-standalone 3100:3100 &
 
@@ -100,7 +100,7 @@ curl -sG http://127.0.0.1:3100/loki/api/v1/query_range \
 - **#30** — OTel Collector com `filelog` receiver para popular Loki com logs
   do `containerd` automaticamente.
 - **Datasource Loki no Grafana** — habilitar via override em
-  `environments/standalone/values.yaml` no bloco `grafana.datasources` (PR
+  `environments/standalone-compact/values.yaml` no bloco `grafana.datasources` (PR
   separado da Fase 3 do plano de observability).
 - **ServiceMonitor + alerts** — quando o Prometheus consumidor estiver pronto
   para scrape de métricas internas do Loki.

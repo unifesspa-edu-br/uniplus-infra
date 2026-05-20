@@ -41,12 +41,10 @@ Closes #
 
 ## Ambientes afetados
 
-- [ ] lab-sp1
-- [ ] lab-sp2
-- [ ] lab-pa1
-- [ ] prod-sp1
-- [ ] prod-sp2
-- [ ] prod-pa1
+- [ ] standalone-compact
+
+<!-- Único ambiente operacional. Os environments do modelo 3-DC (lab-*, prod-*)
+     serão adicionados aqui quando esse modelo for revivido. -->
 
 ## Notas para revisores
 

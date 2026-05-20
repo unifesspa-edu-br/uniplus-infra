@@ -2,7 +2,7 @@ apiVersion: v2
 name: minio-console-proxy
 description: |
   Proxy K8s para o MinIO Console externo (rodando como systemd no data-host
-  em 10.0.2.87:9001). Apenas Service ExternalName + IngressRoute Traefik +
+  em 10.2.2.11:9001). Apenas Service ExternalName + IngressRoute Traefik +
   Certificate cert-manager — sem workload K8s.
 
   MinIO Console tem login próprio (root user/pwd custodiado no Vault em

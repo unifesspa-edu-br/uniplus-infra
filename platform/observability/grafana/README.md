@@ -4,7 +4,7 @@ UI para visualização de métricas (Prometheus), logs (Loki) e traces (Tempo).
 
 ## Visão geral
 
-Wrapper do chart oficial [grafana/grafana](https://github.com/grafana/helm-charts/tree/main/charts/grafana). Roda em cada cluster (lab-{sp1,sp2}, prod-{sp1,sp2}, standalone). Em PA1 fica desligado por default — PA1 hospeda agregação separada.
+Wrapper do chart oficial [grafana/grafana](https://github.com/grafana/helm-charts/tree/main/charts/grafana). Roda no cluster do ambiente operacional (`standalone-compact`); o design multi-cluster permanece válido para o modelo 3-DC quando revivido. Em PA1 fica desligado por default — PA1 hospeda agregação separada.
 
 Vem como chart separado (não bundled no `kube-prometheus-stack`) para facilitar versionamento independente e desligar Grafana em envs sem UI (PA1, ou qualquer cluster onde apenas a coleta importe).
 
@@ -57,7 +57,7 @@ url: http://platform-observability-prometheus-CLUSTER-prometheus.observability-p
 Isso porque o ApplicationSet usa o cluster name no release (`{{.name}}` em `argocd/applicationset.yaml`) e o Service do Prometheus leva esse nome. Cada environment DEVE sobrescrever:
 
 ```yaml
-# environments/standalone/values.yaml
+# environments/standalone-compact/values.yaml
 grafana:
   datasources:
     datasources.yaml:
@@ -125,7 +125,7 @@ grafana:
 PVC default 5Gi (sqlite interno do Grafana). Em standalone, `storageClassName` herda da `standalone-local-nvme` quando configurado em env values:
 
 ```yaml
-# environments/standalone/values.yaml
+# environments/standalone-compact/values.yaml
 grafana:
   persistence:
     storageClassName: standalone-local-nvme

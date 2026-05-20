@@ -1,36 +1,25 @@
 # OpenTofu — standalone-compact OCI
 
-Lab Uni+ em **`sa-saopaulo-1` (GRU)** sobre **`VM.Standard.A1.Flex` Always Free**
-(ARM Ampere), topologia compacta para custo zero recorrente.
+Provisiona o ambiente operacional do Uni+ em **`sa-saopaulo-1` (GRU, home region)**
+sobre **`VM.Standard.E4.Flex` AMD x86_64** (PAYG), topologia compacta de 2 VMs.
 
-## Diferenças vs `provisioning/oci/standalone/`
+## Perfil
 
-| Atributo | standalone (legado) | standalone-compact |
-|---|---|---|
-| Região | `sa-saopaulo-1` | `sa-saopaulo-1` (igual, home region) |
-| Shape | `VM.Standard.E5.Flex` AMD x86 | **`VM.Standard.A1.Flex` ARM Ampere** |
-| Profile | poc=3 OCPU/16 GB total | **4 OCPU / 24 GB total** (limite Always Free A1) |
-| Imagem | Ubuntu 24.04 x86_64 | **Ubuntu 24.04 aarch64** |
-| VCN CIDR | 10.0.0.0/16 | **10.2.0.0/16** |
-| Subnets | public + private | **2 públicas** (split por SL, sem NAT) |
-| NAT Gateway | sim (~$33/mês) | **NÃO** (eliminado) |
-| Block volumes | 4 distintos, 550 GB total | **1 volume 100 GB no data-host** |
-| Tag `uniplus_environment` | `standalone` | `standalone-compact` |
-| DNS subdomínio | `*.standalone.portaluni.com.br` | `*.compact.portaluni.com.br` |
-| **Custo mensal estimado** | ~$108/mês (era ativo) ou ~$17/mês (dormante) | **~$0/mês** |
+| Atributo | Valor |
+|---|---|
+| Região | `sa-saopaulo-1` (home region — preserva Block Volume Always Free) |
+| Shape | `VM.Standard.E4.Flex` AMD x86_64 (PAYG) |
+| k8s-host | 2 OCPU / 8 GB (escalável a 12 GB via live-resize) + boot 47 GB + Reserved Public IP |
+| data-host | 1 OCPU / 4 GB + boot 47 GB + 1 block 100 GB · IP privado fixo `10.2.2.11` |
+| VCN | `10.2.0.0/16` — subnet k8s `10.2.1.0/24`, subnet data `10.2.2.0/24` |
+| NAT Gateway | não (subnets públicas + Security List restritiva no data-host) |
+| DNS | `*.standalone.portaluni.com.br` |
+| **Custo mensal** | **~$9,60 PAYG** (3 OCPU + 12 GB) + $0 storage (boot+block ≤ 200 GB Always Free) |
 
-## Por que custo zero
-
-Always Free OCI **em home region** cobre TUDO:
-
-- **A1 Compute**: 3000 OCPU-hours/mês + 18000 GB-hours/mês. 4 OCPU × 730h = 2920 ✓, 24 GB × 730h = 17520 ✓
-- **Block Volume**: 200 GB total combinando boot + block. 2 × 47 boot + 100 block = 194 GB ✓
-- **Internet Gateway**: free
-- **Reserved Public IP**: free quando attached a VM running
-- **Egress 10 TB/mês**: free
-- **KMS Vault**: 20 keys + 10k crypto ops/mês free
-- **DNS**: PAYG ~$0.04/mês (10 RRSets, ínfimo)
-- **NAT Gateway**: removido (eliminação do item mais caro do lab anterior)
+> **Por que AMD e não A1 Always Free?** A1 Always Free não está disponível em GRU
+> para esta tenancy, e A1 PAYG em região não-home perde o benefício free. O pivot
+> para E4.Flex AMD em GRU (2026-05-19) mantém o Block Volume Always Free e fica em
+> ~$9,60/mês de compute. Histórico em `CHANGELOG.md`.
 
 ## Topologia
 
@@ -38,33 +27,32 @@ Always Free OCI **em home region** cobre TUDO:
                 ┌─── Internet ────┐
                        │
                 ┌──────▼──────┐
-                │     IGW     │  Always Free
+                │     IGW     │
                 └──────┬──────┘
                        │
               ┌────────▼─────────────────────┐
               │ VCN  10.2.0.0/16              │
               │                               │
               │  subnet k8s 10.2.1.0/24       │
-              │   ┌─────────────────────┐     │
-              │   │ k8s-host (Reserved)│     │  HTTP/HTTPS/SSH público
-              │   │ A1 2 OCPU / 12 GB  │     │
-              │   └────────┬───────────┘     │
-              │            │ servicos        │
-              │            ▼ via VCN         │
+              │   ┌──────────────────────┐    │
+              │   │ k8s-host (Reserved IP)│   │  HTTP/HTTPS/SSH público
+              │   │ E4.Flex 2 OCPU / 8 GB │   │  K3s + Helm + ArgoCD
+              │   └────────┬─────────────┘    │
+              │            │ serviços via VCN │
+              │            ▼                  │
               │  subnet data 10.2.2.0/24      │
-              │   ┌─────────────────────┐     │
-              │   │ data-host (efêmero)│     │  Postgres/Kafka/MinIO/Vault/Redis
-              │   │ A1 2 OCPU / 12 GB  │     │  SL bloqueia ingress externo
-              │   │ + 100 GB block     │     │
-              │   └─────────────────────┘     │
+              │   ┌──────────────────────┐    │
+              │   │ data-host (10.2.2.11) │   │  Postgres/Kafka/MinIO/Vault/Redis
+              │   │ E4.Flex 1 OCPU / 4 GB │   │  SL bloqueia ingress externo
+              │   │ + 100 GB block (LVM)  │   │
+              │   └──────────────────────┘    │
               └───────────────────────────────┘
 ```
 
 ## Pré-requisitos
 
-- OpenTofu ≥ 1.6 (testado com 1.11.6; ≥ 1.9 para preservação Reserved IP)
-- Tenancy unifesspa-edu-br em modo **PAYG**
-- Always Free A1 disponível em GRU no momento do apply (capacidade dinâmica)
+- OpenTofu ≥ 1.6 (≥ 1.9 recomendado para `-exclude` na preservação do Reserved IP)
+- Tenancy unifesspa-edu-br em modo PAYG
 - `oci` CLI configurado, permissão `manage` em `instance-family` + `volume-family`
 
 ## Setup
@@ -76,47 +64,26 @@ cd provisioning/oci/standalone-compact
 cp terraform.tfvars.example terraform.tfvars
 $EDITOR terraform.tfvars
 
-# 2. Descobrir image OCID
+# 2. Descobrir image OCID (Ubuntu 24.04 LTS x86_64, compatível com E4.Flex)
 oci compute image list --region sa-saopaulo-1 \
   --compartment-id "$TENANCY" \
   --operating-system "Canonical Ubuntu" \
   --operating-system-version 24.04 \
-  --shape VM.Standard.A1.Flex \
+  --shape VM.Standard.E4.Flex \
   --sort-by TIMECREATED --sort-order DESC \
   --query 'data[0].id' --raw-output
 
-# 3. Init + validate + plan
+# 3. Init + validate + plan + apply
 tofu init
 tofu validate
-tofu plan -out=plan.bin
-
-# 4. Apply
-tofu apply plan.bin
+tofu plan -out=plan.tfplan
+tofu apply plan.tfplan
 ```
 
-## Bootstrap (após apply)
-
-⚠️ **Bloqueado por Story [#380](https://github.com/unifesspa-edu-br/uniplus-infra/issues/380)** (refatoração do discovery por display_name em vez de tamanho).
-
-Topologia compacta tem 1 disco em vez de 4 distintos. O `bootstrap-standalone.sh` atual identifica papéis por tamanho (45-55 → vault, 95-105 → kafka, 190-210 → postgres+minio) e falharia.
-
-Plano: refator do bootstrap usa instance principal + OCI metadata API para resolver `display_name` → role (futuro `att-data-host-uniplus-data` em vez de matching por size).
-
-Pós-refator, o particionamento LVM no data-host:
-
-```bash
-# Bootstrap cria PV → VG → LVs
-sudo pvcreate /dev/oracleoci/oraclevdb
-sudo vgcreate uniplus-vg /dev/oracleoci/oraclevdb
-
-# Distribuição sugerida (100 GB total):
-sudo lvcreate -L 30G -n lv-postgres uniplus-vg
-sudo lvcreate -L 20G -n lv-kafka    uniplus-vg
-sudo lvcreate -L 40G -n lv-minio    uniplus-vg
-sudo lvcreate -L 10G -n lv-vault    uniplus-vg
-
-# Cada LV recebe ext4 + mount em /var/lib/<service>
-```
+Após o apply, rode `scripts/bootstrap-standalone.sh` **manualmente via SSH** em
+cada VM (K3s + Helm + ArgoCD no k8s-host; LVM + data services no data-host). O
+`compute.tf` ainda não injeta `user_data`/cloud-init — automatizar isso é a
+issue #387.
 
 ## Operações típicas
 
@@ -127,15 +94,17 @@ tofu output
 # Aumentar block (in-place online)
 $EDITOR terraform.tfvars  # volume_size_gbs = 150
 tofu apply
-ssh -J ubuntu@<k8s-public-ip> ubuntu@<data-private-ip> "sudo lvextend -L +50G /dev/uniplus-vg/lv-minio && sudo resize2fs /dev/uniplus-vg/lv-minio"
-
-# IMPORTANTE: 200 GB total é o teto do Always Free. Acima disso paga
-# ~$0.0255/GB-mês PAYG. Reduzir abaixo de 50 GB NÃO é possível.
+ssh -J ubuntu@<k8s-public-ip> ubuntu@10.2.2.11 \
+  "sudo lvextend -L +50G /dev/uniplus-vg/lv-minio && sudo resize2fs /dev/uniplus-vg/lv-minio"
 ```
+
+> O block + boot somam 194 GB hoje (≤ 200 GB Always Free). Acima de 200 GB
+> entra em PAYG (~$0,0255/GB-mês). Reduzir abaixo de 50 GB não é suportado pela OCI.
 
 ### Recriar do zero PRESERVANDO o Reserved IP
 
-Idêntico ao runbook do `iad-arm/`. Sequência **ingênua** `tofu destroy && tofu apply` rotaciona o IP. Use uma das duas:
+`tofu destroy && tofu apply` ingênuo rotaciona o IP público (e quebra DNS, callback
+gov.br, certs Let's Encrypt, `KC_HOSTNAME`). Use uma das duas:
 
 **Opção A (preferida) — `-exclude` no destroy** (OpenTofu ≥ 1.9):
 
@@ -144,7 +113,7 @@ tofu destroy -exclude=oci_core_public_ip.k8s_host
 tofu apply
 ```
 
-**Opção B — `state rm` + `import` antes do apply** (compat < 1.9):
+**Opção B — `state rm` + `import`** (compat < 1.9):
 
 ```bash
 OLD_IP_OCID=$(tofu output -raw k8s_host_reserved_ip_ocid)
@@ -156,27 +125,18 @@ tofu apply
 
 ## Bridge para os charts Helm
 
-Mesma estratégia do `standalone/`. Quando o bootstrap (#380) estiver pronto, criar `environments/standalone-compact/values.yaml` com IPs/FQDN do compact, e estender `scripts/sync-tofu-outputs.sh` para reconhecer este módulo.
+`scripts/sync-tofu-outputs.sh` compara os outputs do Tofu com
+`environments/standalone-compact/values.yaml` (`--diff`) e pode materializar um
+ConfigMap (`--apply-configmap`). Ver o cabeçalho do script.
 
 ## State
 
-State **local** por padrão (`terraform.tfstate` ignorado pelo `.gitignore`). Mesma decisão de `standalone/`. Backend remoto fica para refinamento futuro.
+State **local** por padrão (`terraform.tfstate` ignorado pelo `.gitignore`).
+Migração para backend remoto (OCI Object Storage + lock) é rastreada na issue #383
+— sem ela, `tofu plan` só roda na máquina que detém o state.
 
-## Cleanup do standalone antigo
+## Reprodutibilidade
 
-Quando este compact estiver bootstrap concluído e validado:
-
-```bash
-cd ../standalone
-tofu destroy
-```
-
-Libera os 550 GB de block volumes antigos (atualmente cobrando ~$14/mês mesmo com VMs OFF). Após destroy, o compact fica 100% Always Free a $0/mês.
-
-## Próximos passos
-
-1. Smoke apply deste módulo (este PR)
-2. Refator bootstrap-standalone.sh ([#380](https://github.com/unifesspa-edu-br/uniplus-infra/issues/380)) — discovery por display_name
-3. Bootstrap: k3s no k8s-host + LVM no data-host + Helm deploy platform/apps
-4. Validação smoke (SSH, HTTP, Helm health)
-5. Cutover DNS para domínio canônico + `tofu destroy` em `standalone/`
+O procedimento completo de recriação do ambiente (recreate drill) e o checklist
+dos passos manuais (Vault init/unseal, seed de secrets, registro no ArgoCD) estão
+em `docs/REPRODUCIBILITY.md`.
