@@ -121,9 +121,10 @@ tofu destroy
 
 Cada passo manual acima é débito de reprodutibilidade com issue própria:
 
-- State remoto (OCI Object Storage + lock) — sem isso `tofu plan` só roda no laptop
-- Vault OCI KMS auto-unseal — remove o Shamir manual
-- Seed de secrets codificado — remove o `vault kv put` manual
-- Recreate drill agendado no CI — automatiza esta página
+- **#383** — State remoto (OCI Object Storage + lock); sem isso `tofu plan` só roda no laptop
+- **#384** — Vault OCI KMS auto-unseal; remove o Shamir manual
+- **#385** — Seed de secrets codificado; remove o `vault kv put` manual e a dessincronização Keycloak ↔ Vault
+- **#386** — Recreate drill agendado no CI; automatiza esta página (bloqueado por #383/#384/#385)
 
-Ver as issues abertas no repositório com label `infra`.
+Quando os quatro fecharem, o recreate drill roda sem intervenção humana e
+esta página passa a descrever um processo totalmente automatizado.
