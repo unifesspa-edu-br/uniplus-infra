@@ -63,6 +63,28 @@ jobs:
           scandir: './scripts'
           severity: warning
 
+  tofu-validate:
+    name: Tofu Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup OpenTofu
+        uses: opentofu/setup-opentofu@v1
+        with:
+          tofu_version: '1.8.0'
+
+      - name: Tofu fmt + validate (standalone-compact)
+        run: |
+          set -euo pipefail
+          DIR=provisioning/oci/standalone-compact
+          echo "=== tofu fmt -check ==="
+          tofu -chdir="$DIR" fmt -check -diff
+          echo "=== tofu init -backend=false ==="
+          tofu -chdir="$DIR" init -backend=false -input=false
+          echo "=== tofu validate ==="
+          tofu -chdir="$DIR" validate
+
   schema-validate:
     name: Schema Validate
     runs-on: ubuntu-latest
