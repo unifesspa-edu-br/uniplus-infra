@@ -1,75 +1,84 @@
 # GEMINI.md
 
-Este arquivo fornece contexto e instruções para interações do Gemini CLI neste repositório de infraestrutura da plataforma **Uni+**.
+Contexto e instruções para interações do Gemini CLI no repositório de infra da plataforma **Uni+**.
 
-> **Nota de Contexto:** Este repositório faz parte do ecossistema Uni+. Convenções de workflow, commits em pt-BR e padrões de contribuição estão detalhados no arquivo [CONTRIBUTING.md](./CONTRIBUTING.md) deste repositório.
+> **Nota de Contexto:** Faz parte do ecossistema Uni+. Convenções de workflow, commits em pt-BR e padrões de contribuição estão em [CONTRIBUTING.md](./CONTRIBUTING.md). A visão de produto vem do monorepo:
+
+@docs/visao-do-projeto.md
 
 ## 🚀 Visão Geral do Projeto
 
-O **uniplus-infra** é o repositório de Infraestrutura como Código (IaC) e GitOps da plataforma Uni+ (UNIFESSPA). Ele gerencia o provisionamento e a operação de múltiplos ambientes (Lab e Produção) distribuídos em 3 Datacenters lógicos: **SP1**, **SP2** (ativos) e **PA1** (institucional/DR).
+**uniplus-infra** é o repositório de IaC e GitOps da plataforma Uni+ (UNIFESSPA). Em 2026-05-19 a única infra operada é o ambiente `standalone-compact` (1 cluster K3s + 1 data-host externo em OCI GRU, shape E4.Flex AMD, ~$9,60/mês PAYG). O modelo aspiracional dos 3 DCs lógicos (**SP1+SP2+PA1**) está descrito em `docs/ARCHITECTURE.md §5.5` como referência futura — adoção depende de acordo formal com EVEO e DIRSI. Os ADRs 001/007 que decidiam o 3-DC puro estão Superseded.
 
 ### 🛠️ Stack Tecnológica
+
 - **Orquestração:** Kubernetes (K3s)
 - **GitOps:** ArgoCD (ApplicationSet)
 - **Service Layer:** Helm 3
-- **Stateful (Host-based):** PostgreSQL (Patroni), Kafka (KRaft), MinIO (Distributed)
-- **Borda/Ingress:** Traefik, Cloudflare Tunnel (Lab)
+- **Stateful (host via systemd + Docker):** PostgreSQL 18, Kafka 4.2 KRaft, MinIO single-node, Redis 8, Vault Shamir 5/3
+- **Borda/Ingress:** Traefik IngressRoute + cert-manager Let's Encrypt
 - **Segurança:** HashiCorp Vault + External Secrets Operator
-- **Observabilidade:** Grafana, Prometheus, Loki, Tempo, OpenTelemetry
+- **Observabilidade:** Grafana, Prometheus, Loki, Tempo, OpenTelemetry Collector
 
 ## 📂 Estrutura de Pastas
 
-- `apps/`: Helm charts das aplicações Uni+ (.NET 10 / Angular).
-- `platform/`: Componentes de infraestrutura do cluster (Traefik, Vault, etc).
-- `data/`: Configurações de serviços stateful executados via Docker no host.
-- `environments/`: Valores específicos por ambiente (`lab-sp1`, `prod-sp1`, etc).
-- `argocd/`: Manifestos de bootstrap do ArgoCD (ApplicationSets).
-- `scripts/`: Automação de setup, limpeza e validação.
-- `docs/`: Documentação arquitetural e runbooks operacionais.
+- `apps/` — Helm charts das aplicações Uni+ (.NET 10 / Angular)
+- `platform/` — Componentes de infraestrutura do cluster (Traefik, Vault, etc.)
+- `data/` — Configurações dos services stateful no data-host (referência)
+- `environments/standalone-compact/` — Valores do único ambiente operacional
+- `argocd/` — Bootstrap GitOps (ApplicationSet + AppProject)
+- `provisioning/oci/standalone-compact/` — OpenTofu das 2 VMs OCI
+- `scripts/` — Automação de bootstrap, validação, smokes
+- `docs/` — Arquitetura, ADRs, runbooks, validação executada
 
 ## ⚙️ Comandos Chave e Fluxos
 
-### 🧪 Setup de Laboratório (Local)
-Para provisionar uma máquina de laboratório do zero:
-```bash
-# Para a máquina principal (SP1 - Ryzen/Arch)
-./scripts/bootstrap-lab.sh --role=sp1
+### Validação local (mesmo que o CI roda)
 
-# Para a máquina secundária (SP2 - i7/Ubuntu)
-./scripts/bootstrap-lab.sh --role=sp2 --enable-cloudflared
+```bash
+make validate          # tudo (yaml-lint + helm-lint + markdown + shellcheck + schema-validate)
+make help              # lista atualizada de alvos
 ```
 
-### 📦 Gestão de Serviços Stateful (Host)
-Os bancos de dados e mensageria rodam fora do K8s via Docker Compose:
+### Bootstrap do standalone-compact
+
+O cloud-init das VMs em `provisioning/oci/standalone-compact/` chama o `bootstrap-standalone.sh` automaticamente. Para reexecutar manualmente:
+
 ```bash
-cd data/postgres && docker compose up -d
-cd data/kafka && docker compose up -d
-cd data/minio && docker compose up -d
+./scripts/bootstrap-standalone.sh --role=standalone-k8s [--dry-run]
+./scripts/bootstrap-standalone.sh --role=standalone-data [--dry-run]
 ```
 
-### ⚓ Operações Kubernetes (GitOps)
-Embora o ArgoCD automatize o deploy, você pode interagir manualmente:
+### Operações de cluster
+
 ```bash
-# Validar saúde do cluster
-./scripts/validate-cluster.sh
+# Smoke completo
+./scripts/validate-standalone.sh
 
-# Verificar logs de uma aplicação
-kubectl logs -f deployment/uniplus-api-selecao -n uniplus
+# Smoke por área
+./scripts/smoke-dashboards.sh
+./scripts/smoke-encryption-e2e.sh
+./scripts/smoke-metrics-pipeline.sh
 
-# Acessar UI do ArgoCD localmente
-kubectl port-forward -n argocd svc/argocd-server 8080:443
+# SSH
+ssh ubuntu@137.131.131.6                          # k8s-host
+ssh -J ubuntu@137.131.131.6 ubuntu@10.2.2.11      # data-host via jump
+
+# Acessar ArgoCD
+kubectl -n argocd port-forward svc/argocd-server 8080:443
 ```
 
 ## 📝 Convenções de Desenvolvimento
 
-1.  **GitOps First:** Evite `kubectl apply` manual para mudanças permanentes. Altere os Helm charts em `apps/` ou os valores em `environments/` e faça commit.
-2.  **Conventional Commits:** Siga o padrão `feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `ci:`. Commits devem ser em **pt-BR**. Detalhes em [CONTRIBUTING.md](./CONTRIBUTING.md).
-3.  **Secrets:** NUNCA suba segredos no Git. Use o Vault e referencie via `ExternalSecret`.
-4.  **Charts Helm:** Mantenha os charts genéricos e use arquivos de valores em `environments/` para diferenciação.
-5.  **Independência de DC:** Mudanças não devem criar dependências síncronas obrigatórias entre os clusters de cada DC.
-6.  **Aprovações:** Alterações em `environments/prod-*` requerem **2 aprovações** e plano de rollback explícito no PR.
+1. **GitOps First:** Evite `kubectl apply` manual para mudanças permanentes. Altere `apps/`, `platform/` ou `environments/standalone-compact/values.yaml` e faça commit — ArgoCD reconcilia.
+2. **Conventional Commits em pt-BR:** `feat(scope): ...`, `fix(scope): ...`, `chore(scope): ...`, `docs(scope): ...`. Subject em indicativo presente 3ª pessoa (`adiciona`, `corrige`, `remove`). Detalhes em [CONTRIBUTING.md](./CONTRIBUTING.md).
+3. **Secrets:** NUNCA suba segredos no Git. Use o Vault e referencie via `ExternalSecret`.
+4. **Charts Helm:** Mantenha os charts genéricos; diferenciação fica em `environments/standalone-compact/values.yaml`.
+5. **Provisionamento OCI:** mudanças em `provisioning/oci/standalone-compact/` geram custo real — rodar `tofu plan` e revisar antes de aplicar.
 
 ## 📖 Referências Úteis
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - Visão técnica completa.
-- [docs/SETUP.md](docs/SETUP.md) - Passo a passo detalhado de provisionamento.
-- [docs/RUNBOOKS.md](docs/RUNBOOKS.md) - Procedimentos de failover e recuperação.
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — visão técnica, diagramas C4, §5.5 com as topologias
+- [docs/RUNBOOKS.md](docs/RUNBOOKS.md) — bootstrap, failover, backup, troubleshooting
+- [docs/adrs/](docs/adrs/) — ADRs 008+ são canônicos; 001/007 estão Superseded
+- [docs/validacao/](docs/validacao/) — relatórios de validação executadas
