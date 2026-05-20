@@ -8,18 +8,19 @@
 #   ./bootstrap-standalone.sh --role=standalone-k8s   # k8s-host: K3s + Helm + ArgoCD
 #   ./bootstrap-standalone.sh --role=standalone-data   # data-host: Docker + LVM + mounts
 #
-# Roles originais (sp1/sp2/pa1) continuam no bootstrap-lab.sh.
-# Este script é exclusivo para o ambiente standalone OCI (Ubuntu 24.04 LTS).
+# As roles sp1/sp2/pa1 existiam no bootstrap-lab.sh, removido em 2026-05-19
+# junto com o modelo 3-DC nunca provisionado (ver CHANGELOG.md).
+# Este script é exclusivo para o ambiente standalone-compact (Ubuntu 24.04 LTS).
 #
 # Pré-requisitos:
 #   - Ubuntu 24.04 LTS (amd64 ou arm64/aarch64 — arquitetura auto-detectada)
 #   - Não executar como root (usa sudo internamente)
-#   - standalone-data: 4 block volumes OCI anexados — rodar lsblk antes
-#     para confirmar (tamanhos variam entre lab GRU/standalone e IAD/iad-arm)
+#   - standalone-data: block volume(s) OCI anexado(s) — rodar lsblk antes.
+#     No standalone-compact é 1 disco de 100 GB particionado em 4 LVs.
 #
-# Suporte multi-arch:
-#   amd64 (x86_64)  — lab GRU sobre VM.Standard.E5.Flex
-#   arm64 (aarch64) — lab IAD sobre VM.Standard.A1.Flex (Epic #317)
+# Suporte multi-arch (capability — standalone-compact roda em amd64 hoje):
+#   amd64 (x86_64)  — standalone-compact sobre VM.Standard.E4.Flex (GRU)
+#   arm64 (aarch64) — suportado caso o ambiente use shape ARM no futuro
 #   k3s, ArgoCD e docker.io detectam arquitetura nativamente; apenas o
 #   download tarball do Helm exige variável ARCH explícita.
 # ============================================================================
@@ -56,7 +57,7 @@ K8S_DOMAIN="${K8S_DOMAIN:-standalone.portaluni.com.br}"
 if [[ -z "${DATA_HOST_IP:-}" ]] && command -v hostname &>/dev/null; then
     DATA_HOST_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
 fi
-DATA_HOST_IP="${DATA_HOST_IP:-10.0.2.87}"
+DATA_HOST_IP="${DATA_HOST_IP:-10.2.2.11}"
 
 # Mount base para os volumes de dados
 DATA_BASE="/var/lib/uniplus"
@@ -1337,7 +1338,7 @@ EOF
     fi
 
     # systemd unit (sempre re-aplicado). Heredoc single-quoted: paths hardcoded.
-    # --address e --console-address ligam explicitamente em 10.0.2.87 (subnet
+    # --address e --console-address ligam explicitamente em 10.2.2.11 (subnet
     # privada VCN). Console em 9001 NÃO está exposto externamente (sem
     # IngressRoute) — acesso só via kubectl port-forward ou SSH tunnel.
     if $DRY_RUN; then
@@ -1484,7 +1485,7 @@ EOF
 # gerado pelo bootstrap. Self-signed deliberado em standalone — cert-manager
 # fica para hml/prod com secret-sync para data-host (extensão K8s não atinge
 # nativamente container fora do cluster). Cert tem SAN cobrindo IP da subnet
-# privada (10.0.2.87) + DNS interno (kafka.standalone.portaluni.com.br).
+# privada (10.2.2.11) + DNS interno (kafka.standalone.portaluni.com.br).
 #
 # Authentication: SCRAM-SHA-512 exclusivo (256 NIST-deprecated). Admin user
 # `admin` embarcada via `kafka-storage.sh format --add-scram` no bootstrap

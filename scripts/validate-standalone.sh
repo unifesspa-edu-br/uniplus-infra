@@ -7,7 +7,7 @@
 #
 # Uso:
 #   ./validate-standalone.sh
-#   DATA_HOST_IP=10.0.2.87 SSH_KEY=~/.ssh/id_ed25519 ./validate-standalone.sh
+#   DATA_HOST_IP=10.2.2.11 SSH_KEY=~/.ssh/id_ed25519 ./validate-standalone.sh
 #
 # Saída: 0 se nenhum check crítico falhou; 1 se houver falhas críticas.
 # ============================================================================
@@ -23,8 +23,8 @@ PASSED=0
 FAILED=0
 WARNINGS=0
 
-# data-host: subnet privada OCI — sobrepor via env se necessário
-DATA_HOST_IP="${DATA_HOST_IP:-10.0.2.87}"
+# data-host: IP privado fixo do standalone-compact — sobrepor via env se necessário
+DATA_HOST_IP="${DATA_HOST_IP:-10.2.2.11}"
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_ed25519}"
 # subnet privada OCI — fingerprint não disponível no primeiro boot; StrictHostKeyChecking aceitável
 ssh_data() { ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=5 -o BatchMode=yes ubuntu@"$DATA_HOST_IP" "$@"; }

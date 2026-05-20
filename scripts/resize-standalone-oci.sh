@@ -56,10 +56,11 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-# OCIDs das instâncias do standalone (compartment root da tenancy unifesspa-edu-br).
-# Ver: oci compute instance list --compartment-id <tenancy-ocid> --query 'data[?contains("display-name", `standalone`)].{name:"display-name",id:id}'
-DATA_OCID="ocid1.instance.oc1.sa-saopaulo-1.antxeljr3d2ev6qcmjvq4kk7oheaut5hzo7v6xgfj2kasku5kbs6vro5o26q"
-K8S_OCID="ocid1.instance.oc1.sa-saopaulo-1.antxeljr3d2ev6qc2675teq7fatuqdgn37sj45fbip24iycfmkowa4ye7z5a"
+# OCIDs das instâncias do standalone-compact (compartment root da tenancy unifesspa-edu-br).
+# Ver: tofu -chdir=provisioning/oci/standalone-compact output k8s_host_ocid data_host_ocid
+# ou:  oci compute instance list --compartment-id <tenancy-ocid> --query 'data[?contains("display-name", `compact`)].{name:"display-name",id:id}'
+DATA_OCID="ocid1.instance.oc1.sa-saopaulo-1.antxeljr3d2ev6qcexcgjkod7ftc2pqo6u2kaywjwkciu2xokufardx46xeq"
+K8S_OCID="ocid1.instance.oc1.sa-saopaulo-1.antxeljr3d2ev6qcwid3ytc2srjajyoyrgzpifyhhduhqufqdzbuqfcyrhta"
 
 case "$PROFILE" in
   poc)
@@ -115,7 +116,7 @@ resize "k8s-host"  "$K8S_OCID"  "$K8S_OCPU"  "$K8S_MEM"
 cat <<EOF
 
 Resize aplicado. Validar (após ~1-2min para serviços religarem):
-  ssh ubuntu@164.152.53.29 'uptime; free -h | head -2; nproc'
-  ssh ubuntu@164.152.53.29 'sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get nodes; sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get pods -A --field-selector=status.phase!=Running'
-  ssh ubuntu@164.152.53.29 'ssh ubuntu@10.0.2.87 "uptime; systemctl is-active uniplus-postgres uniplus-kafka uniplus-redis uniplus-minio"'
+  ssh ubuntu@137.131.131.6 'uptime; free -h | head -2; nproc'
+  ssh ubuntu@137.131.131.6 'sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get nodes; sudo KUBECONFIG=/etc/rancher/k3s/k3s.yaml kubectl get pods -A --field-selector=status.phase!=Running'
+  ssh -J ubuntu@137.131.131.6 ubuntu@10.2.2.11 "uptime; systemctl is-active uniplus-postgres uniplus-kafka uniplus-redis uniplus-minio"
 EOF

@@ -9,7 +9,7 @@ variable "tenancy_ocid" {
 }
 
 variable "region" {
-  description = "Região OCI alvo. compact é fixado em sa-saopaulo-1 (GRU) — a home region da tenancy unifesspa-edu-br. Manter em home garante: (1) Always Free A1 Compute (4 OCPU / 24 GB) válida; (2) Always Free Block Volume (200 GB) válida; (3) IAM master ops funcionam sem provider alias."
+  description = "Região OCI alvo. compact é fixado em sa-saopaulo-1 (GRU) — a home region da tenancy unifesspa-edu-br. Manter em home garante: (1) Always Free Block Volume (200 GB) válida; (2) IAM master ops funcionam sem provider alias. O compute usa E4.Flex AMD PAYG (A1 Always Free não disponível em GRU nesta tenancy)."
   type        = string
   default     = "sa-saopaulo-1"
 }
@@ -27,19 +27,19 @@ variable "fault_domain" {
 }
 
 variable "vcn_cidr" {
-  description = "CIDR block da VCN. compact usa 10.2.0.0/16 para evitar conflito com `standalone` (10.0.0.0/16) e `iad-arm` (10.1.0.0/16) durante coexistência."
+  description = "CIDR block da VCN. compact usa 10.2.0.0/16 (o legado standalone, já removido, usava 10.0.0.0/16). O bootstrap-standalone.sh deriva as regras de firewall deste CIDR."
   type        = string
   default     = "10.2.0.0/16"
 }
 
 variable "subnet_cidr" {
-  description = "CIDR da única subnet (PÚBLICA). Diferente de `standalone/` que separa public+private, compact usa subnet única para eliminar a necessidade de NAT Gateway (~$33/mês). data-host ganha public IP efêmero e Security List restritiva controla ingress."
+  description = "CIDR base das subnets públicas. compact usa subnets públicas (k8s 10.2.1.0/24 + data 10.2.2.0/24) para eliminar a necessidade de NAT Gateway. O data-host ganha public IP efêmero (egress) e a Security List restritiva controla o ingress."
   type        = string
   default     = "10.2.1.0/24"
 }
 
 variable "image_ocid" {
-  description = "OCID da imagem base Ubuntu 24.04 LTS aarch64 em sa-saopaulo-1. Descobrir via: oci compute image list --region sa-saopaulo-1 --operating-system 'Canonical Ubuntu' --operating-system-version 24.04 --shape VM.Standard.A1.Flex --sort-by TIMECREATED --sort-order DESC --query 'data[0].id' --raw-output"
+  description = "OCID da imagem base Ubuntu 24.04 LTS x86_64 em sa-saopaulo-1 (compatível com E4.Flex AMD). Descobrir via: oci compute image list --region sa-saopaulo-1 --operating-system 'Canonical Ubuntu' --operating-system-version 24.04 --shape VM.Standard.E4.Flex --sort-by TIMECREATED --sort-order DESC --query 'data[0].id' --raw-output"
   type        = string
 }
 
@@ -54,8 +54,12 @@ variable "volume_size_gbs" {
   default     = 100
 
   validation {
-    condition     = var.volume_size_gbs >= 50 && var.volume_size_gbs <= 32000
-    error_message = "volume_size_gbs deve estar entre 50 e 32000 (limites OCI Block Volume)."
+    # Mínimo 95 GB: setup_lvm_compact() em bootstrap-standalone.sh cria LVs
+    # fixos somando 95 GB (postgres 30 + kafka 20 + minio 40 + vault 5). Abaixo
+    # disso o tofu apply passa mas o bootstrap falha no lvcreate. Teto 200 GB
+    # mantém boot+block dentro do Always Free Block Volume da home region.
+    condition     = var.volume_size_gbs >= 95 && var.volume_size_gbs <= 32000
+    error_message = "volume_size_gbs deve estar entre 95 (mínimo para os LVs do data-host) e 32000 (limite OCI)."
   }
 }
 
