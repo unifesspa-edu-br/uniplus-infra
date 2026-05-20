@@ -1,7 +1,7 @@
 # ADR-007: Vault HA com auto-unseal Transit centralizado em PA1
 
-- **Status:** ✅ Aceito
-- **Data:** 2026-05-03
+- **Status:** ⛔ Superseded — o auto-unseal Transit centralizado em PA1 dependia do modelo dos 3 DCs ([ADR-001](ADR-001-tres-dcs-logicos-e-clusters-k8s-independentes.md), também superseded). No `standalone-compact` o Vault roda com selo Shamir 5/3 manual + KV v2 + auth Kubernetes; substituição por OCI KMS auto-unseal está como follow-up.
+- **Data:** 2026-05-03 · **Superseded em:** 2026-05-19
 - **Relacionado:** [Issue #13](https://github.com/unifesspa-edu-br/uniplus-infra/issues/13)
 
 ## Contexto
