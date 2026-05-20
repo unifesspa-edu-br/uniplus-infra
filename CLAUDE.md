@@ -4,80 +4,90 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 > **Workflow Context:** This repository is part of the Uni+ ecosystem. Global workflow conventions (mandatory issues, branch naming, commits in pt-BR, GitHub organization, team) are defined in [CONTRIBUTING.md](./CONTRIBUTING.md). This file covers only what is specific to `uniplus-infra`.
 
+@docs/visao-do-projeto.md
+
 ## O que este repositório é
 
-IaC declarativa da plataforma Uni+. **Não contém código de aplicação** — apenas Helm charts, manifests Kubernetes, valores por ambiente, scripts de bootstrap de laboratório e documentação operacional. As aplicações vivem em `uniplus-api` e `uniplus-web`; este repo descreve **como** elas são empacotadas, configuradas e implantadas.
+IaC declarativa da plataforma Uni+. **Não contém código de aplicação** — apenas Helm charts, manifests Kubernetes, valores por ambiente, scripts de bootstrap e documentação operacional. As aplicações vivem em `uniplus-api` e `uniplus-web`; este repo descreve **como** elas são empacotadas, configuradas e implantadas.
 
-GitOps é a fonte única de verdade: o ArgoCD em cada cluster reconcilia o estado do cluster com o conteúdo do repositório. Mudanças manuais (`kubectl apply`, edição via UI) são reconciliadas/sobrescritas pelo ArgoCD.
+GitOps é a fonte única de verdade: o ArgoCD reconcilia o estado do cluster com o conteúdo deste repositório. Mudanças manuais (`kubectl apply`, edição via UI) são reconciliadas/sobrescritas pelo ArgoCD.
+
+## Topologia atual: standalone-compact
+
+**A única infra operada hoje** (2026-05-19) é o ambiente `standalone-compact`:
+
+- **Região:** OCI `sa-saopaulo-1` (home region; preserva Block Volume Always Free 200 GB cap)
+- **k8s-host:** VM `VM.Standard.E4.Flex` 2 OCPU / 8 GB (escalável a 12 GB live-resize) · Reserved Public IP `137.131.131.6` · K3s + Helm + ArgoCD
+- **data-host:** VM `VM.Standard.E4.Flex` 1 OCPU / 4 GB · private `10.2.2.11` · Postgres 18 + Kafka KRaft + MinIO + Vault + Redis em containers Docker gerenciados por systemd, com LVs em 1 disco de 100 GB
+- **DNS:** `*.standalone.portaluni.com.br` (Cloudflare) · TLS Let's Encrypt via cert-manager + Traefik IngressRoute
+- **Custo mensal:** ~$9,60 PAYG (compute) + $0 storage (Always Free)
+
+O modelo aspiracional dos **3 DCs lógicos (SP1+SP2+PA1)** está descrito em `docs/ARCHITECTURE.md §2.2 / §5.5` como referência futura para quando houver acordo formal com EVEO e DIRSI. Os ADRs do bloco 001/007 que decidiam o 3-DC puro estão marcados como **Superseded** por [ADR-008](docs/adrs/ADR-008-topologia-standalone.md).
 
 ## Comandos de validação
 
-Não há test suite de aplicação — toda validação é de configuração. Antes de PR, rodar (mesmos checks do CI em `.github/workflows/validate.yml`):
+Não há test suite de aplicação — toda validação é de configuração.
 
 ```bash
-# YAML lint (config em .yamllint.yaml)
-yamllint -c .yamllint.yaml apps/ platform/ data/ environments/ argocd/
+# Tudo de uma vez (mesmo que o CI roda em .github/workflows/validate.yml)
+make validate
 
-# Helm lint em todos os charts (apps/ e platform/)
-for chart in apps/*/ platform/*/; do
-  [ -f "$chart/Chart.yaml" ] && helm lint "$chart"
-done
-
-# ShellCheck nos scripts
-shellcheck scripts/*.sh
-
-# Markdown lint
-markdownlint-cli2 '**/*.md'
+# Ou alvos individuais
+make yaml-lint        # yamllint (config: .yamllint.yaml)
+make helm-lint        # helm lint em apps/ + platform/
+make markdown-lint    # markdownlint-cli2
+make shellcheck       # shellcheck nos scripts
+make schema-validate  # values.yaml vs schemas dos charts (kubeconform render)
+make helm-template    # render local de todos os charts × environments
 ```
 
-CI atual roda esses checks em modo *warning-only* (`|| true`, `continue-on-error`) — falhas não bloqueiam merge automaticamente, mas devem ser tratadas. O `CONTRIBUTING.md` referencia alvos `make helm-lint / yaml-lint / kube-validate`, mas **não há Makefile ainda** — usar os comandos acima diretamente.
+Use `make help` para a lista atualizada.
 
-## Operações de laboratório
-
-Scripts em `scripts/` gerenciam o ambiente de validação local:
+## Operações no standalone-compact
 
 ```bash
-./scripts/bootstrap-lab.sh --role={sp1|sp2|pa1} [--dry-run]   # provisiona K3s + Docker + cloudflared
-./scripts/validate-cluster.sh                                       # checa Docker/Helm/K8s/ArgoCD/serviços
-./scripts/teardown-lab.sh                                           # limpa
+# SSH ao cluster
+ssh ubuntu@137.131.131.6                          # k8s-host (Reserved IP)
+ssh -J ubuntu@137.131.131.6 ubuntu@10.2.2.11      # data-host via jump
+
+# Bootstrap (executado automaticamente pelo cloud-init no tofu apply)
+./scripts/bootstrap-standalone.sh --role=standalone-k8s [--dry-run]
+./scripts/bootstrap-standalone.sh --role=standalone-data [--dry-run]
+
+# Validação pós-bootstrap
+./scripts/validate-standalone.sh                  # smoke completo dos 2 hosts
+./scripts/validate-cluster.sh                     # smoke focado no K3s
+./scripts/smoke-{dashboards,encryption-e2e,metrics-pipeline}.sh
+
+# Resize OCPU/RAM (hot-resize via OCI CLI)
+./scripts/resize-standalone-oci.sh poc            # default ~$9,60/mês
+./scripts/resize-standalone-oci.sh hml            # ~$157/mês para HML
 ```
 
-Sempre rodar `--dry-run` antes em mudanças no bootstrap. O script detecta Arch vs Ubuntu automaticamente e tem flags `--skip-k3s`, `--skip-docker`, `--enable-cloudflared`.
-
-## Arquitetura — modelo dos 3 DCs lógicos
-
-A plataforma é modelada como **`SP1` + `SP2` + `PA1`**, e essa nomenclatura permeia diretórios, charts e valores. Entender a divisão de papéis é pré-requisito para tocar qualquer coisa:
-
-- **`SP1` e `SP2`** (datacenters EVEO Cotia/Osasco): atendem tráfego de usuário em **ativo-ativo**. Cada um é um cluster K3s independente — **não há cluster K8s estendido entre DCs**.
-- **`PA1`** (datacenter institucional UNIFESSPA, Marabá): **não é witness simples**. Hospeda LDAP institucional, fonte OIDC institucional (`pa1-oidc-source`), destino de backup e retenção de observabilidade. Pode ficar fora algumas horas sem derrubar o atendimento — `SP1`/`SP2` continuam servindo e sincronizam o backlog quando `PA1` retorna.
-
-**Princípio "ativo-ativo no nível da plataforma":** cada componente usa o mecanismo nativo de HA (Patroni para Postgres, KRaft para Kafka, modo distribuído do MinIO, etc.). Onde multi-writer limpo não existe, distribui-se responsabilidade com failover controlado — **nunca simular multi-master artificial**.
-
-`environments/lab-pa1/` é o cluster K3s no host i7 simulando o DC institucional PA1 (renomeado de `lab-witness` em 2026-05-03 conforme issue #13 e ADR-007). Hospeda o Vault Transit + componentes legados em containers Docker (etcd, keycloak-master, minio-master, backup-target).
+Sempre rodar `--dry-run` antes em mudanças no `bootstrap-standalone.sh`.
 
 ## Layout: por que está dividido assim
 
 | Diretório | Conteúdo | Característica determinante |
 |---|---|---|
-| `apps/` | Helm charts das aplicações Uni+ (`uniplus-web`, `uniplus-api-{portal,selecao,ingresso}`, `clamav-scanner`, `keycloak-replica`) | Workloads K8s puros, namespace `uniplus` |
-| `platform/` | Componentes de plataforma K8s (Traefik, ArgoCD, Vault, External Secrets, cert-manager, cloudflared, observability) | Rodam **dentro** do K8s, suportam `apps/` |
-| `data/` | PostgreSQL (+ Patroni + PgBouncer), Kafka KRaft, MinIO, Redis | **Rodam fora do K8s** — containers gerenciados por systemd no host, em LVM dedicada no NVMe. Decisão deliberada: backup/restore/troubleshooting independem da saúde do K8s |
-| `environments/{lab,prod}-{sp1,sp2,pa1}/` | `values.yaml` com overrides de Helm por ambiente | Defaults ficam em `apps/*/values.yaml` e `platform/*/values.yaml`; ambiente só sobrescreve o necessário |
-| `argocd/` | `applicationset.yaml` + `project.yaml` (bootstrap GitOps) | Aplica os charts conforme o ambiente do cluster |
-
-Mudanças em `environments/prod-*` requerem **2 aprovações** (vs. 1 padrão), descrição do lab onde foi testado e plano de rollback explícito no PR.
+| `apps/` | Helm charts das aplicações Uni+ (`uniplus-web`, `uniplus-api-{portal,selecao,ingresso}`, `clamav-scanner`, `keycloak-replica`, `apicurio-registry`, `kafka-ui`, `redis-ui`) | Workloads K8s puros, namespace `uniplus` |
+| `platform/` | Componentes de plataforma K8s (Traefik, ArgoCD, Vault, External Secrets, cert-manager, cloudflared, observability/{prometheus,grafana,loki,tempo,otelcol}, storage, minio-console-proxy) | Rodam **dentro** do K8s, suportam `apps/` |
+| `data/` | PostgreSQL, Kafka KRaft, MinIO, Redis | **Rodam fora do K8s** — containers gerenciados por systemd no data-host, em LVs dedicadas. Decisão deliberada: backup/restore/troubleshooting independem da saúde do K8s |
+| `environments/standalone-compact/` | `values.yaml` com overrides de Helm | Defaults ficam em `apps/*/values.yaml` e `platform/*/values.yaml`; environment só sobrescreve o necessário |
+| `argocd/` | `applicationset.yaml` + `project.yaml` | ApplicationSet matcha clusters com label `uniplus.io/managed=true` |
+| `provisioning/oci/standalone-compact/` | OpenTofu — provisiona as 2 VMs OCI | Edits aqui geram custo real; planejar com `tofu plan` antes |
 
 ## Convenções específicas de manifests
 
 - Indentação YAML: **2 espaços, sem tabs**.
 - Nomes (charts, recursos, branches, labels): **kebab-case** — `uniplus-api-selecao`, nunca `uniplus_api_selecao`.
 - Todos os recursos K8s carregam os labels padrão `app.kubernetes.io/{name,instance,version,managed-by}` **mais** `app.kubernetes.io/part-of: uniplus`.
-- **Nunca** commitar credenciais, kubeconfigs, unseal keys do Vault, tokens Cloudflare, certificados, IPs internos UNIFESSPA ou regras do Palo Alto. Secrets vivem no Vault e são injetadas via `ExternalSecret` — manifests no Git contêm apenas referências.
-- `helm-docs` para gerar `README.md` dos charts a partir dos `values.yaml`; `values.schema.json` recomendado quando aplicável.
+- **Nunca** commitar credenciais, kubeconfigs, unseal keys do Vault, tokens Cloudflare, certificados, IPs internos UNIFESSPA. Secrets vivem no Vault e são injetadas via `ExternalSecret` — manifests no Git contêm apenas referências.
+- `helm-docs` gera `README.md` dos charts a partir dos `values.yaml`; `values.schema.json` recomendado quando aplicável.
 
 ## Documentos a consultar antes de mudar algo não-trivial
 
-- `docs/ARCHITECTURE.md` — visão arquitetural completa, diagramas C4, decisões e estratégia por componente. **É a fonte sobre o "porquê" das escolhas** (3 DCs, stateful fora do K8s, ativo-ativo, soberania institucional).
-- `docs/SETUP.md` — passo-a-passo das máquinas de laboratório (Ryzen 9950X / Arch = sp1, Core i7 / Ubuntu = sp2).
-- `docs/VALIDATION-PLAN.md` — plano de validação em laboratório (a ser executado antes de promover algo a produção).
-- `docs/RUNBOOKS.md` — failover, backup, restore.
+- `docs/ARCHITECTURE.md` — visão arquitetural, diagramas C4, decisões e estratégia por componente. Inclui o §5.5 com as duas topologias (3-DC futuro / standalone-compact atual).
+- `docs/RUNBOOKS.md` — bootstrap, failover (modelo 3-DC = referência histórica), backup, restore, troubleshooting do data-host.
+- `docs/adrs/` — Architecture Decision Records. ADRs 001/007 estão Superseded; 002, 003, 004, 005, 006, 008+ são canônicos.
+- `docs/validacao/` — relatórios de validação executadas (smoke standalone, dashboards, etc.).
