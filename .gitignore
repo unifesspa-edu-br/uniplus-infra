@@ -90,3 +90,13 @@ dumps/
 local-config/
 .local/
 __pycache__/
+
+# OpenTofu / Terraform locais (cache, lockfile remoto, planos binários)
+provisioning/oci/*/.terraform/
+provisioning/oci/*/*.tfstate
+provisioning/oci/*/*.tfstate.backup
+provisioning/oci/*/*.tfplan
+provisioning/oci/*/plan-*.bin
+
+# Playwright MCP local (logs e snapshots de browser para debug)
+.playwright-mcp/

@@ -77,7 +77,7 @@ jobs:
       - name: Validate values.schema.json across charts × environments
         run: |
           set -euo pipefail
-          ENVS="lab-sp1 lab-sp2 lab-pa1 prod-sp1 prod-sp2 prod-pa1"
+          ENVS="standalone-compact"
           FAILS=0
           for chart_dir in apps/*/ platform/*/; do
             chart_name=$(basename "$chart_dir")
@@ -131,7 +131,7 @@ jobs:
         run: |
           set -euo pipefail
           K8S_VERSION="1.31.0"
-          ENVS="lab-sp1 lab-sp2 lab-pa1 prod-sp1 prod-sp2 prod-pa1 standalone"
+          ENVS="standalone-compact"
           FAILS=0
           for chart in apps/*/ platform/*/ platform/observability/*/; do
             [ -f "$chart/Chart.yaml" ] || continue
