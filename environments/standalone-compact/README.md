@@ -94,9 +94,9 @@ Exemplos por provider de referência:
 
 ```bash
 argocd cluster add <kube-context> \
-  --name uniplus-standalone \
+  --name uniplus-standalone-compact \
   --label uniplus.io/managed=true \
-  --label environment=standalone
+  --label environment=standalone-compact
 ```
 
 Procedimento detalhado: `docs/RUNBOOKS.md` §8 (Bootstrap e Teardown — Ambiente Standalone OCI).
