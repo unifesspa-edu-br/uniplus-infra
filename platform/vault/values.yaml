@@ -163,7 +163,7 @@ serviceMonitor:
 
 # IngressRoute (Traefik) para acesso administrativo ao UI.
 # Desligado por default — ligar quando integração OIDC com Keycloak estiver
-# pronta (sub-issue futura). Acesso restrito via VPN ou Cloudflare Access.
+# pronta (sub-issue futura). Acesso restrito via VPN institucional.
 ingress:
   enabled: false
   host: ""

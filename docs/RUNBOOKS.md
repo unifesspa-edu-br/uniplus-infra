@@ -316,11 +316,10 @@ patronictl -c /etc/patroni/patroni.yml switchover \
 **Verificação:**
 
 ```bash
-# Status do agente de tunnel/entrada local, quando usado
-sudo systemctl status cloudflared
-
-# Logs
-sudo journalctl -u cloudflared -f
+# No standalone-compact a entrada HTTP/TLS é o Traefik no cluster
+# (não há agente de túnel/borda em systemd no host)
+kubectl -n traefik get pods
+kubectl -n traefik logs -l app.kubernetes.io/name=traefik --tail=50
 ```
 
 **Métricas esperadas:**
@@ -576,8 +575,8 @@ kubectl --context uniplus-sp2 get pods -A | grep -v Running
 ping uniplus-sp2  # da Ryzen
 ping uniplus-sp1  # da i7
 
-# Entrada HTTP/TLS de lab?
-sudo systemctl status cloudflared
+# Entrada HTTP/TLS (Traefik no cluster)?
+kubectl -n traefik get pods
 
 # Bancos saudáveis?
 patronictl list
@@ -1182,7 +1181,6 @@ Avisos são esperados enquanto serviços da Epic `data/*` ainda não estiverem p
 - K3s e todo o estado do cluster (pods, PVs, namespaces)
 - `~/.kube/config`
 - Helm binário (`/usr/local/bin/helm`)
-- cloudflared (se ativo)
 
 **O que é preservado:** volumes LVM do data-host ficam intactos.
 

@@ -40,7 +40,6 @@ uniplus-infra/
 │   ├── vault/                  # Gestão de secrets
 │   ├── external-secrets/       # Sync Vault → K8s Secrets
 │   ├── cert-manager/           # Provisionamento TLS automático
-│   ├── cloudflared/            # Entrada HTTP/TLS provisória do lab
 │   └── observability/          # Prometheus, Grafana, Loki, Tempo, OTel
 ├── data/                       # Componentes stateful (fora do K8s)
 │   ├── postgres/               # 3 instâncias + Patroni + PgBouncer
@@ -100,7 +99,7 @@ uniplus-infra/
 | API Gateway / Ingress | Traefik | 3.x |
 | Service mesh (futuro) | — | a definir |
 | Secrets | HashiCorp Vault + ESO | 1.17+ / 0.10+ |
-| Entrada HTTP/TLS de lab | cloudflared ou alternativa gratuita | latest |
+| Entrada HTTP/TLS | Traefik IngressRoute + cert-manager (Let's Encrypt) | 3.x |
 | Observabilidade — métricas | Prometheus + Grafana | 2.x / 11.x |
 | Observabilidade — logs | Loki + Promtail | 3.x |
 | Observabilidade — traces | Tempo + OpenTelemetry Collector | 2.x |

@@ -6,7 +6,7 @@
 
 ## Estrutura do Projeto e Organização de Módulos
 
-Repositório de IaC declarativa para o Uni+. Charts Helm de aplicação em `apps/` (`uniplus-web`, `uniplus-api-*`, `clamav-scanner`, `keycloak-replica`, `apicurio-registry`, `kafka-ui`, `redis-ui`). Plataforma em `platform/` (Argo CD, Vault, External Secrets, Traefik, cert-manager, Cloudflared, observabilidade). Stateful no host (Postgres, Kafka, MinIO, Redis) documentado em `data/`. Overrides do único ambiente vivo em `environments/standalone-compact/`. Bootstrap GitOps em `argocd/`. Provisionamento OpenTofu em `provisioning/oci/standalone-compact/`. Scripts em `scripts/`. Docs em `docs/`.
+Repositório de IaC declarativa para o Uni+. Charts Helm de aplicação em `apps/` (`uniplus-web`, `uniplus-api-*`, `clamav-scanner`, `keycloak-replica`, `apicurio-registry`, `kafka-ui`, `redis-ui`). Plataforma em `platform/` (Argo CD, Vault, External Secrets, Traefik, cert-manager, observabilidade). Stateful no host (Postgres, Kafka, MinIO, Redis) documentado em `data/`. Overrides do único ambiente vivo em `environments/standalone-compact/`. Bootstrap GitOps em `argocd/`. Provisionamento OpenTofu em `provisioning/oci/standalone-compact/`. Scripts em `scripts/`. Docs em `docs/`.
 
 O modelo aspiracional dos 3 DCs (SP1+SP2+PA1) está em `docs/ARCHITECTURE.md §5.5` como referência futura — ADRs 001/007 estão marcados como Superseded.
 
@@ -35,4 +35,4 @@ Conventional Commits em pt-BR (`feat(scope): ...`, `fix(scope): ...`, `docs(scop
 
 ## Dicas de Segurança e Configuração
 
-Nunca commite credenciais, kubeconfigs, unseal keys, tokens Cloudflare, certificados, dumps ou configurações locais geradas. Use placeholders e mantenha secrets no Vault ou em arquivos locais ignorados via `.gitignore`. Vulnerabilidades em `SECURITY.md`, nunca em Issues públicas.
+Nunca commite credenciais, kubeconfigs, unseal keys, certificados, dumps ou configurações locais geradas. Use placeholders e mantenha secrets no Vault ou em arquivos locais ignorados via `.gitignore`. Vulnerabilidades em `SECURITY.md`, nunca em Issues públicas.

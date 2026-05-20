@@ -217,7 +217,7 @@ Topologia descrita em [ADR-008](adrs/ADR-008-topologia-standalone.md). Resumo:
 - **Single-site monolocal** — duas VMs (`k8s-host`, `data-host`) coabitam o mesmo provedor (lab, OCI Always Free, ou laboratório institucional).
 - **Sem HA inter-DC** — a topologia não pretende sobreviver a falha de site. Single-node K3s + Postgres 18 + Kafka KRaft + MinIO single-node + Vault Shamir 1-de-1.
 - **GitOps end-to-end preservado** — chart layout, ArgoCD, ExternalSecrets, ESO continuam idênticos ao 3-DC. O delta é nos `environments/standalone-compact/values.yaml` (1 réplica, sem witness, paths de storage local, etc.).
-- **Acesso externo via Cloudflare Tunnel** — sem dependência de IP público nem de NAT/DNS institucional. Smoke E2E completo executável (PR #181).
+- **Acesso externo via Reserved Public IP + Traefik IngressRoute** — TLS Let's Encrypt (cert-manager, HTTP-01) sobre o domínio `*.standalone.portaluni.com.br` (OCI DNS). Sem dependência de túnel externo.
 - **Provisioning provider-agnostic** — VMs de qualquer provedor (OCI, lab on-prem, VMs em estação de trabalho) bastam ter Ubuntu 24.04 + kernel atualizado + IP roteável entre as duas VMs.
 
 **Quando usar:**
@@ -233,7 +233,7 @@ Topologia descrita em [ADR-008](adrs/ADR-008-topologia-standalone.md). Resumo:
 - Volume de produção plena Uni+ (~20k candidatos/processo) → standalone tem limites de throughput nativos do single-node.
 - Compliance institucional que exija redundância geográfica.
 
-**Custo:** 2 VMs (~12 vCPU + 24 GB RAM + 200 GB) + Cloudflare Tunnel (gratuito até limites). Operável por 1 pessoa.
+**Custo:** 2 VMs E4.Flex AMD (3 OCPU + 12 GB + 194 GB) ~$9,60/mês PAYG (boot+block dentro do Always Free). Operável por 1 pessoa.
 
 #### 5.5.3 Como o repositório suporta as duas
 

@@ -41,7 +41,7 @@ argocd/
    - keycloak-replica
 
 2. **uniplus-platform** — gera Applications para componentes de plataforma:
-   - traefik, cert-manager, external-secrets, vault, cloudflared
+   - storage, minio-console-proxy, traefik, cert-manager, external-secrets, vault, vault-transit, vault-transit-bootstrap
    - observability (prometheus, grafana, loki, tempo, otel-collector)
 
 Cada ApplicationSet usa **matrix generator** combinando:

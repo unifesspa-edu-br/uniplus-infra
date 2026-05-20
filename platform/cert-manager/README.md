@@ -12,7 +12,7 @@ Wrapper do chart oficial [jetstack/cert-manager](https://github.com/cert-manager
 ## Estratégia de emissão
 
 - **HTTP-01 via Traefik** para hosts simples (cobertura desta PR)
-- **DNS-01 wildcard** fora de escopo até decisão DIRSI sobre borda externa (ADR-004) — separado para evitar acoplar Cloudflare DNS API ao Uni+ antes da decisão
+- **DNS-01 wildcard** fora de escopo até decisão DIRSI sobre borda externa (ADR-004) — separado para evitar acoplar uma DNS API de provider ao Uni+ antes da decisão
 
 Standalone usa apenas HTTP-01 (FQDN único `standalone.portaluni.com.br`). 3-DC poderá adicionar DNS-01 quando decisão de borda for tomada.
 

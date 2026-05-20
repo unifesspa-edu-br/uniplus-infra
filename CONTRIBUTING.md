@@ -126,7 +126,7 @@ Pelo menos 1 aprovação do time CTIC é obrigatória. Mudanças no ambiente ope
 - IPs internos da UNIFESSPA (use placeholders)
 - Detalhes de regras do Palo Alto institucional
 - Kubeconfig de produção
-- Credenciais Cloudflare ou Vault unseal keys
+- Vault unseal keys ou tokens de provider
 
 Em caso de commit acidental de informação sensível, **avise imediatamente** o coordenador técnico para rotação de credenciais.
 
