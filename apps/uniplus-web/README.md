@@ -29,7 +29,7 @@ Para teste local apenas:
 helm install uniplus-web ./apps/uniplus-web \
     --namespace uniplus \
     --create-namespace \
-    -f environments/lab-sp1/values.yaml
+    -f environments/standalone-compact/values.yaml
 ```
 
 ## Estrutura de templates
@@ -59,12 +59,11 @@ templates/
 
 ## Override por ambiente
 
-Os ambientes em `environments/` definem overrides específicos:
+O único ambiente operacional é `standalone-compact`:
 
-- `lab-sp1/values.yaml` — réplicas reduzidas, hostname `uniplus-lab.shop`
-- `lab-sp2/values.yaml` — idem, mas com selecao primary
-- `prod-sp1/values.yaml` — produção, hostname institucional
-- `prod-sp2/values.yaml` — idem
+- `standalone-compact/values.yaml` — 1 réplica por app, hostname `*.standalone.portaluni.com.br`
+
+Quando o modelo 3-DC (`lab-*` / `prod-*` em SP1/SP2/PA1) for revivido, novos environments serão derivados a partir do standalone-compact.
 
 ## Contribuindo
 

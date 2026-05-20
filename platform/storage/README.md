@@ -54,19 +54,19 @@ Como StorageClass é um recurso cluster-scoped, cada cluster tem **sua própria*
 ## Test plan
 
 ```bash
-# Renderiza para lab-sp1
-helm template storage platform/storage/ -f environments/lab-sp1/values.yaml
+# Renderiza para o único ambiente vivo
+helm template storage platform/storage/ -f environments/standalone-compact/values.yaml
 
-# Esperado: 1 StorageClass com nome lab-local-nvme, isDefault=true,
+# Esperado: 1 StorageClass com nome standalone-local-nvme, isDefault=true,
 # provisioner=rancher.io/local-path
 ```
 
 Após sync no cluster:
 
 ```bash
-kubectl --context uniplus-lab-sp1 get sc
-# NAME            PROVISIONER            RECLAIMPOLICY  ...
-# lab-local-nvme  rancher.io/local-path  Retain         ...
+kubectl get sc
+# NAME                  PROVISIONER            RECLAIMPOLICY  ...
+# standalone-local-nvme rancher.io/local-path  Retain         ...
 ```
 
 ## Próximos passos
