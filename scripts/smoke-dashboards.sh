@@ -15,10 +15,10 @@
 # Uso:
 #   ./scripts/smoke-dashboards.sh
 #   SKIP_TRAFFIC=true ./scripts/smoke-dashboards.sh
-#   SSH_HOST=ubuntu@164.152.53.29 ./scripts/smoke-dashboards.sh
+#   SSH_HOST=ubuntu@137.131.131.6 ./scripts/smoke-dashboards.sh
 #
 # Variáveis de ambiente:
-#   SSH_HOST           Host SSH com acesso ao cluster (default: ubuntu@164.152.53.29)
+#   SSH_HOST           Host SSH com acesso ao cluster (default: ubuntu@137.131.131.6)
 #   SSH_KEY            Chave SSH (default: ~/.ssh/id_ed25519)
 #   GRAFANA_URL        URL pública do Grafana (default: https://standalone.portaluni.com.br/grafana)
 #   GRAFANA_USER       Usuário Grafana (default: admin)
@@ -42,7 +42,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # ── Configuração ──────────────────────────────────────────────────────────────
-SSH_HOST="${SSH_HOST:-ubuntu@164.152.53.29}"
+SSH_HOST="${SSH_HOST:-ubuntu@137.131.131.6}"
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/id_ed25519}"
 BASE_DOMAIN="${BASE_DOMAIN:-standalone.portaluni.com.br}"
 GRAFANA_URL="${GRAFANA_URL:-https://${BASE_DOMAIN}/grafana}"
