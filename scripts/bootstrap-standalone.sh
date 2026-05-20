@@ -41,14 +41,16 @@ SKIP_K3S=false
 SKIP_DOCKER=false
 SKIP_SERVICES=false
 
-# ============== Configuração por env var (defaults = legacy standalone) ==============
-# Override via env vars antes do script. Para o lab standalone-compact:
+# ============== Configuração por env var (defaults = standalone-compact) ==============
+# Override via env vars antes do script. Os defaults abaixo correspondem ao
+# ambiente standalone-compact (único provisionado — ver
+# provisioning/oci/standalone-compact/). Para outros ambientes, sobrescrever:
 #   export VCN_CIDR=10.2.0.0/16
 #   export K8S_PUBLIC_IP=137.131.131.6
-#   export DATA_HOST_IP=10.2.2.193  (ou deixa auto-detectar via hostname -I no data-host)
+#   export DATA_HOST_IP=10.2.2.11  (ou deixa auto-detectar via hostname -I no data-host)
 
-VCN_CIDR="${VCN_CIDR:-10.0.0.0/16}"
-K8S_PUBLIC_IP="${K8S_PUBLIC_IP:-164.152.53.29}"
+VCN_CIDR="${VCN_CIDR:-10.2.0.0/16}"
+K8S_PUBLIC_IP="${K8S_PUBLIC_IP:-137.131.131.6}"
 K8S_DOMAIN="${K8S_DOMAIN:-standalone.portaluni.com.br}"
 
 if [[ -z "${DATA_HOST_IP:-}" ]] && command -v hostname &>/dev/null; then
@@ -180,7 +182,7 @@ install_iptables_persistent() {
 # Sem o REJECT no chain (host customizado), insere na pos 1 com warning.
 #
 # Uso: iptables_ensure_before_reject <chain> <-args para a regra>
-# Exemplo: iptables_ensure_before_reject FORWARD -s 10.42.0.0/16 -d 10.0.0.0/16 -j ACCEPT
+# Exemplo: iptables_ensure_before_reject FORWARD -s 10.42.0.0/16 -d 10.2.0.0/16 -j ACCEPT
 iptables_ensure_before_reject() {
     local chain="$1"
     shift
@@ -357,19 +359,18 @@ step_k8s_configure_iptables() {
     # via cloud-init): regra `REJECT --reject-with icmp-host-prohibited` no
     # chain FORWARD, posicionada ANTES da chain `FLANNEL-FWD`. Resultado:
     # pacotes saindo de pods K8s (source 10.42.0.0/16, flannel pod CIDR) com
-    # destino na VCN OCI (10.0.0.0/16, ex.: data-host em 10.0.2.x) batem no
-    # REJECT antes de chegar nas regras de masquerade do flannel — Pod fica
-    # com `Host is unreachable`, mesmo com Security List OCI permitindo.
+    # destino na VCN OCI (${VCN_CIDR}, ex.: data-host) batem no REJECT antes
+    # de chegar nas regras de masquerade do flannel — Pod fica com
+    # `Host is unreachable`, mesmo com Security List OCI permitindo.
     #
-    # Inserir ACCEPT *antes do REJECT* para os dois sentidos. Em standalone,
-    # 10.0.0.0/16 = VCN inteira (subnet pública 10.0.1.0/24 do k8s-host +
-    # subnet privada 10.0.2.0/24 do data-host). Diagnóstico original em
-    # issue #123, tratado em #124.
+    # Inserir ACCEPT *antes do REJECT* para os dois sentidos. ${VCN_CIDR} é
+    # a VCN inteira (subnet pública do k8s-host + subnet privada do
+    # data-host). Diagnóstico original em issue #123, tratado em #124.
     #
     # Posição é detectada dinamicamente — re-runs após reordenação de chain
     # (image nova, hooks K3s/docker, regras manuais) reposicionam corretamente.
-    iptables_ensure_before_reject FORWARD -s 10.42.0.0/16 -d 10.0.0.0/16 -j ACCEPT
-    iptables_ensure_before_reject FORWARD -d 10.42.0.0/16 -s 10.0.0.0/16 -j ACCEPT
+    iptables_ensure_before_reject FORWARD -s 10.42.0.0/16 -d "$VCN_CIDR" -j ACCEPT
+    iptables_ensure_before_reject FORWARD -d 10.42.0.0/16 -s "$VCN_CIDR" -j ACCEPT
     install_iptables_persistent
     log_success "iptables FORWARD configurado e persistido."
 }
