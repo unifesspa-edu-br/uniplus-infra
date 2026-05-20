@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # ============================================================================
 # sync-tofu-outputs.sh
-# Bridge entre `tofu output` (provisioning/oci/standalone/) e os values dos
-# charts Helm consumidos via ArgoCD. Story #58 da Feature #43.
+# Bridge entre `tofu output` (provisioning/oci/standalone-compact/) e os values
+# dos charts Helm consumidos via ArgoCD. Story #58 da Feature #43.
 #
 # Estratégia (compatível com GitOps):
-# - Schema do `environments/standalone/values.yaml` continua provider-agnostic
-#   (versionado em git, lido pelo ArgoCD).
+# - Schema do `environments/standalone-compact/values.yaml` continua
+#   provider-agnostic (versionado em git, lido pelo ArgoCD).
 # - Valores OCI-specific (IPs, hostnames) ficam **hardcoded** no values.yaml
 #   pra ArgoCD ter tudo no repo. Recreate de infra que mude algum desses
 #   valores exige PR ajustando o values.yaml — esse script ajuda a detectar
@@ -24,17 +24,17 @@
 #   ./scripts/sync-tofu-outputs.sh --json           # imprime JSON cru
 #
 # Pré-requisitos:
-#   - tofu state inicializado em provisioning/oci/standalone (ou seja:
-#     `cd provisioning/oci/standalone && tofu init && tofu import × N`,
-#     conforme README do diretório)
+#   - tofu state inicializado em provisioning/oci/standalone-compact (ou seja:
+#     `cd provisioning/oci/standalone-compact && tofu init`, conforme README
+#     do diretório)
 #   - kubectl configurado para o cluster alvo (apenas para --apply-configmap)
 # ============================================================================
 
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TOFU_DIR="${REPO_ROOT}/provisioning/oci/standalone"
-ENV_VALUES="${REPO_ROOT}/environments/standalone/values.yaml"
+TOFU_DIR="${REPO_ROOT}/provisioning/oci/standalone-compact"
+ENV_VALUES="${REPO_ROOT}/environments/standalone-compact/values.yaml"
 NAMESPACE="uniplus"
 CONFIGMAP_NAME="standalone-tofu-outputs"
 
@@ -83,9 +83,9 @@ for key, info in sorted(data.items()):
     print(f'  {key:30s} = {val}{sensitive}')
 "
     echo
-    echo "Mapeamento para environments/standalone/values.yaml:"
+    echo "Mapeamento para environments/standalone-compact/values.yaml:"
     cat <<MAP
-  k8s_host_reserved_ip       → standalone.<ingress.host>; uniplusKafkaUi/oidcIssuerCIDR (deriva /32)
+  k8s_host_public_ip         → standalone.<ingress.host>; uniplusKafkaUi/oidcIssuerCIDR (deriva /32)
   data_host_private_ip       → uniplusKeycloak.db.host
                                kafkaUi.kafka.bootstrapServers (porta 9092)
                                apicurioRegistry.db.host
@@ -107,7 +107,7 @@ MAP
 
   diff)
     echo "Comparando outputs Tofu com ${ENV_VALUES}:"
-    K8S_IP=$(echo "${OUTPUTS_JSON}" | python3 -c "import sys, json; print(json.load(sys.stdin).get('k8s_host_reserved_ip',{}).get('value',''))")
+    K8S_IP=$(echo "${OUTPUTS_JSON}" | python3 -c "import sys, json; print(json.load(sys.stdin).get('k8s_host_public_ip',{}).get('value',''))")
     DATA_IP=$(echo "${OUTPUTS_JSON}" | python3 -c "import sys, json; print(json.load(sys.stdin).get('data_host_private_ip',{}).get('value',''))")
     DNS_FQDN=$(echo "${OUTPUTS_JSON}" | python3 -c "import sys, json; print(json.load(sys.stdin).get('dns_apex_fqdn',{}).get('value',''))")
 
@@ -120,7 +120,7 @@ MAP
       fi
     }
 
-    [ -n "${K8S_IP}" ]   && check_value "k8s_host_reserved_ip"  "${K8S_IP}"   "${ENV_VALUES}"
+    [ -n "${K8S_IP}" ]   && check_value "k8s_host_public_ip"   "${K8S_IP}"   "${ENV_VALUES}"
     [ -n "${DATA_IP}" ]  && check_value "data_host_private_ip" "${DATA_IP}"  "${ENV_VALUES}"
     [ -n "${DNS_FQDN}" ] && check_value "dns_apex_fqdn"         "${DNS_FQDN}" "${ENV_VALUES}"
     ;;
