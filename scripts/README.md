@@ -1,54 +1,30 @@
 # Scripts
 
-Scripts de operação do laboratório e do ambiente standalone OCI.
+Scripts de operação do ambiente `standalone-compact` (1 cluster K3s + 1 data-host externo em OCI GRU).
 
 | Script | Função |
 |--------|--------|
-| `bootstrap-lab.sh` | Provisiona o laboratório do zero em uma máquina Linux (roles sp1/sp2/pa1) |
-| `bootstrap-standalone.sh` | Provisiona o ambiente standalone OCI (roles standalone-k8s e standalone-data) |
-| `validate-cluster.sh` | Valida saúde do cluster de laboratório (sp1/sp2/pa1) |
-| `validate-standalone.sh` | Valida saúde do ambiente standalone OCI (k8s-host + data-host) |
-| `resize-standalone-oci.sh` | Hot-resize dos shapes (OCPU + RAM) das 2 VMs OCI; perfis `poc` (default, ~$72/mês) e `hml` (~$157/mês) |
-| `sync-tofu-outputs.sh` | Bridge entre `tofu output` (provisioning/oci/standalone/) e os charts Helm. Modos: `--diff` (compara IPs/FQDN com `environments/standalone/values.yaml`), `--apply-configmap` (cria ConfigMap K8s `standalone-tofu-outputs` para charts consumirem via envFrom), `--json`/sem flag (imprime tabela). |
-| `teardown-lab.sh` | Remove o laboratório ou standalone (CUIDADO: destrutivo) |
-
-## Laboratório (sp1 / sp2 / pa1)
-
-```bash
-# Bootstrap da máquina principal (Ryzen — Arch Linux)
-./scripts/bootstrap-lab.sh --role=sp1
-
-# Bootstrap da máquina secundária (i7 — Ubuntu Server)
-./scripts/bootstrap-lab.sh --role=sp2
-
-# Bootstrap do DC institucional UNIFESSPA simulado (K3s + containers Docker)
-./scripts/bootstrap-lab.sh --role=pa1
-
-# Com Cloudflare Tunnel (requer login interativo)
-./scripts/bootstrap-lab.sh --role=sp1 --enable-cloudflared
-
-# Modo dry-run
-./scripts/bootstrap-lab.sh --role=sp1 --dry-run
-
-# Validar cluster
-./scripts/validate-cluster.sh
-
-# Teardown (cuidado!)
-./scripts/teardown-lab.sh
-```
+| `bootstrap-standalone.sh` | Provisiona o ambiente standalone OCI (roles `standalone-k8s` e `standalone-data`); chamado pelo cloud-init das VMs |
+| `validate-standalone.sh` | Valida saúde do ambiente (k8s-host + data-host) — usado após o bootstrap |
+| `validate-cluster.sh` | Smoke pós-bootstrap focado no K3s (Pods Running, ArgoCD Synced, IngressRoute respondendo) |
+| `resize-standalone-oci.sh` | Hot-resize dos shapes (OCPU + RAM) das 2 VMs OCI; perfis pré-definidos para POC/HML |
+| `sync-tofu-outputs.sh` | Bridge entre `tofu output` (`provisioning/oci/standalone-compact/`) e os charts Helm. Modos: `--diff`, `--apply-configmap`, `--json` |
+| `smoke-dashboards.sh` | Smoke dos dashboards Grafana provisionados |
+| `smoke-encryption-e2e.sh` | Smoke do pipeline Vault → ExternalSecrets → Pod |
+| `smoke-metrics-pipeline.sh` | Smoke do pipeline OTel → Prometheus → Grafana |
+| `validate-rfc1123.py` | Valida nomes RFC 1123 em todos os charts (consumido pelo CI) |
 
 ## Standalone OCI (dois hosts Ubuntu)
 
-Ambiente de homologação e produção inicial: um `k8s-host` (K3s + ArgoCD) e um
-`data-host` (Docker + volumes LVM para Postgres, Kafka, MinIO, Vault e Redis).
+Topologia: 1 `k8s-host` (K3s + Helm + ArgoCD) + 1 `data-host` (Docker + volumes LVM para Postgres, Kafka, MinIO, Vault e Redis).
 
-### Bootstrap
+O `bootstrap-standalone.sh` é executado **automaticamente pelo cloud-init** das VMs durante o `tofu apply` em `provisioning/oci/standalone-compact/`. Para reexecutar manualmente:
 
 ```bash
 # No k8s-host — K3s + Helm + ArgoCD
 ./scripts/bootstrap-standalone.sh --role=standalone-k8s
 
-# No data-host — Docker + LVM + mount points
+# No data-host — Docker + LVM + mount points + data services
 ./scripts/bootstrap-standalone.sh --role=standalone-data
 
 # Dry-run (mostra o que seria feito, sem executar)
@@ -56,43 +32,25 @@ Ambiente de homologação e produção inicial: um `k8s-host` (K3s + ArgoCD) e u
 ./scripts/bootstrap-standalone.sh --role=standalone-data --dry-run
 
 # Flags disponíveis
-#   --skip-k3s      Pula instalação do K3s (standalone-k8s)
-#   --skip-docker   Pula instalação do Docker (standalone-data)
+#   --skip-k3s        Pula instalação do K3s (standalone-k8s)
+#   --skip-docker     Pula instalação do Docker (standalone-data)
+#   --skip-services   Pula bring-up dos services (standalone-data, debug)
 ```
 
-### Variáveis de ambiente (standalone-data)
-
-O bootstrap do data-host descobre os block volumes OCI automaticamente por
-tamanho. Topologia esperada: 1 × 50 GB (Vault), 1 × 100 GB (Kafka),
-2 × 200 GB (Postgres e MinIO). Verificar com `lsblk` antes de rodar.
+O bootstrap do data-host descobre os block volumes OCI automaticamente. Para o standalone-compact a topologia é 1 disco LVM-particionado (4 LVs). Verificar com `lsblk` antes de rodar.
 
 ### Validação
 
 ```bash
-# No k8s-host (valida os dois hosts)
+# Smoke completo (valida os dois hosts a partir do k8s-host)
 ./scripts/validate-standalone.sh
 
-# Sobrepor IP do data-host (padrão: 10.0.2.87)
-DATA_HOST_IP=10.0.2.87 ./scripts/validate-standalone.sh
+# Sobrepor IP do data-host (padrão: 10.2.2.11)
+DATA_HOST_IP=10.2.2.11 ./scripts/validate-standalone.sh
 ```
 
-Saída esperada em ambiente completo: **`X OK, 0 ERROS, Y AVISOS`**.
-Avisos são esperados enquanto serviços ainda não provisionados (Vault, dados).
+Saída esperada: **`X OK, 0 ERROS, Y AVISOS`**. Avisos são esperados enquanto serviços ainda estão subindo.
 
-### Teardown
+## Histórico
 
-```bash
-# Teardown do k8s-host (desinstala K3s — dados do data-host preservados)
-./scripts/teardown-lab.sh --role=standalone-k8s
-
-# Teardown do data-host (para containers, desmonta LVM — dados nos block volumes preservados)
-./scripts/teardown-lab.sh --role=standalone-data
-```
-
-## Roadmap
-
-- [ ] `chaos/kill-postgres-primary.sh` — Cenário 3 do VALIDATION-PLAN
-- [ ] `chaos/network-partition.sh` — Cenário 4 (split-brain)
-- [ ] `chaos/dc-down.sh` — Cenário 5 (DC inteiro fora)
-- [ ] `load-test/k6-edital-peak.js` — Cenário 8 (carga em pico)
-- [ ] `backup/test-restore.sh` — Cenário 12 (backup/restore)
+Até 2026-05-19 o diretório também trazia `bootstrap-lab.sh` e `teardown-lab.sh` para um laboratório multi-DC (Ryzen 9950X + i7) que nunca foi provisionado. Os scripts foram removidos junto com `environments/lab-*`, `environments/prod-*` e `environments/standalone/` (ver `CHANGELOG.md`).
