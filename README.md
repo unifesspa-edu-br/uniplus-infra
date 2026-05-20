@@ -48,22 +48,20 @@ uniplus-infra/
 │   ├── minio/                  # Storage de objetos distribuído
 │   └── redis/                  # Cache distribuído
 ├── environments/               # Overrides por ambiente
-│   ├── lab-sp1/                # Laboratório local — máquina principal
-│   ├── lab-sp2/                # Laboratório local — máquina secundária
-│   ├── lab-pa1/                # Laboratório local — cluster K3s simulando PA1 (i7)
-│   ├── prod-sp1/               # Produção — EVEO Cotia
-│   └── prod-sp2/               # Produção — EVEO Osasco
+│   └── standalone-compact/     # Único ambiente operacional (OCI GRU, AMD E4.Flex)
 ├── argocd/                     # Bootstrap GitOps (ApplicationSet)
+├── provisioning/oci/           # Provisionamento OpenTofu
+│   └── standalone-compact/     # VMs E4.Flex em sa-saopaulo-1
 ├── docs/                       # Documentação operacional
 │   ├── ARCHITECTURE.md         # Visão arquitetural da plataforma
-│   ├── VALIDATION-PLAN.md      # Plano de validação arquitetural
-│   ├── SETUP.md                # Setup de máquinas do laboratório
-│   ├── RUNBOOKS.md             # Procedimentos operacionais
+│   ├── RUNBOOKS.md             # Procedimentos operacionais (standalone)
+│   ├── adrs/                   # Architecture Decision Records
 │   └── images/                 # Diagramas C4 e ilustrações
 ├── scripts/                    # Scripts de automação
-│   ├── bootstrap-lab.sh        # Provisiona laboratório do zero
-│   ├── teardown-lab.sh         # Limpa o laboratório
-│   └── validate-cluster.sh     # Valida saúde do cluster
+│   ├── bootstrap-standalone.sh # Provisiona K3s + data services no host
+│   ├── validate-cluster.sh     # Valida saúde do cluster
+│   ├── smoke-*.sh              # Smokes (dashboards, encryption, metrics)
+│   └── validate-standalone.sh  # Validação pós-bootstrap standalone
 └── .github/                    # CI/CD workflows
 ```
 
@@ -71,7 +69,7 @@ uniplus-infra/
 
 **1. GitOps como fonte única de verdade.** Todo o estado declarativo da plataforma reside neste repositório. O ArgoCD em cada cluster reconcilia continuamente o estado real com o desejado.
 
-**2. Três DCs lógicos.** A plataforma é modelada como `SP1`, `SP2` e `PA1`. `SP1` e `SP2` atendem tráfego de usuário em modo ativo-ativo; `PA1` é o DC institucional da UNIFESSPA, responsável por identidade institucional, backup, observabilidade/retenção e funções de consenso quando aplicável.
+**2. Topologia atual: standalone-compact.** A plataforma opera hoje em 1 cluster K3s + 1 data-host externo em OCI GRU (sa-saopaulo-1), shape E4.Flex AMD. O modelo dos 3 DCs (`SP1`+`SP2`+`PA1`) é a topologia de referência institucional para o futuro; sua adoção depende de acordo com EVEO e DIRSI. Detalhes em [docs/ARCHITECTURE.md §5.5](docs/ARCHITECTURE.md#55-topologias-suportadas).
 
 **3. Ativo-ativo no nível da plataforma.** Cada componente usa o mecanismo nativo de HA, replicação, sincronização ou quorum suportado pelo produto. Onde multi-writer limpo não existir, distribuímos responsabilidade e usamos failover controlado, sem simular multi-master artificial.
 
@@ -79,16 +77,16 @@ uniplus-infra/
 
 **5. Secrets nunca em código.** Toda credencial, chave ou token reside no cofre institucional e é injetada nos pods via External Secrets Operator. Os manifests do Git contêm apenas referências (`ExternalSecret`).
 
-**6. Soberania institucional sem ponto único de falha.** `PA1` concentra LDAP institucional, `pa1-oidc-source` e `pa1-backup`, mas não fica no caminho síncrono obrigatório do atendimento normal. Se `PA1` ficar fora por algumas horas, `SP1` e `SP2` continuam atendendo e sincronizam backlog/backup quando `PA1` retornar.
+**6. Soberania institucional como meta.** No standalone-compact (atual) a soberania ainda depende do provedor OCI. Quando o modelo 3-DC for revivido, `PA1` (Marabá) hospedará LDAP institucional, OIDC source institucional e destino de backup, sem virar ponto único de falha para o atendimento.
 
 ## Documentação
 
 | Documento | Descrição |
 |-----------|-----------|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Visão arquitetural completa, com diagramas C4 |
-| [docs/VALIDATION-PLAN.md](docs/VALIDATION-PLAN.md) | Plano de validação arquitetural em laboratório local |
-| [docs/SETUP.md](docs/SETUP.md) | Passo-a-passo de setup das máquinas do laboratório |
-| [docs/RUNBOOKS.md](docs/RUNBOOKS.md) | Procedimentos operacionais (failover, backup, etc.) |
+| [docs/RUNBOOKS.md](docs/RUNBOOKS.md) | Procedimentos operacionais (bootstrap, failover, backup) |
+| [docs/adrs/](docs/adrs/) | Architecture Decision Records (ADR-008+ vigentes) |
+| [docs/validacao/](docs/validacao/) | Relatórios de validação executadas |
 
 ## Tecnologias e ferramentas
 

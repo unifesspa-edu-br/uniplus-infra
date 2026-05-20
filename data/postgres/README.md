@@ -25,7 +25,7 @@ Esta distribuição balanceia carga de escrita e exercita rotineiramente os meca
 ## Pré-requisitos
 
 - Docker + Docker Compose instalado no host
-- Volume LVM dedicado em `/var/lib/postgres` (ver [SETUP.md](../../docs/SETUP.md))
+- Volume LVM dedicado em `/var/lib/postgres` (criado pelo `scripts/bootstrap-standalone.sh` no data-host)
 - Conectividade entre nós via L2L (ou LAN no laboratório)
 - `pa1-consensus-witness` acessível em `uniplus-pa1:12379` no lab quando Patroni usar consenso externo
 - `pa1-backup` acessível para arquivamento de WAL e backups pgBackRest
@@ -149,4 +149,4 @@ Veja [docs/RUNBOOKS.md](../../docs/RUNBOOKS.md) para procedimentos operacionais 
 
 ## Validação
 
-Veja [docs/VALIDATION-PLAN.md](../../docs/VALIDATION-PLAN.md) Cenários 3 (failover Postgres), 4 (queda de PA1), 5 (queda de SP1/SP2) e 12 (backup, backlog e restore via PA1).
+Validação atual (standalone-compact): smoke pós-bootstrap em `scripts/validate-standalone.sh` e relatórios em `docs/validacao/`. Cenários 3 (failover Postgres), 4 (queda de PA1), 5 (queda de SP1/SP2) e 12 (backup, backlog e restore via PA1) eram do modelo 3-DC original e ainda não foram executados.

@@ -50,7 +50,9 @@ A integração entre módulos ocorre via **eventos de domínio** publicados no A
 
 ### 2.2 Independência operacional entre datacenters
 
-A plataforma é modelada como **3 DCs lógicos**:
+> **Status (2026-05-19):** este princípio descreve a arquitetura-alvo. Hoje a plataforma opera no ambiente `standalone-compact` — 1 cluster K3s + 1 data-host externo em OCI GRU (ver [§5.5](#55-topologias-suportadas)). O modelo dos 3 DCs (SP1+SP2+PA1) é a topologia de referência institucional, mas só será adotada quando houver acordo formal com EVEO e DIRSI sobre IPSEC/Palo Alto/roteamento. Os ADRs do bloco 001/007 que descreviam o 3-DC puro foram marcados como Superseded por [ADR-008](adrs/ADR-008-topologia-standalone.md).
+
+A plataforma é modelada (futuro) como **3 DCs lógicos**:
 
 - `SP1`: datacenter externo EVEO Cotia, ativo para tráfego de usuário.
 - `SP2`: datacenter externo EVEO Osasco, ativo para tráfego de usuário.
@@ -235,19 +237,21 @@ Topologia descrita em [ADR-008](adrs/ADR-008-topologia-standalone.md). Resumo:
 
 #### 5.5.3 Como o repositório suporta as duas
 
-| Aspecto | 3-DC | Standalone |
+| Aspecto | 3-DC (referência futura) | Standalone (em uso 2026-05-19) |
 |---|---|---|
 | `apps/` charts | mesmos | mesmos |
 | `platform/` charts | mesmos | mesmos |
 | `data/` (Postgres/Kafka/MinIO/Redis fora-do-K8s) | binários iguais, configs HA | binários iguais, configs single-node |
-| `environments/` overrides | `lab-{sp1,sp2,pa1}/` + `prod-{sp1,sp2,pa1}/` | `standalone/` |
-| `argocd/applicationset.yaml` | mesmo (multi-cluster) | mesmo (single-cluster, gera só Apps de standalone) |
-| `scripts/bootstrap-{role}.sh` | `bootstrap-lab.sh --role={sp1\|sp2\|pa1}` | `bootstrap-standalone.sh` |
-| ADRs específicas | ADRs 001–007, 009 (3-DC) | [ADR-008](adrs/ADR-008-topologia-standalone.md), [ADR-010](adrs/ADR-010-keycloak-config-cli-realm-reconcile.md) (standalone) |
+| `environments/` overrides | a derivar de standalone-compact quando 3-DC for revivido | `standalone-compact/` |
+| `argocd/applicationset.yaml` | mesmo (multi-cluster) | mesmo (single-cluster, gera só Apps de standalone-compact) |
+| `scripts/bootstrap-{role}.sh` | (não implementado) | `bootstrap-standalone.sh` |
+| ADRs específicas | ADRs 001–007 (superseded em 2026-05-19) | [ADR-008](adrs/ADR-008-topologia-standalone.md), [ADR-010](adrs/ADR-010-keycloak-config-cli-realm-reconcile.md), e demais |
 
 **Princípio de divergência mínima:** valores divergem apenas em `environments/<env>/values.yaml`. Charts não trazem código condicional `{{- if eq .Values.topology "standalone" -}}` — a topologia é uma propriedade do environment, não do chart.
 
 > Excecções pontuais (ex.: `keycloak.realmReconcile.enabled` ligado em standalone, desligado em prod até o smoke validar; `traefik.updateStrategy.type=Recreate` necessário em single-node por HostPort conflict) ficam em values.yaml documentadas inline e em ADR. Não há flag global de "topologia".
+
+> **Histórico:** até 2026-05-19 o repositório também trazia `environments/lab-{sp1,sp2,pa1}/`, `environments/prod-{sp1,sp2,pa1}/`, `environments/standalone/`, `scripts/bootstrap-lab.sh` e `scripts/teardown-lab.sh`. Esses arquivos foram removidos por nunca terem sido provisionados (ver `CHANGELOG.md`). Quando o modelo 3-DC for revivido, derivar do `standalone-compact` (mais maduro).
 
 ## 6. Componentes Internos (C4 Nível 3)
 
@@ -369,15 +373,16 @@ Esta seção define o mecanismo de redundância aceito para cada família de ser
 
 ## Anexos
 
-- [VALIDATION-PLAN.md](VALIDATION-PLAN.md) — Plano de validação arquitetural em laboratório
-- [SETUP.md](SETUP.md) — Setup das máquinas do laboratório
-- [RUNBOOKS.md](RUNBOOKS.md) — Procedimentos operacionais detalhados
+- [RUNBOOKS.md](RUNBOOKS.md) — Procedimentos operacionais detalhados (bootstrap standalone, failover 3-DC histórico)
+- [adrs/](adrs/) — Architecture Decision Records (ADR-008+ vigentes)
+- [validacao/](validacao/) — Relatórios de validação executadas
 
 ## Histórico de versões
 
 | Versão | Data | Autor | Mudanças |
 |--------|------|-------|----------|
 | 1.0 | Abr/2026 | Jeferson Ferreira | Versão inicial baseada no DT-UNIPLUS-001 |
+| 1.1 | 2026-05-19 | Jeferson Ferreira | §2.2 marcada como referência futura; §5.5.3 atualizada para standalone-compact; remoção de refs a VALIDATION-PLAN/SETUP/network-matrix |
 
 ---
 

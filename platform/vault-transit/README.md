@@ -51,7 +51,7 @@ Métricas internas do Vault expostas em `/v1/sys/metrics?format=prometheus`. Col
 
 ## Network
 
-Tráfego 8200/tcp cross-cluster (SP1/SP2 → este Transit) precisa ser liberado pela DIRSI antes da promoção a sanidade. Linhas correspondentes documentadas em [`docs/network-matrix.md`](../../docs/network-matrix.md).
+Tráfego 8200/tcp cross-cluster (SP1/SP2 → este Transit) faria parte do modelo 3-DC (ADR-007, superseded em 2026-05-19). No `standalone-compact` atual este chart não é deployado.
 
 ## Segurança
 
