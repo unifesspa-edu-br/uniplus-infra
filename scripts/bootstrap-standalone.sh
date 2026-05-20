@@ -54,8 +54,14 @@ VCN_CIDR="${VCN_CIDR:-10.2.0.0/16}"
 K8S_PUBLIC_IP="${K8S_PUBLIC_IP:-137.131.131.6}"
 K8S_DOMAIN="${K8S_DOMAIN:-standalone.portaluni.com.br}"
 
+# Auto-detecta o IPv4 privado (RFC 1918) do data-host. `hostname -I` lista
+# múltiplos endereços (privado, possivelmente IPv6) e o primeiro token não é
+# garantidamente o IPv4 privado — filtrar evita bindar Postgres/Kafka/MinIO/
+# Redis na interface errada. Se nada casar, cai no default fixo do compact.
 if [[ -z "${DATA_HOST_IP:-}" ]] && command -v hostname &>/dev/null; then
-    DATA_HOST_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+    DATA_HOST_IP=$(hostname -I 2>/dev/null | tr ' ' '\n' \
+        | grep -E '^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)' \
+        | head -1)
 fi
 DATA_HOST_IP="${DATA_HOST_IP:-10.2.2.11}"
 

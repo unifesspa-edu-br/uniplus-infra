@@ -95,7 +95,7 @@ tofu output
 $EDITOR terraform.tfvars  # volume_size_gbs = 150
 tofu apply
 ssh -J ubuntu@<k8s-public-ip> ubuntu@10.2.2.11 \
-  "sudo lvextend -L +50G /dev/uniplus-vg/lv-minio && sudo resize2fs /dev/uniplus-vg/lv-minio"
+  "sudo lvextend -L +50G /dev/uniplus-vg/lv-minio && sudo xfs_growfs /var/lib/uniplus/minio"
 ```
 
 > O block + boot somam 194 GB hoje (≤ 200 GB Always Free). Acima de 200 GB
