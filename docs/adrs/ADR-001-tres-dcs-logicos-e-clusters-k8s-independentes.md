@@ -1,7 +1,7 @@
 # ADR-001: Três DCs lógicos e clusters K8s independentes
 
-- **Status:** ✅ Aceito
-- **Data:** 2026-04-20
+- **Status:** ⛔ Superseded — substituído por [ADR-008](ADR-008-topologia-standalone.md). O modelo dos 3 DCs (SP1+SP2+PA1) nunca foi provisionado; em 2026-05-19 a única infra operada é o ambiente `standalone-compact` (1 cluster K3s + data-host externo em OCI GRU).
+- **Data:** 2026-04-20 · **Superseded em:** 2026-05-19
 - **Relacionado:** [Issue #17](https://github.com/unifesspa-edu-br/uniplus-infra/issues/17)
 
 ## Contexto
