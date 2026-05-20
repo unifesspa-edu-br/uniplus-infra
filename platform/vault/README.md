@@ -58,7 +58,7 @@ Métricas internas do Vault expostas em `/v1/sys/metrics?format=prometheus`. Col
 
 ## Network
 
-Tráfego cross-cluster (este Vault → Vault Transit em PA1) precisa ser liberado pela DIRSI antes da promoção a sanidade. No lab, o endpoint é o NodePort `30200/tcp`; em prod, os values apontam para HTTPS público `443/tcp`. Linhas correspondentes documentadas em [`docs/network-matrix.md`](../../docs/network-matrix.md).
+No `standalone-compact` (2026-05-19) o Vault opera com selo Shamir 5/3 manual; auto-unseal Transit cross-cluster fazia parte do modelo 3-DC (ADR-007, superseded). Quando o 3-DC for revivido, o tráfego cross-cluster precisará ser liberado pela DIRSI — atualmente sem matriz de rede formalizada.
 
 ## Segurança
 

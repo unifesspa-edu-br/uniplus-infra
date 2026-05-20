@@ -84,5 +84,5 @@ Por padrão, todos os ApplicationSets têm:
 
 ## Relacionamento com a documentação
 
-- Setup inicial do ArgoCD: [docs/SETUP.md](../docs/SETUP.md#6-instalação-do-kubernetes-k3s)
+- Setup inicial do ArgoCD: `scripts/bootstrap-standalone.sh` (instala K3s + ArgoCD)
 - Operação: [docs/RUNBOOKS.md](../docs/RUNBOOKS.md#12-deploy-de-mudança-via-gitops)

@@ -43,4 +43,4 @@ Diferente de Postgres, Kafka e MinIO, Redis/Valkey roda **dentro do Kubernetes**
 
 ## Validação
 
-Não há cenário específico no [VALIDATION-PLAN.md](../../docs/VALIDATION-PLAN.md). Validação implícita nos cenários de carga (Cenário 8).
+Validação atual (standalone-compact): smoke pós-bootstrap em `scripts/validate-standalone.sh` (ping/auth). Cenários de carga ainda não executados.

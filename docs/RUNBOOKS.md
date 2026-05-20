@@ -2,6 +2,8 @@
 
 > Procedimentos passo-a-passo para operação rotineira e resposta a incidentes da plataforma Uni+.
 
+> **Status (2026-05-19):** as seções 1–7 deste arquivo foram escritas para o modelo 3-DC (SP1+SP2+PA1) que ainda não foi provisionado — mantidas como referência institucional. Para a operação atual em `standalone-compact` (1 cluster K3s + 1 data-host em OCI GRU) use as seções **8 (Bootstrap/Teardown)** e **9 (Data services no data-host)**. Procedimentos de failover inter-DC (§2.3, §2.4), Vault auto-unseal Transit (§1.4) e backup destino PA1 (§3) não se aplicam ao standalone-compact, onde o Vault usa selo Shamir 5/3 manual e os backups são locais ao data-host.
+
 ## Sumário
 
 - [1. Procedimentos Rotineiros](#1-procedimentos-rotineiros)
@@ -267,7 +269,7 @@ patronictl -c /etc/patroni/patroni.yml switchover \
    ./scripts/validate-cluster.sh
    ```
 
-**Tempo estimado de RTO:** ≤ 1 hora (medido em [VALIDATION-PLAN.md](VALIDATION-PLAN.md) Cenário 5).
+**Tempo estimado de RTO:** ≤ 1 hora (alvo do desenho 3-DC; ainda não foi medido em laboratório real).
 
 ### 2.4 PA1 indisponível
 
@@ -913,7 +915,7 @@ argocd app list --selector environment=standalone
 
 ### 8.3.1 DNS records — CNAMEs por host
 
-A topologia standalone expõe 11 hostnames sob `standalone.portaluni.com.br` via Traefik IngressRoutes (validados pelo Cenário 13 do `VALIDATION-PLAN.md`). O FQDN raiz `standalone.portaluni.com.br` aponta para o **Reserved Public IP** OCI (provisionamento via `provisioning/oci/standalone/` — issue #56). Os demais são CNAMEs apontando para o FQDN raiz.
+A topologia standalone expõe 11 hostnames sob `standalone.portaluni.com.br` via Traefik IngressRoutes (validados em `docs/validacao/standalone-2026-05-09.md`). O FQDN raiz `standalone.portaluni.com.br` aponta para o **Reserved Public IP** OCI (provisionamento via `provisioning/oci/standalone-compact/` — issue #56). Os demais são CNAMEs apontando para o FQDN raiz.
 
 | Host | Tipo | Aponta para | Apps consumidoras |
 |---|---|---|---|

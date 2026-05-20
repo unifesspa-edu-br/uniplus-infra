@@ -30,4 +30,4 @@ Objetos devem usar chaves imutáveis/UUID sempre que possível. Isso reduz confl
 
 ## Validação
 
-Veja [docs/VALIDATION-PLAN.md](../../docs/VALIDATION-PLAN.md) Cenário 7.
+Validação atual (standalone-compact): smoke pós-bootstrap em `scripts/validate-standalone.sh`. O Cenário 7 (3-DC, replicação inter-DC) ainda não foi executado.
