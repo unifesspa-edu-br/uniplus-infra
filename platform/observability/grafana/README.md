@@ -73,11 +73,9 @@ grafana:
             timeInterval: 30s
 ```
 
-Pattern por env:
-- standalone: `platform-observability-prometheus-uniplus-standalone-prometheus.observability-prometheus.svc...`
-- lab-sp1: `platform-observability-prometheus-lab-sp1-prometheus.observability-prometheus.svc...`
-- lab-sp2: `platform-observability-prometheus-lab-sp2-prometheus.observability-prometheus.svc...`
-- prod-sp1/sp2: `platform-observability-prometheus-prod-{sp1,sp2}-prometheus.observability-prometheus.svc...`
+Pattern por env (atual: apenas standalone-compact):
+
+- `standalone-compact`: `platform-observability-prometheus-in-cluster-prometheus.observability-prometheus.svc...`
 
 (Quando `platform/observability/prometheus/` ganhar `fullnameOverride`, esse pattern simplifica — issue separada se valer a pena.)
 
