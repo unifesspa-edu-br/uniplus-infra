@@ -85,6 +85,7 @@ uniplus-infra/
 |-----------|-----------|
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Visão arquitetural completa, com diagramas C4 |
 | [docs/RUNBOOKS.md](docs/RUNBOOKS.md) | Procedimentos operacionais (bootstrap, failover, backup) |
+| [docs/REPRODUCIBILITY.md](docs/REPRODUCIBILITY.md) | Como recriar o ambiente do zero (recreate drill, checklist de passos manuais) |
 | [docs/adrs/](docs/adrs/) | Architecture Decision Records (ADR-008+ vigentes) |
 | [docs/validacao/](docs/validacao/) | Relatórios de validação executadas |
 
