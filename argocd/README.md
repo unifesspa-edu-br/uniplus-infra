@@ -4,9 +4,9 @@ Configurações do ArgoCD para o Uni+: AppProject e ApplicationSets.
 
 ## Visão geral
 
-O ArgoCD é instalado em **cada cluster** (lab-sp1, lab-sp2, prod-sp1, prod-sp2) e gerencia o ciclo de vida das aplicações Uni+ neste cluster.
+O ArgoCD é instalado no cluster do ambiente operacional (`standalone-compact`) e gerencia o ciclo de vida das aplicações Uni+. O design é multi-cluster (o ApplicationSet matcha qualquer cluster com o label `uniplus.io/managed=true`), pronto para o dia em que o modelo 3-DC for revivido.
 
-A instalação inicial do ArgoCD é feita pelo script `scripts/bootstrap-lab.sh`. Após instalado, os manifests neste diretório são aplicados via `kubectl apply -f` (uma vez), e a partir daí o ArgoCD se autogerencia (incluindo seus próprios upgrades).
+A instalação inicial do ArgoCD é feita pelo `scripts/bootstrap-standalone.sh` (role `standalone-k8s`). Após instalado, os manifests neste diretório são aplicados via `kubectl apply -f` (uma vez), e a partir daí o ArgoCD se autogerencia (incluindo seus próprios upgrades).
 
 ## Estrutura
 
@@ -61,7 +61,7 @@ Após o ArgoCD estar instalado:
 ```bash
 # Registrar este cluster
 argocd cluster add <context> --label uniplus.io/managed=true \
-                              --label environment=lab-sp1
+                              --label environment=standalone-compact
 
 # Aplicar AppProject
 kubectl apply -f argocd/project.yaml

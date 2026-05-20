@@ -87,7 +87,7 @@ spec:
     # Backends externos ao cluster (data-host stateful: MinIO Console,
     # futuras UIs admin de Postgres/Redis/etc.). IngressRoutes que apontam
     # para Services com EndpointSlice manual cujo IP é externo (ex.:
-    # 10.0.2.87 do data-host) precisam que o Traefik consiga abrir conexão
+    # 10.2.2.11 do data-host) precisam que o Traefik consiga abrir conexão
     # TCP nesse IP+porta. Sem essa regra, Traefik retorna 502 Bad Gateway
     # silenciosamente (egress default-deny quando policyTypes inclui Egress).
     # Code-reviewer P0 do platform/minio-console-proxy.

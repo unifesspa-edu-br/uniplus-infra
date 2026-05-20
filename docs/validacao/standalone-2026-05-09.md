@@ -1,7 +1,7 @@
 # Validação integrada Standalone OCI — 2026-05-09
 
 > **Story:** [`uniplus-infra#99`](https://github.com/unifesspa-edu-br/2026-05-09)
-> **Cenário:** [`docs/VALIDATION-PLAN.md` Cenário 13 + 13.A](../VALIDATION-PLAN.md)
+> **Cenário:** Cenário 13 + 13.A do antigo `docs/VALIDATION-PLAN.md` (plano 3-DC removido em 2026-05-19 — ver `CHANGELOG.md`)
 > **Operador:** Jeferson Ferreira da Silva (@marmota-alpina)
 > **Auxílio:** Claude Code (smoke automatizado via Playwright + curl + ssh)
 

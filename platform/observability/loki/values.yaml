@@ -6,7 +6,7 @@
 # PA1 fica desligado por default (agregação separada).
 #
 # Storage backend: S3-compatible. Em standalone aponta para MinIO local
-# (data-host 10.0.2.87:9000) com credenciais escopadas (user `loki-svc`,
+# (data-host 10.2.2.11:9000) com credenciais escopadas (user `loki-svc`,
 # policy `loki-rw`) custodiadas no Vault `secret/standalone/minio/loki`
 # e injetadas via ExternalSecret + envFrom.
 #
@@ -276,7 +276,7 @@ lokiWrapper:
       - observability-grafana
       - observability-otelcol
     # CIDR do MinIO (data-host privado). Override por environment.
-    minioCIDR: "10.0.2.87/32"
+    minioCIDR: "10.2.2.11/32"
     minioPort: 9000
     # Service CIDR do K3s para acesso ao kube-apiserver (DNS via CoreDNS no
     # Service `kubernetes` em default). Override por environment se cluster

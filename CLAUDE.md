@@ -50,7 +50,7 @@ Use `make help` para a lista atualizada.
 ssh ubuntu@137.131.131.6                          # k8s-host (Reserved IP)
 ssh -J ubuntu@137.131.131.6 ubuntu@10.2.2.11      # data-host via jump
 
-# Bootstrap (executado automaticamente pelo cloud-init no tofu apply)
+# Bootstrap — manual via SSH após o tofu apply (sem cloud-init ainda, issue #387)
 ./scripts/bootstrap-standalone.sh --role=standalone-k8s [--dry-run]
 ./scripts/bootstrap-standalone.sh --role=standalone-data [--dry-run]
 

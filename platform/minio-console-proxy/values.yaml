@@ -23,7 +23,7 @@ minioConsoleProxy:
     # aceito pelo K8s nesse contexto. Para FQDN seria necessário addressType:
     # FQDN (não implementado neste chart) ou resolver no values do environment.
     # Render-time guard rejeita não-IPv4 com mensagem explicativa.
-    host: ""                    # ex.: 10.0.2.87
+    host: ""                    # ex.: 10.2.2.11
     # Port do MinIO Console (não da API S3 9000).
     consolePort: 9001
 

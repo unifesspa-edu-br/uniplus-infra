@@ -26,7 +26,7 @@ Ver [docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md) para o contexto arquitetu
 
 `apps/keycloak-replica/` é referenciado pelo ApplicationSet `uniplus-apps` em `argocd/applicationset.yaml`. Cada cluster registrado (label `uniplus.io/managed=true`) recebe uma `Application` chamada `keycloak-replica-<release>` que aterrissa no namespace `uniplus`.
 
-Por padrão o chart fica **desabilitado** (`keycloak.enabled: false`). Apenas environments que explicitamente ligam (ex.: `environments/standalone/values.yaml`) sobem os recursos.
+Por padrão o chart fica **desabilitado** (`keycloak.enabled: false`). Apenas environments que explicitamente ligam (ex.: `environments/standalone-compact/values.yaml`) sobem os recursos.
 
 ## Templates entregues
 
@@ -79,7 +79,7 @@ helm lint apps/keycloak-replica/
 
 # Render contra standalone (envs reais)
 helm template keycloak-replica apps/keycloak-replica/ \
-  -f environments/standalone/values.yaml | kubectl apply --dry-run=client -f -
+  -f environments/standalone-compact/values.yaml | kubectl apply --dry-run=client -f -
 
 # Schema
 make schema-validate

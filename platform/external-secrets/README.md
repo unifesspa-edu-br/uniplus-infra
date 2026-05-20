@@ -4,7 +4,7 @@ External Secrets Operator (ESO) — sincroniza Secrets do Vault para Secrets nat
 
 ## Visão geral
 
-Wrapper do chart oficial [external-secrets/external-secrets](https://github.com/external-secrets/external-secrets). Roda em cada cluster (lab-{sp1,sp2}, prod-{sp1,sp2}, standalone) e consome Secrets do Vault de aplicação local (chart `platform/vault/`).
+Wrapper do chart oficial [external-secrets/external-secrets](https://github.com/external-secrets/external-secrets). Roda no cluster do ambiente operacional (`standalone-compact`); o design multi-cluster permanece válido para o modelo 3-DC quando revivido e consome Secrets do Vault de aplicação local (chart `platform/vault/`).
 
 Em clusters PA1, ESO permanece desligado por default — PA1 só hospeda Vault Transit (não há aplicação consumindo Secrets ali).
 
@@ -56,7 +56,7 @@ Procedimento (resumido — versão completa em `docs/RUNBOOKS.md` §1.4 e §8.4)
 4. Habilitar o ClusterSecretStore via override no environment:
 
    ```yaml
-   # environments/standalone/values.yaml
+   # environments/standalone-compact/values.yaml
    clusterSecretStore:
      enabled: true
    ```

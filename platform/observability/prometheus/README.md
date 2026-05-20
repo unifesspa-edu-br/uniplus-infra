@@ -4,7 +4,7 @@ Stack Prometheus + Operator (CRDs ServiceMonitor/PodMonitor) + Alertmanager + no
 
 ## Visão geral
 
-Wrapper do chart oficial [prometheus-community/kube-prometheus-stack](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack). Roda em cada cluster (lab-{sp1,sp2}, prod-{sp1,sp2}, standalone). Em PA1 fica desligado por default — PA1 hospeda agregação separada com retenção longa.
+Wrapper do chart oficial [prometheus-community/kube-prometheus-stack](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack). Roda no cluster do ambiente operacional (`standalone-compact`); o design multi-cluster permanece válido para o modelo 3-DC quando revivido. Em PA1 fica desligado por default — PA1 hospeda agregação separada com retenção longa.
 
 Grafana NÃO faz parte deste chart (vai para `platform/observability/grafana/`, sub-issue #27). O subchart upstream vem com Grafana habilitado por default — desligamos explicitamente aqui.
 
@@ -38,7 +38,7 @@ Após o ApplicationSet sincronizar:
 | `kubePrometheusStack.enabled` | `true` | Liga o subchart |
 | `kubePrometheusStack.grafana.enabled` | `false` | Grafana fica em chart separado (#27) |
 | `kubePrometheusStack.prometheus.prometheusSpec.replicas` | `1` | 1 em standalone/lab, 2+ em prod (override) |
-| `kubePrometheusStack.prometheus.prometheusSpec.retention` | `7d` | Standalone alinha com `environments/standalone/values.yaml` |
+| `kubePrometheusStack.prometheus.prometheusSpec.retention` | `7d` | Standalone alinha com `environments/standalone-compact/values.yaml` |
 | `kubePrometheusStack.prometheus.prometheusSpec.retentionSize` | `8GiB` | Storage 10Gi com folga pra WAL |
 | `kubePrometheusStack.prometheus.ingress.enabled` | `false` | Habilitar atrás de OIDC + IP allowlist |
 | `kubePrometheusStack.alertmanager.enabled` | `true` | Receiver placeholder "null" (apenas log) |
@@ -54,7 +54,7 @@ Após o ApplicationSet sincronizar:
 Após este chart estar Synced/Healthy, outros charts da plataforma podem habilitar seus ServiceMonitors via override no environment:
 
 ```yaml
-# environments/standalone/values.yaml
+# environments/standalone-compact/values.yaml
 externalSecrets:
   serviceMonitor:
     enabled: true       # ESO scrapeado pelo Prometheus

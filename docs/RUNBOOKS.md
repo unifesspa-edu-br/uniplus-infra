@@ -769,8 +769,8 @@ Ambiente de homologação e produção inicial composto por dois hosts Ubuntu na
 
 | Host | Papel | IP público | IP privado |
 |------|-------|-----------|-----------|
-| `k8s-host` | K3s single-node + Helm + ArgoCD | `164.152.53.29` | — |
-| `data-host` | Docker + LVM (Postgres, Kafka, MinIO, Vault, Redis) | — | `10.0.2.87` |
+| `k8s-host` | K3s single-node + Helm + ArgoCD | `137.131.131.6` | — |
+| `data-host` | Docker + LVM (Postgres, Kafka, MinIO, Vault, Redis) | — | `10.2.2.11` |
 
 > **Pré-requisito infra:** as VMs OCI E4.Flex (k8s-host + data-host), VCN, subnets, NSGs, Block Volumes e Reserved Public IP são provisionados via OpenTofu em `provisioning/oci/standalone/` — ver [`provisioning/oci/standalone/README.md`](../provisioning/oci/standalone/README.md) e issues [#52](https://github.com/unifesspa-edu-br/uniplus-infra/issues/52)–[#58](https://github.com/unifesspa-edu-br/uniplus-infra/issues/58). Os procedures abaixo assumem essas VMs já no ar com Ubuntu 24.04 LTS instalado.
 >
@@ -818,7 +818,7 @@ kubectl get pods -n argocd
 **Executar no data-host (via SSH do k8s-host):**
 
 ```bash
-ssh -i ~/.ssh/id_ed25519 ubuntu@10.0.2.87
+ssh -i ~/.ssh/id_ed25519 ubuntu@10.2.2.11
 
 # Dentro do data-host:
 git clone https://github.com/unifesspa-edu-br/uniplus-infra.git
@@ -970,7 +970,7 @@ done
 
 ### 8.4 Init, unseal e configuração do Vault (Shamir manual)
 
-> **Decisão arquitetural temporária (2026-05-05):** standalone usa **Shamir seal com unseal manual** em vez de OCI KMS auto-unseal. OCI KMS provisionado e pronto, mas Vault 1.20.x/1.21.x panicam consistentemente em `go-kms-wrapping@v2.0.9/ocikms.go:290` na pre-flight encrypt validation (Resource Principal *e* API Key falham; OCI CLI direto funciona — bug é no Vault, não na infra). Migração para `seal "ocikms"` quando Vault 1.22+ chegar com go-kms-wrapping atualizado. Detalhes do bloco `seal` provisional em `environments/standalone/values.yaml` (comentário no chart vault).
+> **Decisão arquitetural temporária (2026-05-05):** standalone usa **Shamir seal com unseal manual** em vez de OCI KMS auto-unseal. OCI KMS provisionado e pronto, mas Vault 1.20.x/1.21.x panicam consistentemente em `go-kms-wrapping@v2.0.9/ocikms.go:290` na pre-flight encrypt validation (Resource Principal *e* API Key falham; OCI CLI direto funciona — bug é no Vault, não na infra). Migração para `seal "ocikms"` quando Vault 1.22+ chegar com go-kms-wrapping atualizado. Detalhes do bloco `seal` provisional em `environments/standalone-compact/values.yaml` (comentário no chart vault).
 
 #### 8.4.1 Init na primeira vez
 
@@ -1138,7 +1138,7 @@ exit  # dispara o trap EXIT da §8.4.3 → kill port-forward + unset VAULT_TOKEN
 
 Quando Vault 1.22+ aterrissar (go-kms-wrapping atualizado), a migração elimina o procedimento manual de unseal:
 
-1. Adicionar bloco `seal "ocikms"` em `vault.server.ha.raft.config` (override standalone), apontando para o OCI Vault + Master Key já provisionados (OCIDs em `environments/standalone/values.yaml` — comentário do chart vault).
+1. Adicionar bloco `seal "ocikms"` em `vault.server.ha.raft.config` (override standalone), apontando para o OCI Vault + Master Key já provisionados (OCIDs em `environments/standalone-compact/values.yaml` — comentário do chart vault).
 2. Provisionar Secret `vault-ocikms-config` via ESO/Vault (será emitido pelo próprio Vault standalone via `secret/data/standalone/ocikms`).
 3. `vault operator migrate` para converter Shamir → OCI KMS.
 4. Restart do StatefulSet — Pod sobe com `Sealed=false` automaticamente.
@@ -1150,11 +1150,11 @@ Validar antes em ambiente de teste com `letsencrypt-staging` cert do Vault (qual
 **Executar no k8s-host após todos os bootstraps:**
 
 ```bash
-# Usando o IP padrão do data-host (10.0.2.87)
+# Usando o IP padrão do data-host (10.2.2.11)
 ./scripts/validate-standalone.sh
 
 # Sobrepor IP se necessário
-DATA_HOST_IP=10.0.2.87 ./scripts/validate-standalone.sh
+DATA_HOST_IP=10.2.2.11 ./scripts/validate-standalone.sh
 ```
 
 **Saída esperada em ambiente completo:**
@@ -1194,7 +1194,7 @@ Avisos são esperados enquanto serviços da Epic `data/*` ainda não estiverem p
 
 ```bash
 # A partir do k8s-host — SSH no data-host e executar teardown
-ssh -t -i ~/.ssh/id_ed25519 ubuntu@10.0.2.87 \
+ssh -t -i ~/.ssh/id_ed25519 ubuntu@10.2.2.11 \
   "cd uniplus-infra && ./scripts/teardown-lab.sh --role=standalone-data"
 ```
 
@@ -1248,7 +1248,7 @@ A função `step_data_setup_postgres` em `scripts/bootstrap-standalone.sh` provi
 2. `.bootstrap-creds` (root:root 600) em `/var/lib/uniplus/postgres/.bootstrap-creds` com `super_pw` + `keycloak_pw` (256 bits cada via `openssl rand -hex 32`) — gerado **somente na primeira execução**.
 3. Init SQL **efêmero** `/var/lib/uniplus/postgres/init/00-keycloak.sql` (mode `600`, owner `70:70`) — gerado APENAS quando o cluster ainda não foi inicializado (sem `PG_VERSION` em `data/`). Cria role `keycloak` + database `keycloak` na primeira inicialização. Após `pg_isready` confirmar que o entrypoint executou o script, o arquivo é shredded (`shred -u`) — `keycloak_pw` em cleartext NÃO persiste no filesystem do data-host entre runs (snapshots/backups da LVM `vg-postgres` não capturam cópia extra do secret).
 4. **Credential file** `/etc/credstore/uniplus-postgres-password` (root:root `400`, dir `700`) contendo `super_pw` em texto puro (sem trailing newline). Issue #128 — substitui o legacy `/etc/uniplus-postgres.env` (EnvironmentFile) pelo pattern `LoadCredential=` do systemd 250+: a senha é bind-mounted pelo systemd em `${CREDENTIALS_DIRECTORY}/postgres-password` (tmpfs do unit, isolada de `/proc/<pid>/environ`) e nunca trafega via env do processo. Em Ubuntu 24.04 LTS (systemd 255), o file pode ser opcionalmente cifrado via `systemd-creds encrypt --name=postgres-password --tpm2-pcrs=...` para binding ao TPM2 do host (ver §9.6).
-5. `systemd` unit `/etc/systemd/system/uniplus-postgres.service` com `Restart=always`, `Type=simple`, `LoadCredential=postgres-password:/etc/credstore/uniplus-postgres-password`, container em `--network host` (Postgres listen em `10.0.2.87:5432`). O `docker run` consome a senha via `POSTGRES_PASSWORD_FILE=/run/secrets/postgres-password` (suportado nativamente pelo entrypoint `postgres:18-alpine`) — bind-mount read-only de `${CREDENTIALS_DIRECTORY}/postgres-password` no container, lido pelo entrypoint **antes** do `gosu` drop para uid 70.
+5. `systemd` unit `/etc/systemd/system/uniplus-postgres.service` com `Restart=always`, `Type=simple`, `LoadCredential=postgres-password:/etc/credstore/uniplus-postgres-password`, container em `--network host` (Postgres listen em `10.2.2.11:5432`). O `docker run` consome a senha via `POSTGRES_PASSWORD_FILE=/run/secrets/postgres-password` (suportado nativamente pelo entrypoint `postgres:18-alpine`) — bind-mount read-only de `${CREDENTIALS_DIRECTORY}/postgres-password` no container, lido pelo entrypoint **antes** do `gosu` drop para uid 70.
 
 **Idempotência (decisões independentes):**
 
@@ -1273,7 +1273,7 @@ sudo docker exec uniplus-postgres psql -U keycloak -d keycloak -c 'SELECT curren
 **Passo 1 — Ler senhas no data-host:**
 
 ```bash
-ssh -i ~/.ssh/id_ed25519 ubuntu@10.0.2.87
+ssh -i ~/.ssh/id_ed25519 ubuntu@10.2.2.11
 sudo cat /var/lib/uniplus/postgres/.bootstrap-creds
 # super_pw=<64 hex>
 # keycloak_pw=<64 hex>
@@ -1304,7 +1304,7 @@ export VAULT_TOKEN
 
 # 4) PUT em secret/standalone/postgres/keycloak (KV v2)
 vault kv put secret/standalone/postgres/keycloak \
-  host=10.0.2.87 \
+  host=10.2.2.11 \
   port=5432 \
   database=keycloak \
   username=keycloak \
@@ -1320,7 +1320,7 @@ vault kv get secret/standalone/postgres/keycloak
 **Passo 3 — Limpar `.bootstrap-creds` no data-host:**
 
 ```bash
-ssh -i ~/.ssh/id_ed25519 ubuntu@10.0.2.87
+ssh -i ~/.ssh/id_ed25519 ubuntu@10.2.2.11
 sudo shred -u /var/lib/uniplus/postgres/.bootstrap-creds
 ```
 
@@ -1334,13 +1334,13 @@ Confirma que pods do cluster K3s alcançam o Postgres no data-host via TCP. Pré
 
 ```bash
 # 1) Conectividade TCP bruta
-nc -zv 10.0.2.87 5432
+nc -zv 10.2.2.11 5432
 # Esperado: succeeded
 
 # 2) Senha do keycloak — fail fast se não disponível.
 #    Após §9.2 shred, .bootstrap-creds não existe mais; restaure via §9.4
 #    antes de rodar este bloco (ou cole a senha à mão via read -rsp).
-KEYCLOAK_PW=$(ssh ubuntu@10.0.2.87 \
+KEYCLOAK_PW=$(ssh ubuntu@10.2.2.11 \
   "sudo grep keycloak_pw= /var/lib/uniplus/postgres/.bootstrap-creds 2>/dev/null | cut -d= -f2")
 if [ -z "$KEYCLOAK_PW" ]; then
   echo "ERRO: keycloak_pw não encontrado em .bootstrap-creds no data-host." >&2
@@ -1359,7 +1359,7 @@ fi
 #    Mesmo padrão de higiene de §8.4.2 (unseal keys via stdin do vault CLI).
 sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml run pg-validation \
   --image=postgres:18-alpine --restart=Never --rm -i --command -- \
-  sh -c 'read -r PW; PGPASSWORD="$PW" psql -h 10.0.2.87 -U keycloak -d keycloak -c "SELECT 1 AS ok;"' \
+  sh -c 'read -r PW; PGPASSWORD="$PW" psql -h 10.2.2.11 -U keycloak -d keycloak -c "SELECT 1 AS ok;"' \
   <<<"$KEYCLOAK_PW"
 # Esperado: 1 (uma linha)
 unset KEYCLOAK_PW
@@ -1387,7 +1387,7 @@ export VAULT_TOKEN
 KC_PW=$(vault kv get -field=password secret/standalone/postgres/keycloak)
 
 # Transmitir para o data-host via stdin do ssh — não cruza argv
-ssh -i ~/.ssh/id_ed25519 ubuntu@10.0.2.87 \
+ssh -i ~/.ssh/id_ed25519 ubuntu@10.2.2.11 \
   "sudo tee /var/lib/uniplus/postgres/.bootstrap-creds > /dev/null && \
    sudo chmod 600 /var/lib/uniplus/postgres/.bootstrap-creds && \
    sudo chown root:root /var/lib/uniplus/postgres/.bootstrap-creds" <<EOF
@@ -1419,7 +1419,7 @@ A migração de `EnvironmentFile=` para `LoadCredential=` (PR fecha #128) muda o
 - Custódia transferida (engenheiro DevOps off-boarded)
 - Janela de manutenção planejada com bump conjunto de senhas
 
-**Pré-requisitos:** acesso root no data-host (`10.0.2.87`); cliente Keycloak parado ou em janela onde reconnect é aceitável (Postgres restart força re-auth de connections existentes).
+**Pré-requisitos:** acesso root no data-host (`10.2.2.11`); cliente Keycloak parado ou em janela onde reconnect é aceitável (Postgres restart força re-auth de connections existentes).
 
 > ⚠️ **Procedimento assume senha hex-only** (`openssl rand -hex N` — caracteres `[0-9a-f]`). Se a política institucional exigir charset diferente (símbolos, mistura), o `ALTER USER ... WITH PASSWORD '$NEW_PW'` em heredoc unquoted e o `sed -i "s/.../...$NEW_PW/"` ficam vulneráveis a escape (`'`, `/`, `&`, etc.). Para outros charsets, gerar via `openssl rand -base64 N | tr -d '/=+'` e validar manualmente, ou refatorar para passar via `psql -v` com `quote_literal()`.
 >
@@ -1428,7 +1428,7 @@ A migração de `EnvironmentFile=` para `LoadCredential=` (PR fecha #128) muda o
 **Passo 1 — Gerar nova senha:**
 
 ```bash
-ssh -i ~/.ssh/id_ed25519 ubuntu@10.0.2.87
+ssh -i ~/.ssh/id_ed25519 ubuntu@10.2.2.11
 NEW_PW=$(openssl rand -hex 32)
 echo "New super_pw (custodiar antes de continuar): $NEW_PW"
 ```
@@ -1675,7 +1675,7 @@ spec:
             - secretRef: { name: keycloak-replica-uniplus-standalone-db }
           env:
             - { name: KC_DB, value: postgres }
-            - { name: KC_DB_URL_HOST, value: 10.0.2.87 }
+            - { name: KC_DB_URL_HOST, value: 10.2.2.11 }
             - { name: KC_DB_URL_PORT, value: "5432" }
             - { name: KC_DB_URL_DATABASE, value: keycloak }
           volumeMounts:
@@ -1699,7 +1699,7 @@ kc scale deployment -n uniplus keycloak-replica-uniplus-standalone --replicas=1
 
 Standalone usa `letsencrypt-staging` durante a Fase 4–6 (90d, browser warning aceitável para validação). Após smoke test completo (Fase 6 — login real do portal), promover para certificado válido:
 
-1. Em `environments/standalone/values.yaml`, alterar a key real consumida pelo chart:
+1. Em `environments/standalone-compact/values.yaml`, alterar a key real consumida pelo chart:
 
    ```yaml
    keycloak:
@@ -1726,11 +1726,11 @@ Standalone usa `letsencrypt-staging` durante a Fase 4–6 (90d, browser warning 
 | Pod Running mas `curl /auth/...` retorna 404 | `KC_HTTP_RELATIVE_PATH=/auth` faltando ou `KC_HOSTNAME` sem `/auth` no final | Validar env vars no Pod; ajustar `keycloak.hostname.url` e `keycloak.http.relativePath` no values |
 | Login redireciona pra HTTP em vez de HTTPS | `KC_PROXY_HEADERS=xforwarded` faltando ou `KC_HTTP_ENABLED=false` | Conferir env vars; Traefik deve passar `X-Forwarded-{Proto,Host,Port,Prefix}` (default em IngressRoute) |
 | Realm import falha com `Could not parse JSON` | Erro de sintaxe no `uniplus-realm.json` ou `${VAR}` referenciando env var não setada | Validar JSON localmente (`jq . files/uniplus-realm.json`); conferir se todos os `UNIPLUS_PORTAL_*` env vars existem no Pod |
-| Pod startupProbe falha após 10min | Postgres lento na 1ª conexão (cold start) ou DB inacessível | `kc logs ... --previous`; conferir `nc -zv 10.0.2.87 5432` do Pod (sem hostNetwork) |
+| Pod startupProbe falha após 10min | Postgres lento na 1ª conexão (cold start) ou DB inacessível | `kc logs ... --previous`; conferir `nc -zv 10.2.2.11 5432` do Pod (sem hostNetwork) |
 
 ## 11. Redis (standalone)
 
-Cache local — `redis:8.6.3-alpine` em container Docker gerenciado por systemd no data-host (`10.0.2.87:6379`). Pré-requisito: §9 Postgres systemd ativo (mesmo data-host) + Vault unsealed para custódia da senha.
+Cache local — `redis:8.6.3-alpine` em container Docker gerenciado por systemd no data-host (`10.2.2.11:6379`). Pré-requisito: §9 Postgres systemd ativo (mesmo data-host) + Vault unsealed para custódia da senha.
 
 ### 11.1 Redis 8.6.3 — bootstrap automatizado
 
@@ -1739,8 +1739,8 @@ A função `step_data_setup_redis` em `scripts/bootstrap-standalone.sh` provisio
 1. Diretórios `/var/lib/uniplus/redis/data` (mode `750`, owner `999:1000` — uid `redis` no container `redis:8.6.3-alpine`) e `/etc/uniplus-redis/` (mode `755`, owner `root:root` — traversável pelo uid 999 do container; confidencialidade dos arquivos é via mode dos próprios files).
 2. `.bootstrap-creds` (root:root 600) em `/var/lib/uniplus/redis/.bootstrap-creds` com `default_pw` (256 bits via `openssl rand -hex 32`) — gerado **somente na primeira execução**.
 3. ACL file `/etc/uniplus-redis/users.acl` (mode `600`, owner `999:1000`) — sempre regerado a partir de `default_pw` lido do `.bootstrap-creds`. Conteúdo: `user default on >$pw ~* &* +@all`.
-4. Config `/etc/uniplus-redis/redis.conf` (mode `644`, owner `root:root` — sem segredos, conf é legível para auditoria) com `bind 10.0.2.87 127.0.0.1 -::1`, `protected-mode yes`, `aclfile /usr/local/etc/redis/users.acl`, AOF (`appendfsync everysec`) + RDB (`save 3600 1 300 100 60 10000`), `maxmemory 2gb` `allkeys-lru`.
-5. `systemd` unit `/etc/systemd/system/uniplus-redis.service` com `Restart=always`, container em `--network host` (Redis listen em `10.0.2.87:6379`), config dir mounted **read-only** (`-v /etc/uniplus-redis:/usr/local/etc/redis:ro`).
+4. Config `/etc/uniplus-redis/redis.conf` (mode `644`, owner `root:root` — sem segredos, conf é legível para auditoria) com `bind 10.2.2.11 127.0.0.1 -::1`, `protected-mode yes`, `aclfile /usr/local/etc/redis/users.acl`, AOF (`appendfsync everysec`) + RDB (`save 3600 1 300 100 60 10000`), `maxmemory 2gb` `allkeys-lru`.
+5. `systemd` unit `/etc/systemd/system/uniplus-redis.service` com `Restart=always`, container em `--network host` (Redis listen em `10.2.2.11:6379`), config dir mounted **read-only** (`-v /etc/uniplus-redis:/usr/local/etc/redis:ro`).
 
 **Diferença vs Postgres (§9.1):** o ACL file **persiste** entre runs (redis-server lê em todo startup), enquanto o init SQL do Postgres é efêmero (executado uma vez pelo entrypoint, depois shredded). O ACL contém o cleartext da senha — proteção é via mode `600` + owner uid do container; visibilidade limitada a quem tem `sudo` no data-host. `ACL SAVE` / `CONFIG REWRITE` no container são noop por o mount ser read-only — fonte da verdade da senha continua sendo `.bootstrap-creds` + Vault.
 
@@ -1772,7 +1772,7 @@ sudo docker exec -i uniplus-redis sh -c \
 **Passo 1 — Ler senha no data-host:**
 
 ```bash
-ssh -i ~/.ssh/id_ed25519 ubuntu@10.0.2.87
+ssh -i ~/.ssh/id_ed25519 ubuntu@10.2.2.11
 sudo cat /var/lib/uniplus/redis/.bootstrap-creds
 # default_pw=<64 hex>
 ```
@@ -1796,7 +1796,7 @@ read -rsp "Root token: " VAULT_TOKEN; echo
 export VAULT_TOKEN
 
 vault kv put secret/standalone/redis/default \
-  host=10.0.2.87 \
+  host=10.2.2.11 \
   port=6379 \
   username=default \
   password="$RED_PW"
@@ -1808,7 +1808,7 @@ vault kv get secret/standalone/redis/default
 **Passo 3 — Limpar `.bootstrap-creds` no data-host:**
 
 ```bash
-ssh -i ~/.ssh/id_ed25519 ubuntu@10.0.2.87
+ssh -i ~/.ssh/id_ed25519 ubuntu@10.2.2.11
 sudo shred -u /var/lib/uniplus/redis/.bootstrap-creds
 ```
 
@@ -1822,11 +1822,11 @@ Confirma que pods do cluster K3s alcançam o Redis no data-host via TCP. Pré-re
 
 ```bash
 # 1) Conectividade TCP bruta
-nc -zv 10.0.2.87 6379
+nc -zv 10.2.2.11 6379
 # Esperado: succeeded
 
 # 2) Ler senha — fail fast se não disponível
-REDIS_PW=$(ssh ubuntu@10.0.2.87 \
+REDIS_PW=$(ssh ubuntu@10.2.2.11 \
   "sudo grep default_pw= /var/lib/uniplus/redis/.bootstrap-creds 2>/dev/null | cut -d= -f2")
 if [ -z "$REDIS_PW" ]; then
   echo "ERRO: default_pw não encontrado em .bootstrap-creds no data-host." >&2
@@ -1839,7 +1839,7 @@ fi
 #    Senha via stdin → REDISCLI_AUTH (mesmo padrão §9.3 com PGPASSWORD)
 sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml run redis-validation \
   --image=redis:8.6.3-alpine --restart=Never --rm -i --command -- \
-  sh -c 'read -r PW; REDISCLI_AUTH="$PW" redis-cli -h 10.0.2.87 ping' \
+  sh -c 'read -r PW; REDISCLI_AUTH="$PW" redis-cli -h 10.2.2.11 ping' \
   <<<"$REDIS_PW"
 # Esperado: PONG
 unset REDIS_PW
@@ -1867,7 +1867,7 @@ export VAULT_TOKEN
 RED_PW=$(vault kv get -field=password secret/standalone/redis/default)
 
 # Transmitir para o data-host via stdin do ssh — não cruza argv
-ssh -i ~/.ssh/id_ed25519 ubuntu@10.0.2.87 \
+ssh -i ~/.ssh/id_ed25519 ubuntu@10.2.2.11 \
   "sudo tee /var/lib/uniplus/redis/.bootstrap-creds > /dev/null && \
    sudo chmod 600 /var/lib/uniplus/redis/.bootstrap-creds && \
    sudo chown root:root /var/lib/uniplus/redis/.bootstrap-creds" <<EOF
@@ -1883,15 +1883,15 @@ EOF
 # 1) Gerar nova senha + atualizar Vault (k8s-host)
 NEW_PW=$(openssl rand -hex 32)
 vault kv put secret/standalone/redis/default \
-  host=10.0.2.87 port=6379 username=default password="$NEW_PW"
+  host=10.2.2.11 port=6379 username=default password="$NEW_PW"
 
 # 2) Reconstituir .bootstrap-creds via §11.4 com o NEW_PW
 
 # 3) Re-rodar bootstrap (regenera ACL file)
-ssh ubuntu@10.0.2.87 "cd ~/uniplus-infra && ./scripts/bootstrap-standalone.sh --role=standalone-data"
+ssh ubuntu@10.2.2.11 "cd ~/uniplus-infra && ./scripts/bootstrap-standalone.sh --role=standalone-data"
 
 # 4) Aplicar a nova ACL no Redis em runtime (sem restart):
-ssh ubuntu@10.0.2.87 "sudo docker exec -i uniplus-redis sh -c \
+ssh ubuntu@10.2.2.11 "sudo docker exec -i uniplus-redis sh -c \
   'read -r P; REDISCLI_AUTH=\"\$P\" redis-cli ACL LOAD' \
   <<<\"\$(sudo grep ^default_pw= /var/lib/uniplus/redis/.bootstrap-creds | cut -d= -f2)\""
 # Esperado: OK
@@ -1917,13 +1917,13 @@ unset NEW_PW
 | `WRONGPASS invalid username-password` no log do app | Senha no app desatualizada vs Vault, ou ACL file e Vault desincronizados | Conferir `vault kv get secret/standalone/redis/default` vs `default_pw` em `.bootstrap-creds`; se mismatch, executar §11.5 |
 | Container reinicia em loop com `Configuration loading: ACL file not readable` | Ownership do `users.acl` ≠ `999:1000` ou mode ≠ `600` (uid 999 do container precisa ser owner) | `sudo chown 999:1000 /etc/uniplus-redis/users.acl && sudo chmod 600 /etc/uniplus-redis/users.acl` |
 | `DENIED Redis is running in protected mode` | `bind` ausente em `redis.conf` ou ACL file vazio | Validar `redis.conf` mounted contém `bind` + `aclfile`; re-executar bootstrap |
-| `nc -zv 10.0.2.87 6379` succeeded mas `redis-cli` retorna `Could not connect to Redis: Connection reset` | iptables FORWARD ainda dropando flannel→VCN ou app pod usa IP errado | `kc exec` no pod e testar `nc -zv 10.0.2.87 6379` direto; conferir resultado do bloco §11.3 |
+| `nc -zv 10.2.2.11 6379` succeeded mas `redis-cli` retorna `Could not connect to Redis: Connection reset` | iptables FORWARD ainda dropando flannel→VCN ou app pod usa IP errado | `kc exec` no pod e testar `nc -zv 10.2.2.11 6379` direto; conferir resultado do bloco §11.3 |
 | AOF cresce indefinidamente | `auto-aof-rewrite-percentage 100` não dispara (default mas pode ter sido desligado em config customizada) | `redis-cli BGREWRITEAOF`; revisar `redis.conf` |
 | OOM kills do container | `maxmemory 2gb` excedido ou cgroup limit do host menor | `redis-cli INFO memory`; ajustar `maxmemory` em `redis.conf` ou liberar memória no host |
 
 ## 12. MinIO (standalone)
 
-Object storage AGPL community release `RELEASE.2025-09-07T16-13-09Z` — container Docker gerenciado por systemd no data-host (`10.0.2.87:9000` API + `:9001` Console). Single-node single-drive (SNSD), única topologia suportada em standalone single-host. Pré-requisito: §9 Postgres + §11 Redis ativos no data-host (mesmo padrão systemd).
+Object storage AGPL community release `RELEASE.2025-09-07T16-13-09Z` — container Docker gerenciado por systemd no data-host (`10.2.2.11:9000` API + `:9001` Console). Single-node single-drive (SNSD), única topologia suportada em standalone single-host. Pré-requisito: §9 Postgres + §11 Redis ativos no data-host (mesmo padrão systemd).
 
 > ⚠️ **Aviso community vs enterprise:** este é o **último release AGPL** antes do split MinIO/AIStor (2025-09). Security fixes pós-Setembro/2025 só estão disponíveis em AIStor enterprise. Aceitável em standalone (validação) mas decisão arquitetural pra hml/prod precisa avaliar alternativas (Garage, SeaweedFS, build próprio do source) — backlog Story futura.
 
@@ -1934,7 +1934,7 @@ A função `step_data_setup_minio` em `scripts/bootstrap-standalone.sh` provisio
 1. Diretório `/var/lib/uniplus/minio/data` (mode `750`, owner `1000:1000` — uid `minio` criado dinamicamente pelo entrypoint via `chroot --userspec`).
 2. `.bootstrap-creds` (root:root 600) em `/var/lib/uniplus/minio/.bootstrap-creds` com `root_user` (16 bytes hex via `openssl rand -hex 16`) + `root_pw` (32 bytes hex via `openssl rand -hex 32`) — gerado **somente na primeira execução**. **Username NÃO é literal `admin`/`minioadmin`** — randomização reduz tentativas de chute.
 3. EnvironmentFile `/etc/uniplus-minio.env` (root:root 600) com `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD` (lidos do `.bootstrap-creds`), `MINIO_USERNAME=minio`, `MINIO_GROUPNAME=minio`, `MINIO_UID=1000`, `MINIO_GID=1000` (instruções para o entrypoint criar o user e fazer chroot).
-4. `systemd` unit `/etc/systemd/system/uniplus-minio.service` com `Restart=always`, container em `--network host`, server `--address 10.0.2.87:9000 --console-address 10.0.2.87:9001`, data dir `/data` mounted via volume.
+4. `systemd` unit `/etc/systemd/system/uniplus-minio.service` com `Restart=always`, container em `--network host`, server `--address 10.2.2.11:9000 --console-address 10.2.2.11:9001`, data dir `/data` mounted via volume.
 5. `step_data_bootstrap_minio_buckets` cria 4 buckets baseline idempotentemente via `mc mb --ignore-existing` em job one-shot (`quay.io/minio/mc:latest`):
    - `keycloak-backups` — destino de pg_dump
    - `loki-chunks` — chunks de log (observability)
@@ -1952,14 +1952,14 @@ A função `step_data_setup_minio` em `scripts/bootstrap-standalone.sh` provisio
 
 ```bash
 sudo systemctl status uniplus-minio
-curl -sf http://10.0.2.87:9000/minio/health/live -o /dev/null -w "%{http_code}\n"
+curl -sf http://10.2.2.11:9000/minio/health/live -o /dev/null -w "%{http_code}\n"
 # Esperado: 200
 
 # Listar buckets via mc one-shot (lê creds do .bootstrap-creds via stdin)
 sudo docker run --rm -i --network host --entrypoint sh \
   quay.io/minio/mc:latest -c '
     read -r U; read -r P
-    mc --quiet alias set local http://10.0.2.87:9000 "$U" "$P"
+    mc --quiet alias set local http://10.2.2.11:9000 "$U" "$P"
     mc ls local
   ' <<EOF
 $(sudo grep ^root_user= /var/lib/uniplus/minio/.bootstrap-creds | cut -d= -f2)
@@ -1975,7 +1975,7 @@ EOF
 **Passo 1 — Ler credenciais no data-host:**
 
 ```bash
-ssh -i ~/.ssh/id_ed25519 ubuntu@10.0.2.87
+ssh -i ~/.ssh/id_ed25519 ubuntu@10.2.2.11
 sudo cat /var/lib/uniplus/minio/.bootstrap-creds
 # root_user=<32 hex>
 # root_pw=<64 hex>
@@ -2001,7 +2001,7 @@ read -rsp "Root token: " VAULT_TOKEN; echo
 export VAULT_TOKEN
 
 vault kv put secret/standalone/minio/root \
-  endpoint=http://10.0.2.87:9000 \
+  endpoint=http://10.2.2.11:9000 \
   region=us-east-1 \
   username="$MIN_USER" \
   password="$MIN_PW"
@@ -2013,7 +2013,7 @@ vault kv get secret/standalone/minio/root
 **Passo 3 — Limpar `.bootstrap-creds` no data-host:**
 
 ```bash
-ssh -i ~/.ssh/id_ed25519 ubuntu@10.0.2.87
+ssh -i ~/.ssh/id_ed25519 ubuntu@10.2.2.11
 sudo shred -u /var/lib/uniplus/minio/.bootstrap-creds
 ```
 
@@ -2027,14 +2027,14 @@ Confirma que pods do cluster K3s alcançam MinIO no data-host via flannel→VCN.
 
 ```bash
 # 1) Conectividade TCP bruta (host → data-host)
-nc -zv 10.0.2.87 9000   # API
-nc -zv 10.0.2.87 9001   # Console
+nc -zv 10.2.2.11 9000   # API
+nc -zv 10.2.2.11 9001   # Console
 # Esperado: succeeded em ambas
 
 # 2) Ler credenciais — fail fast se não disponíveis
-MIN_USER=$(ssh ubuntu@10.0.2.87 \
+MIN_USER=$(ssh ubuntu@10.2.2.11 \
   "sudo grep ^root_user= /var/lib/uniplus/minio/.bootstrap-creds 2>/dev/null | cut -d= -f2")
-MIN_PW=$(ssh ubuntu@10.0.2.87 \
+MIN_PW=$(ssh ubuntu@10.2.2.11 \
   "sudo grep ^root_pw= /var/lib/uniplus/minio/.bootstrap-creds 2>/dev/null | cut -d= -f2")
 if [ -z "$MIN_USER" ] || [ -z "$MIN_PW" ]; then
   echo "ERRO: creds não encontradas. Se shredded (§12.2), restaure via §12.4." >&2
@@ -2046,7 +2046,7 @@ sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml run minio-validation \
   --image=quay.io/minio/mc:latest --restart=Never --rm -i --command -- \
   sh -c '
     read -r U; read -r P
-    mc --quiet alias set s http://10.0.2.87:9000 "$U" "$P"
+    mc --quiet alias set s http://10.2.2.11:9000 "$U" "$P"
     mc ls s
   ' <<EOF
 $MIN_USER
@@ -2074,7 +2074,7 @@ export VAULT_TOKEN
 MIN_USER=$(vault kv get -field=username secret/standalone/minio/root)
 MIN_PW=$(vault kv get -field=password secret/standalone/minio/root)
 
-ssh -i ~/.ssh/id_ed25519 ubuntu@10.0.2.87 \
+ssh -i ~/.ssh/id_ed25519 ubuntu@10.2.2.11 \
   "sudo tee /var/lib/uniplus/minio/.bootstrap-creds > /dev/null && \
    sudo chmod 600 /var/lib/uniplus/minio/.bootstrap-creds && \
    sudo chown root:root /var/lib/uniplus/minio/.bootstrap-creds" <<EOF
@@ -2088,13 +2088,13 @@ EOF
 Se quiser pré-criar buckets adicionais sem rerunnar todo o bootstrap, ou se `step_data_bootstrap_minio_buckets` pulou por `.bootstrap-creds` ausente:
 
 ```bash
-ssh ubuntu@10.0.2.87
+ssh ubuntu@10.2.2.11
 # Substitua a lista de buckets conforme necessário
 sudo docker run --rm -i --network host --entrypoint sh \
   quay.io/minio/mc:latest -c '
     set -e
     read -r U; read -r P
-    mc --quiet alias set local http://10.0.2.87:9000 "$U" "$P"
+    mc --quiet alias set local http://10.2.2.11:9000 "$U" "$P"
     for b in keycloak-backups loki-chunks tempo-traces app-uploads; do
       mc mb --ignore-existing "local/$b"
     done
@@ -2119,15 +2119,15 @@ https://minio.standalone.portaluni.com.br
 
 Como funciona internamente:
 - Service `minio-console-proxy-uniplus-standalone-minio-console-proxy` no namespace `minio-console-proxy`: ClusterIP sem selector
-- EndpointSlice manual com `endpoints[].addresses: [10.0.2.87]` apontando ao data-host (NÃO ExternalName — IP literal não resolve via DNS)
+- EndpointSlice manual com `endpoints[].addresses: [10.2.2.11]` apontando ao data-host (NÃO ExternalName — IP literal não resolve via DNS)
 - IngressRoute Traefik faz proxy HTTPS terminando o cert + HTTP plain para o ClusterIP
-- NetworkPolicy do Traefik tem egress para `10.0.2.87/32:9001` (override em `environments/standalone/values.yaml > networkPolicy.externalBackends`)
+- NetworkPolicy do Traefik tem egress para `10.2.2.11/32:9001` (override em `environments/standalone-compact/values.yaml > networkPolicy.externalBackends`)
 
 Acesso via SSH tunnel (fallback, se Traefik/cert-manager fora do ar):
 
 ```bash
 # Do laptop (cria tunnel local 9001 → k8s-host:9001 → data-host:9001 via VCN)
-ssh -L 9001:10.0.2.87:9001 ubuntu@164.152.53.29
+ssh -L 9001:10.2.2.11:9001 ubuntu@137.131.131.6
 # Em outro terminal: xdg-open http://localhost:9001
 ```
 
@@ -2137,17 +2137,17 @@ ssh -L 9001:10.0.2.87:9001 ubuntu@164.152.53.29
 # 1) Gerar nova senha + atualizar Vault
 NEW_PW=$(openssl rand -hex 32)
 vault kv put secret/standalone/minio/root \
-  endpoint=http://10.0.2.87:9000 region=us-east-1 \
+  endpoint=http://10.2.2.11:9000 region=us-east-1 \
   username="$(vault kv get -field=username secret/standalone/minio/root)" \
   password="$NEW_PW"
 
 # 2) Reconstituir .bootstrap-creds via §12.4 com NEW_PW
 
 # 3) Re-rodar bootstrap (re-aplica EnvironmentFile com NEW_PW)
-ssh ubuntu@10.0.2.87 "cd ~/uniplus-infra && ./scripts/bootstrap-standalone.sh --role=standalone-data"
+ssh ubuntu@10.2.2.11 "cd ~/uniplus-infra && ./scripts/bootstrap-standalone.sh --role=standalone-data"
 
 # 4) Restart do MinIO para que MINIO_ROOT_PASSWORD reflita o novo valor
-ssh ubuntu@10.0.2.87 "sudo systemctl restart uniplus-minio"
+ssh ubuntu@10.2.2.11 "sudo systemctl restart uniplus-minio"
 
 # 5) Validar — `mc admin info` deve aceitar a nova senha
 unset NEW_PW
@@ -2171,7 +2171,7 @@ unset NEW_PW
 | `Access Denied` ao chamar `mc admin info` | `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD` no env do container desatualizados ou typo no creds | Conferir `.bootstrap-creds` vs Vault; re-rodar §12.7 |
 | Container falha startup com `Permission denied` em `/data` | Ownership do data dir ≠ `1000:1000` ou mode ≠ `750` | `sudo chown -R 1000:1000 /var/lib/uniplus/minio/data && sudo chmod 750 /var/lib/uniplus/minio/data` |
 | `/minio/health/live` retorna 503 | MinIO ainda inicializando (1ª run formata `.minio.sys/`) ou drive corrupto | `sudo journalctl -u uniplus-minio -n 100`; aguardar até 90s |
-| Console em `:9001` não responde | `--console-address 10.0.2.87:9001` não bind (porta em uso?) | `sudo ss -tlnp \| grep 9001`; se libre, restart `uniplus-minio` |
+| Console em `:9001` não responde | `--console-address 10.2.2.11:9001` não bind (porta em uso?) | `sudo ss -tlnp \| grep 9001`; se libre, restart `uniplus-minio` |
 | `mc mb` retorna `BucketAlreadyOwnedByYou` | Bucket já existe (idempotência funcionando) | Sem ação — `--ignore-existing` evita o erro; se aparecer fora do flag, é OK |
 | OOM kills do container | Workload excede heap default da JVM ausente (MinIO é Go, sem JVM); cgroup limit do host muito baixo | `docker stats uniplus-minio`; ajustar limits do systemd unit ou liberar memória |
 | `mc alias set` retorna `Unable to verify SSL certificate` | TLS-mismatch ou endpoint errado | Confirmar endpoint `http://` (NÃO `https://`) — standalone usa PLAINTEXT |
@@ -2179,7 +2179,7 @@ unset NEW_PW
 
 ## 13. Kafka KRaft + SASL_SSL + SCRAM-SHA-512 (standalone)
 
-Mensageria — `apache/kafka:4.2.0` (KRaft only; ZooKeeper removido na 4.0 GA) em container Docker gerenciado por systemd no data-host (`10.0.2.87:9092` para clientes, `:9093` para controller). Single-node combined (`process.roles=broker,controller`) com **SASL_SSL + SCRAM-SHA-512 + StandardAuthorizer** (ADR-009).
+Mensageria — `apache/kafka:4.2.0` (KRaft only; ZooKeeper removido na 4.0 GA) em container Docker gerenciado por systemd no data-host (`10.2.2.11:9092` para clientes, `:9093` para controller). Single-node combined (`process.roles=broker,controller`) com **SASL_SSL + SCRAM-SHA-512 + StandardAuthorizer** (ADR-009).
 
 ### 13.1 Kafka 4.2.0 — bootstrap automatizado
 
@@ -2190,7 +2190,7 @@ A função `step_data_setup_kafka` em `scripts/bootstrap-standalone.sh` provisio
    - `/etc/uniplus-kafka/certs/` (mode `755`, owner `root:root` — uid 1000 traverse para abrir PEMs)
    - `/etc/uniplus-kafka/config/` (mesmo padrão; contém `server.properties`)
 2. `.bootstrap-creds` (root:root 600) em `/var/lib/uniplus/kafka/.bootstrap-creds` com `cluster_id` (UUID via `kafka-storage.sh random-uuid`) **e `admin_pw`** (32 bytes hex via `openssl rand`) — gerados **somente na primeira execução**. Mais robusto que o formato pré-ADR-009 que só tinha `cluster_id`.
-3. **Cert PEM self-signed** em `/etc/uniplus-kafka/certs/` (validade **10 anos**), gerado por `openssl req` com SAN multi-tipo (`DNS:kafka.standalone.portaluni.com.br`, `DNS:localhost`, `IP:10.0.2.87`, `IP:127.0.0.1`). Auto-assinado → `ca.crt = server.crt` (cadeia de 1 nível). Bootstrap produz 4 arquivos:
+3. **Cert PEM self-signed** em `/etc/uniplus-kafka/certs/` (validade **10 anos**), gerado por `openssl req` com SAN multi-tipo (`DNS:kafka.standalone.portaluni.com.br`, `DNS:localhost`, `IP:10.2.2.11`, `IP:127.0.0.1`). Auto-assinado → `ca.crt = server.crt` (cadeia de 1 nível). Bootstrap produz 4 arquivos:
    - `server.crt` (chown 1000:1000 mode 644) — cert isolado
    - `server.key` (chown 1000:1000 mode 600) — chave privada isolada
    - `ca.crt` (chown 1000:1000 mode 644) — CA pra distribuição a clients
@@ -2199,8 +2199,8 @@ A função `step_data_setup_kafka` em `scripts/bootstrap-standalone.sh` provisio
    cert-manager fica para hml/prod com secret-sync para data-host (extensão K8s não atinge container fora do cluster).
 4. **Format inicial do storage** via container ad-hoc com `--add-scram "SCRAM-SHA-512=[name=admin,password=$ADMIN_PW]"` — embarca admin SCRAM no `__cluster_metadata` log antes do primeiro start. Crítico: `--add-scram` só vale na 1ª formatação; re-format depois NÃO adiciona credenciais. Por isso o script roda format ANTES do `systemctl start`. Subsequentes runs: entrypoint do uniplus-kafka vê "already formatted" e skip.
 5. `server.properties` em `/etc/uniplus-kafka/config/server.properties` (mode `600`, owner `1000:1000` — contém SCRAM password em cleartext na `listener.name.*.sasl.jaas.config`; broker uid 1000 lê, outros não). Inclui:
-   - KRaft topology: `process.roles=broker,controller`, `node.id=1`, `controller.quorum.voters=1@10.0.2.87:9093`
-   - Listeners: `SASL_SSL://10.0.2.87:9092` + `CONTROLLER://10.0.2.87:9093`; `inter.broker.listener.name=SASL_SSL`
+   - KRaft topology: `process.roles=broker,controller`, `node.id=1`, `controller.quorum.voters=1@10.2.2.11:9093`
+   - Listeners: `SASL_SSL://10.2.2.11:9092` + `CONTROLLER://10.2.2.11:9093`; `inter.broker.listener.name=SASL_SSL`
    - SASL: `sasl.enabled.mechanisms=SCRAM-SHA-512`, JAAS inline para os 2 listeners
    - TLS: `ssl.keystore.type=PEM`, `ssl.keystore.location=/etc/kafka/secrets/server.pem` (bundle cert+key concatenados — Kafka 4.x não tem propriedade `*.key.location` separada), `ssl.truststore.type=PEM`, `ssl.truststore.location=/etc/kafka/secrets/ca.crt`, `ssl.client.auth=none`
    - AuthZ: `authorizer.class.name=org.apache.kafka.metadata.authorizer.StandardAuthorizer`, `super.users=User:admin`, `allow.everyone.if.no.acl.found=false` (fail-closed)
@@ -2230,7 +2230,7 @@ sudo docker run --rm --network host \
   -v /etc/uniplus-kafka/certs/ca.crt:/etc/uniplus-kafka/certs/ca.crt:ro \
   --entrypoint /opt/kafka/bin/kafka-broker-api-versions.sh \
   apache/kafka:4.2.0 \
-  --bootstrap-server 10.0.2.87:9092 \
+  --bootstrap-server 10.2.2.11:9092 \
   --command-config /tmp/admin.properties | head -3
 # Esperado: lista de APIs (Produce, Fetch, ListOffsets, Metadata, ...)
 ```
@@ -2246,7 +2246,7 @@ Operadores com Kafka standalone deployado em PLAINTEXT (PR #137) — `.bootstrap
 Procedimento (executar no data-host):
 
 ```bash
-ssh -i ~/.ssh/id_ed25519 ubuntu@10.0.2.87
+ssh -i ~/.ssh/id_ed25519 ubuntu@10.2.2.11
 
 # 1) Parar o serviço PLAINTEXT
 sudo systemctl stop uniplus-kafka
@@ -2280,7 +2280,7 @@ Após o bootstrap concluir com sucesso, completar:
 **Passo 1 — Ler creds no data-host:**
 
 ```bash
-ssh -i ~/.ssh/id_ed25519 ubuntu@10.0.2.87
+ssh -i ~/.ssh/id_ed25519 ubuntu@10.2.2.11
 sudo cat /var/lib/uniplus/kafka/.bootstrap-creds
 # cluster_id=<UUID>
 # admin_pw=<64 hex>
@@ -2304,17 +2304,17 @@ read -rsp "Root token: " VAULT_TOKEN; echo
 export VAULT_TOKEN
 
 # Admin SCRAM (segredo + CA cert para clients)
-CA_CERT=$(ssh ubuntu@10.0.2.87 "sudo cat /etc/uniplus-kafka/certs/ca.crt")
+CA_CERT=$(ssh ubuntu@10.2.2.11 "sudo cat /etc/uniplus-kafka/certs/ca.crt")
 vault kv put secret/standalone/kafka/admin \
   username=admin \
   password="$KAFKA_ADMIN_PW" \
-  bootstrap_servers=10.0.2.87:9092 \
+  bootstrap_servers=10.2.2.11:9092 \
   mechanism=SCRAM-SHA-512 \
   ca_cert="$CA_CERT"
 
 # Cluster info (auditoria, não-segredo)
 vault kv put secret/standalone/kafka/cluster \
-  bootstrap_servers=10.0.2.87:9092 \
+  bootstrap_servers=10.2.2.11:9092 \
   cluster_id="$KAFKA_CID"
 
 vault kv get secret/standalone/kafka/admin
@@ -2332,7 +2332,7 @@ Confirma que pods do cluster K3s alcançam Kafka SASL_SSL no data-host. Pré-req
 
 ```bash
 # 1) Conectividade TCP bruta
-nc -zv 10.0.2.87 9092
+nc -zv 10.2.2.11 9092
 # Esperado: succeeded (mas TCP succeeded != auth ok — segue passo 2)
 
 # 2) Pod ad-hoc com cliente Kafka — produce + consume round-trip via SASL_SSL.
@@ -2364,7 +2364,7 @@ unset ADMIN_PW CA_CERT
 
 sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml run kafka-validation \
   --image=apache/kafka:4.2.0 --restart=Never --rm -i \
-  --overrides='{"spec":{"containers":[{"name":"kafka-validation","image":"apache/kafka:4.2.0","command":["bash","-c","set -euo pipefail; BS=10.0.2.87:9092; CC=/tmp/cm/client.properties; /opt/kafka/bin/kafka-topics.sh --bootstrap-server $BS --command-config $CC --create --topic uniplus-smoke --partitions 1 --replication-factor 1; echo hello-uniplus | /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server $BS --producer.config $CC --topic uniplus-smoke; /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server $BS --consumer.config $CC --topic uniplus-smoke --from-beginning --max-messages 1 --timeout-ms 10000; /opt/kafka/bin/kafka-topics.sh --bootstrap-server $BS --command-config $CC --delete --topic uniplus-smoke"],"volumeMounts":[{"name":"cm","mountPath":"/tmp/cm","readOnly":true}]}],"volumes":[{"name":"cm","configMap":{"name":"kafka-smoke-client"}}]}}'
+  --overrides='{"spec":{"containers":[{"name":"kafka-validation","image":"apache/kafka:4.2.0","command":["bash","-c","set -euo pipefail; BS=10.2.2.11:9092; CC=/tmp/cm/client.properties; /opt/kafka/bin/kafka-topics.sh --bootstrap-server $BS --command-config $CC --create --topic uniplus-smoke --partitions 1 --replication-factor 1; echo hello-uniplus | /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server $BS --producer.config $CC --topic uniplus-smoke; /opt/kafka/bin/kafka-console-consumer.sh --bootstrap-server $BS --consumer.config $CC --topic uniplus-smoke --from-beginning --max-messages 1 --timeout-ms 10000; /opt/kafka/bin/kafka-topics.sh --bootstrap-server $BS --command-config $CC --delete --topic uniplus-smoke"],"volumeMounts":[{"name":"cm","mountPath":"/tmp/cm","readOnly":true}]}],"volumes":[{"name":"cm","configMap":{"name":"kafka-smoke-client"}}]}}'
 
 sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml delete configmap kafka-smoke-client
 # Esperado: "hello-uniplus" no consumer; topic deletado
@@ -2390,7 +2390,7 @@ APW=$(sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml \
   <<<"$VAULT_TOKEN")
 
 # Sanidade: cluster_id do Vault deve bater com meta.properties (se existir)
-META_CID=$(ssh ubuntu@10.0.2.87 \
+META_CID=$(ssh ubuntu@10.2.2.11 \
   "sudo grep '^cluster.id=' /var/lib/uniplus/kafka/data/meta.properties 2>/dev/null | cut -d= -f2")
 if [[ -n "$META_CID" && "$META_CID" != "$CID" ]]; then
   echo "ERRO: cluster_id do Vault ($CID) ≠ meta.properties ($META_CID)" >&2
@@ -2398,7 +2398,7 @@ if [[ -n "$META_CID" && "$META_CID" != "$CID" ]]; then
 fi
 
 # Reconstituir
-ssh -i ~/.ssh/id_ed25519 ubuntu@10.0.2.87 \
+ssh -i ~/.ssh/id_ed25519 ubuntu@10.2.2.11 \
   "sudo tee /var/lib/uniplus/kafka/.bootstrap-creds > /dev/null && \
    sudo chmod 600 /var/lib/uniplus/kafka/.bootstrap-creds && \
    sudo chown root:root /var/lib/uniplus/kafka/.bootstrap-creds" <<EOF
@@ -2422,7 +2422,7 @@ sudo docker run --rm --network host \
   -v /etc/uniplus-kafka/certs/ca.crt:/etc/uniplus-kafka/certs/ca.crt:ro \
   --entrypoint /opt/kafka/bin/kafka-topics.sh \
   apache/kafka:4.2.0 \
-  --bootstrap-server 10.0.2.87:9092 --command-config /tmp/admin.properties --list
+  --bootstrap-server 10.2.2.11:9092 --command-config /tmp/admin.properties --list
 ```
 
 **Criar tópico com partições e retenção customizadas:**
@@ -2433,7 +2433,7 @@ sudo docker run --rm --network host \
   -v /etc/uniplus-kafka/certs/ca.crt:/etc/uniplus-kafka/certs/ca.crt:ro \
   --entrypoint /opt/kafka/bin/kafka-topics.sh \
   apache/kafka:4.2.0 \
-  --bootstrap-server 10.0.2.87:9092 --command-config /tmp/admin.properties \
+  --bootstrap-server 10.2.2.11:9092 --command-config /tmp/admin.properties \
   --create --topic uniplus.events.candidato.inscrito \
   --partitions 3 --replication-factor 1 \
   --config retention.ms=604800000  # 7 dias
@@ -2449,7 +2449,7 @@ sudo docker run --rm --network host \
   -v /etc/uniplus-kafka/certs/ca.crt:/etc/uniplus-kafka/certs/ca.crt:ro \
   --entrypoint /opt/kafka/bin/kafka-configs.sh \
   apache/kafka:4.2.0 \
-  --bootstrap-server 10.0.2.87:9092 --command-config /tmp/admin.properties \
+  --bootstrap-server 10.2.2.11:9092 --command-config /tmp/admin.properties \
   --alter --add-config "SCRAM-SHA-512=[password=$APP_PW]" \
   --entity-type users --entity-name uniplus-portal-svc
 
@@ -2465,7 +2465,7 @@ sudo docker run --rm --network host \
   -v /etc/uniplus-kafka/certs/ca.crt:/etc/uniplus-kafka/certs/ca.crt:ro \
   --entrypoint /opt/kafka/bin/kafka-acls.sh \
   apache/kafka:4.2.0 \
-  --bootstrap-server 10.0.2.87:9092 --command-config /tmp/admin.properties \
+  --bootstrap-server 10.2.2.11:9092 --command-config /tmp/admin.properties \
   --add --allow-principal User:uniplus-portal-svc \
   --producer --topic uniplus.events. --resource-pattern-type prefixed
 
@@ -2474,7 +2474,7 @@ sudo docker run --rm --network host \
   -v /etc/uniplus-kafka/certs/ca.crt:/etc/uniplus-kafka/certs/ca.crt:ro \
   --entrypoint /opt/kafka/bin/kafka-acls.sh \
   apache/kafka:4.2.0 \
-  --bootstrap-server 10.0.2.87:9092 --command-config /tmp/admin.properties \
+  --bootstrap-server 10.2.2.11:9092 --command-config /tmp/admin.properties \
   --add --allow-principal User:uniplus-portal-svc \
   --consumer --topic uniplus.events. --resource-pattern-type prefixed \
   --group uniplus-portal.
@@ -2488,7 +2488,7 @@ sudo docker run --rm --network host \
   -v /etc/uniplus-kafka/certs/ca.crt:/etc/uniplus-kafka/certs/ca.crt:ro \
   --entrypoint /opt/kafka/bin/kafka-consumer-groups.sh \
   apache/kafka:4.2.0 \
-  --bootstrap-server 10.0.2.87:9092 --command-config /tmp/admin.properties \
+  --bootstrap-server 10.2.2.11:9092 --command-config /tmp/admin.properties \
   --describe --group uniplus-portal-consumer
 ```
 
@@ -2502,12 +2502,12 @@ Operação não-trivial — admin SCRAM está embarcada no `__cluster_metadata` 
 # 1) Gerar nova senha + ALTER user no Kafka
 NEW_PW=$(openssl rand -hex 32)
 
-ssh ubuntu@10.0.2.87 "sudo docker run --rm --network host \
+ssh ubuntu@10.2.2.11 "sudo docker run --rm --network host \
   -v /var/lib/uniplus/kafka/admin.properties:/tmp/admin.properties:ro \
   -v /etc/uniplus-kafka/certs/ca.crt:/etc/uniplus-kafka/certs/ca.crt:ro \
   --entrypoint /opt/kafka/bin/kafka-configs.sh \
   apache/kafka:4.2.0 \
-  --bootstrap-server 10.0.2.87:9092 --command-config /tmp/admin.properties \
+  --bootstrap-server 10.2.2.11:9092 --command-config /tmp/admin.properties \
   --alter --add-config 'SCRAM-SHA-512=[password=$NEW_PW]' \
   --entity-type users --entity-name admin"
 
@@ -2523,19 +2523,19 @@ EOF
 
 # 3) Atualizar .bootstrap-creds + re-rodar bootstrap (regera server.properties
 #    + admin.properties com a nova senha)
-ssh ubuntu@10.0.2.87 "sudo sed -i 's/^admin_pw=.*$/admin_pw=$NEW_PW/' /var/lib/uniplus/kafka/.bootstrap-creds"
-ssh ubuntu@10.0.2.87 "cd ~/uniplus-infra && ./scripts/bootstrap-standalone.sh --role=standalone-data"
+ssh ubuntu@10.2.2.11 "sudo sed -i 's/^admin_pw=.*$/admin_pw=$NEW_PW/' /var/lib/uniplus/kafka/.bootstrap-creds"
+ssh ubuntu@10.2.2.11 "cd ~/uniplus-infra && ./scripts/bootstrap-standalone.sh --role=standalone-data"
 
 # 4) Restart do broker para que o JAAS inline em server.properties recarregue
-ssh ubuntu@10.0.2.87 "sudo systemctl restart uniplus-kafka"
+ssh ubuntu@10.2.2.11 "sudo systemctl restart uniplus-kafka"
 
 # 5) Validar com nova senha (admin.properties já regenerado)
-ssh ubuntu@10.0.2.87 "sudo docker run --rm --network host \
+ssh ubuntu@10.2.2.11 "sudo docker run --rm --network host \
   -v /var/lib/uniplus/kafka/admin.properties:/tmp/admin.properties:ro \
   -v /etc/uniplus-kafka/certs/ca.crt:/etc/uniplus-kafka/certs/ca.crt:ro \
   --entrypoint /opt/kafka/bin/kafka-broker-api-versions.sh \
   apache/kafka:4.2.0 \
-  --bootstrap-server 10.0.2.87:9092 --command-config /tmp/admin.properties | head -1"
+  --bootstrap-server 10.2.2.11:9092 --command-config /tmp/admin.properties | head -1"
 
 unset NEW_PW TKN
 ```
@@ -2548,16 +2548,16 @@ Self-signed estático com validade 10 anos — rotação programática não est�
 
 ```bash
 # 1) Backup do cert antigo
-ssh ubuntu@10.0.2.87 "sudo cp /etc/uniplus-kafka/certs/server.crt /etc/uniplus-kafka/certs/server.crt.bak.$(date +%s)"
+ssh ubuntu@10.2.2.11 "sudo cp /etc/uniplus-kafka/certs/server.crt /etc/uniplus-kafka/certs/server.crt.bak.$(date +%s)"
 
 # 2) Apagar para forçar regeneração no próximo bootstrap
-ssh ubuntu@10.0.2.87 "sudo rm /etc/uniplus-kafka/certs/server.{crt,key} /etc/uniplus-kafka/certs/ca.crt"
+ssh ubuntu@10.2.2.11 "sudo rm /etc/uniplus-kafka/certs/server.{crt,key} /etc/uniplus-kafka/certs/ca.crt"
 
 # 3) Re-rodar bootstrap (gera novo cert)
-ssh ubuntu@10.0.2.87 "cd ~/uniplus-infra && ./scripts/bootstrap-standalone.sh --role=standalone-data"
+ssh ubuntu@10.2.2.11 "cd ~/uniplus-infra && ./scripts/bootstrap-standalone.sh --role=standalone-data"
 
 # 4) Atualizar ca_cert no Vault
-NEW_CA=$(ssh ubuntu@10.0.2.87 "sudo cat /etc/uniplus-kafka/certs/ca.crt")
+NEW_CA=$(ssh ubuntu@10.2.2.11 "sudo cat /etc/uniplus-kafka/certs/ca.crt")
 read -rsp "Root token: " TKN; echo
 sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml \
   -n vault exec -i platform-vault-uniplus-standalone-0 -- \
@@ -2567,7 +2567,7 @@ $NEW_CA
 EOF
 
 # 5) Restart broker (carrega novo cert)
-ssh ubuntu@10.0.2.87 "sudo systemctl restart uniplus-kafka"
+ssh ubuntu@10.2.2.11 "sudo systemctl restart uniplus-kafka"
 
 # 6) Apps consumidoras (Fase 5) precisam refresh do CA via ESO/configmap
 unset NEW_CA TKN
@@ -2604,7 +2604,7 @@ ADR-009 documenta os deltas previstos:
 | `ACL DENIED` para user existente | ACL não criada ou pattern errado (literal vs prefixed) | `kafka-acls.sh --list` filtrando por principal; recriar ACL com `--resource-pattern-type prefixed` se aplicável |
 | `endpoint identification algorithm` failure no client | Cliente verificando hostname no cert; standalone usa SAN IP/DNS específicos | `ssl.endpoint.identification.algorithm=` (vazio) no client.properties |
 | `OutOfMemoryError: Java heap space` | `KAFKA_HEAP_OPTS=-Xmx1g` insuficiente | Aumentar `-Xmx` no EnvironmentFile (manter aspas); restart |
-| `nc -zv 10.0.2.87 9092` succeeded mas SASL_SSL falha | TCP OK, mas auth/cert problem | `journalctl -u uniplus-kafka -n 100`; conferir `server.properties` perms (600 chown 1000:1000); conferir `ca.crt` legível pelo client |
+| `nc -zv 10.2.2.11 9092` succeeded mas SASL_SSL falha | TCP OK, mas auth/cert problem | `journalctl -u uniplus-kafka -n 100`; conferir `server.properties` perms (600 chown 1000:1000); conferir `ca.crt` legível pelo client |
 | Cert expirado (ano 2036+) | Validade self-signed esgotou | Rotacionar via §13.7; alertar em monitoring quando < 30 dias |
 | `KRaft metadata controller is not yet ready` | Cold start ou storage corrupto | Aguardar até 180s; se persiste, conferir `__cluster_metadata-0/` |
 | Disk full em `vg-kafka` | Logs cresceram além do volume | `df -h /var/lib/uniplus/kafka`; aplicar `retention.ms`/`retention.bytes` por topic; expandir LVM |
@@ -2835,7 +2835,7 @@ unset NEW_SECRET TKN
 | Login redireciona pro Keycloak mas após callback retorna 401/Forbidden no AKHQ | Membership do user no grupo `/admins/kafka` ausente OU mapper `groups` no client kafka-ui ausente/quebrado | Confirmar grupo via Admin UI; verificar `kc get configmap -n uniplus <release>-config -o yaml` se `claim.name=groups` no protocolMapper |
 | AKHQ logs: `Connection to node -1 failed: Authentication failed: Invalid username or password` | Senha SCRAM em Vault desatualizada vs Kafka runtime | Rodar §13.6 (rotação admin Kafka) — sincroniza Vault + restart broker; depois forçar refresh ESO `kafka-admin` |
 | `redirect_uri did not match` no Keycloak | URI no realm ≠ `https://kafka-ui.standalone.portaluni.com.br/oauth/callback/keycloak` | Conferir `redirectUris` no client `kafka-ui` (Admin UI ou kcadm); ajustar se domínio do `ingress.host` mudou |
-| Browser warning permanente "Not secure" | Cert LE staging — esperado em validação | Promover para `letsencrypt-prod` (alterar `clusterIssuer` em `environments/standalone/values.yaml`) — mesmo procedimento §10.6 do Keycloak |
+| Browser warning permanente "Not secure" | Cert LE staging — esperado em validação | Promover para `letsencrypt-prod` (alterar `clusterIssuer` em `environments/standalone-compact/values.yaml`) — mesmo procedimento §10.6 do Keycloak |
 
 ---
 
@@ -2860,13 +2860,13 @@ kc() { sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml "$@"; }
 **Passo 1 — Provisionar DB no Postgres data-host.**
 
 ```bash
-# No host data (10.0.2.87), executar a etapa apicurio do bootstrap.
+# No host data (10.2.2.11), executar a etapa apicurio do bootstrap.
 # Role correto é `standalone-data` (validation do script aceita apenas
 # `standalone-k8s` ou `standalone-data`).
 # IMPORTANTE: NÃO usar `sudo ./scripts/bootstrap-standalone.sh` — o script
 # aborta com `check_not_root` quando EUID=0 (usa sudo internamente para
 # operações específicas). Executar como user normal (ubuntu).
-ssh ubuntu@10.0.2.87 "cd /opt/uniplus-infra && ./scripts/bootstrap-standalone.sh \
+ssh ubuntu@10.2.2.11 "cd /opt/uniplus-infra && ./scripts/bootstrap-standalone.sh \
   --role=standalone-data"
 ```
 
@@ -2874,7 +2874,7 @@ O step idempotente `step_data_setup_apicurio_db` cria role + database e preserva
 
 ```bash
 # Custodiar senha em Vault (mesmo pattern do §9.2):
-ssh ubuntu@10.0.2.87 "sudo cat /var/lib/uniplus/postgres/.bootstrap-creds-apicurio"
+ssh ubuntu@10.2.2.11 "sudo cat /var/lib/uniplus/postgres/.bootstrap-creds-apicurio"
 # apicurio_pw=<HEX_64>
 
 VAULT_TOKEN=hvs.xxx \
@@ -2883,7 +2883,7 @@ VAULT_TOKEN=hvs.xxx \
     password=<HEX_64>
 
 # Após custódia confirmada (vault kv get OK), apagar o arquivo do data-host:
-ssh ubuntu@10.0.2.87 "sudo shred -u /var/lib/uniplus/postgres/.bootstrap-creds-apicurio"
+ssh ubuntu@10.2.2.11 "sudo shred -u /var/lib/uniplus/postgres/.bootstrap-creds-apicurio"
 ```
 
 **Passo 2 — Adicionar client `apicurio-registry` ao realm uniplus** (idempotente — Keycloak skipa import se realm já existe).
@@ -2970,7 +2970,7 @@ shred -u /tmp/apicurio-cs
 
 ```bash
 APICURIO_PW=$(VAULT_TOKEN=hvs.xxx vault kv get -field=password secret/standalone/postgres/apicurio)
-ssh ubuntu@10.0.2.87 "sudo tee /var/lib/uniplus/postgres/.bootstrap-creds-apicurio > /dev/null <<EOF
+ssh ubuntu@10.2.2.11 "sudo tee /var/lib/uniplus/postgres/.bootstrap-creds-apicurio > /dev/null <<EOF
 apicurio_pw=$APICURIO_PW
 EOF
 sudo chmod 600 /var/lib/uniplus/postgres/.bootstrap-creds-apicurio
@@ -2978,7 +2978,7 @@ sudo chown root:root /var/lib/uniplus/postgres/.bootstrap-creds-apicurio"
 
 # Agora pode rodar o bootstrap normalmente (sem sudo — script aborta
 # com check_not_root se EUID=0; usa sudo internamente).
-ssh ubuntu@10.0.2.87 "cd /opt/uniplus-infra && ./scripts/bootstrap-standalone.sh --role=standalone-data"
+ssh ubuntu@10.2.2.11 "cd /opt/uniplus-infra && ./scripts/bootstrap-standalone.sh --role=standalone-data"
 
 # Após confirmar success, shred novamente (idempotente).
 ```
@@ -2990,7 +2990,7 @@ ssh ubuntu@10.0.2.87 "cd /opt/uniplus-infra && ./scripts/bootstrap-standalone.sh
 NEW_PW=$(openssl rand -hex 32)
 
 # 2. Atualizar role no Postgres
-ssh ubuntu@10.0.2.87 "sudo docker exec -e PGPASSWORD=<super_pw> uniplus-postgres \
+ssh ubuntu@10.2.2.11 "sudo docker exec -e PGPASSWORD=<super_pw> uniplus-postgres \
   psql -U postgres -c \"ALTER ROLE apicurio WITH PASSWORD '$NEW_PW';\""
 
 # 3. Atualizar Vault
@@ -3084,14 +3084,14 @@ curl -sk -H "Authorization: Bearer $TOKEN" \
 | Sintoma | Causa provável | Resolução |
 |---|---|---|
 | Pod `CreateContainerConfigError` | ESO não sintetizou Secret (Vault offline ou path errado) | `kc describe externalsecret -n uniplus apicurio-registry-uniplus-standalone-apicurio-registry-{db,oidc-client}` — checar `status.conditions`. Se `SecretNotFound`: confirmar Vault unsealed + path correto |
-| Pod `CrashLoopBackOff`, log `Connection refused (...:5432)` | Egress Postgres bloqueado por NetworkPolicy | Validar `dataHostCIDR` em `environments/standalone/values.yaml` cobre `10.0.2.0/24` (default). Confirmar `uniplus-postgres` ativo no data-host |
+| Pod `CrashLoopBackOff`, log `Connection refused (...:5432)` | Egress Postgres bloqueado por NetworkPolicy | Validar `dataHostCIDR` em `environments/standalone-compact/values.yaml` cobre `10.0.2.0/24` (default). Confirmar `uniplus-postgres` ativo no data-host |
 | Pod `CrashLoopBackOff`, log `password authentication failed for user "apicurio"` | Senha em Vault diferente da no Postgres | Recuperar `apicurio_pw` do data-host (`.bootstrap-creds-apicurio` se ainda existe) ou rotacionar via §15.2 |
-| Pod up mas `/q/health/ready` retorna 503 com `OIDC discovery failed` | Egress OIDC issuer bloqueado (default-deny) | Validar `oidcIssuerCIDR=164.152.53.29/32` em `environments/standalone/values.yaml`. Mesmo bug que §14.4 do AKHQ |
+| Pod up mas `/q/health/ready` retorna 503 com `OIDC discovery failed` | Egress OIDC issuer bloqueado (default-deny) | Validar `oidcIssuerCIDR=137.131.131.6/32` em `environments/standalone-compact/values.yaml`. Mesmo bug que §14.4 do AKHQ |
 | 401 mesmo com JWT válido em `/admins/kafka` | Mapper groups não aplicado no client | `kc exec deploy/keycloak-replica-... -- /opt/keycloak/bin/kcadm.sh get clients/$CID/protocol-mappers/models -r uniplus` — adicionar mapper conforme §15.1 passo 2 |
 | 403 "user has no roles" mesmo após login | `APICURIO_AUTH_ROLE_BASED_AUTHORIZATION` true mas claim path errado | Decode JWT (`jwt.io`) — verificar claim `groups` presente. Se ausente, mapper groups não está incluindo no access_token (config.access.token.claim=true falta) |
 | UI carrega mas botões "Create artifact" cinza | Role mapeada como `sr-readonly` em vez de `sr-admin` | Verificar group do user no Keycloak: `Users → jeferson.ferreira → Groups`. Adicionar a `/admins/kafka` se ausente |
-| `auth.apicur.io` aparece em logs OIDC | `QUARKUS_OIDC_AUTH_SERVER_URL` não setado — caiu no default Keycloak demo Red Hat | Validar `oidc.issuerUri` em `environments/standalone/values.yaml`. Sempre obrigatório — sem isso, Apicurio confia em IdP externo público |
-| Browser warning "Not secure" no `schema-registry.standalone.portaluni.com.br` | Cert LE staging | Promover para `letsencrypt-prod` em `ingress.tls.certManager.clusterIssuer` (já é default no `environments/standalone/values.yaml` — checar override por engano) |
+| `auth.apicur.io` aparece em logs OIDC | `QUARKUS_OIDC_AUTH_SERVER_URL` não setado — caiu no default Keycloak demo Red Hat | Validar `oidc.issuerUri` em `environments/standalone-compact/values.yaml`. Sempre obrigatório — sem isso, Apicurio confia em IdP externo público |
+| Browser warning "Not secure" no `schema-registry.standalone.portaluni.com.br` | Cert LE staging | Promover para `letsencrypt-prod` em `ingress.tls.certManager.clusterIssuer` (já é default no `environments/standalone-compact/values.yaml` — checar override por engano) |
 
 ### 15.6 Pré-flight: client_secret das APIs Uni+ (uniplus-api-{portal,selecao,ingresso})
 
@@ -3281,7 +3281,7 @@ curl -s -H "Authorization: Bearer $TOKEN" \
 
 ## 16. RedisInsight UI (standalone)
 
-UI para inspecionar/admin o Redis standalone — chart `apps/redis-ui/` (issue #154). RedisInsight 2.74 com connection pré-setup via env vars apontando para o Redis systemd no data-host (`10.0.2.87:6379`). Pré-requisitos: §11 Redis ativo + Vault unsealed + Traefik com IngressRoute funcionando.
+UI para inspecionar/admin o Redis standalone — chart `apps/redis-ui/` (issue #154). RedisInsight 2.74 com connection pré-setup via env vars apontando para o Redis systemd no data-host (`10.2.2.11:6379`). Pré-requisitos: §11 Redis ativo + Vault unsealed + Traefik com IngressRoute funcionando.
 
 ### 16.1 Pré-flight: htpasswd + custódia
 
@@ -3350,7 +3350,7 @@ curl -sk -u "admin:<PASSWORD>" https://redis-ui.standalone.portaluni.com.br/api/
 # 5. Conexão Redis pré-setup aparece no UI (browser)
 xdg-open https://redis-ui.standalone.portaluni.com.br
 # Login admin / <PASSWORD>
-# Lista de databases mostra "standalone" (alias) com host=10.0.2.87:6379
+# Lista de databases mostra "standalone" (alias) com host=10.2.2.11:6379
 ```
 
 ### 16.3 Rotacionar senha basic auth
@@ -3380,11 +3380,11 @@ kc annotate -n uniplus externalsecret \
 | Sintoma | Causa provável | Resolução |
 |---|---|---|
 | Pod `CreateContainerConfigError` | ESO não sintetizou Secret (Vault offline ou htpasswd ausente) | `kc describe externalsecret -n uniplus redis-ui-uniplus-standalone-redis-ui-{redis,basic-auth}` — checar `status.conditions`. Se `SecretNotFound`: confirmar Vault unsealed + paths corretos |
-| Pod `CrashLoopBackOff`, log `Connection refused (...:6379)` | Egress Redis bloqueado por NetworkPolicy | Validar `dataHostCIDR=10.0.2.0/24` em `environments/standalone/values.yaml`. Confirmar `uniplus-redis` ativo no data-host |
+| Pod `CrashLoopBackOff`, log `Connection refused (...:6379)` | Egress Redis bloqueado por NetworkPolicy | Validar `dataHostCIDR=10.0.2.0/24` em `environments/standalone-compact/values.yaml`. Confirmar `uniplus-redis` ativo no data-host |
 | 401 mesmo com credenciais corretas | htpasswd em formato errado (md5/sha em vez de bcrypt) | Re-gerar com `htpasswd -nbB` (-B = bcrypt). Re-custodiar + force ESO refresh + restart Middleware via `kc rollout restart -n traefik deploy/...` (raramente necessário) |
 | UI carrega mas conexão pré-setup ausente | RedisInsight não recriou conexões em restart (emptyDir limpo + env não foi re-aplicada) | `kc exec -n uniplus deploy/redis-ui-uniplus-standalone-redis-ui -- env \| grep RI_REDIS_` — confirmar env vars setadas. Se OK, `kc rollout restart deploy/redis-ui-uniplus-standalone-redis-ui` re-aplica setup |
 | Login na UI mas `Connection failed` ao clicar no DB | Senha Redis errada no ESO ou Redis exigindo TLS | Validar senha em Vault `secret/standalone/redis/default` bate com `/etc/uniplus-redis/users.acl`. Se ok, RedisInsight 2.x default `RI_REDIS_TLS=false` (nosso config) — Redis standalone aceita plaintext na subnet privada |
-| Browser warning "Not secure" | Cert LE staging ou expirado | Confirmar `clusterIssuer: letsencrypt-prod` em `environments/standalone/values.yaml`. `kc get certificate -n uniplus redis-ui-uniplus-standalone-redis-ui` deve estar `READY=True` |
+| Browser warning "Not secure" | Cert LE staging ou expirado | Confirmar `clusterIssuer: letsencrypt-prod` em `environments/standalone-compact/values.yaml`. `kc get certificate -n uniplus redis-ui-uniplus-standalone-redis-ui` deve estar `READY=True` |
 
 ---
 
@@ -3532,7 +3532,7 @@ sudo kubectl -n uniplus logs deploy/uniplus-api-selecao-uniplus-standalone-... |
 
 ### 18.4 Rollback para Provider=local
 
-Trocar `encryption.provider` de `vault` para `local` em `environments/standalone/values.yaml` para cada um dos 3 blocos `uniplusApi{Portal,Selecao,Ingresso}` **não basta** — o pod entrará em `CrashLoopBackOff` porque `EncryptionOptionsValidator` da uniplus-api (PR #401) exige `LocalKey` quando Provider=local.
+Trocar `encryption.provider` de `vault` para `local` em `environments/standalone-compact/values.yaml` para cada um dos 3 blocos `uniplusApi{Portal,Selecao,Ingresso}` **não basta** — o pod entrará em `CrashLoopBackOff` porque `EncryptionOptionsValidator` da uniplus-api (PR #401) exige `LocalKey` quando Provider=local.
 
 Rollback completo é um PR separado, pois os charts atuais não têm wire-up de `UniPlus__Encryption__LocalKey` via Secret. Passos:
 
@@ -3546,7 +3546,7 @@ Rollback completo é um PR separado, pois os charts atuais não têm wire-up de 
 2. **No PR de rollback**:
    - Adicionar `ExternalSecret` (`apps/uniplus-api-*/templates/externalsecret.yaml`) materializando Secret K8s com key `LOCAL_KEY` a partir de `secret/standalone/uniplus-api/encryption-local`.
    - Adicionar env var no Deployment: `UniPlus__Encryption__LocalKey` referenciando o Secret via `secretKeyRef`.
-   - Trocar `encryption.provider: vault` para `local` no environments/standalone/values.yaml + zerar `vaultAddress`/`kubernetesRole`.
+   - Trocar `encryption.provider: vault` para `local` no environments/standalone-compact/values.yaml + zerar `vaultAddress`/`kubernetesRole`.
 
 3. **Aplicar via ArgoCD + verificar** que o pod não está mais consumindo Transit no audit log.
 
@@ -3628,7 +3628,7 @@ kubectl exec -n observability-prometheus <pod-name> -- \
 
 Se `prometheus_tsdb_head_series` ultrapassar 100.000 ou `otelcol_exporter_sent_metric_points` superar
 50.000 pontos/min de forma consistente, aumentar `retentionSize` para 12 GiB via override no
-`environments/standalone/values.yaml` (bloco `kubePrometheusStack.prometheus.prometheusSpec`).
+`environments/standalone-compact/values.yaml` (bloco `kubePrometheusStack.prometheus.prometheusSpec`).
 
 ### 19.5 Troubleshooting
 
@@ -3652,7 +3652,7 @@ kubePrometheusStack:
 
 O OTel Collector começará a falhar o exporter `prometheusremotewrite` com HTTP 404 após o próximo
 sync do ArgoCD e reinício do pod do Prometheus. Para parar retries imediatamente adicionar
-`retry_on_failure.max_elapsed_time: 0` no override do OTelCol em `environments/standalone/values.yaml`.
+`retry_on_failure.max_elapsed_time: 0` no override do OTelCol em `environments/standalone-compact/values.yaml`.
 
 ---
 

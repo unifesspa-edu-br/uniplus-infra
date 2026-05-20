@@ -11,7 +11,7 @@ Backend de traces distribuídos para o Uni+ — chart wrapper sobre `grafana/tem
 - **Modo**: single-binary (1 réplica) — apropriado para single-cluster com
   baixa volumetria (standalone POC, lab).
 - **Storage**: S3-compatible. Em standalone aponta para MinIO local
-  (`10.0.2.87:9000`, bucket `tempo-traces`, credencial dedicada `tempo-svc`
+  (`10.2.2.11:9000`, bucket `tempo-traces`, credencial dedicada `tempo-svc`
   custodiada em Vault `secret/standalone/minio/tempo`).
 - **Receivers**: APENAS OTLP (gRPC `:4317` + HTTP `:4318`). Jaeger e
   OpenCensus desligados — apps Uni+ usam OpenTelemetry SDK que emite OTLP
@@ -78,14 +78,14 @@ helm dependency update platform/observability/tempo
 helm lint platform/observability/tempo
 helm template platform-observability-tempo-uniplus-standalone \
   platform/observability/tempo \
-  -f environments/standalone/values.yaml \
+  -f environments/standalone-compact/values.yaml \
   --namespace observability-tempo
 ```
 
 ## Smoke pós-sync (standalone)
 
 ```bash
-ssh ubuntu@164.152.53.29
+ssh ubuntu@137.131.131.6
 sudo k3s kubectl -n observability-tempo get pods           # 1/1 Running
 sudo k3s kubectl -n observability-tempo port-forward \
   svc/platform-observability-tempo-uniplus-standalone 3200:3200 4318:4318 &
@@ -109,7 +109,7 @@ curl -s 'http://127.0.0.1:3200/api/search?tags=service.name=smoke' | jq
 
 - **#30** — OTel Collector com OTLP receivers + exporter para este Tempo.
 - **Datasource Tempo no Grafana** — habilitar via override em
-  `environments/standalone/values.yaml` no bloco `grafana.datasources` (PR
+  `environments/standalone-compact/values.yaml` no bloco `grafana.datasources` (PR
   separado).
 - **MetricsGenerator + ServiceMonitor** — quando o Prometheus consumidor
   estiver pronto.

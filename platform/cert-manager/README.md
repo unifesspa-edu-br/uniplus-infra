@@ -4,7 +4,7 @@ Provisionamento automático de certificados TLS via Let's Encrypt (HTTP-01 + Tra
 
 ## Visão geral
 
-Wrapper do chart oficial [jetstack/cert-manager](https://github.com/cert-manager/cert-manager). Roda em cada cluster (lab-{sp1,sp2}, prod-{sp1,sp2}, standalone). Em PA1 pode permanecer desligado — não há ingress público lá.
+Wrapper do chart oficial [jetstack/cert-manager](https://github.com/cert-manager/cert-manager). Roda no cluster do ambiente operacional (`standalone-compact`); o design multi-cluster permanece válido para o modelo 3-DC quando revivido.
 
 **Upstream:** https://github.com/cert-manager/cert-manager
 **Versão upstream empacotada:** v1.20.2 (ver `Chart.yaml`)
@@ -43,7 +43,7 @@ Após o ApplicationSet sincronizar:
 5. Habilitar via override:
 
    ```yaml
-   # environments/standalone/values.yaml
+   # environments/standalone-compact/values.yaml
    clusterIssuers:
      enabled: true
    ```

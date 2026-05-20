@@ -12,12 +12,10 @@ assignees: ''
 
 ## Ambiente afetado
 
-- [ ] lab-sp1 (Ryzen)
-- [ ] lab-sp2 (i7)
-- [ ] lab-pa1
-- [ ] prod-sp1
-- [ ] prod-sp2
-- [ ] prod-pa1
+- [ ] standalone-compact
+
+<!-- Único ambiente operacional. Os environments do modelo 3-DC (lab-*, prod-*)
+     serão adicionados quando esse modelo for revivido. -->
 
 ## Como reproduzir
 

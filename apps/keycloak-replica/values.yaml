@@ -10,7 +10,7 @@ commonLabels:
 
 # ============================================================================
 # Bloco principal `keycloak.*`. O nome do bloco coincide com a key já em uso
-# em environments/standalone/values.yaml (`keycloak.enabled`, `keycloak.govbr`).
+# em environments/standalone-compact/values.yaml (`keycloak.enabled`, `keycloak.govbr`).
 # ============================================================================
 keycloak:
   # Liga/desliga o chart inteiro. Default false — só os ambientes que

@@ -216,7 +216,7 @@ Topologia descrita em [ADR-008](adrs/ADR-008-topologia-standalone.md). Resumo:
 
 - **Single-site monolocal** — duas VMs (`k8s-host`, `data-host`) coabitam o mesmo provedor (lab, OCI Always Free, ou laboratório institucional).
 - **Sem HA inter-DC** — a topologia não pretende sobreviver a falha de site. Single-node K3s + Postgres 18 + Kafka KRaft + MinIO single-node + Vault Shamir 1-de-1.
-- **GitOps end-to-end preservado** — chart layout, ArgoCD, ExternalSecrets, ESO continuam idênticos ao 3-DC. O delta é nos `environments/standalone/values.yaml` (1 réplica, sem witness, paths de storage local, etc.).
+- **GitOps end-to-end preservado** — chart layout, ArgoCD, ExternalSecrets, ESO continuam idênticos ao 3-DC. O delta é nos `environments/standalone-compact/values.yaml` (1 réplica, sem witness, paths de storage local, etc.).
 - **Acesso externo via Cloudflare Tunnel** — sem dependência de IP público nem de NAT/DNS institucional. Smoke E2E completo executável (PR #181).
 - **Provisioning provider-agnostic** — VMs de qualquer provedor (OCI, lab on-prem, VMs em estação de trabalho) bastam ter Ubuntu 24.04 + kernel atualizado + IP roteável entre as duas VMs.
 
@@ -251,7 +251,7 @@ Topologia descrita em [ADR-008](adrs/ADR-008-topologia-standalone.md). Resumo:
 
 > Excecções pontuais (ex.: `keycloak.realmReconcile.enabled` ligado em standalone, desligado em prod até o smoke validar; `traefik.updateStrategy.type=Recreate` necessário em single-node por HostPort conflict) ficam em values.yaml documentadas inline e em ADR. Não há flag global de "topologia".
 
-> **Histórico:** até 2026-05-19 o repositório também trazia `environments/lab-{sp1,sp2,pa1}/`, `environments/prod-{sp1,sp2,pa1}/`, `environments/standalone/`, `scripts/bootstrap-lab.sh` e `scripts/teardown-lab.sh`. Esses arquivos foram removidos por nunca terem sido provisionados (ver `CHANGELOG.md`). Quando o modelo 3-DC for revivido, derivar do `standalone-compact` (mais maduro).
+> **Histórico:** até 2026-05-19 o repositório também trazia `environments/lab-{sp1,sp2,pa1}/`, `environments/prod-{sp1,sp2,pa1}/`, `environments/standalone-compact/`, `scripts/bootstrap-lab.sh` e `scripts/teardown-lab.sh`. Esses arquivos foram removidos por nunca terem sido provisionados (ver `CHANGELOG.md`). Quando o modelo 3-DC for revivido, derivar do `standalone-compact` (mais maduro).
 
 ## 6. Componentes Internos (C4 Nível 3)
 

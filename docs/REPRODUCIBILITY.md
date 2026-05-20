@@ -30,7 +30,7 @@ pré-requisitos baratos que pegam regressões antes do drill.
 | Etapa | Estado | Onde |
 |---|---|---|
 | VMs, rede, DNS, block volume | ✅ codificado | `provisioning/oci/standalone-compact/*.tf` |
-| K3s + Helm + ArgoCD + LVM + data services | ✅ codificado | `scripts/bootstrap-standalone.sh` (cloud-init) |
+| K3s + Helm + ArgoCD + LVM + data services | ⚠️ codificado, execução manual | `scripts/bootstrap-standalone.sh` rodado via SSH (sem cloud-init ainda — issue #387) |
 | Charts de app e plataforma | ✅ codificado (GitOps) | `apps/`, `platform/`, `environments/standalone-compact/` |
 | **State do Tofu** | ⚠️ **local** (laptop) | `terraform.tfstate` — gitignored; sem backend remoto. Ver issue de state remoto |
 | **Vault init/unseal** | ❌ manual | Shamir 5/3 à mão; unseal keys em `/home/ubuntu/vault-init.json` |
@@ -64,10 +64,11 @@ tofu plan -out=drill.tfplan
 # 2. Apply — cria as 2 VMs, rede, DNS, block volume
 tofu apply drill.tfplan
 
-# 3. Bootstrap roda via cloud-init automaticamente; se precisar reexecutar:
-ssh ubuntu@<k8s-host-ip> 'sudo /opt/uniplus/bootstrap-standalone.sh --role=standalone-k8s'
+# 3. Bootstrap — manual via SSH (sem cloud-init ainda — issue #387). Copiar o
+#    script para a VM (scp/git clone) e rodar:
+ssh ubuntu@<k8s-host-ip> 'sudo ./bootstrap-standalone.sh --role=standalone-k8s'
 ssh -J ubuntu@<k8s-host-ip> ubuntu@10.2.2.11 \
-  'sudo /opt/uniplus/bootstrap-standalone.sh --role=standalone-data'
+  'sudo ./bootstrap-standalone.sh --role=standalone-data'
 
 # 4. Passos MANUAIS (ainda não codificados — ver checklist abaixo)
 #    - inicializar e unsealar o Vault

@@ -5,7 +5,7 @@
 # quando volumetria justificar; PA1 fica desligado por default.
 #
 # Storage backend: S3-compatible. Em standalone aponta para MinIO local
-# (data-host 10.0.2.87:9000) com credenciais escopadas (user `tempo-svc`,
+# (data-host 10.2.2.11:9000) com credenciais escopadas (user `tempo-svc`,
 # policy `tempo-rw`) custodiadas no Vault `secret/standalone/minio/tempo`
 # e injetadas via ExternalSecret + envFrom + `-config.expand-env=true`.
 #
@@ -243,7 +243,7 @@ tempoWrapper:
     ingressNamespaces:
       - observability-grafana
       - observability-otelcol
-    minioCIDR: "10.0.2.87/32"
+    minioCIDR: "10.2.2.11/32"
     minioPort: 9000
     # Quando metricsGenerator.enabled=true, setar este campo com o namespace
     # do Prometheus para liberar egress :9090 (remote_write do generator).
