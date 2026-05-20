@@ -19,4 +19,9 @@ locals {
     "uniplus_environment" = "standalone-compact"
     "uniplus_managed_by"  = "opentofu"
   }
+
+  # IP privado fixo do data-host. environments/standalone-compact/values.yaml
+  # referencia este endereço para Postgres/Kafka/MinIO/Redis e para o scrape
+  # do node-exporter. Mudá-lo exige atualizar o values.yaml em conjunto.
+  data_host_private_ip = "10.2.2.11"
 }

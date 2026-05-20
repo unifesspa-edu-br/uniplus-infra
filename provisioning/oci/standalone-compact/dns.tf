@@ -1,14 +1,15 @@
 # ==============================================================================
 # DNS records do standalone-compact
 #
-# Zona `portaluni.com.br` é compartilhada (mora no tenancy root). Registramos
-# o subdomínio `compact.portaluni.com.br` em paralelo a:
-#   standalone.portaluni.com.br (lab GRU antigo, VMs OFF)
-#   iad-arm.portaluni.com.br    (lab IAD draft, não-deployado)
+# Zona `portaluni.com.br` é compartilhada (mora no tenancy root). O compact
+# assumiu o domínio canônico `standalone.portaluni.com.br` no cutover de
+# 2026-05-19 (A record reapontado do IP do lab antigo 164.152.53.29 para o
+# Reserved Public IP do compact). O lab `standalone/` antigo foi destruído.
 #
-# Cutover futuro: quando este compact estiver bootstrap concluído e validado,
-# reapontar o domínio canônico (a definir) para o IP do compact e destruir o
-# lab `standalone/` antigo.
+# O apex `standalone.portaluni.com.br` aponta para o Reserved Public IP do
+# k8s-host; os demais hosts são CNAMEs para o apex. Os IngressRoutes e as
+# URLs OIDC em environments/standalone-compact/values.yaml usam exatamente
+# estes nomes — manter o domínio em sincronia com o values.yaml.
 # ==============================================================================
 
 data "oci_dns_zones" "portaluni" {
@@ -20,9 +21,9 @@ data "oci_dns_zones" "portaluni" {
 
 locals {
   dns_zone_id = data.oci_dns_zones.portaluni.zones[0].id
-  apex_domain = "compact.portaluni.com.br"
+  apex_domain = "standalone.portaluni.com.br"
 
-  compact_cnames = toset([
+  standalone_cnames = toset([
     "api-ingresso",
     "api-portal",
     "api-selecao",
@@ -36,7 +37,7 @@ locals {
   ])
 }
 
-resource "oci_dns_rrset" "compact_apex" {
+resource "oci_dns_rrset" "standalone_apex" {
   zone_name_or_id = local.dns_zone_id
   domain          = local.apex_domain
   rtype           = "A"
@@ -49,8 +50,8 @@ resource "oci_dns_rrset" "compact_apex" {
   }
 }
 
-resource "oci_dns_rrset" "compact_cname" {
-  for_each = local.compact_cnames
+resource "oci_dns_rrset" "standalone_cname" {
+  for_each = local.standalone_cnames
 
   zone_name_or_id = local.dns_zone_id
   domain          = "${each.key}.${local.apex_domain}"

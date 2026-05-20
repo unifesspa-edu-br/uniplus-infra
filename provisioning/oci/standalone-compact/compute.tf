@@ -67,6 +67,11 @@ resource "oci_core_instance" "data_host" {
     subnet_id        = oci_core_subnet.data_host.id
     assign_public_ip = true # IP efêmero para egress; sem Reserved IP no data-host
     hostname_label   = "data-host"
+    # IP privado fixo: environments/standalone-compact/values.yaml hardcoda
+    # 10.2.2.11 para Postgres/Kafka/MinIO/Redis e para o scrape do
+    # node-exporter no Prometheus. Sem o pin, OCI escolhe qualquer IP da
+    # subnet e um recreate da VM quebraria os charts e as NetworkPolicies.
+    private_ip = local.data_host_private_ip
   }
 
   metadata = {
