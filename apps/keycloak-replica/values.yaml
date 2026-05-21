@@ -104,6 +104,26 @@ keycloak:
       redirectUris: []
       webOrigins:
         - "+"
+    # Servidor SMTP do realm — envio de e-mail transacional (reset de senha,
+    # verificação de e-mail, "executar ações por e-mail"). Desabilitado por
+    # padrão; cada environment habilita e aponta o relay. Reconciliado pelo
+    # Job realm-reconcile (ADR-010) — o bloco smtpServer faz parte da
+    # representação do realm e é sempre atualizado pelo keycloak-config-cli.
+    smtp:
+      enabled: false
+      host: ""
+      port: "587"
+      from: ""
+      fromDisplayName: "Uni+ — Unifesspa"
+      # STARTTLS na porta submission (587). ssl=true só para SMTPS (465).
+      starttls: "true"
+      ssl: "false"
+      # auth=false quando o relay autoriza por allowlist de IP (sem
+      # credencial a custodiar). Se o relay exigir login, setar auth=true,
+      # preencher `user` e injetar ${SMTP_PASSWORD} via ExternalSecret
+      # (entrada em oidcClientSecrets.clients) — ver files/uniplus-realm.json.
+      auth: "false"
+      user: ""
 
   # Realm reconcile — Job Helm hook (post-install,post-upgrade) que
   # executa keycloak-config-cli (adorsys) para reconciliar o realm
@@ -206,6 +226,20 @@ keycloak:
     monitoringNamespace: observability-prometheus
     dataHostCIDR: ""
     dataHostPort: 5432
+    # Egress SMTP para relay externo (envio de e-mail transacional do KC).
+    # Desabilitado por padrão; habilitar no environment que configura o
+    # smtpServer. Relays como o Google Workspace (smtp-relay.gmail.com) usam
+    # faixas de IP amplas/dinâmicas, então liberamos a porta submission para
+    # `cidrs` com `except` das redes privadas (evita egress lateral interno).
+    smtp:
+      enabled: false
+      port: 587
+      cidrs:
+        - 0.0.0.0/0
+      except:
+        - 10.0.0.0/8
+        - 172.16.0.0/12
+        - 192.168.0.0/16
 
   # ServiceMonitor — desligado até platform/observability/prometheus/
   # aterrissar (issue #26).

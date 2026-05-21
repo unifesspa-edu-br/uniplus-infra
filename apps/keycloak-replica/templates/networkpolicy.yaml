@@ -65,4 +65,21 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
+    {{- if $np.smtp.enabled }}
+    # SMTP submission para relay externo (Keycloak envia e-mail transacional).
+    # Relay (ex.: Google Workspace) usa faixas amplas → liberar a porta para
+    # cidrs com except das redes privadas. Habilitado via networkPolicy.smtp.
+    - to:
+        {{- range $np.smtp.cidrs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+            {{- with $np.smtp.except }}
+            except:
+              {{- toYaml . | nindent 14 }}
+            {{- end }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ $np.smtp.port }}
+    {{- end }}
 {{- end }}

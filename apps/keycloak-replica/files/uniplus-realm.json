@@ -25,6 +25,19 @@
     "xXSSProtection": "1; mode=block",
     "strictTransportSecurity": "max-age=31536000; includeSubDomains"
   },
+{{- if .Values.keycloak.realmImport.smtp.enabled }}
+  "smtpServer": {
+    "host": {{ .Values.keycloak.realmImport.smtp.host | quote }},
+    "port": {{ .Values.keycloak.realmImport.smtp.port | quote }},
+    "from": {{ .Values.keycloak.realmImport.smtp.from | quote }},
+    "fromDisplayName": {{ .Values.keycloak.realmImport.smtp.fromDisplayName | quote }},
+    "ssl": {{ .Values.keycloak.realmImport.smtp.ssl | quote }},
+    "starttls": {{ .Values.keycloak.realmImport.smtp.starttls | quote }},
+    "auth": {{ .Values.keycloak.realmImport.smtp.auth | quote }}{{ if eq (.Values.keycloak.realmImport.smtp.auth | toString) "true" }},
+    "user": {{ .Values.keycloak.realmImport.smtp.user | quote }},
+    "password": "${SMTP_PASSWORD}"{{ end }}
+  },
+{{- end }}
   "clients": [
     {
       "clientId": {{ .Values.keycloak.realmImport.portalClient.clientId | quote }},

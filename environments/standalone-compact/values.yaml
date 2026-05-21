@@ -781,6 +781,31 @@ keycloak:
       webOrigins:
         - "+"
 
+    # SMTP via Google Workspace relay (issue #390). Autenticação por allowlist
+    # de IP no Workspace (o egress do cluster sai com 137.131.131.6) — sem
+    # credencial, então auth=false e nenhum secret no Vault. STARTTLS na 587.
+    # Aplicado ao realm vivo pelo Job realm-reconcile (smtpServer faz parte da
+    # representação do realm). Depende de: (1) egress liberado via
+    # networkPolicy.smtp abaixo; (2) JAVA_OPTS preferIPv4Stack em extraEnv
+    # (o pod resolve o relay em IPv6 e o cluster não tem egress IPv6);
+    # (3) admin do Workspace autorizar o IP 137.131.131.6/32 no relay service.
+    smtp:
+      enabled: true
+      host: smtp-relay.gmail.com
+      port: "587"
+      from: noreply@unifesspa.edu.br
+      fromDisplayName: "Uni+ — Unifesspa"
+      starttls: "true"
+      ssl: "false"
+      auth: "false"
+
+  # Força IPv4 no JVM do Keycloak. Sem isso o pod resolve smtp-relay.gmail.com
+  # pelo registro AAAA e falha com "Network is unreachable" (cluster sem egress
+  # IPv6). Necessário para o envio SMTP funcionar (issue #390).
+  extraEnv:
+    - name: JAVA_OPTS_APPEND
+      value: "-Djava.net.preferIPv4Stack=true"
+
   # Realm reconcile via keycloak-config-cli (Story #177) — habilitado em
   # standalone para fechar o gap descoberto durante o smoke #181: clients
   # M2M com mappers ausentes em realm vivo (Keycloak 26.x skipa re-import).
@@ -834,6 +859,12 @@ keycloak:
     # environments/standalone/README.md, seção provider-specifics).
     dataHostCIDR: 10.2.2.11/32
     dataHostPort: 5432
+    # Egress para o relay SMTP externo (issue #390). Google Workspace usa
+    # faixas amplas → libera a porta submission para 0.0.0.0/0 com except das
+    # redes privadas (mantém o bloqueio de egress lateral interno).
+    smtp:
+      enabled: true
+      port: 587
 
   # ServiceMonitor desligado até platform/observability/prometheus/ subir.
   serviceMonitor:

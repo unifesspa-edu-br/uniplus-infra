@@ -110,6 +110,21 @@
                   "items": { "type": "string" }
                 }
               }
+            },
+            "smtp": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "host": { "type": "string" },
+                "port": { "type": "string" },
+                "from": { "type": "string" },
+                "fromDisplayName": { "type": "string" },
+                "starttls": { "type": "string", "enum": ["true", "false"] },
+                "ssl": { "type": "string", "enum": ["true", "false"] },
+                "auth": { "type": "string", "enum": ["true", "false"] },
+                "user": { "type": "string" }
+              }
             }
           }
         },
@@ -168,7 +183,17 @@
             "traefikNamespace": { "type": "string" },
             "monitoringNamespace": { "type": "string" },
             "dataHostCIDR": { "type": "string" },
-            "dataHostPort": { "type": "integer", "minimum": 1, "maximum": 65535 }
+            "dataHostPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+            "smtp": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+                "cidrs": { "type": "array", "items": { "type": "string" } },
+                "except": { "type": "array", "items": { "type": "string" } }
+              }
+            }
           }
         },
         "serviceMonitor": {
