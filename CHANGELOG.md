@@ -7,6 +7,10 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ## [Não lançado]
 
+### Segurança
+
+- Chart `keycloak-replica` sobe a imagem composta `ghcr.io/unifesspa-edu-br/uniplus-keycloak` de `26.6.1-0` para **`26.6.4-0`** (Keycloak 26.6.4 + JAR `cpf-matcher`). O Keycloak 26.6.4 corrige 8 CVEs — incluindo CVE-2026-11800 (authentication bypass via JWT algorithm confusion), CVE-2026-9099 (privilege escalation group-admin → realm-admin) e CVE-2026-9799/9800 (authorization bypass) — além do bug de migração Postgres `keycloak/keycloak#48438` (restart loop ao migrar schema 26.5→26.6). `appVersion` e `version` do Chart (0.3.0 → 0.3.1) sincronizadas. Imagem publicada em `unifesspa-edu-br/uniplus-keycloak-providers#16`. Issue #392.
+
 ### Removido
 
 - Limpeza do repositório para focar no `standalone-compact` como único ambiente operacional (2026-05-19): removidos `environments/lab-{sp1,sp2,pa1}`, `environments/prod-{sp1,sp2,pa1}` e `environments/standalone/` (nunca provisionados ou já destruídos); `provisioning/oci/standalone/` (VMs destruídas) e `provisioning/oci/iad-arm/` (exploração ARM Phoenix abandonada); `docs/SETUP.md`, `docs/VALIDATION-PLAN.md`, `docs/network-matrix.md` (laboratório multi-DC nunca executado); `scripts/bootstrap-lab.sh` e `scripts/teardown-lab.sh`.

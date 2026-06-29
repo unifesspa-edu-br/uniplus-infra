@@ -1659,7 +1659,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: kc-import
-          image: ghcr.io/unifesspa-edu-br/uniplus-keycloak:26.6.1-0
+          image: ghcr.io/unifesspa-edu-br/uniplus-keycloak:26.6.4-0
           args:
             - import
             - --override=true
@@ -2639,7 +2639,7 @@ kc exec -n uniplus -i deploy/keycloak-replica-uniplus-standalone -- bash -c '
     --password "$KC_BOOTSTRAP_ADMIN_PASSWORD" >/dev/null
 
   # 1.1 Criar grupos /admins/kafka e /users/uniplus (idempotente — ignora se existem).
-  # NOTA: container ghcr.io/.../uniplus-keycloak:26.6.1-0 herda RHEL 9 minimal
+  # NOTA: container ghcr.io/.../uniplus-keycloak:26.6.4-0 herda RHEL 9 minimal
   # do upstream Keycloak e NÃO tem awk/jq/python — usar grep+cut. Pattern para
   # extrair ID por name no CSV.
   for GP in "admins/kafka" "users/uniplus"; do
