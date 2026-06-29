@@ -59,7 +59,7 @@ O chart codifica estas opções de configuração runtime do Keycloak 26.x:
 
 ## Decisões de design
 
-- **Imagem composta `uniplus-keycloak` + `start --import-realm`** (sem rebuild custom): a imagem `ghcr.io/unifesspa-edu-br/uniplus-keycloak:26.6.1-0` é Keycloak 26.6.1 upstream + JAR `cpf-matcher` (SPI institucional), com health/metrics built-in. `start` (sem `--optimized`) deixa o Keycloak fazer auto-build na primeira inicialização — `startupProbe.failureThreshold: 60` (×10s = 10min) absorve a janela. Standalone usa a mesma imagem que vai pra HML/PROD para garantir production parity.
+- **Imagem composta `uniplus-keycloak` + `start --import-realm`** (sem rebuild custom): a imagem `ghcr.io/unifesspa-edu-br/uniplus-keycloak:26.6.4-0` é Keycloak 26.6.4 upstream + JAR `cpf-matcher` (SPI institucional), com health/metrics built-in. `start` (sem `--optimized`) deixa o Keycloak fazer auto-build na primeira inicialização — `startupProbe.failureThreshold: 60` (×10s = 10min) absorve a janela. Standalone usa a mesma imagem que vai pra HML/PROD para garantir production parity.
 - **Realm import idempotente**: `--import-realm` em 26.x **não re-importa** se o realm já existir, preservando mudanças via Admin UI. Para forçar reimport: `kc.sh import` explícito (não automático).
 - **`uniplus-portal` é public client (SPA + PKCE)**: realm JSON declara `"publicClient": true` sem `client_secret`. Browsers não podem custodiar segredo; PKCE substitui o secret em fluxos de Authorization Code (`code_verifier` gerado pelo SPA garante a posse do code). Para futuros clients confidenciais (ex.: backend BFF, Vault UI integration #34), criar entradas separadas no realm com seus próprios secrets via Vault.
 - **Sem PV**: estado durável vive todo no Postgres. `/tmp` em emptyDir.
