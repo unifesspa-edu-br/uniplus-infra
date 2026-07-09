@@ -1,0 +1,67 @@
+# Ambiente: lab-standalone-single
+#
+# Topologia de laboratório de host único — K3s + Docker no mesmo host (ver
+# scripts/lab-standalone-single/), diferente do standalone-compact real
+# (2 VMs: k8s-host + data-host). Complementar, não substitui: valida a
+# mecânica dos charts/plataforma antes de replicar num servidor real da
+# Unifesspa. Contexto completo na issue #395.
+#
+# Este arquivo NÃO é consumido pelo ApplicationSet real (não há cluster
+# registrado no ArgoCD com esse nome) — é um values overlay de referência,
+# aplicado manualmente via `helm install/upgrade -f` durante a implementação
+# das Tasks da issue #395. Cresce incrementalmente conforme cada
+# componente/Task é validado no lab.
+#
+# Sem peer PA1 nem OCI KMS — mesmo bug documentado em standalone-compact
+# (go-kms-wrapping@v2.0.9 nil pointer no auto-unseal OCI KMS) se aplicaria
+# aqui também, e não há nem sequer um provider de nuvem no lab. Shamir
+# manual, single-node.
+
+vault:
+  enabled: true
+
+  global:
+    tlsDisable: true
+
+  server:
+    ha:
+      enabled: true
+      replicas: 1
+
+      # replicas=1 não precisa de PDB — não há outro Pod para preservar
+      # durante drain (mesmo racional do standalone-compact).
+      disruptionBudget:
+        enabled: false
+
+      raft:
+        enabled: true
+        setNodeId: true
+        # service_registration "kubernetes" REMOVIDO — mesmo bug documentado
+        # em standalone-compact: K3s/flannel + service-account auth gera nil
+        # response no GET do Pod, bloqueando requests síncronos do Vault.
+        config: |
+          ui = true
+
+          listener "tcp" {
+            tls_disable     = 1
+            address         = "0.0.0.0:8200"
+            cluster_address = "0.0.0.0:8201"
+          }
+
+          storage "raft" {
+            path = "/vault/data"
+          }
+
+    dataStorage:
+      size: 2Gi
+    auditStorage:
+      size: 2Gi
+
+networkPolicy:
+  enabled: false # k3s lab usa flannel (não enforça NetworkPolicy)
+
+ingress:
+  enabled: false # acesso via kubectl port-forward
+
+serviceMonitor:
+  enabled: false # sem Prometheus Operator no lab
