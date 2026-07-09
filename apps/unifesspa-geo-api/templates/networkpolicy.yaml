@@ -1,0 +1,116 @@
+{{- if and .Values.unifesspaGeoApi.enabled .Values.unifesspaGeoApi.networkPolicy.enabled -}}
+{{- if not .Values.unifesspaGeoApi.networkPolicy.dataHostCIDR -}}
+{{- fail "unifesspaGeoApi.networkPolicy.dataHostCIDR é obrigatório (egress para Postgres + Redis no data-host)." -}}
+{{- end -}}
+{{/* Issuer in-cluster (*.svc.cluster.local) já é coberto pela regra de
+     egress "Keycloak in-cluster" abaixo (namespaceSelector+podSelector) —
+     não precisa de CIDR. Só exigimos oidcIssuerCIDR quando o issuer for um
+     hostname externo (ex.: servido via Traefik em standalone-compact),
+     cuja resolução DNS sai pela rede externa, não pelo cluster. */}}
+{{- $issuerInCluster := contains ".svc.cluster.local" .Values.unifesspaGeoApi.oidc.issuerUri -}}
+{{- if and .Values.unifesspaGeoApi.oidc.enabled (not $issuerInCluster) (not .Values.unifesspaGeoApi.networkPolicy.oidcIssuerCIDR) -}}
+{{- fail "unifesspaGeoApi.networkPolicy.oidcIssuerCIDR é obrigatório quando oidc.enabled=true e oidc.issuerUri NÃO é um hostname *.svc.cluster.local (egress HTTPS para o issuer Keycloak público / JWKS validation)." -}}
+{{- end -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "unifesspaGeoApi.fullname" . }}
+  labels:
+    {{- include "unifesspaGeoApi.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "unifesspaGeoApi.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.unifesspaGeoApi.networkPolicy.traefikNamespace }}
+      ports:
+        - protocol: TCP
+          port: 8080
+    {{- if and .Values.unifesspaGeoApi.metrics.enabled .Values.unifesspaGeoApi.serviceMonitor.enabled }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.unifesspaGeoApi.networkPolicy.monitoringNamespace }}
+      ports:
+        - protocol: TCP
+          port: 8080
+    {{- end }}
+  egress:
+    # DNS (CoreDNS).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Data-host (Postgres 5432 + Redis 6379).
+    - to:
+        - ipBlock:
+            cidr: {{ .Values.unifesspaGeoApi.networkPolicy.dataHostCIDR }}
+      ports:
+        - protocol: TCP
+          port: 5432  # Postgres/PostGIS
+        - protocol: TCP
+          port: 6379  # Redis
+    {{- if .Values.unifesspaGeoApi.oidc.enabled }}
+    # Keycloak in-cluster — JWKS/discovery para bearer validation (resource server).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.unifesspaGeoApi.networkPolicy.keycloakNamespace }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: keycloak-replica
+      ports:
+        - protocol: TCP
+          port: {{ .Values.unifesspaGeoApi.networkPolicy.keycloakPort }}
+    {{- if not $issuerInCluster }}
+    # Egress HTTPS para o IP do OIDC issuer (Keycloak via Traefik). Necessário
+    # quando Auth:Authority aponta pro hostname público (ex.: standalone-compact:
+    # https://standalone.portaluni.com.br/auth/realms/uniplus) em vez do Service
+    # in-cluster — a regra acima não cobre esse caso, já que a resolução DNS do
+    # hostname público sai pela rede externa, não pelo cluster.
+    - to:
+        - ipBlock:
+            cidr: {{ .Values.unifesspaGeoApi.networkPolicy.oidcIssuerCIDR }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.unifesspaGeoApi.networkPolicy.oidcIssuerPort }}
+    {{- end }}
+    {{- end }}
+    {{- if .Values.unifesspaGeoApi.otel.enabled }}
+    # OTel Collector DaemonSet (ADR-013) — egress OTLP gRPC (4317) e HTTP (4318).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.unifesspaGeoApi.networkPolicy.otelCollectorNamespace }}
+      ports:
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 4318
+    {{- end }}
+    {{- if eq .Values.unifesspaGeoApi.encryption.provider "vault" }}
+    # Vault Transit (ADR-0027) — egress TCP 8200 para o pod do Vault quando
+    # encryption.provider=vault.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.unifesspaGeoApi.networkPolicy.vaultNamespace }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vault
+      ports:
+        - protocol: TCP
+          port: {{ .Values.unifesspaGeoApi.networkPolicy.vaultPort }}
+    {{- end }}
+{{- end }}

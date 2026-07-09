@@ -1,0 +1,193 @@
+# Defaults do chart apps/unifesspa-geo-api/.
+# Cada environment (environments/<env>/values.yaml) sobrescreve apenas o
+# necessário. Por padrão DESABILITADO — só ambientes onde a imagem GHCR
+# estiver publicada e os pré-requisitos atendidos (DB, secrets, OIDC) ligam
+# via `unifesspaGeoApi.enabled: true`.
+#
+# NOTA: este chart ainda NÃO está registrado em argocd/applicationset.yaml.
+# Registrar antes de provisionar os secrets do Vault (postgres/geo, redis já
+# compartilhado, geo/encryption) e decidir o hostname de ingress geraria uma
+# Application vazia no standalone-compact — a syncPolicy do AppSet usa
+# `allowEmpty: false`, então o Application ficaria bloqueado/barulhento.
+# Registrar no AppSet + habilitar via environments/standalone-compact/values.yaml
+# é follow-up, junto do provisionamento dos secrets (issue #395).
+
+commonLabels:
+  app.kubernetes.io/part-of: uniplus
+  app.kubernetes.io/component: api
+
+unifesspaGeoApi:
+  enabled: false
+
+  image:
+    registry: ghcr.io
+    repository: unifesspa-edu-br/unifesspa-geo-api
+    # Sincronizar com tag publicada em GHCR.
+    tag: "v1.0.1"
+    pullPolicy: IfNotPresent
+
+  imagePullSecrets: []
+
+  # API stateless. Em standalone/lab 1 réplica para reduzir uso de recursos.
+  replicas: 1
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+
+  # NOTA (encryption.provider=vault): a role Vault `uniplus-api`
+  # (platform/vault-transit-bootstrap/values.yaml) só vincula
+  # `boundSa: uniplus-api-portal,uniplus-api-selecao,uniplus-api-ingresso`.
+  # Se ligar Vault mode para Geo, ou fixar `name` aqui como um desses 3 nomes
+  # E adicionar `unifesspa-geo-api` ao boundSa da role existente, ou criar uma
+  # role Vault dedicada — deixar `name` vazio (SA auto-gerada) não vai
+  # autenticar, o Kubernetes auth login será negado.
+  serviceAccount:
+    create: true
+    name: ""
+
+  aspnet:
+    environment: Production
+    urls: "http://+:8080"
+
+  # === Backend Postgres/PostGIS (DB dedicada) ===
+  database:
+    host: ""                    # ex.: 10.0.2.87
+    port: 5432
+    name: uniplus_geo
+    username: uniplus_geo_app
+    # Nome em ConnectionStrings__<Name> (.NET config binding) — GeoDb.
+    connectionStringName: GeoDb
+
+  # === Backend Redis (default user) ===
+  redis:
+    host: ""                    # ex.: 10.0.2.87
+    port: 6379
+    username: default
+
+  # === OIDC (Auth bearer — Geo API é resource server, não client OAuth) ===
+  oidc:
+    enabled: true
+    issuerUri: ""               # ex.: http://keycloak-replica.uniplus.svc.cluster.local:8080/auth/realms/uniplus
+    audience: ""
+    validateAudience: false
+
+  # === Cifragem (Geo:Encryption — AES-GCM local ou Vault Transit) ===
+  # Provider=local exige LocalKey (Base64, 32 bytes) via Secret; Provider=vault
+  # exige VaultAddress + KubernetesRole (bound à ServiceAccount deste chart).
+  # EncryptionOptionsValidator derruba o pod no boot se a combinação estiver
+  # inconsistente; EncryptionWarmupHostedService força a resolução do
+  # singleton em Host.StartAsync para fail-fast garantido (nunca 500 na
+  # primeira request cifrada).
+  encryption:
+    provider: local
+    vaultAddress: ""
+    vaultTransitMount: transit
+    kubernetesRole: ""
+
+  # === CORS (obrigatório fora de Development, mesmo padrão das demais APIs Uni+) ===
+  cors:
+    allowedOrigins: []          # ex.: ["https://selecao.standalone.portaluni.com.br"]
+
+  # === OpenTelemetry (ADR-0018 uniplus-api + ADR-013 uniplus-infra) ===
+  # Desligado por default — liga quando o environment tiver o OTel Collector
+  # do cluster disponível.
+  otel:
+    enabled: false
+    exporter:
+      endpoint: ""              # ex.: http://otelcol.observability-otelcol.svc.cluster.local:4317
+      protocol: grpc
+    resource:
+      serviceName: ""
+
+  # === ExternalSecrets (Vault → K8s Secret) ===
+  # Desligável para ambientes sem Vault/ESO (ex.: lab local) — nesse caso o
+  # operador deve criar manualmente os Secrets com os mesmos nomes esperados
+  # (ver _helpers.tpl: postgresSecretName, redisSecretName, encryptionSecretName).
+  externalSecrets:
+    enabled: true
+    refreshInterval: "1h"
+    secretStoreRef:
+      kind: ClusterSecretStore
+      name: vault-default
+
+    postgresApp:
+      vaultPath: secret/standalone/postgres/geo
+      passwordKey: password
+
+    redisDefault:
+      vaultPath: secret/standalone/redis/default
+      passwordKey: password
+
+    # Só usado quando encryption.provider=local.
+    encryptionLocalKey:
+      vaultPath: secret/standalone/geo/encryption
+      localKeyKey: local_key
+
+  # === Exposição externa via Traefik IngressRoute ===
+  ingress:
+    enabled: false
+    entryPoint: websecure
+    host: ""                    # ex.: api-geo.standalone.portaluni.com.br
+    tls:
+      enabled: true
+      secretName: ""
+      certManager:
+        enabled: false
+        clusterIssuer: ""
+
+  # === NetworkPolicy ===
+  networkPolicy:
+    enabled: true
+    traefikNamespace: traefik
+    monitoringNamespace: observability-prometheus
+    dataHostCIDR: ""             # ex.: 10.0.2.0/24
+    keycloakService: keycloak-replica
+    keycloakNamespace: uniplus
+    keycloakPort: 8080
+    # Egress HTTPS para o IP do OIDC issuer quando Auth:Authority aponta pro
+    # hostname público do Keycloak (ex.: https://standalone.portaluni.com.br/auth/realms/uniplus,
+    # servido via Traefik) em vez do Service in-cluster. Obrigatório quando
+    # oidc.enabled=true — sem isso, discovery/JWKS falha sob NetworkPolicy
+    # em CNIs que a enforçam (Calico etc.; flannel no lab não enforça).
+    oidcIssuerCIDR: ""            # ex.: 164.152.53.29/32
+    oidcIssuerPort: 443
+    otelCollectorNamespace: observability-otelcol
+    vaultNamespace: vault
+    vaultPort: 8200
+
+  metrics:
+    enabled: false
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+
+  # /health/live: dependency-free (sempre 200 enquanto processo respira).
+  # /health: agregado readiness — falha sob transient outage de deps.
+  startupProbe:
+    failureThreshold: 60
+    periodSeconds: 5
+  livenessProbe:
+    periodSeconds: 10
+  readinessProbe:
+    periodSeconds: 5
+
+  # Container roda como `appuser` — Dockerfile.geo cria via
+  # `groupadd -r appuser && useradd -r -g appuser` (uid/gid do sistema).
+  # Verificado via `docker run --rm --entrypoint id <imagem> appuser` → 999:999.
+  podSecurityContext:
+    fsGroup: 999
+  containerSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 999
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    readOnlyRootFilesystem: false
+
+  extraEnv: []

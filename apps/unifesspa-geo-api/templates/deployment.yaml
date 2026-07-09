@@ -1,0 +1,169 @@
+{{- if .Values.unifesspaGeoApi.enabled -}}
+{{- if not .Values.unifesspaGeoApi.database.host -}}
+{{- fail "unifesspaGeoApi.database.host é obrigatório quando enabled=true. Configurar em environments/<env>/values.yaml (ex.: 10.0.2.87)." -}}
+{{- end -}}
+{{- if not .Values.unifesspaGeoApi.redis.host -}}
+{{- fail "unifesspaGeoApi.redis.host é obrigatório quando enabled=true." -}}
+{{- end -}}
+{{- if and .Values.unifesspaGeoApi.oidc.enabled (not .Values.unifesspaGeoApi.oidc.issuerUri) -}}
+{{- fail "unifesspaGeoApi.oidc.issuerUri é obrigatório quando oidc.enabled=true." -}}
+{{- end -}}
+{{- if eq .Values.unifesspaGeoApi.encryption.provider "vault" -}}
+  {{- if not .Values.unifesspaGeoApi.encryption.vaultAddress -}}
+  {{- fail "unifesspaGeoApi.encryption.vaultAddress é obrigatório quando encryption.provider=vault." -}}
+  {{- end -}}
+  {{- if not .Values.unifesspaGeoApi.encryption.kubernetesRole -}}
+  {{- fail "unifesspaGeoApi.encryption.kubernetesRole é obrigatório quando encryption.provider=vault. A role precisa existir no Vault com bound_service_account_names incluindo a SA deste chart." -}}
+  {{- end -}}
+{{- end -}}
+{{- if and .Values.unifesspaGeoApi.otel.enabled (not .Values.unifesspaGeoApi.otel.exporter.endpoint) -}}
+{{- fail "unifesspaGeoApi.otel.exporter.endpoint é obrigatório quando otel.enabled=true. Sem isto, o SDK .NET cai no default localhost:4317 — drops silenciosos." -}}
+{{- end -}}
+{{- $cs := .Values.unifesspaGeoApi.database.connectionStringName -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "unifesspaGeoApi.fullname" . }}
+  labels:
+    {{- include "unifesspaGeoApi.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.unifesspaGeoApi.replicas }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      {{- include "unifesspaGeoApi.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "unifesspaGeoApi.labels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "unifesspaGeoApi.serviceAccountName" . }}
+      # automountServiceAccountToken=true é necessário quando Provider=vault:
+      # VaultTransitEncryptionService lê o JWT projetado em
+      # /var/run/secrets/kubernetes.io/serviceaccount/token e autentica no
+      # Vault via auth/kubernetes/login. Modo local não usa o token, mas
+      # manter true não tem custo prático e mantém simetria entre providers.
+      automountServiceAccountToken: true
+      {{- with .Values.unifesspaGeoApi.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.unifesspaGeoApi.podSecurityContext | nindent 8 }}
+      containers:
+        - name: geo-api
+          image: "{{ .Values.unifesspaGeoApi.image.registry }}/{{ .Values.unifesspaGeoApi.image.repository }}:{{ .Values.unifesspaGeoApi.image.tag }}"
+          imagePullPolicy: {{ .Values.unifesspaGeoApi.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.unifesspaGeoApi.containerSecurityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            # === ASP.NET Core base ===
+            - name: ASPNETCORE_ENVIRONMENT
+              value: {{ .Values.unifesspaGeoApi.aspnet.environment | quote }}
+            - name: ASPNETCORE_URLS
+              value: {{ .Values.unifesspaGeoApi.aspnet.urls | quote }}
+            # === Postgres/PostGIS (ConnectionStrings__GeoDb via .NET binding) ===
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "unifesspaGeoApi.postgresSecretName" . }}
+                  key: POSTGRES_PASSWORD
+            - name: ConnectionStrings__{{ $cs }}
+              value: "Host={{ .Values.unifesspaGeoApi.database.host }};Port={{ .Values.unifesspaGeoApi.database.port }};Database={{ .Values.unifesspaGeoApi.database.name }};Username={{ .Values.unifesspaGeoApi.database.username }};Password=$(POSTGRES_PASSWORD)"
+            # === Redis (Connection string formato StackExchange.Redis) ===
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "unifesspaGeoApi.redisSecretName" . }}
+                  key: REDIS_PASSWORD
+            - name: Redis__ConnectionString
+              value: "{{ .Values.unifesspaGeoApi.redis.host }}:{{ .Values.unifesspaGeoApi.redis.port }},user={{ .Values.unifesspaGeoApi.redis.username }},password=$(REDIS_PASSWORD)"
+            {{- if .Values.unifesspaGeoApi.oidc.enabled }}
+            # === OIDC (Auth:* binding — bearer validation, resource server) ===
+            - name: Auth__Authority
+              value: {{ .Values.unifesspaGeoApi.oidc.issuerUri | quote }}
+            - name: Auth__Audience
+              value: {{ .Values.unifesspaGeoApi.oidc.audience | quote }}
+            - name: Auth__ValidateAudience
+              value: {{ .Values.unifesspaGeoApi.oidc.validateAudience | quote }}
+            {{- end }}
+            # === Cifragem (Geo:Encryption) ===
+            # Provider=local exige LocalKey via Secret; Provider=vault exige
+            # VaultAddress + KubernetesRole bound à ServiceAccount deste Deployment.
+            # EncryptionOptionsValidator derruba o pod no boot se a combinação
+            # estiver inconsistente; EncryptionWarmupHostedService força a
+            # resolução do singleton em Host.StartAsync para fail-fast garantido.
+            - name: Geo__Encryption__Provider
+              value: {{ .Values.unifesspaGeoApi.encryption.provider | quote }}
+            {{- if eq .Values.unifesspaGeoApi.encryption.provider "local" }}
+            - name: Geo__Encryption__LocalKey
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "unifesspaGeoApi.encryptionSecretName" . }}
+                  key: GEO_ENCRYPTION_LOCAL_KEY
+            {{- end }}
+            {{- if eq .Values.unifesspaGeoApi.encryption.provider "vault" }}
+            - name: Geo__Encryption__VaultAddress
+              value: {{ .Values.unifesspaGeoApi.encryption.vaultAddress | quote }}
+            - name: Geo__Encryption__VaultTransitMount
+              value: {{ .Values.unifesspaGeoApi.encryption.vaultTransitMount | quote }}
+            - name: Geo__Encryption__KubernetesRole
+              value: {{ .Values.unifesspaGeoApi.encryption.kubernetesRole | quote }}
+            {{- end }}
+            # === Observability:Enabled (Geo API — appsettings.json bakes default=true) ===
+            # A imagem inicializa o SDK OTel (services.AddOpenTelemetry()) sempre
+            # que Observability:Enabled não estiver explicitamente false — sem
+            # este env, otel.enabled=false no chart só omitiria o endpoint, mas o
+            # SDK ainda tentaria o default localhost:4317 dentro do pod (noise,
+            # sem coletor pra receber). Renderizado incondicionalmente para
+            # espelhar exatamente o toggle do chart.
+            - name: Observability__Enabled
+              value: {{ .Values.unifesspaGeoApi.otel.enabled | quote }}
+            {{- if .Values.unifesspaGeoApi.otel.enabled }}
+            # === OpenTelemetry (ADR-0018) ===
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.unifesspaGeoApi.otel.exporter.endpoint | quote }}
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: {{ .Values.unifesspaGeoApi.otel.exporter.protocol | quote }}
+            {{- if .Values.unifesspaGeoApi.otel.resource.serviceName }}
+            - name: OTEL_SERVICE_NAME
+              value: {{ .Values.unifesspaGeoApi.otel.resource.serviceName | quote }}
+            {{- end }}
+            {{- end }}
+            {{- range $i, $origin := .Values.unifesspaGeoApi.cors.allowedOrigins }}
+            - name: Cors__AllowedOrigins__{{ $i }}
+              value: {{ $origin | quote }}
+            {{- end }}
+            {{- with .Values.unifesspaGeoApi.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          startupProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            failureThreshold: {{ .Values.unifesspaGeoApi.startupProbe.failureThreshold }}
+            periodSeconds: {{ .Values.unifesspaGeoApi.startupProbe.periodSeconds }}
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: http
+            periodSeconds: {{ .Values.unifesspaGeoApi.livenessProbe.periodSeconds }}
+          # Readiness usa /health (agregado com checks externos: Postgres,
+          # Redis, OIDC discovery). Pod sai de Ready quando dependência está
+          # down — comportamento desejado pra remover do load balancer.
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: {{ .Values.unifesspaGeoApi.readinessProbe.periodSeconds }}
+          resources:
+            {{- toYaml .Values.unifesspaGeoApi.resources | nindent 12 }}
+{{- end }}
