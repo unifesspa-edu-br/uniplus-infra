@@ -23,10 +23,10 @@
 # Uso:
 #   ./seed-vault-secrets.sh [--dry-run]
 #
-# Pré-requisitos: kubectl configurado contra o cluster do lab (kubeconfig
-# local já aponta pro k3s da própria VM), Vault unsealed e root token
-# disponível em $DATA_BASE/vault/.bootstrap-creds.json (Task #409), pod
-# keycloak-replica Running no namespace uniplus.
+# Pré-requisitos: rodar na VM do lab com sudo sem senha (kubeconfig do k3s
+# só é legível via sudo — /etc/rancher/k3s/k3s.yaml é root:root 600), Vault
+# unsealed e root token disponível em $DATA_BASE/vault/.bootstrap-creds.json
+# (Task #409), pod keycloak-replica Running no namespace uniplus.
 set -euo pipefail
 
 DRY_RUN=false
@@ -42,6 +42,10 @@ for arg in "$@"; do
 done
 
 DATA_BASE="${DATA_BASE:-/var/lib/uniplus}"
+# k3s não expõe kubeconfig legível a usuários comuns (/etc/rancher/k3s/k3s.yaml
+# é root:root 600) — mesmo padrão de `sudo` usado no resto do script para
+# .bootstrap-creds/vault json.
+KUBECTL=(sudo kubectl)
 KEYCLOAK_NAMESPACE="${KEYCLOAK_NAMESPACE:-uniplus}"
 KEYCLOAK_DEPLOYMENT="${KEYCLOAK_DEPLOYMENT:-keycloak-replica}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-uniplus}"
@@ -99,7 +103,7 @@ for client in uniplus-api-selecao uniplus-api-portal uniplus-api-ingresso; do
         client_secrets[$client]="DRY-RUN-PLACEHOLDER"
         continue
     fi
-    secret=$(kubectl exec -n "$KEYCLOAK_NAMESPACE" "deploy/$KEYCLOAK_DEPLOYMENT" -- bash -c "
+    secret=$("${KUBECTL[@]}" exec -n "$KEYCLOAK_NAMESPACE" "deploy/$KEYCLOAK_DEPLOYMENT" -- bash -c "
         /opt/keycloak/bin/kcadm.sh config credentials \
             --server http://localhost:8080/auth --realm master \
             --user \"\$KC_BOOTSTRAP_ADMIN_USERNAME\" --password \"\$KC_BOOTSTRAP_ADMIN_PASSWORD\" >/dev/null
@@ -126,37 +130,57 @@ if $DRY_RUN; then
     exit 0
 fi
 
-log_info "Copiando CA cert do Kafka para dentro do pod $VAULT_POD..."
-kubectl cp "$KAFKA_CA_CERT" "$VAULT_NAMESPACE/$VAULT_POD:/tmp/ca.crt"
+# Segredos nunca em argv de kubectl/vault (visível via ps/proc enquanto o
+# comando roda) — cada valor vai para um arquivo em diretório temporário
+# 700/600, copiado para o pod e consumido via `campo=@arquivo` do Vault CLI.
+# Mesmo padrão já usado para o ca_cert e para o fix do MinIO (Task #407).
+tmpdir=$(mktemp -d)
+chmod 700 "$tmpdir"
+trap 'shred -u "$tmpdir"/* 2>/dev/null; rm -rf "$tmpdir"' EXIT
+
+printf '%s' "$vault_root_token" > "$tmpdir/vault_token"
+printf '%s' "$redis_pw" > "$tmpdir/redis_pw"
+printf '%s' "$minio_user" > "$tmpdir/minio_user"
+printf '%s' "$minio_pw" > "$tmpdir/minio_pw"
+printf '%s' "$kafka_pw" > "$tmpdir/kafka_pw"
+printf '%s' "${client_secrets[uniplus-api-selecao]}" > "$tmpdir/oidc_selecao"
+printf '%s' "${client_secrets[uniplus-api-portal]}" > "$tmpdir/oidc_portal"
+printf '%s' "${client_secrets[uniplus-api-ingresso]}" > "$tmpdir/oidc_ingresso"
+cp "$KAFKA_CA_CERT" "$tmpdir/ca_crt" 2>/dev/null || sudo cp "$KAFKA_CA_CERT" "$tmpdir/ca_crt"
+chmod 600 "$tmpdir"/*
+
+log_info "Copiando arquivos temporários para dentro do pod $VAULT_POD..."
+"${KUBECTL[@]}" exec -n "$VAULT_NAMESPACE" "$VAULT_POD" -- mkdir -p /tmp/vault-seed
+"${KUBECTL[@]}" cp "$tmpdir/." "$VAULT_NAMESPACE/$VAULT_POD:/tmp/vault-seed"
 
 log_info "Escrevendo secrets no Vault ($VAULT_NAMESPACE/$VAULT_POD)..."
-kubectl exec -n "$VAULT_NAMESPACE" "$VAULT_POD" -- sh -c "
+"${KUBECTL[@]}" exec -i -n "$VAULT_NAMESPACE" "$VAULT_POD" -- sh <<'REMOTE_SCRIPT'
 set -e
-export VAULT_TOKEN='$vault_root_token'
+export VAULT_TOKEN="$(cat /tmp/vault-seed/vault_token)"
 
 vault kv put secret/standalone/redis/default \
-    password='$redis_pw' >/dev/null
+    password=@/tmp/vault-seed/redis_pw >/dev/null
 
 vault kv put secret/standalone/minio/root \
-    username='$minio_user' \
-    password='$minio_pw' >/dev/null
+    username=@/tmp/vault-seed/minio_user \
+    password=@/tmp/vault-seed/minio_pw >/dev/null
 
 vault kv put secret/standalone/kafka/admin \
     username=admin \
-    password='$kafka_pw' \
-    ca_cert=@/tmp/ca.crt >/dev/null
+    password=@/tmp/vault-seed/kafka_pw \
+    ca_cert=@/tmp/vault-seed/ca_crt >/dev/null
 
 vault kv put secret/standalone/keycloak/clients/uniplus-api-selecao \
-    client_secret='${client_secrets[uniplus-api-selecao]}' >/dev/null
+    client_secret=@/tmp/vault-seed/oidc_selecao >/dev/null
 
 vault kv put secret/standalone/keycloak/clients/uniplus-api-portal \
-    client_secret='${client_secrets[uniplus-api-portal]}' >/dev/null
+    client_secret=@/tmp/vault-seed/oidc_portal >/dev/null
 
 vault kv put secret/standalone/keycloak/clients/uniplus-api-ingresso \
-    client_secret='${client_secrets[uniplus-api-ingresso]}' >/dev/null
+    client_secret=@/tmp/vault-seed/oidc_ingresso >/dev/null
 
-rm -f /tmp/ca.crt
-"
+rm -rf /tmp/vault-seed
+REMOTE_SCRIPT
 
 unset redis_pw minio_user minio_pw kafka_pw vault_root_token client_secrets
 
