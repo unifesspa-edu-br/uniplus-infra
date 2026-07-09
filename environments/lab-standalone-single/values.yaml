@@ -97,3 +97,103 @@ clusterSecretStore:
   # do Vault é literalmente `vault`, não `platform-vault-<cluster>` (esse
   # padrão vale só para ambientes reconciliados pelo ApplicationSet).
   vaultServer: "http://vault.vault.svc.cluster.local:8200"
+
+# ============================================================================
+# uniplus-api-selecao — primeira das 3 APIs de negócio no lab (Feature #400).
+# Postgres/Redis/Kafka/MinIO rodam Docker+systemd na mesma VM (127.0.0.1
+# não serve — os containers dessas apps bindam na interface real da VM, ver
+# scripts/lab-standalone-single/), então os hosts abaixo apontam para o IP
+# da própria VM. encryption.provider=local (mais simples que testar Vault
+# Transit nas APIs também — Vault já validado via Task #409/#410/#411
+# isoladamente). otel/ingress/kafka desligados — OTel Collector, Traefik e
+# Apicurio Registry não fazem parte desta leva do lab.
+#
+# LIMITAÇÃO CONHECIDA (issue #423): com Kafka desligado, o pod fica
+# `Running` mas nunca `Ready` (0/1) — o SDK Confluent.Kafka da aplicação
+# registra um producer ativo mesmo sem `Kafka:BootstrapServers` configurado
+# (cai no default `localhost:9092`, loop de reconexão eterno), e isso
+# mantém o Kafka health check dentro de `/health` (readiness, agregado)
+# permanentemente Unhealthy — mesmo com todas as outras dependências reais
+# (Postgres, Redis, MinIO, Keycloak) saudáveis. Confirmado via
+# `/health/live` (dependency-free) respondendo Healthy e teste direto de
+# conectividade. `readinessProbe` usa `/health` hardcoded no
+# deployment.yaml do chart (não configurável via values sem alterar o
+# contrato usado em produção, onde esse comportamento é desejado). Resolve
+# quando a issue #423 (Apicurio Registry no lab) permitir religar Kafka
+# com Schema Registry real.
+# ============================================================================
+uniplusApiSelecao:
+  enabled: true
+
+  # Sem Traefik/TLS no lab — Keycloak in-cluster é servido só via HTTP
+  # (Service ClusterIP, sem terminação TLS de edge). A API valida no boot
+  # que Auth:Authority use HTTPS fora de Development (StartupValidator),
+  # então Production rejeitaria o issuerUri http:// abaixo. Development
+  # também relaxa a obrigatoriedade de Cors:AllowedOrigins (mantido
+  # preenchido de qualquer forma, ver bloco cors abaixo).
+  aspnet:
+    environment: Development
+
+  database:
+    host: 192.168.1.65
+  redis:
+    host: 192.168.1.65
+  # Desligado: Program.cs roda um SchemaRegistrationHostedService no BOOT
+  # (fail-fast) que exige um Schema Registry de fato ALCANÇÁVEL — um
+  # placeholder sintático (só pra passar a validação "url não vazio") não
+  # basta, ele tenta registrar schemas de verdade e derruba o pod
+  # (HttpRequestException: Name or service not known). Confirmado
+  # empiricamente com http://schema-registry.invalid/. Como Apicurio está
+  # fora de escopo desta leva de issues (plano #395), Kafka precisa ficar
+  # desligado.
+  kafka:
+    enabled: false
+  storage:
+    endpoint: 192.168.1.65:9000
+
+  # Keycloak in-cluster (Service ClusterIP, mesmo padrão já usado na
+  # unifesspa-geo-api) — sem Traefik/DNS externo no lab.
+  oidc:
+    issuerUri: http://keycloak-replica.uniplus.svc.cluster.local:8080/auth/realms/uniplus
+
+  # Program.cs rejeita boot em Production sem AllowedOrigins preenchido.
+  # Sem frontend real no lab ainda — placeholder documentando a porta padrão
+  # de dev do Angular (uniplus-web), substituir quando o frontend entrar
+  # numa rodada futura.
+  cors:
+    allowedOrigins:
+      - http://192.168.1.65:4200
+
+  encryption:
+    provider: local
+
+  # Provider=local exige UniPlus__Encryption__LocalKey (base64, 32 bytes) —
+  # o chart não injeta isso automaticamente (não há vaultPath default nem
+  # ExternalSecret dedicado; ver comentário em values.yaml do chart e no
+  # deployment.yaml § Cifragem). Secret criado manualmente na VM
+  # (`kubectl create secret generic uniplus-api-selecao-encryption-local
+  # --from-literal=LOCAL_KEY=<head -c 32 /dev/urandom | base64>`), não
+  # versionado — cada environment gera a sua. Diferente do resto dos
+  # secrets desta API (Postgres/Redis/MinIO/OIDC via Vault+ESO), esta
+  # chave não passa pelo Vault: seria mais um ExternalSecret novo no
+  # chart (mudança de contrato usada também em produção) para uma chave
+  # que só protege dados em repouso dentro do próprio Postgres do lab.
+  extraEnv:
+    - name: UniPlus__Encryption__LocalKey
+      valueFrom:
+        secretKeyRef:
+          name: uniplus-api-selecao-encryption-local
+          key: LOCAL_KEY
+
+  ingress:
+    enabled: false # sem Traefik no lab — acesso via kubectl port-forward
+
+  # Desligada por simplicidade nesta Task — diferente do bloco Vault/ESO
+  # acima, a NetworkPolicy da API exige mapear vários CIDRs/namespaces
+  # (Traefik, Prometheus, data-host, OIDC issuer, Vault Transit) que não
+  # fazem sentido 1:1 no lab. Reavaliar se/quando o lab ganhar Traefik.
+  networkPolicy:
+    enabled: false
+
+  otel:
+    enabled: false # sem OTel Collector no lab
