@@ -198,7 +198,13 @@ step_install_helm() {
 # imagem postgis/postgis em vez de postgres:18-alpine — módulo Geo exige
 # PostGIS). Sem init SQL genérico: cada app (Keycloak, Geo, Host, Portal)
 # cria seu próprio role+db via procedimento documentado no README do
-# respectivo chart/environment, fora deste script.
+# respectivo chart/environment, fora deste script. Diferente do
+# bootstrap-standalone.sh real: NÃO montamos nada sobre
+# /docker-entrypoint-initdb.d aqui — a imagem postgis/postgis já embute ali
+# o script que cria template_postgis + carrega as extensions; um bind mount
+# de diretório vazio (como o real faz sobre postgres:18-alpine, que não tem
+# init script próprio) esconderia esse script da imagem e subiria o cluster
+# sem PostGIS, justamente o motivo de usar essa imagem em vez da vanilla.
 # ============================================================================
 
 step_setup_postgres() {
@@ -209,9 +215,8 @@ step_setup_postgres() {
     local cred_file="$cred_dir/uniplus-postgres-password"
     local unit_file="/etc/systemd/system/uniplus-postgres.service"
 
-    run "sudo mkdir -p $DATA_BASE/postgres/data $DATA_BASE/postgres/init"
-    run "sudo chown 70:70 $DATA_BASE/postgres/data $DATA_BASE/postgres/init"
-    run "sudo chmod 700 $DATA_BASE/postgres/init"
+    run "sudo mkdir -p $DATA_BASE/postgres/data"
+    run "sudo chown 70:70 $DATA_BASE/postgres/data"
 
     # Detectar se o cluster já foi inicializado pelo entrypoint (mesmo guard
     # do bootstrap-standalone.sh §9.1/RUNBOOKS §9.2) — PG_VERSION é escrito
@@ -290,7 +295,6 @@ ExecStart=/usr/bin/docker run --rm --name uniplus-postgres \
   -e POSTGRES_INITDB_ARGS=--encoding=UTF8 \
   -v ${CREDENTIALS_DIRECTORY}/postgres-password:/run/secrets/postgres-password:ro \
   -v /var/lib/uniplus/postgres/data:/var/lib/postgresql \
-  -v /var/lib/uniplus/postgres/init:/docker-entrypoint-initdb.d:ro \
   postgis/postgis:18-3.6 \
   -c listen_addresses=0.0.0.0 \
   -c max_connections=200 \
@@ -463,34 +467,45 @@ step_configure_vault_auth() {
         vault auth list -format=json
     " 2>/dev/null | python3 -c 'import json,sys; print("kubernetes/" in json.load(sys.stdin))' 2>/dev/null || echo "False")
 
+    # `vault auth enable kubernetes` só roda se o mount ainda não existir
+    # (reabilitar um mount já ativo é erro no Vault) — mas config/policy/role
+    # são idempotentes por natureza (write sempre sobrescreve) e por isso
+    # SEMPRE rodam, mesmo quando o mount já existe: uma execução anterior que
+    # chegou a habilitar o mount mas falhou antes de escrever a policy/role
+    # (rede, restart do pod) não pode deixar essas peças faltando para
+    # sempre — sem isso o ClusterSecretStore fica incapaz de autenticar sem
+    # nenhum sinal de erro no bootstrap.
+    local enable_cmd="true"
     if [[ "$already_enabled" == "True" ]]; then
-        log_success "Auth Kubernetes + policy/role do Vault já configurados — preservando."
+        log_success "Auth Kubernetes já habilitado — reconciliando policy/role mesmo assim."
     else
-        # `set -e` no shell remoto: sem isso, cada `vault ...` roda
-        # independente do resultado do anterior e o `sh -c` sempre retorna
-        # 0 (herdado do `|| true` da última linha), mascarando falha real de
-        # `auth enable`/`policy write`/`write role` — o bootstrap seguiria
-        # para ESO/seed com o Vault mal configurado e reportaria sucesso.
-        # `secret enable` continua tolerando "already in use" (único caso
-        # legítimo de reentrância aqui).
-        kubectl exec -n "$VAULT_NAMESPACE" "$VAULT_POD" -- sh -c "
-            set -e
-            export VAULT_TOKEN='$root_token'
-            vault auth enable kubernetes
-            vault write auth/kubernetes/config kubernetes_host=https://kubernetes.default.svc.cluster.local
-            vault policy write external-secrets-read - <<'POLICY'
+        enable_cmd="vault auth enable kubernetes"
+    fi
+
+    # `set -e` no shell remoto: sem isso, cada `vault ...` roda independente
+    # do resultado do anterior e o `sh -c` sempre retorna 0 (herdado do
+    # `|| true` da última linha), mascarando falha real de
+    # `auth enable`/`policy write`/`write role` — o bootstrap seguiria para
+    # ESO/seed com o Vault mal configurado e reportaria sucesso. `secret
+    # enable` continua tolerando "already in use" (único caso legítimo de
+    # reentrância ali).
+    kubectl exec -n "$VAULT_NAMESPACE" "$VAULT_POD" -- sh -c "
+        set -e
+        export VAULT_TOKEN='$root_token'
+        $enable_cmd
+        vault write auth/kubernetes/config kubernetes_host=https://kubernetes.default.svc.cluster.local
+        vault policy write external-secrets-read - <<'POLICY'
 path \"secret/data/*\" { capabilities = [\"read\"] }
 path \"secret/metadata/*\" { capabilities = [\"read\"] }
 POLICY
-            vault write auth/kubernetes/role/external-secrets \
-                bound_service_account_names=external-secrets \
-                bound_service_account_namespaces=external-secrets \
-                policies=external-secrets-read \
-                ttl=1h
-            vault secrets enable -path=secret -version=2 kv || true
-        " >/dev/null
-        log_success "Auth Kubernetes + policy external-secrets-read + role external-secrets configurados."
-    fi
+        vault write auth/kubernetes/role/external-secrets \
+            bound_service_account_names=external-secrets \
+            bound_service_account_namespaces=external-secrets \
+            policies=external-secrets-read \
+            ttl=1h
+        vault secrets enable -path=secret -version=2 kv || true
+    " >/dev/null
+    log_success "Auth Kubernetes + policy external-secrets-read + role external-secrets reconciliados."
     unset root_token
 }
 
@@ -529,9 +544,22 @@ step_seed_secrets() {
     log_info "Populando secrets iniciais no Vault (delegando para seed-vault-secrets.sh)..."
     if $DRY_RUN; then
         "$SCRIPT_DIR/seed-vault-secrets.sh" --dry-run
-    else
-        "$SCRIPT_DIR/seed-vault-secrets.sh"
+        return
     fi
+
+    # seed-vault-secrets.sh recupera os client_secrets M2M via `kubectl exec`
+    # no deployment do Keycloak — que este script NÃO instala (deploy próprio,
+    # ver apps/keycloak-replica/README.md). Numa VM nova, rodando o bootstrap
+    # do início ao fim, o Keycloak ainda não existe neste ponto; chamar o seed
+    # incondicionalmente quebraria o fluxo default de ponta a ponta.
+    if ! kubectl get deployment keycloak-replica -n uniplus &>/dev/null; then
+        log_warn "deploy/keycloak-replica ausente no namespace uniplus — pulando seed de secrets."
+        log_warn "Depois de instalar o Keycloak (ver apps/keycloak-replica/README.md), rodar manualmente:"
+        log_warn "  $SCRIPT_DIR/seed-vault-secrets.sh"
+        return
+    fi
+
+    "$SCRIPT_DIR/seed-vault-secrets.sh"
 }
 
 summary() {
