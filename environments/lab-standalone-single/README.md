@@ -20,6 +20,7 @@ External Secrets Operator, ...) é validado.
 | Vault | `platform/vault/` | Single-node (replicas=1), Shamir manual (1 key share, threshold 1 — simplificado para lab), sem peer PA1/OCI KMS |
 | External Secrets Operator | `platform/external-secrets/` | `ClusterSecretStore vault-default` apontando para o Vault acima; NetworkPolicy habilitada nos dois charts (ver nota abaixo) |
 | Secrets iniciais | `scripts/lab-standalone-single/seed-vault-secrets.sh` | Popula no Vault os paths que os charts de API/Keycloak esperam — ver seção própria abaixo |
+| uniplus-api-selecao | `apps/uniplus-api-selecao/` | Primeira das 3 APIs de negócio; Kafka desligado (issue #423 — ver seção própria abaixo) |
 
 ## Uso
 
@@ -123,3 +124,49 @@ API (#412/#413/#414); populado dentro do procedimento daquela Task, não
 aqui. Rodar o script de novo depois é seguro — `vault kv put` é idempotente
 por natureza, sempre reflete a fonte de verdade atual (útil inclusive para
 sincronizar após rotação de um client_secret no Keycloak).
+
+## uniplus-api-selecao
+
+Pré-requisitos específicos desta API, feitos manualmente (não cobertos por
+`seed-vault-secrets.sh`):
+
+```bash
+# 1. Role + database dedicados no Postgres
+sudo docker exec -i uniplus-postgres psql -U postgres <<SQL
+CREATE ROLE selecao WITH LOGIN PASSWORD '<senha gerada com openssl rand -hex 32>';
+CREATE DATABASE uniplus_selecao WITH OWNER = selecao ENCODING = 'UTF8' LC_COLLATE = 'C.UTF-8' LC_CTYPE = 'C.UTF-8' TEMPLATE = template0;
+SQL
+
+# 2. A MESMA senha usada acima no Vault (path esperado pelo chart)
+kubectl exec -n vault vault-0 -- vault kv put secret/standalone/postgres/selecao password=@<arquivo temporário, nunca argv>
+
+# 3. LocalKey de cifragem (encryption.provider=local) — Secret K8s manual,
+#    não versionado; cada environment gera a sua
+kubectl create secret generic uniplus-api-selecao-encryption-local \
+  -n uniplus --from-literal=LOCAL_KEY="$(head -c 32 /dev/urandom | base64)"
+
+# 4. Deploy
+helm install uniplus-api-selecao apps/uniplus-api-selecao/ -f environments/lab-standalone-single/values.yaml --namespace uniplus
+```
+
+### Limitação conhecida: `/health` nunca fica `Healthy` com Kafka desligado (issue #423)
+
+A API roda um `SchemaRegistrationHostedService` no boot que **exige** um
+Schema Registry de fato alcançável quando `Kafka:BootstrapServers` está
+populado (ADR-0051) — um placeholder sintático não basta, a aplicação
+tenta registrar schemas de verdade e derruba o pod. Como o Apicurio
+Registry não roda nesta leva do lab, `kafka.enabled: false`.
+
+Efeito colateral: o SDK Confluent.Kafka ainda registra um producer ativo
+mesmo sem `Kafka:BootstrapServers` configurado (cai no default
+`localhost:9092`, loop de reconexão eterno), o que mantém o Kafka health
+check dentro de `/health` (readiness, agregado) permanentemente
+`Unhealthy` — mesmo com Postgres/Redis/MinIO/Keycloak saudáveis.
+`/health/live` (dependency-free) responde `Healthy` normalmente, e é a
+forma correta de confirmar que o processo está saudável no lab enquanto a
+issue #423 não é resolvida. `readinessProbe` usa `/health` hardcoded no
+`deployment.yaml` do chart — como o pod nunca fica `Ready`, um
+`helm upgrade` que troque o pod trava em rollout (`RollingUpdate` espera
+o novo pod ficar `Ready` antes de escalar o antigo para baixo); limpar
+manualmente o ReplicaSet antigo (`kubectl delete replicaset <antigo>`) se
+isso acontecer.
