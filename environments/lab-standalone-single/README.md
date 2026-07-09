@@ -21,6 +21,7 @@ External Secrets Operator, ...) é validado.
 | External Secrets Operator | `platform/external-secrets/` | `ClusterSecretStore vault-default` apontando para o Vault acima; NetworkPolicy habilitada nos dois charts (ver nota abaixo) |
 | Secrets iniciais | `scripts/lab-standalone-single/seed-vault-secrets.sh` | Popula no Vault os paths que os charts de API/Keycloak esperam — ver seção própria abaixo |
 | uniplus-api-selecao | `apps/uniplus-api-selecao/` | Primeira das 3 APIs de negócio; Kafka desligado (issue #423 — ver seção própria abaixo) |
+| uniplus-api-portal | `apps/uniplus-api-portal/` | Mesmo padrão do selecao; módulo Portal ainda sem migrations de domínio no código (só schema `wolverine` de infraestrutura) |
 
 ## Uso
 
@@ -170,3 +171,18 @@ issue #423 não é resolvida. `readinessProbe` usa `/health` hardcoded no
 o novo pod ficar `Ready` antes de escalar o antigo para baixo); limpar
 manualmente o ReplicaSet antigo (`kubectl delete replicaset <antigo>`) se
 isso acontecer.
+
+## uniplus-api-portal / uniplus-api-ingresso
+
+Mesmo procedimento e mesmas limitações do `uniplus-api-selecao` acima —
+role+database Postgres dedicados (`portal`/`uniplus_portal`,
+`ingresso`/`uniplus_ingresso`), secret correspondente no Vault, LocalKey
+via Secret K8s manual (`uniplus-api-<app>-encryption-local`),
+`aspnet.environment: Development`, `kafka.enabled: false` (issue #423).
+
+`uniplus-api-portal`: o módulo ainda não tem entidades de domínio
+implementadas no código — `dotnet ef` não gera migrations pendentes,
+então o banco fica só com o schema `wolverine` (infraestrutura de
+mensageria: outbox/inbox/dead-letters), sem tabelas de negócio. Isso é
+esperado (log `Nenhuma migration EF Core pendente para PortalDbContext`),
+não uma falha de configuração.

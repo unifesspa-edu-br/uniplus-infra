@@ -197,3 +197,51 @@ uniplusApiSelecao:
 
   otel:
     enabled: false # sem OTel Collector no lab
+
+# ============================================================================
+# uniplus-api-portal — segunda das 3 APIs de negócio no lab (Feature #400).
+# Mesmo padrão já validado em uniplusApiSelecao acima (Task #412) — ver
+# comentários lá para o racional completo de cada decisão (Kafka desligado
+# por causa da issue #423, Development por causa da ausência de TLS no
+# Keycloak in-cluster, LocalKey via Secret K8s manual).
+# ============================================================================
+uniplusApiPortal:
+  enabled: true
+
+  aspnet:
+    environment: Development
+
+  database:
+    host: 192.168.1.65
+  redis:
+    host: 192.168.1.65
+  kafka:
+    enabled: false
+  storage:
+    endpoint: 192.168.1.65:9000
+
+  oidc:
+    issuerUri: http://keycloak-replica.uniplus.svc.cluster.local:8080/auth/realms/uniplus
+
+  cors:
+    allowedOrigins:
+      - http://192.168.1.65:4200
+
+  encryption:
+    provider: local
+
+  extraEnv:
+    - name: UniPlus__Encryption__LocalKey
+      valueFrom:
+        secretKeyRef:
+          name: uniplus-api-portal-encryption-local
+          key: LOCAL_KEY
+
+  ingress:
+    enabled: false
+
+  networkPolicy:
+    enabled: false
+
+  otel:
+    enabled: false
