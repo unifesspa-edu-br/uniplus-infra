@@ -1,0 +1,19 @@
+{{- if and .Values.unifesspaGeoApi.enabled .Values.unifesspaGeoApi.ingress.enabled .Values.unifesspaGeoApi.ingress.tls.enabled .Values.unifesspaGeoApi.ingress.tls.certManager.enabled -}}
+{{- if not .Values.unifesspaGeoApi.ingress.tls.certManager.clusterIssuer -}}
+{{- fail "unifesspaGeoApi.ingress.tls.certManager.clusterIssuer é obrigatório quando certManager.enabled=true (ex.: letsencrypt-prod)." -}}
+{{- end -}}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "unifesspaGeoApi.fullname" . }}
+  labels:
+    {{- include "unifesspaGeoApi.labels" . | nindent 4 }}
+spec:
+  secretName: {{ .Values.unifesspaGeoApi.ingress.tls.secretName | default (printf "%s-tls" (include "unifesspaGeoApi.fullname" .)) }}
+  commonName: {{ .Values.unifesspaGeoApi.ingress.host }}
+  dnsNames:
+    - {{ .Values.unifesspaGeoApi.ingress.host }}
+  issuerRef:
+    name: {{ .Values.unifesspaGeoApi.ingress.tls.certManager.clusterIssuer }}
+    kind: ClusterIssuer
+{{- end }}

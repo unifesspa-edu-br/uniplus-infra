@@ -1,0 +1,35 @@
+apiVersion: v2
+name: unifesspa-geo-api
+description: |
+  API .NET 10 de localidades/CEP/georreferenciamento institucional da UNIFESSPA
+  (módulo Geo, extraído para repo próprio unifesspa-geo-api). PostGIS via
+  ConnectionStrings__GeoDb, cache Redis, cifragem AES-GCM (local ou Vault
+  Transit). Health: /health (readiness agregado), /health/live (liveness),
+  /health/ready (dependências).
+type: application
+
+version: 0.1.0
+
+# Sincronizar com tag publicada em ghcr.io/unifesspa-edu-br/unifesspa-geo-api.
+appVersion: "1.0.1"
+
+home: https://github.com/unifesspa-edu-br/uniplus-infra
+sources:
+  - https://github.com/unifesspa-edu-br/uniplus-infra
+  - https://github.com/unifesspa-edu-br/unifesspa-geo-api
+
+maintainers:
+  - name: CTIC UNIFESSPA
+    email: jeferson.ferreira@unifesspa.edu.br
+
+keywords:
+  - uniplus
+  - api
+  - geo
+  - postgis
+  - dotnet
+  - unifesspa
+
+annotations:
+  category: api
+  licenses: MIT
