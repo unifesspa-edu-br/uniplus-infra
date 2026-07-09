@@ -19,6 +19,7 @@ External Secrets Operator, ...) é validado.
 |---|---|---|
 | Vault | `platform/vault/` | Single-node (replicas=1), Shamir manual (1 key share, threshold 1 — simplificado para lab), sem peer PA1/OCI KMS |
 | External Secrets Operator | `platform/external-secrets/` | `ClusterSecretStore vault-default` apontando para o Vault acima; NetworkPolicy habilitada nos dois charts (ver nota abaixo) |
+| Secrets iniciais | `scripts/lab-standalone-single/seed-vault-secrets.sh` | Popula no Vault os paths que os charts de API/Keycloak esperam — ver seção própria abaixo |
 
 ## Uso
 
@@ -95,3 +96,30 @@ afeta os dois charts — os defaults do chart Vault
 (`externalSecretsNamespace: external-secrets`, `traefikNamespace: traefik`)
 já batem com os nomes reais usados no lab, então não é necessário overridá-los
 aqui.
+
+## Secrets iniciais no Vault
+
+Com Vault e ESO no ar, popular os paths que os charts `uniplus-api-*`
+esperam (ver `apps/uniplus-api-*/values.yaml` chave
+`externalSecrets.*.vaultPath`):
+
+```bash
+./scripts/lab-standalone-single/seed-vault-secrets.sh
+```
+
+O script sincroniza o Vault com as fontes de verdade já vivas na VM — nunca
+gera segredo novo:
+
+| Path | Origem |
+|---|---|
+| `secret/standalone/redis/default` | `$DATA_BASE/redis/.bootstrap-creds` (Task #406) |
+| `secret/standalone/minio/root` | `$DATA_BASE/minio/.bootstrap-creds` (Task #407) |
+| `secret/standalone/kafka/admin` | `$DATA_BASE/kafka/.bootstrap-creds` + `/etc/uniplus-kafka/certs/ca.crt` (Task #408) |
+| `secret/standalone/keycloak/clients/uniplus-api-{selecao,portal,ingresso}` | `kcadm.sh get clients/.../client-secret` no pod `keycloak-replica` (clients M2M já existentes no realm, issue #163) |
+
+**Não cobre** `secret/standalone/postgres/{selecao,portal,ingresso}` — cada
+role+db Postgres dedicado só existe a partir da Task que sobe a respectiva
+API (#412/#413/#414); populado dentro do procedimento daquela Task, não
+aqui. Rodar o script de novo depois é seguro — `vault kv put` é idempotente
+por natureza, sempre reflete a fonte de verdade atual (útil inclusive para
+sincronizar após rotação de um client_secret no Keycloak).
