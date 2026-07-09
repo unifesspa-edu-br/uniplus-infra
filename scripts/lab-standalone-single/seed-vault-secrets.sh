@@ -151,6 +151,10 @@ printf '%s' "${client_secrets[uniplus-api-selecao]}" > "$tmpdir/oidc_selecao"
 printf '%s' "${client_secrets[uniplus-api-portal]}" > "$tmpdir/oidc_portal"
 printf '%s' "${client_secrets[uniplus-api-ingresso]}" > "$tmpdir/oidc_ingresso"
 cp "$KAFKA_CA_CERT" "$tmpdir/ca_crt" 2>/dev/null || sudo cp "$KAFKA_CA_CERT" "$tmpdir/ca_crt"
+# Fallback via sudo deixa ca_crt dono root — chown de volta pro usuário atual
+# antes do chmod não-privilegiado abaixo (senão "Operation not permitted"
+# sob set -e, abortando o script antes de popular o Vault).
+sudo chown "$(id -u):$(id -g)" "$tmpdir/ca_crt"
 chmod 600 "$tmpdir"/*
 
 log_info "Copiando arquivos temporários para dentro do pod $VAULT_POD..."
