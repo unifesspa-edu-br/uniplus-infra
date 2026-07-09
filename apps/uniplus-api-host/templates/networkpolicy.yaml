@@ -1,0 +1,165 @@
+{{- if and .Values.uniplusApiHost.enabled .Values.uniplusApiHost.networkPolicy.enabled -}}
+{{- if not .Values.uniplusApiHost.networkPolicy.dataHostCIDR -}}
+{{- fail "uniplusApiHost.networkPolicy.dataHostCIDR é obrigatório (egress para Postgres + Redis + Kafka + MinIO no data-host)." -}}
+{{- end -}}
+{{- /*
+  $srEnabled: feature flag real do Schema Registry — url não-vazia (mesma
+  guarda do deployment.yaml, que só renderiza envs SchemaRegistry__* quando
+  url está populado). Independente do authType, a API precisa alcançar o
+  registry HTTPS quando a feature está on.
+
+  $hasSrCIDR: CIDR dedicado do Schema Registry está configurado. Quando
+  vazio, assumimos co-locação com o OIDC issuer e usamos oidcIssuerCIDR
+  como fallback (default standalone via Traefik no k8s-host).
+
+  $srNeedsIssuerCIDR: a regra ipBlock=oidcIssuerCIDR ainda é necessária
+  para Schema Registry em 2 casos:
+    1. Co-locação (hasSrCIDR=false) — registry alcançável pelo IP do issuer.
+    2. authType=OAuthBearer — o oauth.tokenEndpoint tipicamente fica no
+       Keycloak (mesmo IP do issuer), independente do CIDR dedicado do
+       registry para chamadas Confluent-compat.
+  Só dispensamos oidcIssuerCIDR quando SR usa Basic/None E tem CIDR
+  dedicado (rota Confluent-compat 100% no registry, sem token endpoint).
+*/}}
+{{- $srEnabled := ne .Values.uniplusApiHost.schemaRegistry.url "" -}}
+{{- $hasSrCIDR := ne .Values.uniplusApiHost.networkPolicy.schemaRegistryCIDR "" -}}
+{{- $srOAuth := eq .Values.uniplusApiHost.schemaRegistry.authType "OAuthBearer" -}}
+{{- $srNeedsIssuerCIDR := and $srEnabled (or (not $hasSrCIDR) $srOAuth) -}}
+{{- if and .Values.uniplusApiHost.oidc.enabled (not .Values.uniplusApiHost.networkPolicy.oidcIssuerCIDR) -}}
+{{- fail "uniplusApiHost.networkPolicy.oidcIssuerCIDR é obrigatório quando oidc.enabled=true (egress HTTPS para o issuer Keycloak / JWKS validation)." -}}
+{{- end -}}
+{{- if and $srNeedsIssuerCIDR (not .Values.uniplusApiHost.networkPolicy.oidcIssuerCIDR) -}}
+{{- fail "uniplusApiHost.networkPolicy.oidcIssuerCIDR é obrigatório quando schemaRegistry.url está populado E (schemaRegistryCIDR vazio OU authType=OAuthBearer) — o egress 443 do registry co-localizado OU do oauth.tokenEndpoint precisa alcançar o IP do issuer." -}}
+{{- end -}}
+{{- if and $srEnabled (not .Values.uniplusApiHost.networkPolicy.oidcIssuerCIDR) (not $hasSrCIDR) -}}
+{{- fail "uniplusApiHost.networkPolicy.oidcIssuerCIDR OU schemaRegistryCIDR é obrigatório quando schemaRegistry.url está populado (egress HTTPS para o Apicurio Registry). Em standalone os 2 subdomínios resolvem para o mesmo IP — basta oidcIssuerCIDR; em environments com IPs distintos, definir schemaRegistryCIDR." -}}
+{{- end -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "uniplusApiHost.fullname" . }}
+  labels:
+    {{- include "uniplusApiHost.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "uniplusApiHost.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.uniplusApiHost.networkPolicy.traefikNamespace }}
+      ports:
+        - protocol: TCP
+          port: 8080
+    {{- if and .Values.uniplusApiHost.metrics.enabled .Values.uniplusApiHost.serviceMonitor.enabled }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.uniplusApiHost.networkPolicy.monitoringNamespace }}
+      ports:
+        - protocol: TCP
+          port: 8080
+    {{- end }}
+  egress:
+    # DNS (CoreDNS).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Data-host (Postgres 5432 + Redis 6379 + Kafka 9092 + MinIO 9000).
+    # Single rule by CIDR + multi-port (todos compartilham mesmo /24 em standalone).
+    - to:
+        - ipBlock:
+            cidr: {{ .Values.uniplusApiHost.networkPolicy.dataHostCIDR }}
+      ports:
+        - protocol: TCP
+          port: 5432  # Postgres
+        - protocol: TCP
+          port: 6379  # Redis
+        - protocol: TCP
+          port: 9000  # MinIO API S3
+        {{- if .Values.uniplusApiHost.kafka.enabled }}
+        - protocol: TCP
+          port: 9092  # Kafka SASL_SSL
+        {{- end }}
+    # Keycloak in-cluster (fallback se issuerUri usar Service DNS).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.uniplusApiHost.networkPolicy.keycloakNamespace }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: keycloak-replica
+      ports:
+        - protocol: TCP
+          port: {{ .Values.uniplusApiHost.networkPolicy.keycloakPort }}
+    {{- if or .Values.uniplusApiHost.oidc.enabled $srNeedsIssuerCIDR }}
+    # Egress HTTPS para o IP do OIDC issuer (Keycloak via Traefik). Cobre:
+    #   - JWT validation chama jwks endpoint quando oidc.enabled (bearer
+    #     validation no resource server).
+    #   - Schema Registry co-localizado (schemaRegistryCIDR vazio — default
+    #     standalone, auth e schema-registry subdomínios no mesmo IP).
+    #   - oauth.tokenEndpoint quando schemaRegistry.authType=OAuthBearer —
+    #     tipicamente fica no Keycloak, mesmo CIDR do issuer, independente
+    #     do CIDR dedicado do registry para chamadas Confluent-compat.
+    - to:
+        - ipBlock:
+            cidr: {{ .Values.uniplusApiHost.networkPolicy.oidcIssuerCIDR }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.uniplusApiHost.networkPolicy.oidcIssuerPort }}
+    {{- end }}
+    {{- if and $srEnabled $hasSrCIDR }}
+    # Regra dedicada para Schema Registry em IP público distinto do OIDC
+    # issuer (lab/prod-* podem ter Apicurio em outro host/cluster). Esta
+    # regra é independente da regra OIDC acima — em standalone
+    # (schemaRegistryCIDR vazio) o egress do registry cai na regra OIDC.
+    - to:
+        - ipBlock:
+            cidr: {{ .Values.uniplusApiHost.networkPolicy.schemaRegistryCIDR }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.uniplusApiHost.networkPolicy.schemaRegistryPort }}
+    {{- end }}
+    {{- if .Values.uniplusApiHost.otel.enabled }}
+    # OTel Collector DaemonSet (ADR-013) — egress OTLP gRPC (4317) e HTTP (4318)
+    # cross-namespace. O collector já tem o namespace `uniplus` na whitelist
+    # ingressNamespaces (platform/observability/otelcol/values.yaml), então
+    # esta regra fecha a simetria do lado do consumidor.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.uniplusApiHost.networkPolicy.otelCollectorNamespace }}
+      ports:
+        - protocol: TCP
+          port: 4317
+        - protocol: TCP
+          port: 4318
+    {{- end }}
+    {{- if eq .Values.uniplusApiHost.encryption.provider "vault" }}
+    # Vault Transit (ADR-0027) — egress TCP 8200 para o pod do Vault quando
+    # encryption.provider=vault. Sem esta regra todo path que toca cifragem
+    # at-rest (idempotency_cache + chaves materializadas) falha com Connection
+    # refused. Padrão NamespaceSelector + PodSelector (mesmo do Keycloak)
+    # restringe ao Vault server e ignora pods auxiliares (agent-injector etc.).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.uniplusApiHost.networkPolicy.vaultNamespace }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: vault
+      ports:
+        - protocol: TCP
+          port: {{ .Values.uniplusApiHost.networkPolicy.vaultPort }}
+    {{- end }}
+{{- end }}

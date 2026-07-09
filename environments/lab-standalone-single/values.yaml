@@ -160,3 +160,75 @@ uniplusApiPortal:
 
   otel:
     enabled: false
+
+# ============================================================================
+# uniplus-api-host — composition root do monólito modular (ADR-0097 do
+# uniplus-api). Substitui os antigos apps/uniplus-api-{selecao,ingresso}/
+# (revertidos — issue #412/#414): Selecao, Ingresso, Configuracao e
+# OrganizacaoInstitucional agora são módulos internos co-hospedados neste
+# processo único, banco Postgres único `uniplus` (role uniplus, schema-
+# por-módulo).
+# ============================================================================
+uniplusApiHost:
+  enabled: true
+
+  # Sem imagem publicada em GHCR ainda (pipeline publish-images.yml só
+  # dispara em tags v* — nenhuma foi criada; publicar uma teria efeito real
+  # em produção, fora do escopo desta Task). Build local a partir de
+  # uniplus-api/docker/Dockerfile.host, exportado via `docker save` e
+  # importado no containerd do k3s via `k3s ctr images import` — fica
+  # disponível como docker.io/library/uniplus-api-host:local-lab.
+  # pullPolicy=Never é essencial: sem isso o kubelet tentaria puxar de um
+  # registry remoto inexistente mesmo com a imagem já presente localmente.
+  image:
+    registry: docker.io/library
+    repository: uniplus-api-host
+    tag: local-lab
+    pullPolicy: Never
+
+  aspnet:
+    environment: Development
+
+  database:
+    host: 192.168.1.65
+
+  redis:
+    host: 192.168.1.65
+
+  # Desligado — mesma razão documentada no values.yaml do chart: sem
+  # Apicurio Registry no lab (issue #423), e o módulo Selecao (co-hospedado
+  # aqui) exige Schema Registry alcançável no boot quando Kafka está
+  # configurado. Kafka__BootstrapServers é sempre renderizado com " "
+  # (espaço) pelo template, não omitido — ver comentário completo no
+  # values.yaml do chart.
+  kafka:
+    enabled: false
+
+  storage:
+    endpoint: 192.168.1.65:9000
+
+  oidc:
+    issuerUri: http://keycloak-replica.uniplus.svc.cluster.local:8080/auth/realms/uniplus
+
+  cors:
+    allowedOrigins:
+      - http://192.168.1.65:4200
+
+  encryption:
+    provider: local
+
+  extraEnv:
+    - name: UniPlus__Encryption__LocalKey
+      valueFrom:
+        secretKeyRef:
+          name: uniplus-api-host-encryption-local
+          key: LOCAL_KEY
+
+  ingress:
+    enabled: false
+
+  networkPolicy:
+    enabled: false
+
+  otel:
+    enabled: false

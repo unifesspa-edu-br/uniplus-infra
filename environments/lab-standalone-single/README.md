@@ -21,6 +21,7 @@ External Secrets Operator, ...) é validado.
 | External Secrets Operator | `platform/external-secrets/` | `ClusterSecretStore vault-default` apontando para o Vault acima; NetworkPolicy habilitada nos dois charts (ver nota abaixo) |
 | Secrets iniciais | `scripts/lab-standalone-single/seed-vault-secrets.sh` | Popula no Vault os paths que os charts de API/Keycloak esperam — ver seção própria abaixo |
 | uniplus-api-portal | `apps/uniplus-api-portal/` | Deployable autônomo (ADR-0097 do `uniplus-api`); Kafka desligado (issue #423 — ver seção própria abaixo); módulo Portal ainda sem migrations de domínio no código (só schema `wolverine` de infraestrutura) |
+| uniplus-api-host | `apps/uniplus-api-host/` | Composition root do monólito modular (Selecao+Ingresso+Configuracao+OrganizacaoInstitucional, ADR-0097 do `uniplus-api`); imagem buildada localmente (sem publish em GHCR ainda) — ver seção própria abaixo |
 
 ## Uso
 
@@ -188,3 +189,45 @@ com o schema `wolverine` (infraestrutura de mensageria:
 outbox/inbox/dead-letters), sem tabelas de negócio. Isso é esperado (log
 `Nenhuma migration EF Core pendente para PortalDbContext`), não uma falha
 de configuração.
+
+## uniplus-api-host
+
+Composition root do monólito modular ([ADR-0097](https://github.com/unifesspa-edu-br/uniplus-api/blob/main/docs/adrs/0097-topologia-de-deploy-em-tres-apis-monolito-modular.md)
+do `uniplus-api`) — hospeda Selecao+Ingresso+Configuracao+OrganizacaoInstitucional
+num único processo. Detalhes completos no `README.md` do chart
+(`apps/uniplus-api-host/README.md`); resumo do procedimento específico do
+lab abaixo.
+
+```bash
+# 1. Role + database únicos no Postgres (banco compartilhado pelos 4 módulos)
+sudo docker exec -i uniplus-postgres psql -U postgres <<SQL
+CREATE ROLE uniplus WITH LOGIN PASSWORD '<senha gerada com openssl rand -hex 32>';
+CREATE DATABASE uniplus WITH OWNER = uniplus ENCODING = 'UTF8' LC_COLLATE = 'C.UTF-8' LC_CTYPE = 'C.UTF-8' TEMPLATE = template0;
+SQL
+
+# 2. A MESMA senha usada acima no Vault
+kubectl exec -n vault vault-0 -- vault kv put secret/standalone/postgres/uniplus password=@<arquivo temporário, nunca argv>
+
+# 3. LocalKey de cifragem — Secret K8s manual, não versionado
+kubectl create secret generic uniplus-api-host-encryption-local \
+  -n uniplus --from-literal=LOCAL_KEY="$(head -c 32 /dev/urandom | base64)"
+
+# 4. Build local da imagem (sem publish em GHCR ainda) + import no containerd
+cd ../uniplus-api
+docker build -f docker/Dockerfile.host -t uniplus-api-host:local-lab .
+docker save uniplus-api-host:local-lab -o /tmp/uniplus-api-host.tar
+scp /tmp/uniplus-api-host.tar uniplus@<ip-da-vm>:/tmp/
+ssh uniplus@<ip-da-vm> "sudo k3s ctr images import /tmp/uniplus-api-host.tar"
+
+# 5. Deploy
+helm install uniplus-api-host apps/uniplus-api-host/ -f environments/lab-standalone-single/values.yaml --namespace uniplus
+```
+
+Validado de ponta a ponta na VM de lab: pod `Running`/`1/1 Ready` já na
+primeira tentativa (diferente do `uniplus-api-selecao` original, que nunca
+ficava `Ready` com Kafka desligado por omissão de env var — ver seção
+acima), `/health`, `/health/live` e `/health/ready` respondendo `Healthy`,
+migrations EF Core aplicadas nos 4 schemas dedicados (`configuracao`: 15
+tabelas, `selecao`: 20, `ingresso`: 5, `organizacao`: 5, além de
+`wolverine`: 8), rotas `/api/organizacao/unidades` e `/api/configuracao/campi`
+respondendo `200 []`.
