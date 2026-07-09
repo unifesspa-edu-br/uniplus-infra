@@ -54,6 +54,13 @@ DATA_HOST_IP=10.2.2.11 ./scripts/validate-standalone.sh
 
 Saída esperada: **`X OK, 0 ERROS, Y AVISOS`**. Avisos são esperados enquanto serviços ainda estão subindo.
 
+## Lab standalone-single (host único)
+
+`lab-standalone-single/` traz scripts para uma topologia de laboratório de
+host único (K3s + Docker na mesma VM), complementar ao `standalone-compact`
+— ver `lab-standalone-single/README.md` e a issue
+[#395](https://github.com/unifesspa-edu-br/uniplus-infra/issues/395).
+
 ## Histórico
 
 Até 2026-05-19 o diretório também trazia `bootstrap-lab.sh` e `teardown-lab.sh` para um laboratório multi-DC (Ryzen 9950X + i7) que nunca foi provisionado. Os scripts foram removidos junto com `environments/lab-*`, `environments/prod-*` e `environments/standalone/` (ver `CHANGELOG.md`).
