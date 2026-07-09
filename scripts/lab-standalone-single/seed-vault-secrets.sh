@@ -115,7 +115,7 @@ for client in uniplus-api-selecao uniplus-api-portal uniplus-api-ingresso; do
         exit 1
     fi
     client_secrets[$client]="$secret"
-    log_success "client_secret de $client recuperado (${secret:0:8}...)"
+    log_success "client_secret de $client recuperado."
 done
 
 if $DRY_RUN; then
@@ -136,7 +136,11 @@ fi
 # Mesmo padrão já usado para o ca_cert e para o fix do MinIO (Task #407).
 tmpdir=$(mktemp -d)
 chmod 700 "$tmpdir"
-trap 'shred -u "$tmpdir"/* 2>/dev/null; rm -rf "$tmpdir"' EXIT
+# Limpeza local sempre; a remota é best-effort e cobre o caso em que o
+# `kubectl exec` do heredoc nem chega a iniciar (ex.: conexão cai) — nesse
+# cenário o trap remoto (dentro do heredoc) nunca roda, então a staging area
+# no pod ficaria órfã sem esta segunda camada.
+trap 'shred -u "$tmpdir"/* 2>/dev/null; rm -rf "$tmpdir"; "${KUBECTL[@]}" exec -n "$VAULT_NAMESPACE" "$VAULT_POD" -- rm -rf /tmp/vault-seed 2>/dev/null || true' EXIT
 
 printf '%s' "$vault_root_token" > "$tmpdir/vault_token"
 printf '%s' "$redis_pw" > "$tmpdir/redis_pw"
@@ -156,6 +160,10 @@ log_info "Copiando arquivos temporários para dentro do pod $VAULT_POD..."
 log_info "Escrevendo secrets no Vault ($VAULT_NAMESPACE/$VAULT_POD)..."
 "${KUBECTL[@]}" exec -i -n "$VAULT_NAMESPACE" "$VAULT_POD" -- sh <<'REMOTE_SCRIPT'
 set -e
+# Se algum `vault kv put` falhar no meio (ex.: path inválido, token expirado),
+# o trap ainda remove os arquivos staged — sem isso, root token + senhas
+# ficariam residindo no pod até restart/limpeza manual.
+trap 'rm -rf /tmp/vault-seed' EXIT
 export VAULT_TOKEN="$(cat /tmp/vault-seed/vault_token)"
 
 vault kv put secret/standalone/redis/default \
@@ -178,8 +186,6 @@ vault kv put secret/standalone/keycloak/clients/uniplus-api-portal \
 
 vault kv put secret/standalone/keycloak/clients/uniplus-api-ingresso \
     client_secret=@/tmp/vault-seed/oidc_ingresso >/dev/null
-
-rm -rf /tmp/vault-seed
 REMOTE_SCRIPT
 
 unset redis_pw minio_user minio_pw kafka_pw vault_root_token client_secrets
