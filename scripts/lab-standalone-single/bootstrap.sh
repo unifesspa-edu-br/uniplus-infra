@@ -442,7 +442,9 @@ step_init_unseal_vault() {
         fi
         local unseal_key
         unseal_key=$(sudo python3 -c "import json; print(json.load(open('$creds_file'))['unseal_keys_b64'][0])")
-        kubectl exec -n "$VAULT_NAMESPACE" "$VAULT_POD" -- vault operator unseal "$unseal_key" >/dev/null
+        # `-` faz o Vault CLI ler a key do stdin — nunca em argv (visível via
+        # /proc/<pid>/cmdline ou `ps` local enquanto o comando roda).
+        printf '%s' "$unseal_key" | kubectl exec -i -n "$VAULT_NAMESPACE" "$VAULT_POD" -- vault operator unseal - >/dev/null
         unset unseal_key
         log_success "Vault desselado."
     else
@@ -461,52 +463,55 @@ step_configure_vault_auth() {
     local root_token
     root_token=$(sudo python3 -c "import json; print(json.load(open('$creds_file'))['root_token'])")
 
-    local already_enabled
-    already_enabled=$(kubectl exec -n "$VAULT_NAMESPACE" "$VAULT_POD" -- sh -c "
-        export VAULT_TOKEN='$root_token'
-        vault auth list -format=json
-    " 2>/dev/null | python3 -c 'import json,sys; print("kubernetes/" in json.load(sys.stdin))' 2>/dev/null || echo "False")
+    # Root token nunca em argv de kubectl/vault (visível via /proc/<pid>/cmdline
+    # ou `ps` local enquanto o comando roda) — mesmo padrão de
+    # seed-vault-secrets.sh: arquivo temporário 700/600, copiado pro pod,
+    # consumido via `cat` dentro do heredoc remoto, nunca interpolado na
+    # string de um `sh -c`. Subshell isola o trap de limpeza sem afetar os
+    # steps seguintes do script.
+    (
+        tmpdir=$(mktemp -d)
+        trap 'shred -u "$tmpdir"/* 2>/dev/null; rm -rf "$tmpdir"' EXIT
+        chmod 700 "$tmpdir"
+        printf '%s' "$root_token" > "$tmpdir/vault_token"
+        chmod 600 "$tmpdir/vault_token"
 
-    # `vault auth enable kubernetes` só roda se o mount ainda não existir
-    # (reabilitar um mount já ativo é erro no Vault) — mas config/policy/role
-    # são idempotentes por natureza (write sempre sobrescreve) e por isso
-    # SEMPRE rodam, mesmo quando o mount já existe: uma execução anterior que
-    # chegou a habilitar o mount mas falhou antes de escrever a policy/role
-    # (rede, restart do pod) não pode deixar essas peças faltando para
-    # sempre — sem isso o ClusterSecretStore fica incapaz de autenticar sem
-    # nenhum sinal de erro no bootstrap.
-    local enable_cmd="true"
-    if [[ "$already_enabled" == "True" ]]; then
-        log_success "Auth Kubernetes já habilitado — reconciliando policy/role mesmo assim."
-    else
-        enable_cmd="vault auth enable kubernetes"
-    fi
+        kubectl exec -n "$VAULT_NAMESPACE" "$VAULT_POD" -- mkdir -p /tmp/vault-auth-setup
+        kubectl cp "$tmpdir/vault_token" "$VAULT_NAMESPACE/$VAULT_POD:/tmp/vault-auth-setup/vault_token"
 
-    # `set -e` no shell remoto: sem isso, cada `vault ...` roda independente
-    # do resultado do anterior e o `sh -c` sempre retorna 0 (herdado do
-    # `|| true` da última linha), mascarando falha real de
-    # `auth enable`/`policy write`/`write role` — o bootstrap seguiria para
-    # ESO/seed com o Vault mal configurado e reportaria sucesso. `secret
-    # enable` continua tolerando "already in use" (único caso legítimo de
-    # reentrância ali).
-    kubectl exec -n "$VAULT_NAMESPACE" "$VAULT_POD" -- sh -c "
-        set -e
-        export VAULT_TOKEN='$root_token'
-        $enable_cmd
-        vault write auth/kubernetes/config kubernetes_host=https://kubernetes.default.svc.cluster.local
-        vault policy write external-secrets-read - <<'POLICY'
-path \"secret/data/*\" { capabilities = [\"read\"] }
-path \"secret/metadata/*\" { capabilities = [\"read\"] }
+        # `set -e` + trap remoto: sem isso, cada `vault ...` roda independente
+        # do resultado do anterior e o `secrets enable || true` final faria o
+        # heredoc sempre retornar 0, mascarando falha real de `auth
+        # enable`/`policy write`/`write role` — o bootstrap seguiria para
+        # ESO/seed com o Vault mal configurado e reportaria sucesso. `auth
+        # enable` só roda se o mount kubernetes/ ainda não existir (reabilitar
+        # um mount ativo é erro no Vault); config/policy/role SEMPRE rodam
+        # (write é idempotente por natureza no Vault) — uma execução anterior
+        # que habilitou o mount mas falhou antes de escrever a policy/role é
+        # corrigida na próxima execução, em vez de ficar faltando pra sempre.
+        kubectl exec -i -n "$VAULT_NAMESPACE" "$VAULT_POD" -- sh <<'REMOTE_SCRIPT'
+set -e
+trap 'rm -rf /tmp/vault-auth-setup' EXIT
+export VAULT_TOKEN="$(cat /tmp/vault-auth-setup/vault_token)"
+
+if ! vault auth list -format=json | grep -q '"kubernetes/"'; then
+    vault auth enable kubernetes
+fi
+vault write auth/kubernetes/config kubernetes_host=https://kubernetes.default.svc.cluster.local
+vault policy write external-secrets-read - <<'POLICY'
+path "secret/data/*" { capabilities = ["read"] }
+path "secret/metadata/*" { capabilities = ["read"] }
 POLICY
-        vault write auth/kubernetes/role/external-secrets \
-            bound_service_account_names=external-secrets \
-            bound_service_account_namespaces=external-secrets \
-            policies=external-secrets-read \
-            ttl=1h
-        vault secrets enable -path=secret -version=2 kv || true
-    " >/dev/null
-    log_success "Auth Kubernetes + policy external-secrets-read + role external-secrets reconciliados."
+vault write auth/kubernetes/role/external-secrets \
+    bound_service_account_names=external-secrets \
+    bound_service_account_namespaces=external-secrets \
+    policies=external-secrets-read \
+    ttl=1h
+vault secrets enable -path=secret -version=2 kv || true
+REMOTE_SCRIPT
+    )
     unset root_token
+    log_success "Auth Kubernetes + policy external-secrets-read + role external-secrets reconciliados."
 }
 
 step_deploy_eso() {
@@ -542,8 +547,27 @@ step_deploy_eso() {
 
 step_seed_secrets() {
     log_info "Populando secrets iniciais no Vault (delegando para seed-vault-secrets.sh)..."
+
+    # seed-vault-secrets.sh faz require_file nos .bootstrap-creds de
+    # redis/minio/kafka/vault ANTES do resumo --dry-run — numa VM nova, onde
+    # os steps anteriores deste script também só simularam (nada foi escrito
+    # ainda), delegar incondicionalmente faria o preflight completo
+    # (`./bootstrap.sh --dry-run`) abortar com erro real do script delegado,
+    # em vez de só mostrar o que seria feito.
+    local prereqs_ready=true
+    for f in "$DATA_BASE/redis/.bootstrap-creds" "$DATA_BASE/minio/.bootstrap-creds" "$DATA_BASE/kafka/.bootstrap-creds" "$DATA_BASE/vault/.bootstrap-creds.json"; do
+        if ! sudo test -f "$f" 2>/dev/null; then
+            prereqs_ready=false
+            break
+        fi
+    done
+
     if $DRY_RUN; then
-        "$SCRIPT_DIR/seed-vault-secrets.sh" --dry-run
+        if $prereqs_ready; then
+            "$SCRIPT_DIR/seed-vault-secrets.sh" --dry-run
+        else
+            log_warn "Dry-run: pré-requisitos (.bootstrap-creds de redis/minio/kafka/vault) ainda não existem nesta VM — seed-vault-secrets.sh seria chamado numa execução real."
+        fi
         return
     fi
 
