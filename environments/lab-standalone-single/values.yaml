@@ -57,11 +57,43 @@ vault:
     auditStorage:
       size: 2Gi
 
+# NetworkPolicy: HABILITADA (chave raiz compartilhada pelos wrappers
+# platform/vault/ e platform/external-secrets/, cada um instalado via
+# `helm install <chart> -f` deste mesmo arquivo).
+#
+# Suposição anterior "k3s lab usa flannel, não enforça NetworkPolicy" era
+# FALSA — k3s embute kube-router como NetworkPolicy controller mesmo com
+# flannel como dataplane de pods, e ele ESTAVA bloqueando egress do ESO
+# (Task #410). kubeApiCidrs precisa incluir o CIDR do host, não só o
+# service CIDR: em K3s o apiserver roda como processo no host (não Pod),
+# e kube-router avalia egress *após* o DNAT do kube-proxy — o pacote já
+# reescrito para <node-ip>:6443 não bate em 10.43.0.0/16 sozinho (mesmo
+# bug documentado em environments/standalone-compact/values.yaml linha
+# ~600, ali com o CIDR da VCN OCI; aqui é o IP da VM de lab).
 networkPolicy:
-  enabled: false # k3s lab usa flannel (não enforça NetworkPolicy)
+  enabled: true
+  kubeApiCidrs:
+    - 10.43.0.0/16
+    - 192.168.1.65/32
 
 ingress:
   enabled: false # acesso via kubectl port-forward
 
 serviceMonitor:
   enabled: false # sem Prometheus Operator no lab
+
+# ============================================================================
+# External Secrets Operator — lê defaults de platform/external-secrets/values.yaml
+# (replicaCount=1, NetworkPolicy on). Aqui só liga o ClusterSecretStore,
+# que fica desligado por default até o Vault estar init+unsealed com a
+# policy/role external-secrets configuradas (feito manualmente na Task #410,
+# mesmo procedimento documentado em platform/external-secrets/README.md).
+# ============================================================================
+clusterSecretStore:
+  enabled: true
+
+  # Release `vault` instalado sem fullnameOverride no namespace `vault`
+  # (Task #409 — `helm install vault platform/vault/ ...`), então o Service
+  # do Vault é literalmente `vault`, não `platform-vault-<cluster>` (esse
+  # padrão vale só para ambientes reconciliados pelo ApplicationSet).
+  vaultServer: "http://vault.vault.svc.cluster.local:8200"
