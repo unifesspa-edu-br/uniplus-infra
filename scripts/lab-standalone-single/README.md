@@ -14,6 +14,7 @@ apenas em `DATA_HOST_IP` (aqui é o IP da própria VM, não de um host externo).
 | Script | Função |
 |--------|--------|
 | `setup-redis.sh` | Redis 8.6.3 via Docker+systemd (ACL auth, persistência AOF+RDB) |
+| `setup-minio.sh` | MinIO via Docker+systemd (SNSD single-node, buckets baseline) |
 
 ## Uso
 
@@ -21,6 +22,9 @@ apenas em `DATA_HOST_IP` (aqui é o IP da própria VM, não de um host externo).
 ./setup-redis.sh                          # DATA_HOST_IP auto-detectado
 DATA_HOST_IP=x.x.x.x ./setup-redis.sh      # override explícito
 ./setup-redis.sh --dry-run                 # mostra o que seria feito
+
+./setup-minio.sh                          # idem, + cria buckets baseline
+./setup-minio.sh --skip-buckets           # só sobe o serviço, sem tocar buckets
 ```
 
 ## Histórico
