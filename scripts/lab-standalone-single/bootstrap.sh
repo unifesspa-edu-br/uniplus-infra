@@ -377,6 +377,23 @@ step_deploy_vault() {
         return
     fi
 
+    # `networkPolicy.kubeApiCidrs` em $ENV_VALUES é uma lista estática (não
+    # gerada por este script — mesmo padrão de todo values.yaml de
+    # environment neste repo, atado à infra real que descreve). Se a VM
+    # rodando este bootstrap não é a mesma cujo IP está commitado ali, o
+    # egress do Vault/ESO ao Service kubernetes fica bloqueado pelo
+    # kube-router (mesmo bug da Task #410) — falhar cedo aqui em vez de
+    # deployar Vault/ESO com NetworkPolicy silenciosamente quebrada.
+    local host_ip
+    host_ip=$(hostname -I 2>/dev/null | tr ' ' '\n' \
+        | grep -E '^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)' \
+        | head -1)
+    if [[ -n "$host_ip" ]] && ! grep -A5 '^  kubeApiCidrs:' "$ENV_VALUES" | grep -q "$host_ip/32"; then
+        log_error "IP deste host ($host_ip) não está em networkPolicy.kubeApiCidrs de $ENV_VALUES."
+        log_error "Atualize o values.yaml do environment com o IP real desta VM antes de continuar."
+        exit 1
+    fi
+
     helm dependency update "$REPO_ROOT/platform/vault/" >/dev/null
     kubectl create namespace "$VAULT_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 
@@ -471,7 +488,12 @@ step_configure_vault_auth() {
     # steps seguintes do script.
     (
         tmpdir=$(mktemp -d)
-        trap 'shred -u "$tmpdir"/* 2>/dev/null; rm -rf "$tmpdir"' EXIT
+        # Limpeza local sempre; a remota é best-effort e cobre o caso em que
+        # o `kubectl exec` do heredoc nem chega a iniciar (ex.: timeout de
+        # API, admission webhook) — nesse cenário o trap remoto (dentro do
+        # heredoc) nunca roda, deixando o token em texto puro órfão no pod
+        # até restart/limpeza manual. Mesmo padrão de seed-vault-secrets.sh.
+        trap 'shred -u "$tmpdir"/* 2>/dev/null; rm -rf "$tmpdir"; kubectl exec -n "$VAULT_NAMESPACE" "$VAULT_POD" -- rm -rf /tmp/vault-auth-setup 2>/dev/null || true' EXIT
         chmod 700 "$tmpdir"
         printf '%s' "$root_token" > "$tmpdir/vault_token"
         chmod 600 "$tmpdir/vault_token"
