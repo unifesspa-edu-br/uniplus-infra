@@ -116,7 +116,7 @@
     {
       "clientId": "grafana",
       "name": "Grafana — Observability Dashboards (admin/editor/viewer)",
-      "description": "Cliente OIDC do Grafana (platform/observability/grafana). Confidential — secret substituido via ${GRAFANA_CLIENT_SECRET} (IMPORT_VARSUBSTITUTION) e custodiado em secret/standalone/keycloak/clients/grafana. Roles mapeadas via groupsClaim em role_attribute_path do auth.generic_oauth: /admins/grafana=Admin, /editors/grafana=Editor, default=Viewer. RUNBOOKS §16.1.",
+      "description": "Cliente OIDC do Grafana. Confidential — secret gerado no import, custodiado no Vault (secret/standalone/keycloak/clients/grafana). Roles via groupsClaim: /admins/grafana=Admin, /editors/grafana=Editor. Detalhes: RUNBOOKS §16.1.",
       "secret": "${GRAFANA_CLIENT_SECRET}",
       "enabled": true,
       "protocol": "openid-connect",
