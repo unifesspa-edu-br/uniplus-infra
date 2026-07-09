@@ -20,8 +20,7 @@ External Secrets Operator, ...) é validado.
 | Vault | `platform/vault/` | Single-node (replicas=1), Shamir manual (1 key share, threshold 1 — simplificado para lab), sem peer PA1/OCI KMS |
 | External Secrets Operator | `platform/external-secrets/` | `ClusterSecretStore vault-default` apontando para o Vault acima; NetworkPolicy habilitada nos dois charts (ver nota abaixo) |
 | Secrets iniciais | `scripts/lab-standalone-single/seed-vault-secrets.sh` | Popula no Vault os paths que os charts de API/Keycloak esperam — ver seção própria abaixo |
-| uniplus-api-selecao | `apps/uniplus-api-selecao/` | Primeira das 3 APIs de negócio; Kafka desligado (issue #423 — ver seção própria abaixo) |
-| uniplus-api-portal | `apps/uniplus-api-portal/` | Mesmo padrão do selecao; módulo Portal ainda sem migrations de domínio no código (só schema `wolverine` de infraestrutura) |
+| uniplus-api-portal | `apps/uniplus-api-portal/` | Deployable autônomo (ADR-0097 do `uniplus-api`); Kafka desligado (issue #423 — ver seção própria abaixo); módulo Portal ainda sem migrations de domínio no código (só schema `wolverine` de infraestrutura) |
 
 ## Uso
 
@@ -119,14 +118,25 @@ gera segredo novo:
 | `secret/standalone/kafka/admin` | `$DATA_BASE/kafka/.bootstrap-creds` + `/etc/uniplus-kafka/certs/ca.crt` (Task #408) |
 | `secret/standalone/keycloak/clients/uniplus-api-{selecao,portal,ingresso}` | `kcadm.sh get clients/.../client-secret` no pod `keycloak-replica` (clients M2M já existentes no realm, issue #163) |
 
-**Não cobre** `secret/standalone/postgres/{selecao,portal,ingresso}` — cada
-role+db Postgres dedicado só existe a partir da Task que sobe a respectiva
-API (#412/#413/#414); populado dentro do procedimento daquela Task, não
-aqui. Rodar o script de novo depois é seguro — `vault kv put` é idempotente
-por natureza, sempre reflete a fonte de verdade atual (útil inclusive para
-sincronizar após rotação de um client_secret no Keycloak).
+**Não cobre** `secret/standalone/postgres/portal` — o role+db Postgres
+dedicado só existe a partir da Task #413, populado dentro do procedimento
+daquela Task, não aqui. Rodar o script de novo depois é seguro —
+`vault kv put` é idempotente por natureza, sempre reflete a fonte de
+verdade atual (útil inclusive para sincronizar após rotação de um
+client_secret no Keycloak).
 
-## uniplus-api-selecao
+## uniplus-api-portal
+
+A topologia real do backend não é "uma API por módulo de negócio" — ADR-0097
+do `uniplus-api` (accepted 2026-06-26) define 3 executáveis: **Host**
+(`Unifesspa.UniPlus.Host`, absorve Selecao+Ingresso+Configuracao+
+OrganizacaoInstitucional como class libraries co-hospedadas, banco único
+`uniplus` schema-por-módulo), **Geo** (`unifesspa-geo-api`, já deployável
+autônomo) e **Portal** (`uniplus-api-portal`, também deployável autônomo,
+banco próprio `uniplus_portal`). Só Portal e Geo têm chart Helm dedicado
+neste repositório — Selecao/Ingresso/Configuracao/OrganizacaoInstitucional
+são absorvidos pelo Host, que ainda não tem chart aqui (ver issue de
+follow-up para criá-lo).
 
 Pré-requisitos específicos desta API, feitos manualmente (não cobertos por
 `seed-vault-secrets.sh`):
@@ -134,20 +144,20 @@ Pré-requisitos específicos desta API, feitos manualmente (não cobertos por
 ```bash
 # 1. Role + database dedicados no Postgres
 sudo docker exec -i uniplus-postgres psql -U postgres <<SQL
-CREATE ROLE selecao WITH LOGIN PASSWORD '<senha gerada com openssl rand -hex 32>';
-CREATE DATABASE uniplus_selecao WITH OWNER = selecao ENCODING = 'UTF8' LC_COLLATE = 'C.UTF-8' LC_CTYPE = 'C.UTF-8' TEMPLATE = template0;
+CREATE ROLE portal WITH LOGIN PASSWORD '<senha gerada com openssl rand -hex 32>';
+CREATE DATABASE uniplus_portal WITH OWNER = portal ENCODING = 'UTF8' LC_COLLATE = 'C.UTF-8' LC_CTYPE = 'C.UTF-8' TEMPLATE = template0;
 SQL
 
 # 2. A MESMA senha usada acima no Vault (path esperado pelo chart)
-kubectl exec -n vault vault-0 -- vault kv put secret/standalone/postgres/selecao password=@<arquivo temporário, nunca argv>
+kubectl exec -n vault vault-0 -- vault kv put secret/standalone/postgres/portal password=@<arquivo temporário, nunca argv>
 
 # 3. LocalKey de cifragem (encryption.provider=local) — Secret K8s manual,
 #    não versionado; cada environment gera a sua
-kubectl create secret generic uniplus-api-selecao-encryption-local \
+kubectl create secret generic uniplus-api-portal-encryption-local \
   -n uniplus --from-literal=LOCAL_KEY="$(head -c 32 /dev/urandom | base64)"
 
 # 4. Deploy
-helm install uniplus-api-selecao apps/uniplus-api-selecao/ -f environments/lab-standalone-single/values.yaml --namespace uniplus
+helm install uniplus-api-portal apps/uniplus-api-portal/ -f environments/lab-standalone-single/values.yaml --namespace uniplus
 ```
 
 ### Limitação conhecida: `/health` nunca fica `Healthy` com Kafka desligado (issue #423)
@@ -172,17 +182,9 @@ o novo pod ficar `Ready` antes de escalar o antigo para baixo); limpar
 manualmente o ReplicaSet antigo (`kubectl delete replicaset <antigo>`) se
 isso acontecer.
 
-## uniplus-api-portal / uniplus-api-ingresso
-
-Mesmo procedimento e mesmas limitações do `uniplus-api-selecao` acima —
-role+database Postgres dedicados (`portal`/`uniplus_portal`,
-`ingresso`/`uniplus_ingresso`), secret correspondente no Vault, LocalKey
-via Secret K8s manual (`uniplus-api-<app>-encryption-local`),
-`aspnet.environment: Development`, `kafka.enabled: false` (issue #423).
-
-`uniplus-api-portal`: o módulo ainda não tem entidades de domínio
-implementadas no código — `dotnet ef` não gera migrations pendentes,
-então o banco fica só com o schema `wolverine` (infraestrutura de
-mensageria: outbox/inbox/dead-letters), sem tabelas de negócio. Isso é
-esperado (log `Nenhuma migration EF Core pendente para PortalDbContext`),
-não uma falha de configuração.
+O módulo Portal ainda não tem entidades de domínio implementadas no
+código — `dotnet ef` não gera migrations pendentes, então o banco fica só
+com o schema `wolverine` (infraestrutura de mensageria:
+outbox/inbox/dead-letters), sem tabelas de negócio. Isso é esperado (log
+`Nenhuma migration EF Core pendente para PortalDbContext`), não uma falha
+de configuração.
