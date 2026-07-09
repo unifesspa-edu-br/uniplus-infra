@@ -64,7 +64,12 @@ Helm), então não podem coexistir com o `ClusterSecretStore` (CR) no mesmo
 ```bash
 helm dependency update platform/external-secrets/
 kubectl create namespace external-secrets
-helm install external-secrets platform/external-secrets/ --namespace external-secrets --set clusterSecretStore.enabled=false
+# -f já na primeira instalação: sem isso, a NetworkPolicy do ESO nasce com
+# os defaults do chart (kubeApiCidrs só com o service CIDR, sem o CIDR do
+# host) e controller/webhook/cert-controller entram em CrashLoopBackOff
+# antes mesmo do primeiro Ready (mesmo bug descrito abaixo). --set continua
+# necessário para não colidir com o ClusterSecretStore (CRD ainda não existe).
+helm install external-secrets platform/external-secrets/ -f environments/lab-standalone-single/values.yaml --namespace external-secrets --set clusterSecretStore.enabled=false
 # aguardar os pods do ESO Ready, então:
 helm upgrade external-secrets platform/external-secrets/ -f environments/lab-standalone-single/values.yaml --namespace external-secrets
 ```
