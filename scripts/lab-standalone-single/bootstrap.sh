@@ -213,10 +213,27 @@ step_setup_postgres() {
     run "sudo chown 70:70 $DATA_BASE/postgres/data $DATA_BASE/postgres/init"
     run "sudo chmod 700 $DATA_BASE/postgres/init"
 
+    # Detectar se o cluster já foi inicializado pelo entrypoint (mesmo guard
+    # do bootstrap-standalone.sh §9.1/RUNBOOKS §9.2) — PG_VERSION é escrito
+    # por initdb na primeira inicialização, robusto a variações de layout.
+    local cluster_initialized=false
+    if ! $DRY_RUN && \
+       sudo find "$DATA_BASE/postgres/data" -name PG_VERSION -print -quit 2>/dev/null | grep -q .; then
+        cluster_initialized=true
+    fi
+
     if sudo test -f "$creds_file" 2>/dev/null; then
         log_success "Bootstrap creds do Postgres já existentes — preservando senha."
     elif $DRY_RUN; then
         log_warn "Dry-run: senha inicial seria gerada em $creds_file"
+    elif $cluster_initialized; then
+        # Guard: cluster já inicializado mas sem .bootstrap-creds (operador
+        # removeu após custódia). Regenerar agora produziria mismatch entre
+        # o novo super_pw e a senha já persistida no cluster.
+        log_error "$creds_file ausente, mas cluster Postgres já existe em $DATA_BASE/postgres/data"
+        log_error "Regenerar a senha agora produziria mismatch com o cluster já formatado."
+        log_error "Restaure $creds_file a partir do Vault — ver docs/RUNBOOKS.md §9.4."
+        exit 1
     else
         log_info "Gerando senha do superusuário (256 bits)..."
         local super_pw
@@ -385,8 +402,17 @@ step_init_unseal_vault() {
         return
     fi
 
-    local initialized
-    initialized=$(kubectl exec -n "$VAULT_NAMESPACE" "$VAULT_POD" -- vault status -format=json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["initialized"])' 2>/dev/null || echo "false")
+    # `vault status` sai com código 2 quando sealed/uninitialized (não é erro
+    # — é o contrato documentado do comando). Com `set -o pipefail` ativo,
+    # deixar esse exit code dentro do pipe faz `| python3 ...` "vencer" o
+    # parse só quando bem-sucedido; quando o pipeline como um todo propaga o
+    # 2 do `vault status`, o `|| echo` do fallback roda ADEMAIS da saída já
+    # capturada do python3 — a variável vira duas linhas ("True\ntrue") e o
+    # `[[ == "True" ]]` falha silenciosamente. Capturar o JSON separado do
+    # parse evita a mistura.
+    local status_json initialized
+    status_json=$(kubectl exec -n "$VAULT_NAMESPACE" "$VAULT_POD" -- vault status -format=json 2>/dev/null || true)
+    initialized=$(printf '%s' "$status_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["initialized"])' 2>/dev/null || echo "false")
 
     if [[ "$initialized" != "True" ]]; then
         log_info "Inicializando Vault (Shamir 1 key-share/threshold — simplificação de lab)..."
@@ -401,7 +427,8 @@ step_init_unseal_vault() {
     fi
 
     local sealed
-    sealed=$(kubectl exec -n "$VAULT_NAMESPACE" "$VAULT_POD" -- vault status -format=json 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin)["sealed"])' 2>/dev/null || echo "true")
+    status_json=$(kubectl exec -n "$VAULT_NAMESPACE" "$VAULT_POD" -- vault status -format=json 2>/dev/null || true)
+    sealed=$(printf '%s' "$status_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["sealed"])' 2>/dev/null || echo "true")
 
     if [[ "$sealed" == "True" ]]; then
         if ! sudo test -f "$creds_file" 2>/dev/null; then
@@ -439,7 +466,15 @@ step_configure_vault_auth() {
     if [[ "$already_enabled" == "True" ]]; then
         log_success "Auth Kubernetes + policy/role do Vault já configurados — preservando."
     else
+        # `set -e` no shell remoto: sem isso, cada `vault ...` roda
+        # independente do resultado do anterior e o `sh -c` sempre retorna
+        # 0 (herdado do `|| true` da última linha), mascarando falha real de
+        # `auth enable`/`policy write`/`write role` — o bootstrap seguiria
+        # para ESO/seed com o Vault mal configurado e reportaria sucesso.
+        # `secret enable` continua tolerando "already in use" (único caso
+        # legítimo de reentrância aqui).
         kubectl exec -n "$VAULT_NAMESPACE" "$VAULT_POD" -- sh -c "
+            set -e
             export VAULT_TOKEN='$root_token'
             vault auth enable kubernetes
             vault write auth/kubernetes/config kubernetes_host=https://kubernetes.default.svc.cluster.local
