@@ -56,6 +56,16 @@ spec:
     metadata:
       labels:
         {{- include "uniplusApiHost.labels" . | nindent 8 }}
+      {{- if .Values.uniplusApiHost.customCA.enabled }}
+      annotations:
+        # Sem isso, rotacionar customCA.certPEM (ex.: renovar o certificado
+        # autoassinado do lab) só atualiza o ConfigMap — pods já rodando
+        # mantêm o bundle antigo no emptyDir (populado uma vez pelo
+        # initContainer na criação do pod, nunca re-executado depois) até
+        # um restart manual. O checksum muda sempre que o cert muda,
+        # forçando o rollout automático do Deployment.
+        checksum/custom-ca: {{ .Values.uniplusApiHost.customCA.certPEM | sha256sum }}
+      {{- end }}
     spec:
       serviceAccountName: {{ include "uniplusApiHost.serviceAccountName" . }}
       # automountServiceAccountToken=true é necessário quando Provider=vault:
