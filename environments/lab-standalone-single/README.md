@@ -143,6 +143,8 @@ Pré-requisitos específicos desta API, feitos manualmente (não cobertos por
 `seed-vault-secrets.sh`):
 
 ```bash
+export KUBECONFIG="$HOME/.kube/config"   # ver RUNBOOKS.md §20.3 — sem isso, kubectl/helm bare falham com "permission denied"
+
 # 1. Role + database dedicados no Postgres
 sudo docker exec -i uniplus-postgres psql -U postgres <<SQL
 CREATE ROLE portal WITH LOGIN PASSWORD '<senha gerada com openssl rand -hex 32>';
@@ -152,7 +154,7 @@ SQL
 # 2. A MESMA senha usada acima no Vault — vault CLI local via port-forward,
 #    mesma higiene de credenciais do RUNBOOKS.md §8.4.3 (nunca token/senha
 #    em argv; process substitution evita gravar a senha em disco)
-sudo kubectl -n vault port-forward vault-0 8200:8200 > /tmp/vault-pf.log 2>&1 &
+kubectl -n vault port-forward vault-0 8200:8200 > /tmp/vault-pf.log 2>&1 &
 PF_PID=$!
 trap 'kill "$PF_PID" 2>/dev/null; unset VAULT_TOKEN VAULT_ADDR ROLE_PW' EXIT
 export VAULT_ADDR=http://127.0.0.1:8200
@@ -213,6 +215,8 @@ num único processo. Detalhes completos no `README.md` do chart
 lab abaixo.
 
 ```bash
+export KUBECONFIG="$HOME/.kube/config"   # ver RUNBOOKS.md §20.3 — sem isso, kubectl/helm bare falham com "permission denied"
+
 # 1. Role + database únicos no Postgres (banco compartilhado pelos 4 módulos)
 sudo docker exec -i uniplus-postgres psql -U postgres <<SQL
 CREATE ROLE uniplus WITH LOGIN PASSWORD '<senha gerada com openssl rand -hex 32>';
@@ -222,7 +226,7 @@ SQL
 # 2. A MESMA senha usada acima no Vault — vault CLI local via port-forward,
 #    mesma higiene de credenciais do RUNBOOKS.md §8.4.3 (nunca token/senha
 #    em argv; process substitution evita gravar a senha em disco)
-sudo kubectl -n vault port-forward vault-0 8200:8200 > /tmp/vault-pf.log 2>&1 &
+kubectl -n vault port-forward vault-0 8200:8200 > /tmp/vault-pf.log 2>&1 &
 PF_PID=$!
 trap 'kill "$PF_PID" 2>/dev/null; unset VAULT_TOKEN VAULT_ADDR ROLE_PW' EXIT
 export VAULT_ADDR=http://127.0.0.1:8200
