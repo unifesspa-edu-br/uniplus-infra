@@ -192,7 +192,8 @@ follow-up para criá-lo).
 >   --set keycloak.networkPolicy.enabled=false \
 >   --set keycloak.database.host=192.168.1.65 \
 >   --set keycloak.hostname.strict=false \
->   --namespace uniplus --create-namespace
+>   --namespace uniplus --create-namespace \
+>   --wait --timeout=300s
 > ```
 
 Pré-requisitos específicos desta API, feitos manualmente (não cobertos por
@@ -323,7 +324,8 @@ lab abaixo.
 >   --set keycloak.networkPolicy.enabled=false \
 >   --set keycloak.database.host=192.168.1.65 \
 >   --set keycloak.hostname.strict=false \
->   --namespace uniplus --create-namespace
+>   --namespace uniplus --create-namespace \
+>   --wait --timeout=300s
 > ```
 
 ```bash

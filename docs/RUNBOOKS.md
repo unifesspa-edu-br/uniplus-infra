@@ -3794,7 +3794,8 @@ Procedimento manual — não coberto pelo `bootstrap.sh` (§20.2). Resumo para `
 >   --set keycloak.networkPolicy.enabled=false \
 >   --set keycloak.database.host=192.168.1.65 \
 >   --set keycloak.hostname.strict=false \
->   --namespace uniplus --create-namespace
+>   --namespace uniplus --create-namespace \
+>   --wait --timeout=300s
 > ```
 
 ```bash
