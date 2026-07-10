@@ -139,6 +139,11 @@ neste repositório — Selecao/Ingresso/Configuracao/OrganizacaoInstitucional
 são absorvidos pelo Host, que ainda não tem chart aqui (ver issue de
 follow-up para criá-lo).
 
+> **Pré-requisito:** HashiCorp `vault` CLI instalada na VM (`bootstrap.sh` só deploya o servidor via
+> Helm — o binário local não vem com ele; pacote oficial ou `apt install vault` via repositório
+> HashiCorp). Os passos abaixo usam essa CLI local + port-forward (mesma higiene de credenciais do
+> RUNBOOKS.md §8.4.3), nunca `kubectl exec` com segredo em argv.
+
 > **Pré-requisito:** `./scripts/lab-standalone-single/seed-vault-secrets.sh` já deve ter rodado com
 > sucesso — o `ExternalSecret` desta API também referencia `secret/standalone/{redis/default,minio/root}`,
 > não só o Postgres escrito abaixo. Esse script exige o Keycloak já deployado; numa VM nova,
@@ -264,6 +269,11 @@ do `uniplus-api`) — hospeda Selecao+Ingresso+Configuracao+OrganizacaoInstituci
 num único processo. Detalhes completos no `README.md` do chart
 (`apps/uniplus-api-host/README.md`); resumo do procedimento específico do
 lab abaixo.
+
+> **Pré-requisito:** HashiCorp `vault` CLI instalada na VM (`bootstrap.sh` só deploya o servidor via
+> Helm — o binário local não vem com ele; pacote oficial ou `apt install vault` via repositório
+> HashiCorp). Os passos abaixo usam essa CLI local + port-forward (mesma higiene de credenciais do
+> RUNBOOKS.md §8.4.3), nunca `kubectl exec` com segredo em argv.
 
 > **Pré-requisito:** `./scripts/lab-standalone-single/seed-vault-secrets.sh` já deve ter rodado com
 > sucesso — o `ExternalSecret` desta API também referencia `secret/standalone/{redis/default,minio/root}`,
