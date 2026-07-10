@@ -194,6 +194,20 @@ sudo systemctl restart k3s
 
 ### Gerar o certificado autoassinado (uma vez, fora do Git)
 
+> **O par certificado/chave já foi gerado para este lab — a parte pública
+> já está commitada** como YAML anchor `&labSelfSignedCA` no topo de
+> `values.yaml` deste environment (consumida por `customCA.certPEM` nos 3
+> charts .NET). **Rodar o comando abaixo de novo gera um par NOVO,
+> diferente do anchor já commitado** — o `Secret` no cluster passaria a
+> servir um certificado que os charts `customCA` **não confiam**, quebrando
+> OIDC discovery/JWKS/schema-registry via HTTPS silenciosamente (o Traefik
+> sobe normal, os pods também, só a validação TLS falha). Só rodar este
+> comando ao criar um lab **novo** (IP diferente) ou ao rotacionar o
+> certificado deste — em ambos os casos, **atualizar o anchor
+> `&labSelfSignedCA` com o novo `tls.crt`** e reaplicar `helm upgrade` nos
+> 3 charts .NET (`uniplus-api-host`, `uniplus-api-portal`,
+> `unifesspa-geo-api`) depois.
+
 ```bash
 openssl req -x509 -newkey rsa:2048 -nodes -keyout tls.key -out tls.crt -days 825 \
   -subj "/CN=uniplus-lab" \
@@ -201,6 +215,10 @@ openssl req -x509 -newkey rsa:2048 -nodes -keyout tls.key -out tls.crt -days 825
 
 kubectl create secret tls uniplus-wildcard-nip-io-tls \
   --cert=tls.crt --key=tls.key -n uniplus
+
+# Copiar o conteúdo de tls.crt (só a parte pública) pro anchor
+# &labSelfSignedCA no topo de environments/lab-standalone-single/values.yaml
+# ANTES de descartar — sem isso, customCA.certPEM fica com o cert antigo.
 shred -u tls.crt tls.key   # a chave privada nunca entra no Git
 ```
 
