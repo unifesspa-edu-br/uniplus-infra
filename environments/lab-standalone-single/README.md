@@ -218,6 +218,7 @@ docker build -f docker/Dockerfile.host -t uniplus-api-host:local-lab .
 docker save uniplus-api-host:local-lab -o /tmp/uniplus-api-host.tar
 scp /tmp/uniplus-api-host.tar uniplus@<ip-da-vm>:/tmp/
 ssh uniplus@<ip-da-vm> "sudo k3s ctr images import /tmp/uniplus-api-host.tar"
+cd ../uniplus-infra   # volta pro repo de infra antes do helm install (chart/values ficam aqui)
 
 # 5. Deploy
 helm install uniplus-api-host apps/uniplus-api-host/ -f environments/lab-standalone-single/values.yaml --namespace uniplus

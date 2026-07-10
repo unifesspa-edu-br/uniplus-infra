@@ -3721,16 +3721,19 @@ Injector gerencia dinamicamente o `caBundle` do webhook, causando conflito de fi
 (Server-Side Apply) em `helm upgrade`s subsequentes. Corrigir com `--force` — a versão de Helm
 pinada no script (`v3.16.4`) não tem a flag `--server-side` (só em versões mais novas).
 
-**`/health` do `uniplus-api-{host,portal}` nunca fica `Healthy` com Kafka desligado.** Omitir a
+**`/health` do `uniplus-api-host` nunca fica `Healthy` com Kafka desligado.** Omitir a
 env var `Kafka__BootstrapServers` por completo (em vez de renderizá-la sempre) faz o SDK
 Confluent.Kafka cair no default `localhost:9092` e entrar em loop de reconexão eterno, mantendo
-`/health` (readiness) permanentemente `Unhealthy` mesmo com o transporte Wolverine desligado. Os
-charts `uniplus-api-host`/`uniplus-api-portal` corrigem isso renderizando sempre
+`/health` (readiness) permanentemente `Unhealthy` mesmo com o transporte Wolverine desligado. O
+chart `uniplus-api-host` corrige isso renderizando sempre
 `Kafka__BootstrapServers` — com o valor real quando ligado, ou `" "` (um espaço) quando desligado;
 `string.IsNullOrWhiteSpace(" ")=true` em dois pontos do `uniplus-api`
 (`WolverineOutboxConfiguration.cs`, `SelecaoMessagingRegistration.cs`) desliga o Kafka de forma
 limpa sem disparar a validação fatal do módulo Selecao (ADR-0051 do `uniplus-api`). Detalhes em
-`apps/uniplus-api-host/README.md`.
+`apps/uniplus-api-host/README.md`. O chart `uniplus-api-portal` **ainda não** tem esse fix — continua
+omitindo a env var por completo quando `kafka.enabled=false` (mesmo padrão do `uniplus-api-selecao`
+revertido) — corrigir isso é pré-requisito para religar Kafka no Portal junto da issue
+[#423](https://github.com/unifesspa-edu-br/uniplus-infra/issues/423).
 
 ### 20.4 Deploy das APIs de negócio (uniplus-api-host / uniplus-api-portal)
 
@@ -3757,6 +3760,7 @@ docker build -f docker/Dockerfile.host -t uniplus-api-host:local-lab .
 docker save uniplus-api-host:local-lab -o /tmp/uniplus-api-host.tar
 scp /tmp/uniplus-api-host.tar uniplus@<ip-da-vm>:/tmp/
 ssh uniplus@<ip-da-vm> "sudo k3s ctr images import /tmp/uniplus-api-host.tar"
+cd ../uniplus-infra   # volta pro repo de infra antes do helm install (chart/values ficam aqui)
 
 # 5. Deploy
 helm install uniplus-api-host apps/uniplus-api-host/ -f environments/lab-standalone-single/values.yaml --namespace uniplus
