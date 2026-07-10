@@ -3746,9 +3746,13 @@ Procedimento manual — não coberto pelo `bootstrap.sh` (§20.2). Resumo para `
 > Como esse script exige o Keycloak já deployado (§20.3), numa VM nova a ordem é: `bootstrap.sh`
 > → deploy do Keycloak → `seed-vault-secrets.sh` (manual, já que `bootstrap.sh` pulou por falta do
 > Keycloak) → só então este procedimento. `apps/keycloak-replica/` vem **desabilitado** por padrão
-> e `environments/lab-standalone-single/values.yaml` não liga `keycloak.enabled` nem
-> `keycloak.networkPolicy.dataHostCIDR` (a guarda `fail` do template exige esse CIDR quando
-> `networkPolicy.enabled=true`, default do chart. `KC_HOSTNAME_STRICT=true` também é
+> e `environments/lab-standalone-single/values.yaml` não liga `keycloak.enabled`.
+> `networkPolicy.enabled=true` é default do chart — sem `dataHostCIDR` (não setado neste
+> environment) o `fail` do template bloqueia o render; mesmo com ele setado, o ingress só libera
+> Traefik/Prometheus/o Job `realm-reconcile`, não os pods de `uniplus-api-host`/`uniplus-api-portal`
+> que também precisam falar com o Keycloak (OIDC discovery/JWKS) — sem regra própria no chart para
+> isso, desligar a policy inteira (`networkPolicy.enabled=false`) é mais simples que reimplementá-la
+> via `kubectl patch` pós-install. `KC_HOSTNAME_STRICT=true` também é
 > default do chart, mas `hostname.url` vazio faz o Deployment omitir `KC_HOSTNAME` inteiro — sem
 > hostname público neste lab, `hostname.strict=false` evita o Keycloak falhar validando um
 > hostname que não existe). Role+database `keycloak` no Postgres e os secrets
@@ -3782,7 +3786,7 @@ Procedimento manual — não coberto pelo `bootstrap.sh` (§20.2). Resumo para `
 > # 0c. Deploy
 > helm install keycloak-replica apps/keycloak-replica/ -f environments/lab-standalone-single/values.yaml \
 >   --set keycloak.enabled=true \
->   --set keycloak.networkPolicy.dataHostCIDR=192.168.1.65/32 \
+>   --set keycloak.networkPolicy.enabled=false \
 >   --set keycloak.database.host=192.168.1.65 \
 >   --set keycloak.hostname.strict=false \
 >   --namespace uniplus --create-namespace
