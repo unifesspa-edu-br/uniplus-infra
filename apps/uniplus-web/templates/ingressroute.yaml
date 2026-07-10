@@ -22,7 +22,7 @@ spec:
           port: 8080
   {{- if $.Values.uniplusWeb.ingress.tls.enabled }}
   tls:
-    secretName: {{ printf "%s-tls" (include "uniplusWeb.appFullname" (dict "ctx" $ "app" $app)) }}
+    secretName: {{ $.Values.uniplusWeb.ingress.tls.secretName | default (printf "%s-tls" (include "uniplusWeb.appFullname" (dict "ctx" $ "app" $app))) }}
   {{- end }}
 {{- end }}
 {{- end }}
