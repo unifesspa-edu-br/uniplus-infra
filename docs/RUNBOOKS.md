@@ -3740,6 +3740,11 @@ revertido) — corrigir isso é pré-requisito para religar Kafka no Portal junt
 Procedimento manual — não coberto pelo `bootstrap.sh` (§20.2). Resumo para `uniplus-api-host`
 (idêntico em espírito para `uniplus-api-portal`, com banco/role próprios):
 
+> **Pré-requisito:** HashiCorp `vault` CLI instalada na VM (`bootstrap.sh` só deploya o servidor via
+> Helm — o binário local não vem com ele; pacote oficial ou `apt install vault` via repositório
+> HashiCorp). Os passos abaixo usam essa CLI local + port-forward (mesma higiene de credenciais da
+> §8.4.3), nunca `kubectl exec` com segredo em argv.
+
 > **Pré-requisito:** `scripts/lab-standalone-single/seed-vault-secrets.sh` já deve ter rodado com
 > sucesso — os `ExternalSecret`s de `uniplus-api-host`/`uniplus-api-portal` também referenciam
 > `secret/standalone/{redis/default,minio/root}` (não só o Postgres escrito no passo 2 abaixo).
