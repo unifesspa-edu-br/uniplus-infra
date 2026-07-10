@@ -38,7 +38,7 @@ Apicurio Registry vem com default `QUARKUS_OIDC_AUTH_SERVER_URL=https://auth.api
 - UI: `https://schema-registry.standalone.portaluni.com.br/ui` (login OIDC obrigatório)
 - API V3 (Apicurio nativa): `/apis/registry/v3`
 - API V2 (Confluent SR compat): `/apis/ccompat/v7`
-- Health: `/q/health/{started,live,ready}`
+- Health: `/apis/registry/v3/system/info` (Apicurio 3.2.4 desabilita `/q/health/*` — as probes do `deployment.yaml` usam este endpoint)
 - Metrics: `/q/metrics` (Prometheus, scrape via `serviceMonitor.enabled: true`)
 
 ## Operação

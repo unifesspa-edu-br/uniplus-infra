@@ -3679,6 +3679,7 @@ sistema operacional:
 | External Secrets Operator | K3s | `platform/external-secrets/` |
 | Keycloak (realm `uniplus`) | K3s | `apps/keycloak-replica/` |
 | `unifesspa-geo-api` | K3s | `apps/unifesspa-geo-api/` |
+| Apicurio Registry (Schema Registry) | K3s | `apps/apicurio-registry/` |
 | `uniplus-api-host` (Selecao+Ingresso+Configuracao+OrganizacaoInstitucional, ADR-0097) | K3s | `apps/uniplus-api-host/` |
 | `uniplus-api-portal` | K3s | `apps/uniplus-api-portal/` |
 
@@ -3730,10 +3731,24 @@ chart `uniplus-api-host` corrige isso renderizando sempre
 `string.IsNullOrWhiteSpace(" ")=true` em dois pontos do `uniplus-api`
 (`WolverineOutboxConfiguration.cs`, `SelecaoMessagingRegistration.cs`) desliga o Kafka de forma
 limpa sem disparar a validação fatal do módulo Selecao (ADR-0051 do `uniplus-api`). Detalhes em
-`apps/uniplus-api-host/README.md`. O chart `uniplus-api-portal` **ainda não** tem esse fix — continua
-omitindo a env var por completo quando `kafka.enabled=false` (mesmo padrão do `uniplus-api-selecao`
-revertido) — corrigir isso é pré-requisito para religar Kafka no Portal junto da issue
-[#423](https://github.com/unifesspa-edu-br/uniplus-infra/issues/423).
+`apps/uniplus-api-host/README.md`. O chart `uniplus-api-portal` recebeu o mesmo fix na issue
+[#423](https://github.com/unifesspa-edu-br/uniplus-infra/issues/423) — antes disso omitia a env var
+por completo quando `kafka.enabled=false` (mesmo padrão do `uniplus-api-selecao` revertido).
+
+**Apicurio Registry `CrashLoopBackOff` no consumidor (`Connection refused`) mesmo com o Service
+saudável.** O template `apps/apicurio-registry/templates/networkpolicy.yaml` só libera ingress na
+porta 8080 para pods do namespace `traefik` — em produção (`standalone-compact`), todo tráfego
+HTTP ao Apicurio passa pelo Traefik mesmo quando o consumidor está no mesmo cluster
+(`schemaRegistry.url` aponta para o hostname público, não para o Service ClusterIP). O
+`lab-standalone-single` não tem Traefik: `uniplus-api-host`/`uniplus-api-portal` (namespace
+`uniplus`) nunca batem no allow-list da NetworkPolicy do Apicurio, e o
+`SchemaRegistrationHostedService` derruba o pod no boot com `HttpRequestException: Connection
+refused` — apesar do `curl` direto ao Service funcionar normalmente de outro pod do namespace
+`uniplus` (a policy bloqueia especificamente esse tráfego, não é problema de DNS/Service/rota).
+Mesmo racional já aplicado ao `keycloak-replica` neste lab (§20.4): desligar a policy inteira
+(`apicurioRegistry.networkPolicy.enabled: false` em
+`environments/lab-standalone-single/values.yaml`) em vez de reimplementá-la para o caso
+same-namespace — sem fronteira de segurança real a proteger num lab single-node.
 
 ### 20.4 Deploy das APIs de negócio (uniplus-api-host / uniplus-api-portal)
 
@@ -3846,8 +3861,9 @@ escopo de uma Task de lab. Quando a primeira release real existir
 (`ghcr.io/unifesspa-edu-br/uniplus-api-host`), atualizar `image.registry`/`image.repository`/
 `image.tag`/`pullPolicy` no environment e remover o passo 4.
 
-Detalhes completos (banco único com 5 connection strings, Kafka desligado até o Apicurio Registry
-entrar no lab — issue [#423](https://github.com/unifesspa-edu-br/uniplus-infra/issues/423)) em
+Detalhes completos (banco único com 5 connection strings, Kafka + Schema Registry ligados desde a
+issue [#423](https://github.com/unifesspa-edu-br/uniplus-infra/issues/423) — deploy do Apicurio
+Registry documentado em `environments/lab-standalone-single/README.md`) em
 `apps/uniplus-api-host/README.md` e `environments/lab-standalone-single/README.md`.
 
 ### 20.5 Diferenças em relação ao `standalone-compact`
@@ -3857,7 +3873,7 @@ entrar no lab — issue [#423](https://github.com/unifesspa-edu-br/uniplus-infra
 | Hosts | 2 VMs (`k8s-host` + `data-host`) | 1 VM combinando os dois papéis |
 | Deploy | GitOps via ArgoCD | Manual (`helm install/upgrade -f`) |
 | Vault | Shamir 5/3, `service_registration "kubernetes"` | Shamir 1/1 (simplificado) |
-| Kafka nas APIs | Ligado, Apicurio Registry disponível | Desligado até issue #423; `Kafka__BootstrapServers=" "` só no Host, Portal ainda omite a env var (ver §20.3) |
+| Kafka nas APIs | Ligado, Apicurio Registry disponível | Ligado desde issue #423, Apicurio Registry disponível (NetworkPolicy desligada — sem Traefik no lab, ver §20.3) |
 | Provisionamento | OpenTofu (`provisioning/oci/standalone/`) | VM provisionada fora deste repositório (VirtualBox) |
 
 ---
