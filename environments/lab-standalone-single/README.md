@@ -151,6 +151,7 @@ follow-up para criá-lo).
 > hostname que não existe):
 >
 > ```bash
+> export KUBECONFIG="$HOME/.kube/config"   # ver RUNBOOKS.md §20.3 — sem isso, kubectl/helm bare falham com "permission denied"
 > helm install keycloak-replica apps/keycloak-replica/ -f environments/lab-standalone-single/values.yaml \
 >   --set keycloak.enabled=true \
 >   --set keycloak.networkPolicy.dataHostCIDR=192.168.1.65/32 \
@@ -250,6 +251,7 @@ lab abaixo.
 > hostname que não existe):
 >
 > ```bash
+> export KUBECONFIG="$HOME/.kube/config"   # ver RUNBOOKS.md §20.3 — sem isso, kubectl/helm bare falham com "permission denied"
 > helm install keycloak-replica apps/keycloak-replica/ -f environments/lab-standalone-single/values.yaml \
 >   --set keycloak.enabled=true \
 >   --set keycloak.networkPolicy.dataHostCIDR=192.168.1.65/32 \
