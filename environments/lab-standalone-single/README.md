@@ -145,13 +145,17 @@ follow-up para criá-lo).
 > `seed-vault-secrets.sh` não roda sozinho dentro do `bootstrap.sh` por essa razão.
 > `apps/keycloak-replica/` vem **desabilitado** por padrão e este `values.yaml` não liga
 > `keycloak.enabled` nem `keycloak.networkPolicy.dataHostCIDR` (a guarda `fail` do template exige
-> esse CIDR quando `networkPolicy.enabled=true`, default do chart):
+> esse CIDR quando `networkPolicy.enabled=true`, default do chart. `KC_HOSTNAME_STRICT=true` também é
+> default do chart, mas `hostname.url` vazio faz o Deployment omitir `KC_HOSTNAME` inteiro — sem
+> hostname público neste lab, `hostname.strict=false` evita o Keycloak falhar validando um
+> hostname que não existe):
 >
 > ```bash
 > helm install keycloak-replica apps/keycloak-replica/ -f environments/lab-standalone-single/values.yaml \
 >   --set keycloak.enabled=true \
 >   --set keycloak.networkPolicy.dataHostCIDR=192.168.1.65/32 \
 >   --set keycloak.database.host=192.168.1.65 \
+>   --set keycloak.hostname.strict=false \
 >   --namespace uniplus --create-namespace
 > ```
 >
@@ -240,13 +244,17 @@ lab abaixo.
 > `seed-vault-secrets.sh` não roda sozinho dentro do `bootstrap.sh` por essa razão.
 > `apps/keycloak-replica/` vem **desabilitado** por padrão e este `values.yaml` não liga
 > `keycloak.enabled` nem `keycloak.networkPolicy.dataHostCIDR` (a guarda `fail` do template exige
-> esse CIDR quando `networkPolicy.enabled=true`, default do chart):
+> esse CIDR quando `networkPolicy.enabled=true`, default do chart. `KC_HOSTNAME_STRICT=true` também é
+> default do chart, mas `hostname.url` vazio faz o Deployment omitir `KC_HOSTNAME` inteiro — sem
+> hostname público neste lab, `hostname.strict=false` evita o Keycloak falhar validando um
+> hostname que não existe):
 >
 > ```bash
 > helm install keycloak-replica apps/keycloak-replica/ -f environments/lab-standalone-single/values.yaml \
 >   --set keycloak.enabled=true \
 >   --set keycloak.networkPolicy.dataHostCIDR=192.168.1.65/32 \
 >   --set keycloak.database.host=192.168.1.65 \
+>   --set keycloak.hostname.strict=false \
 >   --namespace uniplus --create-namespace
 > ```
 >
