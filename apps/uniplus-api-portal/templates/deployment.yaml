@@ -71,6 +71,31 @@ spec:
       {{- end }}
       securityContext:
         {{- toYaml .Values.uniplusApiPortal.podSecurityContext | nindent 8 }}
+      {{- if .Values.uniplusApiPortal.customCA.enabled }}
+      # initContainer roda update-ca-certificates real (a única forma
+      # confiável de o runtime .NET confiar num certificado extra — ver
+      # comentário completo em values.yaml uniplusApiPortal.customCA).
+      initContainers:
+        - name: install-custom-ca
+          image: "{{ .Values.uniplusApiPortal.image.registry }}/{{ .Values.uniplusApiPortal.image.repository }}:{{ .Values.uniplusApiPortal.image.tag }}"
+          imagePullPolicy: {{ .Values.uniplusApiPortal.image.pullPolicy }}
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              cp /custom-ca/ca.crt /usr/local/share/ca-certificates/lab-custom-ca.crt
+              update-ca-certificates
+              cp -a /etc/ssl/certs/. /merged-ca-certs/
+          volumeMounts:
+            - name: custom-ca-source
+              mountPath: /custom-ca
+              readOnly: true
+            - name: merged-ca-certs
+              mountPath: /merged-ca-certs
+      {{- end }}
       containers:
         - name: api
           image: "{{ .Values.uniplusApiPortal.image.registry }}/{{ .Values.uniplusApiPortal.image.repository }}:{{ .Values.uniplusApiPortal.image.tag }}"
@@ -228,13 +253,24 @@ spec:
             {{- with .Values.uniplusApiPortal.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
-          {{- if .Values.uniplusApiPortal.kafka.enabled }}
+          {{- if or .Values.uniplusApiPortal.kafka.enabled .Values.uniplusApiPortal.customCA.enabled }}
           volumeMounts:
+            {{- if .Values.uniplusApiPortal.kafka.enabled }}
             # CA cert PEM do broker Kafka self-signed.
             - name: kafka-ca
               mountPath: /etc/uniplus-kafka/ca.crt
               subPath: ca.crt
               readOnly: true
+            {{- end }}
+            {{- if .Values.uniplusApiPortal.customCA.enabled }}
+            # Bundle de CAs já mesclado pelo initContainer install-custom-ca
+            # (sistema + certificado extra) — sobrepõe o bundle default da
+            # imagem, que o container principal (non-root) não pode
+            # atualizar sozinho.
+            - name: merged-ca-certs
+              mountPath: /etc/ssl/certs
+              readOnly: true
+            {{- end }}
           {{- end }}
           startupProbe:
             httpGet:
@@ -257,13 +293,22 @@ spec:
             periodSeconds: {{ .Values.uniplusApiPortal.readinessProbe.periodSeconds }}
           resources:
             {{- toYaml .Values.uniplusApiPortal.resources | nindent 12 }}
-      {{- if .Values.uniplusApiPortal.kafka.enabled }}
+      {{- if or .Values.uniplusApiPortal.kafka.enabled .Values.uniplusApiPortal.customCA.enabled }}
       volumes:
+        {{- if .Values.uniplusApiPortal.kafka.enabled }}
         - name: kafka-ca
           secret:
             secretName: {{ include "uniplusApiPortal.kafkaSecretName" . }}
             items:
               - key: ca.crt
                 path: ca.crt
+        {{- end }}
+        {{- if .Values.uniplusApiPortal.customCA.enabled }}
+        - name: custom-ca-source
+          configMap:
+            name: {{ include "uniplusApiPortal.fullname" . }}-custom-ca
+        - name: merged-ca-certs
+          emptyDir: {}
+        {{- end }}
       {{- end }}
 {{- end }}

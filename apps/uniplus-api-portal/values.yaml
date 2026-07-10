@@ -102,6 +102,12 @@ uniplusApiPortal:
     issuerUri: ""               # ex.: https://standalone.portaluni.com.br/auth/realms/uniplus
     audience: uniplus
 
+  # === CA customizada (opt-in) — ver comentário completo em
+  # apps/uniplus-api-host/values.yaml customCA. ===
+  customCA:
+    enabled: false
+    certPEM: ""
+
   # === CORS (obrigatório fora de Development) ===
   # APIs validam no startup que Cors:AllowedOrigins esteja preenchido em
   # ASPNETCORE_ENVIRONMENT=Production. Lista de origins (frontend SPA, ex.:

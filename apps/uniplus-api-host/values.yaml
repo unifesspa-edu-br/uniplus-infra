@@ -134,6 +134,25 @@ uniplusApiHost:
     issuerUri: ""               # ex.: https://standalone.portaluni.com.br/auth/realms/uniplus
     audience: uniplus
 
+  # === CA customizada (opt-in) ===
+  # Adiciona um certificado extra ao trust store do container via
+  # initContainer + `update-ca-certificates` — necessário quando oidc.
+  # issuerUri (ou schemaRegistry.url) aponta para um endpoint HTTPS com
+  # certificado não assinado por uma CA pública (ex.: TLS autoassinado de
+  # laboratório). Em produção real (Let's Encrypt via cert-manager) isso
+  # nunca é necessário — deixar enabled=false.
+  #
+  # SSL_CERT_FILE/SSL_CERT_DIR NÃO resolvem isso: funcionam para libcurl/
+  # OpenSSL (usado por `curl`), mas o runtime .NET no Linux não lê essas
+  # env vars para X509Chain/HttpClient — só respeita o bundle do sistema em
+  # /etc/ssl/certs/ca-certificates.crt, daí a necessidade do
+  # update-ca-certificates real via initContainer (descoberto na issue #432
+  # depurando "OIDC discovery respondeu 404" — na verdade uma falha de
+  # validação TLS mal reportada pelo health check da aplicação).
+  customCA:
+    enabled: false
+    certPEM: ""                 # PEM completo do certificado (não a chave privada)
+
   # === CORS (obrigatório fora de Development) ===
   cors:
     allowedOrigins: []          # ex.: ["https://portal.standalone.portaluni.com.br"]

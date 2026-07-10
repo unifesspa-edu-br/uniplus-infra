@@ -76,6 +76,12 @@ unifesspaGeoApi:
     audience: ""
     validateAudience: false
 
+  # === CA customizada (opt-in) — ver comentário completo em
+  # apps/uniplus-api-host/values.yaml customCA. ===
+  customCA:
+    enabled: false
+    certPEM: ""
+
   # === Cifragem (Geo:Encryption — AES-GCM local ou Vault Transit) ===
   # Provider=local exige LocalKey (Base64, 32 bytes) via Secret; Provider=vault
   # exige VaultAddress + KubernetesRole (bound à ServiceAccount deste chart).
