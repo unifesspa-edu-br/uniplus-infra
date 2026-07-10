@@ -3754,7 +3754,8 @@ Procedimento manual — não coberto pelo `bootstrap.sh` (§20.2). Resumo para `
 > helm install keycloak-replica apps/keycloak-replica/ -f environments/lab-standalone-single/values.yaml \
 >   --set keycloak.enabled=true \
 >   --set keycloak.networkPolicy.dataHostCIDR=192.168.1.65/32 \
->   --namespace uniplus
+>   --set keycloak.database.host=192.168.1.65 \
+>   --namespace uniplus --create-namespace
 > ```
 >
 > Além disso: role+database `keycloak` no Postgres e os secrets `secret/standalone/postgres/keycloak`
