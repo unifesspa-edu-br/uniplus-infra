@@ -3761,7 +3761,10 @@ read -rsp "Senha do role (a mesma do passo 1): " ROLE_PW; echo
 vault kv put secret/standalone/postgres/uniplus password=@<(printf '%s' "$ROLE_PW")
 kill "$PF_PID" 2>/dev/null; unset VAULT_TOKEN VAULT_ADDR ROLE_PW PF_PID  # sem exit — os passos 3-5 seguem no mesmo shell
 
-# 3. LocalKey de cifragem — Secret K8s manual, não versionado
+# 3. Namespace uniplus (idempotente — não coberto pelo bootstrap.sh, que só
+#    cria vault/external-secrets) + LocalKey de cifragem — Secret K8s manual,
+#    não versionado
+kubectl create namespace uniplus --dry-run=client -o yaml | kubectl apply -f -
 kubectl create secret generic uniplus-api-host-encryption-local \
   -n uniplus --from-literal=LOCAL_KEY="$(head -c 32 /dev/urandom | base64)"
 
@@ -3794,7 +3797,7 @@ entrar no lab — issue [#423](https://github.com/unifesspa-edu-br/uniplus-infra
 | Hosts | 2 VMs (`k8s-host` + `data-host`) | 1 VM combinando os dois papéis |
 | Deploy | GitOps via ArgoCD | Manual (`helm install/upgrade -f`) |
 | Vault | Shamir 5/3, `service_registration "kubernetes"` | Shamir 1/1 (simplificado) |
-| Kafka nas APIs | Ligado, Apicurio Registry disponível | Desligado (`Kafka__BootstrapServers=" "`) até issue #423 |
+| Kafka nas APIs | Ligado, Apicurio Registry disponível | Desligado até issue #423; `Kafka__BootstrapServers=" "` só no Host, Portal ainda omite a env var (ver §20.3) |
 | Provisionamento | OpenTofu (`provisioning/oci/standalone/`) | VM provisionada fora deste repositório (VirtualBox) |
 
 ---

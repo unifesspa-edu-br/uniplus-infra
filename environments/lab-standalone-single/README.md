@@ -163,8 +163,11 @@ read -rsp "Senha do role (a mesma do passo 1): " ROLE_PW; echo
 vault kv put secret/standalone/postgres/portal password=@<(printf '%s' "$ROLE_PW")
 kill "$PF_PID" 2>/dev/null; unset VAULT_TOKEN VAULT_ADDR ROLE_PW PF_PID  # sem exit — os passos 3-5 seguem no mesmo shell
 
-# 3. LocalKey de cifragem (encryption.provider=local) — Secret K8s manual,
-#    não versionado; cada environment gera a sua
+# 3. Namespace uniplus (idempotente — não coberto pelo bootstrap.sh, que só
+#    cria vault/external-secrets) + LocalKey de cifragem
+#    (encryption.provider=local) — Secret K8s manual, não versionado; cada
+#    environment gera a sua
+kubectl create namespace uniplus --dry-run=client -o yaml | kubectl apply -f -
 kubectl create secret generic uniplus-api-portal-encryption-local \
   -n uniplus --from-literal=LOCAL_KEY="$(head -c 32 /dev/urandom | base64)"
 
@@ -230,7 +233,10 @@ read -rsp "Senha do role (a mesma do passo 1): " ROLE_PW; echo
 vault kv put secret/standalone/postgres/uniplus password=@<(printf '%s' "$ROLE_PW")
 kill "$PF_PID" 2>/dev/null; unset VAULT_TOKEN VAULT_ADDR ROLE_PW PF_PID  # sem exit — os passos 3-5 seguem no mesmo shell
 
-# 3. LocalKey de cifragem — Secret K8s manual, não versionado
+# 3. Namespace uniplus (idempotente — não coberto pelo bootstrap.sh, que só
+#    cria vault/external-secrets) + LocalKey de cifragem — Secret K8s manual,
+#    não versionado
+kubectl create namespace uniplus --dry-run=client -o yaml | kubectl apply -f -
 kubectl create secret generic uniplus-api-host-encryption-local \
   -n uniplus --from-literal=LOCAL_KEY="$(head -c 32 /dev/urandom | base64)"
 
