@@ -144,8 +144,13 @@ follow-up para criá-lo).
 > não só o Postgres escrito abaixo. Esse script exige o Keycloak já deployado; numa VM nova,
 > `seed-vault-secrets.sh` não roda sozinho dentro do `bootstrap.sh` por essa razão.
 > `apps/keycloak-replica/` vem **desabilitado** por padrão e este `values.yaml` não liga
-> `keycloak.enabled` nem `keycloak.networkPolicy.dataHostCIDR` (a guarda `fail` do template exige
-> esse CIDR quando `networkPolicy.enabled=true`, default do chart. `KC_HOSTNAME_STRICT=true` também é
+> `keycloak.enabled`. `networkPolicy.enabled=true` é default do chart — sem `dataHostCIDR` (não
+> setado neste environment) o `fail` do template bloqueia o render; mesmo com ele setado, o
+> ingress só libera Traefik/Prometheus/o Job `realm-reconcile`, não os pods de
+> `uniplus-api-host`/`uniplus-api-portal` que também precisam falar com o Keycloak (OIDC
+> discovery/JWKS) — sem regra própria no chart para isso, desligar a policy inteira
+> (`networkPolicy.enabled=false`) é mais simples que reimplementá-la via `kubectl patch`
+> pós-install. `KC_HOSTNAME_STRICT=true` também é
 > default do chart, mas `hostname.url` vazio faz o Deployment omitir `KC_HOSTNAME` inteiro — sem
 > hostname público neste lab, `hostname.strict=false` evita o Keycloak falhar validando um
 > hostname que não existe). Role+database `keycloak` no Postgres e os secrets
@@ -179,7 +184,7 @@ follow-up para criá-lo).
 > # 0c. Deploy
 > helm install keycloak-replica apps/keycloak-replica/ -f environments/lab-standalone-single/values.yaml \
 >   --set keycloak.enabled=true \
->   --set keycloak.networkPolicy.dataHostCIDR=192.168.1.65/32 \
+>   --set keycloak.networkPolicy.enabled=false \
 >   --set keycloak.database.host=192.168.1.65 \
 >   --set keycloak.hostname.strict=false \
 >   --namespace uniplus --create-namespace
@@ -265,8 +270,13 @@ lab abaixo.
 > não só o Postgres escrito abaixo. Esse script exige o Keycloak já deployado; numa VM nova,
 > `seed-vault-secrets.sh` não roda sozinho dentro do `bootstrap.sh` por essa razão.
 > `apps/keycloak-replica/` vem **desabilitado** por padrão e este `values.yaml` não liga
-> `keycloak.enabled` nem `keycloak.networkPolicy.dataHostCIDR` (a guarda `fail` do template exige
-> esse CIDR quando `networkPolicy.enabled=true`, default do chart. `KC_HOSTNAME_STRICT=true` também é
+> `keycloak.enabled`. `networkPolicy.enabled=true` é default do chart — sem `dataHostCIDR` (não
+> setado neste environment) o `fail` do template bloqueia o render; mesmo com ele setado, o
+> ingress só libera Traefik/Prometheus/o Job `realm-reconcile`, não os pods de
+> `uniplus-api-host`/`uniplus-api-portal` que também precisam falar com o Keycloak (OIDC
+> discovery/JWKS) — sem regra própria no chart para isso, desligar a policy inteira
+> (`networkPolicy.enabled=false`) é mais simples que reimplementá-la via `kubectl patch`
+> pós-install. `KC_HOSTNAME_STRICT=true` também é
 > default do chart, mas `hostname.url` vazio faz o Deployment omitir `KC_HOSTNAME` inteiro — sem
 > hostname público neste lab, `hostname.strict=false` evita o Keycloak falhar validando um
 > hostname que não existe). Role+database `keycloak` no Postgres e os secrets
@@ -300,7 +310,7 @@ lab abaixo.
 > # 0c. Deploy
 > helm install keycloak-replica apps/keycloak-replica/ -f environments/lab-standalone-single/values.yaml \
 >   --set keycloak.enabled=true \
->   --set keycloak.networkPolicy.dataHostCIDR=192.168.1.65/32 \
+>   --set keycloak.networkPolicy.enabled=false \
 >   --set keycloak.database.host=192.168.1.65 \
 >   --set keycloak.hostname.strict=false \
 >   --namespace uniplus --create-namespace
