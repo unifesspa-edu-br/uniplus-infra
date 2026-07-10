@@ -17,6 +17,37 @@
 # aqui também, e não há nem sequer um provider de nuvem no lab. Shamir
 # manual, single-node.
 
+# Certificado público (não a chave privada) do TLS autoassinado do Traefik
+# deste lab (issue #432) — CN=uniplus-lab, SAN=*.192.168.1.65.nip.io,
+# gerado uma vez via `openssl req -x509` e custodiado como Secret
+# `uniplus-wildcard-nip-io-tls` no namespace uniplus (não versionado — só
+# a parte pública, inerte, entra no Git). YAML anchor reaproveitado pelos
+# blocos `customCA.certPEM` de uniplusApiHost/uniplusApiPortal/
+# unifesspaGeoApi abaixo, que precisam confiar nesse certificado pra
+# validar tokens do Keycloak (ver comentário completo em
+# apps/uniplus-api-host/values.yaml `customCA`).
+_labSelfSignedCA: &labSelfSignedCA |
+  -----BEGIN CERTIFICATE-----
+  MIIDRjCCAi6gAwIBAgIUGvSmq0tvsazacgWSMy54Hx2qeJ4wDQYJKoZIhvcNAQEL
+  BQAwFjEUMBIGA1UEAwwLdW5pcGx1cy1sYWIwHhcNMjYwNzEwMTkwODE1WhcNMjgx
+  MDEyMTkwODE1WjAWMRQwEgYDVQQDDAt1bmlwbHVzLWxhYjCCASIwDQYJKoZIhvcN
+  AQEBBQADggEPADCCAQoCggEBAI9tj7llTp1jXaBU3+BBhTo/KfVo7obhIKnUZxLP
+  fYSh5yUqV11Gz9dXJD39JPo08MIypcyarfRIbhFx9OpI2P7kHS/nVTphezHQrkTv
+  N/CIsGSWUYjTH9dB4cuX0tDh/QjKEZxNejcIhyipdpQFfnQHECsnwsYtj9cyi1+l
+  jun9PHsK4KP3sChO59cjS/DRHlxPnx+i2SVyIRsQNWQh8aZVIEYyqhGU73lWVfks
+  DFaAr4iem5Kwx+LwQk4HvAteV1Ep6uAS1ygC6WFVCUtCHr8kn+i3pQYs/0GKaa/D
+  YEoEX24dy/uZarJbSVWZWFoyATnjAV3sMLV4VDqPbbk68K8CAwEAAaOBizCBiDAd
+  BgNVHQ4EFgQUBYMgd1W+tx3H/E/iJphqhIo6k1YwHwYDVR0jBBgwFoAUBYMgd1W+
+  tx3H/E/iJphqhIo6k1YwDwYDVR0TAQH/BAUwAwEB/zA1BgNVHREELjAsghUqLjE5
+  Mi4xNjguMS42NS5uaXAuaW+CEzE5Mi4xNjguMS42NS5uaXAuaW8wDQYJKoZIhvcN
+  AQELBQADggEBAFYAYU9GvgsFWja0gmkc7vNmbI215pNIWWBoOII+zW7u+93JOIiy
+  /8zGFnaJ92w1vX2HlGHXfcqlQgMfogPKlrevwIFTOjvHw59GMUDt2yz3nTo1xcc5
+  E+LReaVrC3tmA+pUsGycswDXWAI8d3N5AigJe239iOL+skb8LbpWXr4zpkuLc8Fk
+  Q2Gii3SO4BvliedSWG+l8isP6xcy2ooTcA+rSzb9Dl2TKx3BC2Vzr0ffPbxBnN+x
+  SENl7Fk9W9tikSfDGspnaEAOaUvQCiVv04pvDxR9bxioijf1jTV6GpT/n0B375ZM
+  0PC4G8MHn7GolEt4eww6KMZXOJNM3t+9gwc=
+  -----END CERTIFICATE-----
+
 vault:
   enabled: true
 
@@ -83,6 +114,120 @@ serviceMonitor:
   enabled: false # sem Prometheus Operator no lab
 
 # ============================================================================
+# Traefik (chart platform/traefik/, release `traefik` — issue #432).
+# hostPort 80+443 bindam direto na VM (mesmo padrão do standalone-compact,
+# que usa hostPort por ser single-host com IP público — aqui é IP privado
+# da VM de lab, mas o mecanismo é idêntico).
+#
+# TLS autoassinado (secret uniplus-wildcard-nip-io-tls, criado uma vez via
+# `kubectl create secret tls` — CN=uniplus-lab, SAN=*.192.168.1.65.nip.io,
+# não gerenciado pelo cert-manager nem versionado no Git). Sem cert-manager/
+# Let's Encrypt (exigiria DNS público que o lab não tem) — descoberto na
+# implementação que HTTP puro não é opção real: browsers só liberam a Web
+# Crypto API (necessária pro PKCE do keycloak-js na SPA) em secure contexts
+# (HTTPS ou localhost); `http://<host-real>` mesmo em LAN privada NÃO
+# qualifica, então o login OIDC pela SPA travava com "Web Crypto API is not
+# available" mesmo com toda a infra saudável (confirmado via
+# window.isSecureContext=false). O aviso de certificado não confiável do
+# browser é esperado — usuário aceita manualmente ("Avançar"); uma vez
+# aceito, o canal é TLS de verdade e a secure context é satisfeita.
+#
+# ports.web.http.redirections: null desliga o redirect HTTP→HTTPS default
+# do chart wrapper — mantém :80 servindo em paralelo (útil para smoke tests
+# via curl que não precisam de secure context), sem forçar todo mundo por
+# :443. Mesmo racional documentado em environments/standalone-compact/
+# values.yaml (lá é sobre o ACME HTTP-01 challenge).
+# ============================================================================
+traefik:
+  service:
+    type: NodePort
+  ports:
+    web:
+      hostPort: 80
+      http:
+        redirections: null
+    websecure:
+      hostPort: 443
+
+# ============================================================================
+# Keycloak — ingress via Traefik (issue #432). Demais chaves (enabled,
+# database.host, hostname.strict, networkPolicy) historicamente aplicadas
+# via --set ad-hoc no helm install/upgrade (ver
+# environments/lab-standalone-single/README.md) — persistidas aqui só a
+# partir de agora porque são as que este PR muda de fato; deploy usa
+# `--reuse-values` para não arriscar reverter o que não está neste arquivo
+# (mesma lição da regressão de NetworkPolicy documentada em #423).
+#
+# hostname.url precisa bater com o host do IngressRoute abaixo — token
+# issuer (`iss` claim) e os endpoints do discovery document (`authorization_
+# endpoint`, `token_endpoint`, ...) são derivados de KC_HOSTNAME. Se
+# divergir do host real batido pelo browser, o fluxo de login OIDC quebra
+# (redirect_uri mismatch / iss não bate com o esperado pelo cliente).
+#
+# networkPolicy.enabled volta a `true` agora que existe Traefik de fato no
+# namespace `traefik` (era `false` desde #423 só pela ausência dele —
+# ver apicurioRegistry.networkPolicy abaixo pro mesmo racional).
+keycloak:
+  hostname:
+    url: https://keycloak.192.168.1.65.nip.io/auth
+  ingress:
+    enabled: true
+    entryPoint: websecure
+    host: keycloak.192.168.1.65.nip.io
+    tls:
+      enabled: true
+      secretName: uniplus-wildcard-nip-io-tls
+  networkPolicy:
+    enabled: true
+    dataHostCIDR: 192.168.1.65/32
+
+  # realmReconcile precisa estar ligado para o realm-reconcile-job aplicar
+  # o portalClient abaixo num Keycloak que já tinha o realm importado antes
+  # desta issue — --import-realm só roda no primeiro boot (gotcha já
+  # documentado na issue #423/memória feedback_keycloak_realm_reconcile_gated).
+  realmReconcile:
+    enabled: true
+
+  realmImport:
+    # Client OIDC público (SPA), compartilhado pelas 3 apps do uniplus-web —
+    # mesmo pattern de standalone-compact (story #162): 1 client, 1
+    # redirectUri por subdomain. webOrigins fica "+" (default do chart,
+    # deriva automaticamente dos redirectUris).
+    portalClient:
+      rootUrl: https://portal.192.168.1.65.nip.io
+      redirectUris:
+        - https://portal.192.168.1.65.nip.io/*
+        - https://selecao.192.168.1.65.nip.io/*
+        - https://ingresso.192.168.1.65.nip.io/*
+
+# ============================================================================
+# unifesspa-geo-api — ingress via Traefik (issue #432). Demais chaves
+# aplicadas via --set ad-hoc no deploy original (Task #397) — mesmo
+# racional do bloco keycloak acima, deploy usa --reuse-values.
+# ============================================================================
+unifesspaGeoApi:
+  ingress:
+    enabled: true
+    entryPoint: websecure
+    host: api-geo.192.168.1.65.nip.io
+    tls:
+      enabled: true
+      secretName: uniplus-wildcard-nip-io-tls
+
+  # Via Traefik desde a issue #432 — keycloak.networkPolicy voltou a ficar
+  # habilitada (só libera ingress do namespace traefik), então a chamada
+  # direta ao Service ClusterIP in-cluster passa a tomar connection
+  # refused. Mesmo racional dos outros charts neste arquivo.
+  oidc:
+    issuerUri: https://keycloak.192.168.1.65.nip.io/auth/realms/uniplus
+
+  # Sem isso, HttpClient rejeita o certificado autoassinado do Keycloak —
+  # ver comentário completo em apps/uniplus-api-host/values.yaml.
+  customCA:
+    enabled: true
+    certPEM: *labSelfSignedCA
+
+# ============================================================================
 # External Secrets Operator — lê defaults de platform/external-secrets/values.yaml
 # (replicaCount=1, NetworkPolicy on). Aqui só liga o ClusterSecretStore,
 # que fica desligado por default até o Vault estar init+unsealed com a
@@ -128,21 +273,35 @@ uniplusApiPortal:
   kafka:
     enabled: true
     bootstrapServers: 192.168.1.65:9092
+  # schemaRegistry.url e oidc.issuerUri apontam pro Traefik (issue #432),
+  # não mais pro Service ClusterIP in-cluster — mesmo padrão de
+  # standalone-compact (schemaRegistry.url usa o hostname público, nunca
+  # o Service direto). Necessário porque apicurioRegistry.networkPolicy e
+  # keycloak.networkPolicy voltaram a ficar habilitadas (só liberam
+  # ingress do namespace `traefik`) agora que o Traefik existe de fato no
+  # lab — chamada direta ao Service ClusterIP tomaria connection refused.
   schemaRegistry:
-    url: http://apicurio-registry-apicurio-registry.uniplus.svc.cluster.local:8080/apis/ccompat/v7
+    url: https://apicurio.192.168.1.65.nip.io/apis/ccompat/v7
     authType: OAuthBearer
     oauth:
-      tokenEndpoint: http://keycloak-replica.uniplus.svc.cluster.local:8080/auth/realms/uniplus/protocol/openid-connect/token
+      tokenEndpoint: https://keycloak.192.168.1.65.nip.io/auth/realms/uniplus/protocol/openid-connect/token
       clientId: uniplus-api-portal
   storage:
     endpoint: 192.168.1.65:9000
 
   oidc:
-    issuerUri: http://keycloak-replica.uniplus.svc.cluster.local:8080/auth/realms/uniplus
+    issuerUri: https://keycloak.192.168.1.65.nip.io/auth/realms/uniplus
+
+  # Sem isso, HttpClient rejeita o certificado autoassinado do Keycloak —
+  # ver comentário completo em apps/uniplus-api-host/values.yaml.
+  customCA:
+    enabled: true
+    certPEM: *labSelfSignedCA
 
   cors:
     allowedOrigins:
       - http://192.168.1.65:4200
+      - https://portal.192.168.1.65.nip.io
 
   encryption:
     provider: local
@@ -154,8 +313,16 @@ uniplusApiPortal:
           name: uniplus-api-portal-encryption-local
           key: LOCAL_KEY
 
+  # Ligado desde a issue #432 — o browser do usuário (frontend uniplus-web)
+  # precisa de um hostname de fato alcançável, diferente das chamadas
+  # server-to-server que já funcionavam via Service ClusterIP.
   ingress:
-    enabled: false
+    enabled: true
+    entryPoint: websecure
+    host: api-portal.192.168.1.65.nip.io
+    tls:
+      enabled: true
+      secretName: uniplus-wildcard-nip-io-tls
 
   networkPolicy:
     enabled: false
@@ -206,22 +373,33 @@ uniplusApiHost:
     enabled: true
     bootstrapServers: 192.168.1.65:9092
 
+  # Ver comentário em uniplusApiPortal.schemaRegistry — mesmo racional
+  # (Traefik em vez de Service ClusterIP, issue #432).
   schemaRegistry:
-    url: http://apicurio-registry-apicurio-registry.uniplus.svc.cluster.local:8080/apis/ccompat/v7
+    url: https://apicurio.192.168.1.65.nip.io/apis/ccompat/v7
     authType: OAuthBearer
     oauth:
-      tokenEndpoint: http://keycloak-replica.uniplus.svc.cluster.local:8080/auth/realms/uniplus/protocol/openid-connect/token
+      tokenEndpoint: https://keycloak.192.168.1.65.nip.io/auth/realms/uniplus/protocol/openid-connect/token
       clientId: uniplus-api-host
 
   storage:
     endpoint: 192.168.1.65:9000
 
   oidc:
-    issuerUri: http://keycloak-replica.uniplus.svc.cluster.local:8080/auth/realms/uniplus
+    issuerUri: https://keycloak.192.168.1.65.nip.io/auth/realms/uniplus
+
+  # Sem isso, HttpClient rejeita o certificado autoassinado do Keycloak
+  # (validação real de X509Chain, não a fake-404 que curl -k mascarava) —
+  # ver comentário completo em apps/uniplus-api-host/values.yaml.
+  customCA:
+    enabled: true
+    certPEM: *labSelfSignedCA
 
   cors:
     allowedOrigins:
       - http://192.168.1.65:4200
+      - https://selecao.192.168.1.65.nip.io
+      - https://ingresso.192.168.1.65.nip.io
 
   encryption:
     provider: local
@@ -233,8 +411,14 @@ uniplusApiHost:
           name: uniplus-api-host-encryption-local
           key: LOCAL_KEY
 
+  # Ligado desde a issue #432 — mesmo racional do uniplus-api-portal.
   ingress:
-    enabled: false
+    enabled: true
+    entryPoint: websecure
+    host: api-host.192.168.1.65.nip.io
+    tls:
+      enabled: true
+      secretName: uniplus-wildcard-nip-io-tls
 
   networkPolicy:
     enabled: false
@@ -254,26 +438,120 @@ apicurioRegistry:
     host: 192.168.1.65
 
   oidc:
-    # In-cluster (mesmo padrão do resto do lab — sem Traefik/TLS de edge,
-    # Keycloak servido só via Service ClusterIP HTTP).
-    issuerUri: http://keycloak-replica.uniplus.svc.cluster.local:8080/auth/realms/uniplus
+    # Via Traefik desde a issue #432 (precisa bater com o `iss` claim dos
+    # tokens emitidos pelo Keycloak, que também usa esse hostname desde
+    # que keycloak.hostname.url mudou — ver bloco keycloak: acima).
+    issuerUri: https://keycloak.192.168.1.65.nip.io/auth/realms/uniplus
 
+  # Sem isso, o Quarkus rejeita o certificado TLS autoassinado do Keycloak
+  # ao buscar o JWKS ("OIDC Server is not available" — mesma causa raiz do
+  # customCA no uniplus-api-host/portal, mecanismo diferente porque aqui é
+  # a JVM, não o runtime .NET). QUARKUS_TLS_TRUST_ALL (registro de TLS
+  # unificado, não QUARKUS_OIDC_TLS_TRUST_ALL — propriedade antiga
+  # descontinuada nesta versão do Quarkus, testado empiricamente na VM de
+  # lab). trust-all é aceitável só porque é lab HTTP autoassinado — NUNCA
+  # usar em produção real (Let's Encrypt via cert-manager não precisa disso).
+  extraEnv:
+    - name: QUARKUS_TLS_TRUST_ALL
+      value: "true"
+
+  # Ligado desde a issue #432 — Traefik real existe no lab agora, então dá
+  # pra expor a UI/API do Apicurio num hostname de verdade em vez de só
+  # kubectl port-forward.
   ingress:
-    enabled: false # acesso via kubectl port-forward, mesmo padrão do resto do lab
+    enabled: true
+    entryPoint: websecure
+    host: apicurio.192.168.1.65.nip.io
+    tls:
+      enabled: true
+      secretName: uniplus-wildcard-nip-io-tls
 
-  # DESLIGADA — mesmo racional já aplicado ao keycloak-replica neste lab.
-  # A ingress rule do chart só libera a porta 8080 para pods do namespace
-  # `traefik` (produção: todo tráfego HTTP ao Apicurio, mesmo intra-cluster,
-  # passa pelo Traefik — ver schemaRegistry.url em standalone-compact, que
-  # usa o hostname público https://schema-registry.standalone.portaluni.com.br,
-  # não o Service ClusterIP). Este lab não tem Traefik (ingress.enabled=false
-  # em todo o arquivo), então uniplus-api-host/uniplus-api-portal (namespace
-  # uniplus) nunca bateriam no allow-list — Connection refused no boot do
-  # SchemaRegistrationHostedService, CrashLoopBackOff (issue #423). Sem
-  # NetworkPolicy real fazendo falta num lab single-node sem fronteira de
-  # segurança a proteger, ao contrário de standalone-compact.
+  # RELIGADA na issue #432 — estava desligada desde #423 só pela ausência
+  # de Traefik no lab (a ingress rule do chart só libera a porta 8080 para
+  # pods do namespace `traefik`; sem Traefik, uniplus-api-host/portal
+  # nunca bateriam no allow-list — Connection refused no boot do
+  # SchemaRegistrationHostedService). Agora que o Traefik existe de fato
+  # (release `traefik` no namespace `traefik`, issue #432), o allow-list
+  # volta a fazer sentido — chamadas server-to-server (Host/Portal→Apicurio)
+  # passam a ir via Traefik também, igual à produção real.
   networkPolicy:
-    enabled: false
+    enabled: true
+    dataHostCIDR: 192.168.1.65/32
+    keycloakService: keycloak-replica
+    keycloakNamespace: uniplus
+    keycloakPort: 8080
+    # Guard do chart exige oidcIssuerCIDR não-vazio sempre que oidc.enabled=true
+    # (default do chart). NÃO aponta pro IP da VM (192.168.1.65) — o
+    # hostPort do Traefik é implementado via DNAT (CNI portmap), e o
+    # kube-router avalia egress DEPOIS do DNAT (mesmo bug documentado em
+    # networkPolicy.kubeApiCidrs do Service kubernetes, aqui via hostPort
+    # em vez de kube-proxy): o destino real pós-DNAT é o IP do POD do
+    # Traefik (10.42.0.x), não o IP da VM — uma regra com 192.168.1.65/32
+    # nunca bate, egress fica bloqueado (Connection refused mesmo com a
+    # regra "certa" no papel). Usa o pod CIDR do cluster + a porta real do
+    # container (8443, entryPoint websecure — não a porta externa 443;
+    # atualizado na issue #432 quando o lab passou a usar TLS).
+    oidcIssuerCIDR: 10.42.0.0/16
+    oidcIssuerPort: 8443
 
   serviceMonitor:
     enabled: false # sem Prometheus Operator no lab
+
+# ============================================================================
+# uniplus-web — 3 SPAs Angular (portal, selecao, ingresso), 1 chart, 1
+# Deployment por app (issue #432). Imagens já publicadas em GHCR (v0.2.1,
+# confirmadas pull-áveis) — sem build local necessário, diferente do
+# uniplus-api-host. TLS autoassinado (secret uniplus-wildcard-nip-io-tls,
+# ver comentário completo no bloco traefik: acima) — browsers só liberam a
+# Web Crypto API (PKCE do keycloak-js) em secure context, HTTP puro não
+# qualifica mesmo em LAN privada. replicas=1 (chart default é 2 —
+# desnecessário/desperdício num lab single-node de 1 VM).
+# ============================================================================
+uniplusWeb:
+  enabled: true
+
+  ingress:
+    entryPoint: websecure
+    tls:
+      enabled: true
+      secretName: uniplus-wildcard-nip-io-tls
+      # Default do chart é true (produção real usa Let's Encrypt) — sem
+      # cert-manager no lab, desligar explicitamente ou o template tenta
+      # criar um Certificate cert-manager.io/v1 inexistente no cluster
+      # (CRD not found).
+      certManager:
+        enabled: false
+
+  apps:
+    portal:
+      enabled: true
+      replicas: 1
+      host: portal.192.168.1.65.nip.io
+      runtimeConfig:
+        apiUrl: https://api-portal.192.168.1.65.nip.io
+        keycloak:
+          url: https://keycloak.192.168.1.65.nip.io/auth
+
+    selecao:
+      enabled: true
+      replicas: 1
+      host: selecao.192.168.1.65.nip.io
+      runtimeConfig:
+        apiUrl: https://api-host.192.168.1.65.nip.io
+        keycloak:
+          url: https://keycloak.192.168.1.65.nip.io/auth
+
+    ingresso:
+      enabled: true
+      replicas: 1
+      host: ingresso.192.168.1.65.nip.io
+      runtimeConfig:
+        apiUrl: https://api-host.192.168.1.65.nip.io
+        keycloak:
+          url: https://keycloak.192.168.1.65.nip.io/auth
+
+  # traefikNamespace/monitoringNamespace ficam nos defaults do chart
+  # (traefik/monitoring) — o primeiro já bate com o release deste lab,
+  # o segundo é inerte (sem Prometheus Operator aqui).
+  networkPolicy:
+    enabled: true
