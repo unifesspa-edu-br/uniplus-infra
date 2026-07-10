@@ -117,9 +117,11 @@ spec:
             # checagem, desligando o transporte Kafka de forma limpa sem
             # disparar a validação fatal "Kafka:BootstrapServers populado mas
             # SchemaRegistry:Url vazio" (ADR-0051). Mesma receita documentada em
-            # uniplus-api/docker/docker-compose.monolito.yml. Omitir a env var
-            # por completo (como nos charts uniplus-api-{selecao,portal}) NÃO
-            # é equivalente aqui: description completa no values.yaml.
+            # uniplus-api/docker/docker-compose.monolito.yml e já replicada em
+            # apps/uniplus-api-portal/templates/deployment.yaml (issue #423).
+            # Omitir a env var por completo (como ainda fazem os charts legados
+            # uniplus-api-{selecao,ingresso}, mantidos só para standalone-compact)
+            # NÃO é equivalente aqui: description completa no values.yaml.
             - name: Kafka__BootstrapServers
               value: {{ if .Values.uniplusApiHost.kafka.enabled }}{{ .Values.uniplusApiHost.kafka.bootstrapServers | quote }}{{ else }}" "{{ end }}
             {{- if .Values.uniplusApiHost.kafka.enabled }}
