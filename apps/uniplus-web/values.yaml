@@ -132,6 +132,12 @@ uniplusWeb:
     entryPoint: websecure
     tls:
       enabled: true
+      # Vazio (default): cada app usa seu próprio Secret "<appFullname>-tls"
+      # (criado pelo cert-manager quando certManager.enabled=true — caso de
+      # produção). Setar aqui só quando as 3 SPAs devem compartilhar um
+      # único Secret pré-existente (ex.: certificado wildcard autoassinado
+      # de lab, sem cert-manager).
+      secretName: ""
       certManager:
         enabled: true
         clusterIssuer: letsencrypt-prod
