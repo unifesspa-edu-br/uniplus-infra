@@ -1,0 +1,14 @@
+{{- if and .Values.uniplusApiPortal.enabled .Values.uniplusApiPortal.customCA.enabled -}}
+{{- if not .Values.uniplusApiPortal.customCA.certPEM -}}
+{{- fail "uniplusApiPortal.customCA.certPEM é obrigatório quando customCA.enabled=true." -}}
+{{- end -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "uniplusApiPortal.fullname" . }}-custom-ca
+  labels:
+    {{- include "uniplusApiPortal.labels" . | nindent 4 }}
+data:
+  ca.crt: |
+    {{- .Values.uniplusApiPortal.customCA.certPEM | nindent 4 }}
+{{- end }}

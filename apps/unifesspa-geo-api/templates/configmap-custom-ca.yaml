@@ -1,0 +1,14 @@
+{{- if and .Values.unifesspaGeoApi.enabled .Values.unifesspaGeoApi.customCA.enabled -}}
+{{- if not .Values.unifesspaGeoApi.customCA.certPEM -}}
+{{- fail "unifesspaGeoApi.customCA.certPEM é obrigatório quando customCA.enabled=true." -}}
+{{- end -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "unifesspaGeoApi.fullname" . }}-custom-ca
+  labels:
+    {{- include "unifesspaGeoApi.labels" . | nindent 4 }}
+data:
+  ca.crt: |
+    {{- .Values.unifesspaGeoApi.customCA.certPEM | nindent 4 }}
+{{- end }}

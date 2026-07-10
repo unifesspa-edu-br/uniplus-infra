@@ -54,6 +54,31 @@ spec:
       {{- end }}
       securityContext:
         {{- toYaml .Values.unifesspaGeoApi.podSecurityContext | nindent 8 }}
+      {{- if .Values.unifesspaGeoApi.customCA.enabled }}
+      # initContainer roda update-ca-certificates real (a única forma
+      # confiável de o runtime .NET confiar num certificado extra — ver
+      # comentário completo em values.yaml unifesspaGeoApi.customCA).
+      initContainers:
+        - name: install-custom-ca
+          image: "{{ .Values.unifesspaGeoApi.image.registry }}/{{ .Values.unifesspaGeoApi.image.repository }}:{{ .Values.unifesspaGeoApi.image.tag }}"
+          imagePullPolicy: {{ .Values.unifesspaGeoApi.image.pullPolicy }}
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              cp /custom-ca/ca.crt /usr/local/share/ca-certificates/lab-custom-ca.crt
+              update-ca-certificates
+              cp -a /etc/ssl/certs/. /merged-ca-certs/
+          volumeMounts:
+            - name: custom-ca-source
+              mountPath: /custom-ca
+              readOnly: true
+            - name: merged-ca-certs
+              mountPath: /merged-ca-certs
+      {{- end }}
       containers:
         - name: geo-api
           image: "{{ .Values.unifesspaGeoApi.image.registry }}/{{ .Values.unifesspaGeoApi.image.repository }}:{{ .Values.unifesspaGeoApi.image.tag }}"
@@ -145,6 +170,17 @@ spec:
             {{- with .Values.unifesspaGeoApi.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
+          {{- if .Values.unifesspaGeoApi.customCA.enabled }}
+          volumeMounts:
+            # Bundle de CAs já mesclado pelo initContainer install-custom-ca
+            # (sistema + certificado extra) — sobrepõe o bundle default da
+            # imagem, que o container principal (non-root) não pode
+            # atualizar sozinho. Ver comentário completo em values.yaml
+            # unifesspaGeoApi.customCA.
+            - name: merged-ca-certs
+              mountPath: /etc/ssl/certs
+              readOnly: true
+          {{- end }}
           startupProbe:
             httpGet:
               path: /health/live
@@ -166,4 +202,12 @@ spec:
             periodSeconds: {{ .Values.unifesspaGeoApi.readinessProbe.periodSeconds }}
           resources:
             {{- toYaml .Values.unifesspaGeoApi.resources | nindent 12 }}
+      {{- if .Values.unifesspaGeoApi.customCA.enabled }}
+      volumes:
+        - name: custom-ca-source
+          configMap:
+            name: {{ include "unifesspaGeoApi.fullname" . }}-custom-ca
+        - name: merged-ca-certs
+          emptyDir: {}
+      {{- end }}
 {{- end }}
