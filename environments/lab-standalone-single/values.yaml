@@ -227,6 +227,22 @@ unifesspaGeoApi:
     enabled: true
     certPEM: *labSelfSignedCA
 
+  # Chart default é networkPolicy.enabled=true — sem override explícito
+  # aqui, um helm install novo (sem --reuse-values de um release já
+  # existente) bate no fail guard de dataHostCIDR/oidcIssuerCIDR (issuer
+  # não é mais *.svc.cluster.local desde que passou a apontar pro Traefik).
+  # Mesmo padrão do apicurioRegistry.networkPolicy acima, incluindo o
+  # gotcha de DNAT+hostPort (oidcIssuerCIDR aponta pro pod CIDR do Traefik,
+  # não pro IP da VM — ver seção "Traefik + TLS autoassinado" no README).
+  networkPolicy:
+    enabled: true
+    dataHostCIDR: 192.168.1.65/32
+    keycloakService: keycloak-replica
+    keycloakNamespace: uniplus
+    keycloakPort: 8080
+    oidcIssuerCIDR: 10.42.0.0/16
+    oidcIssuerPort: 8443
+
 # ============================================================================
 # External Secrets Operator — lê defaults de platform/external-secrets/values.yaml
 # (replicaCount=1, NetworkPolicy on). Aqui só liga o ClusterSecretStore,
