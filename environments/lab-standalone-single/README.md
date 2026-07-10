@@ -20,8 +20,9 @@ External Secrets Operator, ...) é validado.
 | Vault | `platform/vault/` | Single-node (replicas=1), Shamir manual (1 key share, threshold 1 — simplificado para lab), sem peer PA1/OCI KMS |
 | External Secrets Operator | `platform/external-secrets/` | `ClusterSecretStore vault-default` apontando para o Vault acima; NetworkPolicy habilitada nos dois charts (ver nota abaixo) |
 | Secrets iniciais | `scripts/lab-standalone-single/seed-vault-secrets.sh` | Popula no Vault os paths que os charts de API/Keycloak esperam — ver seção própria abaixo |
-| uniplus-api-portal | `apps/uniplus-api-portal/` | Deployable autônomo (ADR-0097 do `uniplus-api`); Kafka desligado (issue #423 — ver seção própria abaixo); módulo Portal ainda sem migrations de domínio no código (só schema `wolverine` de infraestrutura) |
-| uniplus-api-host | `apps/uniplus-api-host/` | Composition root do monólito modular (Selecao+Ingresso+Configuracao+OrganizacaoInstitucional, ADR-0097 do `uniplus-api`); imagem buildada localmente (sem publish em GHCR ainda) — ver seção própria abaixo |
+| apicurio-registry | `apps/apicurio-registry/` | Schema Registry (Confluent-compat) para uniplus-api-host/uniplus-api-portal (issue #423) — ver seção própria abaixo |
+| uniplus-api-portal | `apps/uniplus-api-portal/` | Deployable autônomo (ADR-0097 do `uniplus-api`); Kafka+Schema Registry ligados desde a issue #423 — ver seção própria abaixo; módulo Portal ainda sem migrations de domínio no código (só schema `wolverine` de infraestrutura) |
+| uniplus-api-host | `apps/uniplus-api-host/` | Composition root do monólito modular (Selecao+Ingresso+Configuracao+OrganizacaoInstitucional, ADR-0097 do `uniplus-api`); Kafka+Schema Registry ligados desde a issue #423; imagem buildada localmente (sem publish em GHCR ainda) — ver seção própria abaixo |
 
 ## Uso
 
@@ -125,6 +126,76 @@ daquela Task, não aqui. Rodar o script de novo depois é seguro —
 `vault kv put` é idempotente por natureza, sempre reflete a fonte de
 verdade atual (útil inclusive para sincronizar após rotação de um
 client_secret no Keycloak).
+
+## Apicurio Registry
+
+Schema Registry (Confluent-compat) consumido por `uniplus-api-host` e
+`uniplus-api-portal` para registrar/validar schemas Avro dos eventos Kafka
+(ADR-0051 do `uniplus-api`). Chart de referência já validado em produção
+(`environments/standalone-compact/values.yaml`) — no lab, adaptado para o IP
+único da VM e sem Traefik/TLS de edge.
+
+> **Pré-requisito:** `./scripts/lab-standalone-single/seed-vault-secrets.sh`
+> e o Keycloak já devem estar no ar (mesmos pré-requisitos das APIs abaixo).
+
+```bash
+export KUBECONFIG="$HOME/.kube/config"   # ver RUNBOOKS.md §20.3
+
+# 1. Role + database dedicados no Postgres
+sudo docker exec -i uniplus-postgres psql -U postgres -v ON_ERROR_STOP=1 <<SQL
+CREATE ROLE apicurio WITH LOGIN PASSWORD '<senha gerada com openssl rand -hex 32>';
+CREATE DATABASE apicurio WITH OWNER = apicurio ENCODING = 'UTF8' LC_COLLATE = 'C.UTF-8' LC_CTYPE = 'C.UTF-8' TEMPLATE = template0;
+SQL
+
+# 2. A MESMA senha usada acima, no Vault — vault CLI local via port-forward,
+#    mesma higiene de credenciais do RUNBOOKS.md §8.4.3
+kubectl -n vault port-forward vault-0 8200:8200 > /tmp/vault-pf.log 2>&1 &
+PF_PID=$!
+trap 'kill "$PF_PID" 2>/dev/null; unset VAULT_TOKEN VAULT_ADDR ROLE_PW' EXIT
+export VAULT_ADDR=http://127.0.0.1:8200
+until curl -s --max-time 1 "$VAULT_ADDR/v1/sys/health" >/dev/null 2>&1; do sleep 1; done
+read -rsp "Root token: " VAULT_TOKEN; echo
+export VAULT_TOKEN
+read -rsp "Senha do role (a mesma do passo 1): " ROLE_PW; echo
+vault kv put secret/standalone/postgres/apicurio username=apicurio password=@<(printf '%s' "$ROLE_PW")
+
+# 3. client_secret do client "apicurio-registry" (já existe no realm.json
+#    desde a issue #152) — recuperar via kcadm dentro do próprio pod do
+#    Keycloak, nunca em argv local
+KC_ADMIN_PW=$(vault kv get -field=password secret/standalone/keycloak/admin)
+kubectl exec -n uniplus deploy/keycloak-replica -- sh -c "
+  /opt/keycloak/bin/kcadm.sh config credentials --server http://localhost:8080/auth \
+    --realm master --user admin --password '$KC_ADMIN_PW'
+  CID=\$(/opt/keycloak/bin/kcadm.sh get clients -r uniplus -q clientId=apicurio-registry --fields id --format csv --noquotes | tail -1)
+  /opt/keycloak/bin/kcadm.sh get clients/\$CID/client-secret -r uniplus --fields value --format csv --noquotes
+" | tail -1 > /tmp/apicurio-cs
+vault kv put secret/standalone/keycloak/clients/apicurio-registry password=@/tmp/apicurio-cs
+shred -u /tmp/apicurio-cs
+kill "$PF_PID" 2>/dev/null; unset VAULT_TOKEN VAULT_ADDR ROLE_PW PF_PID KC_ADMIN_PW  # sem exit — o passo 4 segue no mesmo shell
+
+# 4. Deploy
+helm install apicurio-registry apps/apicurio-registry/ -f environments/lab-standalone-single/values.yaml --namespace uniplus --wait --timeout=120s
+
+# 5. Validar (readinessProbe real do chart — Apicurio 3.2.4 desabilita /q/health/*)
+kubectl exec -n uniplus deploy/apicurio-registry-apicurio-registry -- curl -s http://localhost:8080/apis/registry/v3/system/info
+```
+
+### NetworkPolicy: ingress só libera o namespace Traefik — desligada no lab
+
+O template `apps/apicurio-registry/templates/networkpolicy.yaml` só libera
+ingress na porta 8080 para pods do namespace `traefik` (produção: todo
+tráfego HTTP ao Apicurio, mesmo vindo de outro Pod do mesmo cluster, passa
+pelo Traefik — `schemaRegistry.url` em `standalone-compact` aponta para o
+hostname público `https://schema-registry.standalone.portaluni.com.br`, não
+para o Service ClusterIP). Este lab não tem Traefik, então
+`uniplus-api-host`/`uniplus-api-portal` (namespace `uniplus`) nunca bateriam
+no allow-list — `Connection refused` no boot do
+`SchemaRegistrationHostedService`, `CrashLoopBackOff` (descoberto na issue #423).
+Mesmo racional já aplicado ao `keycloak-replica` neste lab:
+`apicurioRegistry.networkPolicy.enabled: false` em
+`environments/lab-standalone-single/values.yaml` — sem fronteira de
+segurança real a proteger num lab single-node, a policy restritiva de
+produção só atrapalha.
 
 ## uniplus-api-portal
 
@@ -234,27 +305,28 @@ kubectl create secret generic uniplus-api-portal-encryption-local \
 helm install uniplus-api-portal apps/uniplus-api-portal/ -f environments/lab-standalone-single/values.yaml --namespace uniplus
 ```
 
-### Limitação conhecida: `/health` nunca fica `Healthy` com Kafka desligado (issue #423)
+### Kafka + Schema Registry ligados desde a issue #423
 
 A API roda um `SchemaRegistrationHostedService` no boot que **exige** um
 Schema Registry de fato alcançável quando `Kafka:BootstrapServers` está
 populado (ADR-0051) — um placeholder sintático não basta, a aplicação
-tenta registrar schemas de verdade e derruba o pod. Como o Apicurio
-Registry não roda nesta leva do lab, `kafka.enabled: false`.
+tenta registrar schemas de verdade e derruba o pod. Antes da issue #423 o
+Apicurio Registry não rodava no lab, então o Portal subia com
+`kafka.enabled: false` — mas o template do chart **omitia** por completo a
+env var `Kafka__BootstrapServers` nesse caso (em vez de renderizá-la sempre
+com um valor "vazio" reconhecido pelo SDK), fazendo o Confluent.Kafka cair
+no default `localhost:9092` e entrar em loop de reconexão eterno: o Kafka
+health check dentro de `/health` (readiness, agregado) ficava
+permanentemente `Unhealthy` mesmo com Postgres/Redis/MinIO/Keycloak
+saudáveis (mesmo bug já corrigido antes no `uniplus-api-host` — ver
+RUNBOOKS.md §20.3).
 
-Efeito colateral: o SDK Confluent.Kafka ainda registra um producer ativo
-mesmo sem `Kafka:BootstrapServers` configurado (cai no default
-`localhost:9092`, loop de reconexão eterno), o que mantém o Kafka health
-check dentro de `/health` (readiness, agregado) permanentemente
-`Unhealthy` — mesmo com Postgres/Redis/MinIO/Keycloak saudáveis.
-`/health/live` (dependency-free) responde `Healthy` normalmente, e é a
-forma correta de confirmar que o processo está saudável no lab enquanto a
-issue #423 não é resolvida. `readinessProbe` usa `/health` hardcoded no
-`deployment.yaml` do chart — como o pod nunca fica `Ready`, um
-`helm upgrade` que troque o pod trava em rollout (`RollingUpdate` espera
-o novo pod ficar `Ready` antes de escalar o antigo para baixo); limpar
-manualmente o ReplicaSet antigo (`kubectl delete replicaset <antigo>`) se
-isso acontecer.
+Corrigido na issue #423 em duas frentes: (1) o template do chart passou a
+renderizar `Kafka__BootstrapServers` sempre — valor real quando ligado, `" "`
+(um espaço, `string.IsNullOrWhiteSpace=true`) quando desligado, mesmo padrão
+do `uniplus-api-host`; (2) o Apicurio Registry passou a rodar no lab (seção
+própria acima), permitindo religar `kafka.enabled: true` de fato. `/health`
+confirmado `Healthy` no Portal com Kafka+Schema Registry ligados.
 
 O módulo Portal ainda não tem entidades de domínio implementadas no
 código — `dotnet ef` não gera migrations pendentes, então o banco fica só
@@ -370,11 +442,19 @@ cd ../uniplus-infra   # volta pro repo de infra antes do helm install (chart/val
 helm install uniplus-api-host apps/uniplus-api-host/ -f environments/lab-standalone-single/values.yaml --namespace uniplus
 ```
 
-Validado de ponta a ponta na VM de lab: pod `Running`/`1/1 Ready` já na
-primeira tentativa (diferente do `uniplus-api-selecao` original, que nunca
-ficava `Ready` com Kafka desligado por omissão de env var — ver seção
-acima), `/health`, `/health/live` e `/health/ready` respondendo `Healthy`,
+Validado de ponta a ponta na VM de lab: pod `Running`/`1/1 Ready`,
+`/health`, `/health/live` e `/health/ready` respondendo `Healthy`,
 migrations EF Core aplicadas nos 4 schemas dedicados (`configuracao`: 15
 tabelas, `selecao`: 20, `ingresso`: 5, `organizacao`: 5, além de
 `wolverine`: 8), rotas `/api/organizacao/unidades` e `/api/configuracao/campi`
 respondendo `200 []`.
+
+Kafka + Schema Registry ligados desde a issue #423 (ver seção "Apicurio
+Registry" acima): `SchemaRegistrationHostedService` registra o schema Avro
+do módulo Selecao (`processo_seletivo_events-value`) no Apicurio no boot e
+o Wolverine `KafkaTransport` cria o tópico correspondente — confirmado nos
+logs do pod. Pré-requisito de rede: a NetworkPolicy do Apicurio só libera
+ingress do namespace `traefik` (inexistente neste lab) — sem
+`apicurioRegistry.networkPolicy.enabled: false`, o Host entra em
+`CrashLoopBackOff` no boot (`Connection refused` na chamada ao Schema
+Registry), mesmo com o Service/DNS/Postgres/Redis/Keycloak todos saudáveis.
