@@ -15,6 +15,7 @@
 - [7. Diagnóstico](#7-diagnóstico)
 - [8. Bootstrap e Teardown — Ambiente Standalone OCI](#8-bootstrap-e-teardown--ambiente-standalone-oci)
 - [9. Data services no data-host (standalone)](#9-data-services-no-data-host-standalone)
+- [20. Ambiente de laboratório — host único (`lab-standalone-single`)](#20-ambiente-de-laboratório--host-único-lab-standalone-single)
 
 ## 1. Procedimentos Rotineiros
 
@@ -3651,6 +3652,135 @@ kubePrometheusStack:
 O OTel Collector começará a falhar o exporter `prometheusremotewrite` com HTTP 404 após o próximo
 sync do ArgoCD e reinício do pod do Prometheus. Para parar retries imediatamente adicionar
 `retry_on_failure.max_elapsed_time: 0` no override do OTelCol em `environments/standalone-compact/values.yaml`.
+
+## 20. Ambiente de laboratório — host único (`lab-standalone-single`)
+
+> Ambiente **complementar**, não substitui o `standalone-compact` (§8–§19) — serve para validar a
+> mecânica dos charts/plataforma (Vault, ESO, APIs de negócio) numa VM de laboratório antes de
+> replicar num servidor real da Unifesspa. Contexto completo na issue
+> [#395](https://github.com/unifesspa-edu-br/uniplus-infra/issues/395). Frontend (`uniplus-web`)
+> fora de escopo. Diferente do `standalone-compact`, este ambiente **não é GitOps** — o
+> `values.yaml` é aplicado manualmente (`helm install/upgrade -f`), não há cluster registrado no
+> ArgoCD.
+
+### 20.1 Topologia
+
+Uma única VM (VirtualBox, IP `192.168.1.65` no lab atual) combina os dois papéis que no
+`standalone-compact` são hosts separados — K3s **e** os data services Docker+systemd no mesmo
+sistema operacional:
+
+| Componente | Onde roda | Chart/script |
+|---|---|---|
+| Postgres 18 + PostGIS 3.6 | Docker+systemd (host) | `scripts/lab-standalone-single/bootstrap.sh` (`step_setup_postgres`) |
+| Redis 8.6.3 | Docker+systemd (host) | `scripts/lab-standalone-single/setup-redis.sh` |
+| MinIO | Docker+systemd (host) | `scripts/lab-standalone-single/setup-minio.sh` |
+| Kafka 4.2.0 (KRaft, SASL_SSL+SCRAM-SHA-512) | Docker+systemd (host) | `scripts/lab-standalone-single/setup-kafka.sh` |
+| Vault (single-node, Shamir manual 1/1) | K3s | `platform/vault/` |
+| External Secrets Operator | K3s | `platform/external-secrets/` |
+| Keycloak (realm `uniplus`) | K3s | `apps/keycloak-replica/` |
+| `unifesspa-geo-api` | K3s | `apps/unifesspa-geo-api/` |
+| `uniplus-api-host` (Selecao+Ingresso+Configuracao+OrganizacaoInstitucional, ADR-0097) | K3s | `apps/uniplus-api-host/` |
+| `uniplus-api-portal` | K3s | `apps/uniplus-api-portal/` |
+
+Os charts `apps/uniplus-api-{selecao,ingresso}/` (topologia anterior, "uma API por módulo",
+abandonada pelo [ADR-0097](https://github.com/unifesspa-edu-br/uniplus-api/blob/main/docs/adrs/0097-topologia-de-deploy-em-tres-apis-monolito-modular.md)
+do `uniplus-api`) **não são usados** neste ambiente — continuam ativos apenas em
+`environments/standalone-compact/values.yaml` (produção real); migrar a produção para o modelo
+Host é trabalho futuro separado.
+
+### 20.2 Bootstrap consolidado
+
+```bash
+sudo -v                                    # confirma sudo sem senha antes de rodar
+cd /caminho/do/uniplus-infra               # precisa rodar de dentro do repo (usa platform/, environments/)
+./scripts/lab-standalone-single/bootstrap.sh --dry-run
+./scripts/lab-standalone-single/bootstrap.sh                  # execução real
+./scripts/lab-standalone-single/bootstrap.sh --skip-platform  # só até Kafka, sem Vault/ESO
+```
+
+Orquestra Docker → K3s → Helm → Postgres → Redis → MinIO → Kafka → Vault → ESO num único comando
+idempotente. **Não cobre** o deploy de `uniplus-api-host`/`uniplus-api-portal` (§20.4) — dependem
+de artefatos externos ao repositório (build de imagem a partir do `uniplus-api`, role+db Postgres
+dedicados).
+
+Detalhes completos (scripts individuais reutilizáveis, histórico) em
+`scripts/lab-standalone-single/README.md`.
+
+### 20.3 Troubleshooting do bootstrap
+
+**`kubectl`/`helm` falha com "permission denied" em `/etc/rancher/k3s/k3s.yaml`.** O instalador
+oficial do K3s cria `/usr/local/bin/{kubectl,ctr,crictl}` como symlinks para o binário `k3s`
+unificado. Nesse modo, `kubectl` usa `/etc/rancher/k3s/k3s.yaml` (`root:root 600`) como kubeconfig
+**default nativo** — ignora `~/.kube/config` mesmo quando existe e está correto, a menos que
+`KUBECONFIG` seja exportado explicitamente. `bootstrap.sh` já faz isso
+(`export KUBECONFIG="$HOME/.kube/config"` no topo); qualquer comando `kubectl`/`helm` manual fora
+do script precisa do mesmo export, ou rodar com `sudo`.
+
+**`helm upgrade vault` falha por conflito de field-manager no `caBundle`.** O Vault Agent
+Injector gerencia dinamicamente o `caBundle` do webhook, causando conflito de field-ownership
+(Server-Side Apply) em `helm upgrade`s subsequentes. Corrigir com `--force` — a versão de Helm
+pinada no script (`v3.16.4`) não tem a flag `--server-side` (só em versões mais novas).
+
+**`/health` do `uniplus-api-{host,portal}` nunca fica `Healthy` com Kafka desligado.** Omitir a
+env var `Kafka__BootstrapServers` por completo (em vez de renderizá-la sempre) faz o SDK
+Confluent.Kafka cair no default `localhost:9092` e entrar em loop de reconexão eterno, mantendo
+`/health` (readiness) permanentemente `Unhealthy` mesmo com o transporte Wolverine desligado. Os
+charts `uniplus-api-host`/`uniplus-api-portal` corrigem isso renderizando sempre
+`Kafka__BootstrapServers` — com o valor real quando ligado, ou `" "` (um espaço) quando desligado;
+`string.IsNullOrWhiteSpace(" ")=true` em dois pontos do `uniplus-api`
+(`WolverineOutboxConfiguration.cs`, `SelecaoMessagingRegistration.cs`) desliga o Kafka de forma
+limpa sem disparar a validação fatal do módulo Selecao (ADR-0051 do `uniplus-api`). Detalhes em
+`apps/uniplus-api-host/README.md`.
+
+### 20.4 Deploy das APIs de negócio (uniplus-api-host / uniplus-api-portal)
+
+Procedimento manual — não coberto pelo `bootstrap.sh` (§20.2). Resumo para `uniplus-api-host`
+(idêntico em espírito para `uniplus-api-portal`, com banco/role próprios):
+
+```bash
+# 1. Role + database únicos no Postgres (banco compartilhado pelos 4 módulos do Host)
+sudo docker exec -i uniplus-postgres psql -U postgres <<SQL
+CREATE ROLE uniplus WITH LOGIN PASSWORD '<senha gerada com openssl rand -hex 32>';
+CREATE DATABASE uniplus WITH OWNER = uniplus ENCODING = 'UTF8' LC_COLLATE = 'C.UTF-8' LC_CTYPE = 'C.UTF-8' TEMPLATE = template0;
+SQL
+
+# 2. A MESMA senha usada acima no Vault
+kubectl exec -n vault vault-0 -- vault kv put secret/standalone/postgres/uniplus password=@<arquivo temporário, nunca argv>
+
+# 3. LocalKey de cifragem — Secret K8s manual, não versionado
+kubectl create secret generic uniplus-api-host-encryption-local \
+  -n uniplus --from-literal=LOCAL_KEY="$(head -c 32 /dev/urandom | base64)"
+
+# 4. Build local da imagem (sem publish em GHCR ainda) + import no containerd
+cd ../uniplus-api
+docker build -f docker/Dockerfile.host -t uniplus-api-host:local-lab .
+docker save uniplus-api-host:local-lab -o /tmp/uniplus-api-host.tar
+scp /tmp/uniplus-api-host.tar uniplus@<ip-da-vm>:/tmp/
+ssh uniplus@<ip-da-vm> "sudo k3s ctr images import /tmp/uniplus-api-host.tar"
+
+# 5. Deploy
+helm install uniplus-api-host apps/uniplus-api-host/ -f environments/lab-standalone-single/values.yaml --namespace uniplus
+```
+
+`publish-images.yml` do `uniplus-api` só dispara em tags `v*.*.*` — nenhuma foi criada para o
+módulo `host` até o momento; publicar uma teria efeito real em produção (release pública), fora do
+escopo de uma Task de lab. Quando a primeira release real existir
+(`ghcr.io/unifesspa-edu-br/uniplus-api-host`), atualizar `image.registry`/`image.repository`/
+`image.tag`/`pullPolicy` no environment e remover o passo 4.
+
+Detalhes completos (banco único com 5 connection strings, Kafka desligado até o Apicurio Registry
+entrar no lab — issue [#423](https://github.com/unifesspa-edu-br/uniplus-infra/issues/423)) em
+`apps/uniplus-api-host/README.md` e `environments/lab-standalone-single/README.md`.
+
+### 20.5 Diferenças em relação ao `standalone-compact`
+
+| | `standalone-compact` (§8–§19) | `lab-standalone-single` |
+|---|---|---|
+| Hosts | 2 VMs (`k8s-host` + `data-host`) | 1 VM combinando os dois papéis |
+| Deploy | GitOps via ArgoCD | Manual (`helm install/upgrade -f`) |
+| Vault | Shamir 5/3, `service_registration "kubernetes"` | Shamir 1/1 (simplificado) |
+| Kafka nas APIs | Ligado, Apicurio Registry disponível | Desligado (`Kafka__BootstrapServers=" "`) até issue #423 |
+| Provisionamento | OpenTofu (`provisioning/oci/standalone/`) | VM provisionada fora deste repositório (VirtualBox) |
 
 ---
 
