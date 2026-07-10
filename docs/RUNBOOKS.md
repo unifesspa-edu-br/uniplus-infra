@@ -3747,14 +3747,19 @@ CREATE ROLE uniplus WITH LOGIN PASSWORD '<senha gerada com openssl rand -hex 32>
 CREATE DATABASE uniplus WITH OWNER = uniplus ENCODING = 'UTF8' LC_COLLATE = 'C.UTF-8' LC_CTYPE = 'C.UTF-8' TEMPLATE = template0;
 SQL
 
-# 2. A MESMA senha usada acima no Vault — nunca em argv; o `@` do Vault CLI
-#    resolve caminho no filesystem do POD (kubectl exec roda lá dentro), não
-#    no host que dispara o comando, daí o kubectl cp antes do exec
-pw_file=$(mktemp) && chmod 600 "$pw_file"
-printf '%s' '<a mesma senha do passo 1>' > "$pw_file"
-kubectl cp "$pw_file" vault/vault-0:/tmp/postgres-pw
-kubectl exec -n vault vault-0 -- sh -c 'vault kv put secret/standalone/postgres/uniplus password=@/tmp/postgres-pw && rm -f /tmp/postgres-pw'
-shred -u "$pw_file" 2>/dev/null || rm -f "$pw_file"
+# 2. A MESMA senha usada acima no Vault — vault CLI local via port-forward,
+#    mesma higiene de credenciais da §8.4.3 (nunca token/senha em argv;
+#    process substitution evita gravar a senha em disco)
+sudo kubectl -n vault port-forward vault-0 8200:8200 > /tmp/vault-pf.log 2>&1 &
+PF_PID=$!
+trap 'kill "$PF_PID" 2>/dev/null; unset VAULT_TOKEN VAULT_ADDR ROLE_PW' EXIT
+export VAULT_ADDR=http://127.0.0.1:8200
+until curl -s --max-time 1 "$VAULT_ADDR/v1/sys/health" >/dev/null 2>&1; do sleep 1; done
+read -rsp "Root token: " VAULT_TOKEN; echo
+export VAULT_TOKEN
+read -rsp "Senha do role (a mesma do passo 1): " ROLE_PW; echo
+vault kv put secret/standalone/postgres/uniplus password=@<(printf '%s' "$ROLE_PW")
+exit  # dispara o trap acima (kill port-forward + unset)
 
 # 3. LocalKey de cifragem — Secret K8s manual, não versionado
 kubectl create secret generic uniplus-api-host-encryption-local \
