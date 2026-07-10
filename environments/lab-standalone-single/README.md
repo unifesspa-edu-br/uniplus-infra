@@ -139,6 +139,11 @@ neste repositório — Selecao/Ingresso/Configuracao/OrganizacaoInstitucional
 são absorvidos pelo Host, que ainda não tem chart aqui (ver issue de
 follow-up para criá-lo).
 
+> **Pré-requisito:** `./scripts/lab-standalone-single/seed-vault-secrets.sh` já deve ter rodado com
+> sucesso — o `ExternalSecret` desta API também referencia `secret/standalone/{redis/default,minio/root}`,
+> não só o Postgres escrito abaixo. Esse script exige o Keycloak já deployado (ver seção acima);
+> numa VM nova ele não roda sozinho dentro do `bootstrap.sh` por essa razão.
+
 Pré-requisitos específicos desta API, feitos manualmente (não cobertos por
 `seed-vault-secrets.sh`):
 
@@ -213,6 +218,11 @@ do `uniplus-api`) — hospeda Selecao+Ingresso+Configuracao+OrganizacaoInstituci
 num único processo. Detalhes completos no `README.md` do chart
 (`apps/uniplus-api-host/README.md`); resumo do procedimento específico do
 lab abaixo.
+
+> **Pré-requisito:** `./scripts/lab-standalone-single/seed-vault-secrets.sh` já deve ter rodado com
+> sucesso — o `ExternalSecret` desta API também referencia `secret/standalone/{redis/default,minio/root}`,
+> não só o Postgres escrito abaixo. Esse script exige o Keycloak já deployado (ver seção acima);
+> numa VM nova ele não roda sozinho dentro do `bootstrap.sh` por essa razão.
 
 ```bash
 export KUBECONFIG="$HOME/.kube/config"   # ver RUNBOOKS.md §20.3 — sem isso, kubectl/helm bare falham com "permission denied"

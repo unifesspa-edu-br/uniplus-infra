@@ -3740,6 +3740,13 @@ revertido) — corrigir isso é pré-requisito para religar Kafka no Portal junt
 Procedimento manual — não coberto pelo `bootstrap.sh` (§20.2). Resumo para `uniplus-api-host`
 (idêntico em espírito para `uniplus-api-portal`, com banco/role próprios):
 
+> **Pré-requisito:** `scripts/lab-standalone-single/seed-vault-secrets.sh` já deve ter rodado com
+> sucesso — os `ExternalSecret`s de `uniplus-api-host`/`uniplus-api-portal` também referenciam
+> `secret/standalone/{redis/default,minio/root}` (não só o Postgres escrito no passo 2 abaixo).
+> Como esse script exige o Keycloak já deployado (§20.3), numa VM nova a ordem é: `bootstrap.sh`
+> → deploy do Keycloak (`apps/keycloak-replica/`) → `seed-vault-secrets.sh` (manual, já que
+> `bootstrap.sh` pulou por falta do Keycloak) → só então este procedimento.
+
 ```bash
 export KUBECONFIG="$HOME/.kube/config"   # ver §20.3 — sem isso, kubectl/helm bare falham com "permission denied"
 
