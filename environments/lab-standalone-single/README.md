@@ -120,6 +120,34 @@ gera segredo novo:
 | `secret/standalone/kafka/admin` | `$DATA_BASE/kafka/.bootstrap-creds` + `/etc/uniplus-kafka/certs/ca.crt` (Task #408) |
 | `secret/standalone/keycloak/clients/uniplus-api-{selecao,portal,ingresso,host}` | `kcadm.sh get clients/.../client-secret` no pod `keycloak-replica` (clients M2M já existentes no realm — selecao/portal/ingresso desde a issue #163, host desde a issue #423) |
 
+**Pré-requisito para o client `uniplus-api-host` (novo na issue #423): o
+Keycloak precisa ter reconciliado o `uniplus-realm.json` atualizado.**
+`--import-realm` do Keycloak só roda no primeiro boot — se o realm `uniplus`
+já existe no banco (lab que já rodou `helm install keycloak-replica` antes
+desta issue), um `helm upgrade` normal com o `uniplus-realm.json` atualizado
+**não** cria o client novo, porque `keycloak.realmReconcile.enabled` é
+`false` por padrão no chart e este `values.yaml` não liga a chave (mesma
+lacuna documentada no RUNBOOKS.md sobre o `realm-reconcile-job`). Sem isso,
+`seed-vault-secrets.sh` aborta em "client_secret de uniplus-api-host veio
+vazio — client existe no realm uniplus?" **antes de escrever qualquer path
+no Vault** (nem os dos outros 3 clients). Rodar antes, num lab que já tinha
+Keycloak deployado:
+
+```bash
+helm upgrade keycloak-replica apps/keycloak-replica/ -f environments/lab-standalone-single/values.yaml \
+  --set keycloak.enabled=true \
+  --set keycloak.networkPolicy.enabled=false \
+  --set keycloak.database.host=192.168.1.65 \
+  --set keycloak.hostname.strict=false \
+  --set keycloak.realmReconcile.enabled=true \
+  --namespace uniplus \
+  --wait --timeout=300s
+```
+
+Num lab **novo** (primeiro `helm install`, seção "uniplus-api-portal"
+abaixo), o client já nasce junto no `--import-realm` inicial — este passo
+extra não é necessário.
+
 **Não cobre** `secret/standalone/postgres/portal` — o role+db Postgres
 dedicado só existe a partir da Task #413, populado dentro do procedimento
 daquela Task, não aqui. Rodar o script de novo depois é seguro —
