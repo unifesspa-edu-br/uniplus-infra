@@ -149,8 +149,14 @@ CREATE ROLE portal WITH LOGIN PASSWORD '<senha gerada com openssl rand -hex 32>'
 CREATE DATABASE uniplus_portal WITH OWNER = portal ENCODING = 'UTF8' LC_COLLATE = 'C.UTF-8' LC_CTYPE = 'C.UTF-8' TEMPLATE = template0;
 SQL
 
-# 2. A MESMA senha usada acima no Vault (path esperado pelo chart)
-kubectl exec -n vault vault-0 -- vault kv put secret/standalone/postgres/portal password=@<arquivo temporário, nunca argv>
+# 2. A MESMA senha usada acima no Vault — nunca em argv; o `@` do Vault CLI
+#    resolve caminho no filesystem do POD (kubectl exec roda lá dentro), não
+#    no host que dispara o comando, daí o kubectl cp antes do exec
+pw_file=$(mktemp) && chmod 600 "$pw_file"
+printf '%s' '<a mesma senha do passo 1>' > "$pw_file"
+kubectl cp "$pw_file" vault/vault-0:/tmp/postgres-pw
+kubectl exec -n vault vault-0 -- sh -c 'vault kv put secret/standalone/postgres/portal password=@/tmp/postgres-pw && rm -f /tmp/postgres-pw'
+shred -u "$pw_file" 2>/dev/null || rm -f "$pw_file"
 
 # 3. LocalKey de cifragem (encryption.provider=local) — Secret K8s manual,
 #    não versionado; cada environment gera a sua
@@ -205,8 +211,14 @@ CREATE ROLE uniplus WITH LOGIN PASSWORD '<senha gerada com openssl rand -hex 32>
 CREATE DATABASE uniplus WITH OWNER = uniplus ENCODING = 'UTF8' LC_COLLATE = 'C.UTF-8' LC_CTYPE = 'C.UTF-8' TEMPLATE = template0;
 SQL
 
-# 2. A MESMA senha usada acima no Vault
-kubectl exec -n vault vault-0 -- vault kv put secret/standalone/postgres/uniplus password=@<arquivo temporário, nunca argv>
+# 2. A MESMA senha usada acima no Vault — nunca em argv; o `@` do Vault CLI
+#    resolve caminho no filesystem do POD (kubectl exec roda lá dentro), não
+#    no host que dispara o comando, daí o kubectl cp antes do exec
+pw_file=$(mktemp) && chmod 600 "$pw_file"
+printf '%s' '<a mesma senha do passo 1>' > "$pw_file"
+kubectl cp "$pw_file" vault/vault-0:/tmp/postgres-pw
+kubectl exec -n vault vault-0 -- sh -c 'vault kv put secret/standalone/postgres/uniplus password=@/tmp/postgres-pw && rm -f /tmp/postgres-pw'
+shred -u "$pw_file" 2>/dev/null || rm -f "$pw_file"
 
 # 3. LocalKey de cifragem — Secret K8s manual, não versionado
 kubectl create secret generic uniplus-api-host-encryption-local \
