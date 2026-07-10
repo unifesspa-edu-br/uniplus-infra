@@ -141,11 +141,22 @@ follow-up para criá-lo).
 
 > **Pré-requisito:** `./scripts/lab-standalone-single/seed-vault-secrets.sh` já deve ter rodado com
 > sucesso — o `ExternalSecret` desta API também referencia `secret/standalone/{redis/default,minio/root}`,
-> não só o Postgres escrito abaixo. Esse script exige o Keycloak já deployado — chart
-> `apps/keycloak-replica/` vem **desabilitado** por padrão, este `values.yaml` não liga
-> `keycloak.enabled`; precisa `--set keycloak.enabled=true` além dos pré-requisitos próprios
-> documentados em `apps/keycloak-replica/README.md`. Numa VM nova, `seed-vault-secrets.sh` não
-> roda sozinho dentro do `bootstrap.sh` por essa razão.
+> não só o Postgres escrito abaixo. Esse script exige o Keycloak já deployado; numa VM nova,
+> `seed-vault-secrets.sh` não roda sozinho dentro do `bootstrap.sh` por essa razão.
+> `apps/keycloak-replica/` vem **desabilitado** por padrão e este `values.yaml` não liga
+> `keycloak.enabled` nem `keycloak.networkPolicy.dataHostCIDR` (a guarda `fail` do template exige
+> esse CIDR quando `networkPolicy.enabled=true`, default do chart):
+>
+> ```bash
+> helm install keycloak-replica apps/keycloak-replica/ -f environments/lab-standalone-single/values.yaml \
+>   --set keycloak.enabled=true \
+>   --set keycloak.networkPolicy.dataHostCIDR=192.168.1.65/32 \
+>   --namespace uniplus
+> ```
+>
+> Além disso: role+database `keycloak` no Postgres e os secrets `secret/standalone/postgres/keycloak`
+> e `secret/standalone/keycloak/admin` no Vault — nenhum dos dois é criado por `bootstrap.sh` nem
+> `seed-vault-secrets.sh`; ver pré-requisitos completos em `apps/keycloak-replica/README.md`.
 
 Pré-requisitos específicos desta API, feitos manualmente (não cobertos por
 `seed-vault-secrets.sh`):
@@ -224,11 +235,22 @@ lab abaixo.
 
 > **Pré-requisito:** `./scripts/lab-standalone-single/seed-vault-secrets.sh` já deve ter rodado com
 > sucesso — o `ExternalSecret` desta API também referencia `secret/standalone/{redis/default,minio/root}`,
-> não só o Postgres escrito abaixo. Esse script exige o Keycloak já deployado — chart
-> `apps/keycloak-replica/` vem **desabilitado** por padrão, este `values.yaml` não liga
-> `keycloak.enabled`; precisa `--set keycloak.enabled=true` além dos pré-requisitos próprios
-> documentados em `apps/keycloak-replica/README.md`. Numa VM nova, `seed-vault-secrets.sh` não
-> roda sozinho dentro do `bootstrap.sh` por essa razão.
+> não só o Postgres escrito abaixo. Esse script exige o Keycloak já deployado; numa VM nova,
+> `seed-vault-secrets.sh` não roda sozinho dentro do `bootstrap.sh` por essa razão.
+> `apps/keycloak-replica/` vem **desabilitado** por padrão e este `values.yaml` não liga
+> `keycloak.enabled` nem `keycloak.networkPolicy.dataHostCIDR` (a guarda `fail` do template exige
+> esse CIDR quando `networkPolicy.enabled=true`, default do chart):
+>
+> ```bash
+> helm install keycloak-replica apps/keycloak-replica/ -f environments/lab-standalone-single/values.yaml \
+>   --set keycloak.enabled=true \
+>   --set keycloak.networkPolicy.dataHostCIDR=192.168.1.65/32 \
+>   --namespace uniplus
+> ```
+>
+> Além disso: role+database `keycloak` no Postgres e os secrets `secret/standalone/postgres/keycloak`
+> e `secret/standalone/keycloak/admin` no Vault — nenhum dos dois é criado por `bootstrap.sh` nem
+> `seed-vault-secrets.sh`; ver pré-requisitos completos em `apps/keycloak-replica/README.md`.
 
 ```bash
 export KUBECONFIG="$HOME/.kube/config"   # ver RUNBOOKS.md §20.3 — sem isso, kubectl/helm bare falham com "permission denied"
