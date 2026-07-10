@@ -20,9 +20,11 @@ External Secrets Operator, ...) é validado.
 | Vault | `platform/vault/` | Single-node (replicas=1), Shamir manual (1 key share, threshold 1 — simplificado para lab), sem peer PA1/OCI KMS |
 | External Secrets Operator | `platform/external-secrets/` | `ClusterSecretStore vault-default` apontando para o Vault acima; NetworkPolicy habilitada nos dois charts (ver nota abaixo) |
 | Secrets iniciais | `scripts/lab-standalone-single/seed-vault-secrets.sh` | Popula no Vault os paths que os charts de API/Keycloak esperam — ver seção própria abaixo |
+| Traefik | `platform/traefik/` | HTTPS autoassinado, único ingress controller do lab (substitui o Traefik embutido do k3s, desabilitado) — ver seção própria abaixo |
 | apicurio-registry | `apps/apicurio-registry/` | Schema Registry (Confluent-compat) para uniplus-api-host/uniplus-api-portal (issue #423) — ver seção própria abaixo |
 | uniplus-api-portal | `apps/uniplus-api-portal/` | Deployable autônomo (ADR-0097 do `uniplus-api`); Kafka+Schema Registry ligados desde a issue #423 — ver seção própria abaixo; módulo Portal ainda sem migrations de domínio no código (só schema `wolverine` de infraestrutura) |
 | uniplus-api-host | `apps/uniplus-api-host/` | Composition root do monólito modular (Selecao+Ingresso+Configuracao+OrganizacaoInstitucional, ADR-0097 do `uniplus-api`); Kafka+Schema Registry ligados desde a issue #423; imagem buildada localmente (sem publish em GHCR ainda) — ver seção própria abaixo |
+| uniplus-web | `apps/uniplus-web/` | 3 SPAs Angular (portal, selecao, ingresso), issue #432 — ver seção própria abaixo |
 
 ## Uso
 
@@ -155,13 +157,132 @@ daquela Task, não aqui. Rodar o script de novo depois é seguro —
 verdade atual (útil inclusive para sincronizar após rotação de um
 client_secret no Keycloak).
 
+## Traefik + TLS autoassinado
+
+Issue #432. Todo acesso ao lab era via `kubectl exec`/`kubectl port-forward`
+até então — funciona para health checks server-to-server, mas o
+`uniplus-web` (SPA Angular) roda no **browser do usuário**: precisa de um
+hostname de fato alcançável, **e HTTPS de verdade** — browsers só liberam a
+Web Crypto API (necessária pro PKCE do `keycloak-js`) em *secure contexts*
+(HTTPS ou `localhost`); `http://<host>`, mesmo em LAN privada, não
+qualifica. Confirmado via Playwright: `window.isSecureContext=false`,
+`crypto.subtle` indisponível, login trava com "Web Crypto API is not
+available" mesmo com toda a infra saudável.
+
+TLS real (Let's Encrypt via cert-manager) exigiria DNS público apontando
+pro lab, que não existe — solução: certificado **autoassinado** cobrindo
+`*.192.168.1.65.nip.io` ([nip.io](https://nip.io) resolve qualquer IP
+embutido no hostname via DNS público, mesmo IP privado — a conexão TCP em
+si continua sendo LAN-local; funciona tanto pra esta VM quanto pro browser
+de quem estiver na mesma rede).
+
+### k3s já vem com Traefik embutido — precisa desabilitar antes
+
+K3s instala seu próprio Traefik por padrão (namespace `kube-system`,
+`Service traefik` tipo `LoadBalancer` já mapeando a porta 80/443 da VM).
+Conflita com `platform/traefik/` (mesma IngressClass, mesmos hostPorts) e,
+mais importante, o objetivo do lab é validar **o chart real** do Uni+, não
+o default do k3s. Desabilitar antes de instalar o nosso:
+
+```bash
+sudo mkdir -p /etc/rancher/k3s
+printf 'disable:\n  - traefik\n' | sudo tee /etc/rancher/k3s/config.yaml
+sudo systemctl restart k3s
+# aguardar ~15s — o addon-manager do k3s desinstala o Traefik embutido
+# sozinho (jobs helm-delete-traefik*), sem precisar limpar nada manualmente
+```
+
+### Gerar o certificado autoassinado (uma vez, fora do Git)
+
+```bash
+openssl req -x509 -newkey rsa:2048 -nodes -keyout tls.key -out tls.crt -days 825 \
+  -subj "/CN=uniplus-lab" \
+  -addext "subjectAltName=DNS:*.192.168.1.65.nip.io,DNS:192.168.1.65.nip.io"
+
+kubectl create secret tls uniplus-wildcard-nip-io-tls \
+  --cert=tls.crt --key=tls.key -n uniplus
+shred -u tls.crt tls.key   # a chave privada nunca entra no Git
+```
+
+A **parte pública** do certificado (não a chave) é reaproveitada como YAML
+anchor `&labSelfSignedCA` no topo de `values.yaml` deste environment — ver
+seção "Confiar no certificado autoassinado" abaixo.
+
+### Deploy do Traefik
+
+```bash
+helm dependency update platform/traefik/
+helm install traefik platform/traefik/ -f environments/lab-standalone-single/values.yaml \
+  --namespace traefik --create-namespace --wait --timeout=180s
+```
+
+`ports.web.hostPort: 80` + `ports.websecure.hostPort: 443` bindam direto na
+VM (via DNAT do CNI portmap plugin — não aparece em `ss -tlnp`, mas
+funciona; confirmar com `curl` direto). `ports.web.http.redirections: null`
+mantém a porta 80 servindo em paralelo (sem redirect forçado pra 443) —
+útil para smoke tests via `curl` sem `-k`/`-v` que não precisam de secure
+context.
+
+### Confiar no certificado autoassinado (server-to-server)
+
+Chamadas server-to-server que validam o `iss` claim de tokens do Keycloak
+(Host/Portal validando bearer tokens, Apicurio validando tokens ao
+registrar schema) **também precisam confiar no certificado** — não só o
+browser. Dois mecanismos diferentes, por runtime:
+
+- **.NET** (`uniplus-api-host`, `uniplus-api-portal`, `unifesspa-geo-api`):
+  `SSL_CERT_FILE`/`SSL_CERT_DIR` **não funcionam** — funcionam para
+  `curl`/libcurl (que lê essas env vars via OpenSSL), mas o runtime .NET no
+  Linux só confia no bundle do sistema
+  (`/etc/ssl/certs/ca-certificates.crt`). Solução: `customCA.enabled: true`
+  nos 3 charts — um `initContainer` roda `update-ca-certificates` de
+  verdade (mesma imagem da app, tem a ferramenta; roda como root só ali,
+  container principal continua non-root) e compartilha o bundle atualizado
+  via `emptyDir` montado em `/etc/ssl/certs` no container principal. Ver
+  comentário completo em `apps/uniplus-api-host/values.yaml` `customCA`.
+- **Quarkus/Java** (`apicurio-registry`): `extraEnv: QUARKUS_TLS_TRUST_ALL=true`
+  (registro de TLS unificado — a propriedade antiga
+  `QUARKUS_OIDC_TLS_TRUST_ALL` foi testada primeiro e **não funcionou**
+  nesta versão do Quarkus/Apicurio). `trust-all` só é aceitável porque é
+  cert autoassinado de lab — nunca usar em produção real.
+
+### Hostnames deste lab
+
+| Serviço | Hostname |
+|---|---|
+| Keycloak | `keycloak.192.168.1.65.nip.io` |
+| Apicurio Registry | `apicurio.192.168.1.65.nip.io` |
+| uniplus-api-host | `api-host.192.168.1.65.nip.io` |
+| uniplus-api-portal | `api-portal.192.168.1.65.nip.io` |
+| unifesspa-geo-api | `api-geo.192.168.1.65.nip.io` |
+| uniplus-web (portal) | `portal.192.168.1.65.nip.io` |
+| uniplus-web (selecao) | `selecao.192.168.1.65.nip.io` |
+| uniplus-web (ingresso) | `ingresso.192.168.1.65.nip.io` |
+
+### Gotcha: NetworkPolicy de egress com hostPort — DNAT acontece antes da avaliação
+
+Ao religar `apicurioRegistry.networkPolicy.enabled: true` (agora que
+Traefik existe de verdade), a regra de egress `oidcIssuerCIDR:
+192.168.1.65/32` (apontando pro IP da VM, porta 443) **nunca batia** —
+`Connection refused` do pod do Apicurio para `keycloak.192.168.1.65.nip.io`,
+apesar de um `curl` direto de outro pod (sem NetworkPolicy própria)
+funcionar normalmente. Causa: o `hostPort` do Traefik é implementado via
+DNAT (CNI portmap, `iptables -t nat`), e o `kube-router` (NetworkPolicy
+controller do k3s) avalia egress **depois** do DNAT — o destino real
+pós-DNAT é o IP do **pod** do Traefik (`10.42.0.x`), não o IP da VM (mesma
+classe de bug já documentada para o Service `kubernetes` do apiserver, ver
+seção "NetworkPolicy: kubeApiCidrs" acima, aqui via hostPort em vez de
+kube-proxy). Fix: `oidcIssuerCIDR: 10.42.0.0/16` (pod CIDR do cluster) +
+`oidcIssuerPort: 8443` (containerPort real do entryPoint `websecure` do
+Traefik, não a porta externa 443).
+
 ## Apicurio Registry
 
 Schema Registry (Confluent-compat) consumido por `uniplus-api-host` e
 `uniplus-api-portal` para registrar/validar schemas Avro dos eventos Kafka
 (ADR-0051 do `uniplus-api`). Chart de referência já validado em produção
-(`environments/standalone-compact/values.yaml`) — no lab, adaptado para o IP
-único da VM e sem Traefik/TLS de edge.
+(`environments/standalone-compact/values.yaml`) — no lab, adaptado para o
+Traefik + TLS autoassinado da issue #432 (seção própria acima).
 
 > **Pré-requisito:** `./scripts/lab-standalone-single/seed-vault-secrets.sh`
 > e o Keycloak já devem estar no ar (mesmos pré-requisitos das APIs abaixo).
@@ -210,22 +331,23 @@ helm install apicurio-registry apps/apicurio-registry/ -f environments/lab-stand
 kubectl exec -n uniplus deploy/apicurio-registry-apicurio-registry -- curl -s http://localhost:8080/apis/registry/v3/system/info
 ```
 
-### NetworkPolicy: ingress só libera o namespace Traefik — desligada no lab
+### NetworkPolicy: ingress só libera o namespace Traefik — religada na issue #432
 
 O template `apps/apicurio-registry/templates/networkpolicy.yaml` só libera
 ingress na porta 8080 para pods do namespace `traefik` (produção: todo
 tráfego HTTP ao Apicurio, mesmo vindo de outro Pod do mesmo cluster, passa
 pelo Traefik — `schemaRegistry.url` em `standalone-compact` aponta para o
-hostname público `https://schema-registry.standalone.portaluni.com.br`, não
-para o Service ClusterIP). Este lab não tem Traefik, então
-`uniplus-api-host`/`uniplus-api-portal` (namespace `uniplus`) nunca bateriam
-no allow-list — `Connection refused` no boot do
-`SchemaRegistrationHostedService`, `CrashLoopBackOff` (descoberto na issue #423).
-Mesmo racional já aplicado ao `keycloak-replica` neste lab:
-`apicurioRegistry.networkPolicy.enabled: false` em
-`environments/lab-standalone-single/values.yaml` — sem fronteira de
-segurança real a proteger num lab single-node, a policy restritiva de
-produção só atrapalha.
+hostname público, não para o Service ClusterIP). Na issue #423 este lab
+ainda não tinha Traefik, então a policy ficava `enabled: false`
+(`uniplus-api-host`/`uniplus-api-portal` nunca bateriam no allow-list —
+`Connection refused` no boot do `SchemaRegistrationHostedService`). Desde a
+issue #432 o Traefik existe de fato (seção acima) — a policy volta a
+`enabled: true`, `schemaRegistry.url`/`oidc.issuerUri` do Host/Portal agora
+apontam pro hostname do Traefik (`apicurio.192.168.1.65.nip.io`,
+`keycloak.192.168.1.65.nip.io`) em vez do Service ClusterIP direto, igual
+à produção real. Ver também o gotcha de NetworkPolicy+hostPort+DNAT na
+seção "Traefik + TLS autoassinado" acima — `oidcIssuerCIDR`/`oidcIssuerPort`
+não apontam pro IP da VM, e sim pro pod CIDR + porta interna do Traefik.
 
 ## uniplus-api-portal
 
@@ -251,15 +373,13 @@ follow-up para criá-lo).
 > `seed-vault-secrets.sh` não roda sozinho dentro do `bootstrap.sh` por essa razão.
 > `apps/keycloak-replica/` vem **desabilitado** por padrão e este `values.yaml` não liga
 > `keycloak.enabled`. `networkPolicy.enabled=true` é default do chart — sem `dataHostCIDR` (não
-> setado neste environment) o `fail` do template bloqueia o render; mesmo com ele setado, o
-> ingress só libera Traefik/Prometheus/o Job `realm-reconcile`, não os pods de
-> `uniplus-api-host`/`uniplus-api-portal` que também precisam falar com o Keycloak (OIDC
-> discovery/JWKS) — sem regra própria no chart para isso, desligar a policy inteira
-> (`networkPolicy.enabled=false`) é mais simples que reimplementá-la via `kubectl patch`
-> pós-install. `KC_HOSTNAME_STRICT=true` também é
-> default do chart, mas `hostname.url` vazio faz o Deployment omitir `KC_HOSTNAME` inteiro — sem
-> hostname público neste lab, `hostname.strict=false` evita o Keycloak falhar validando um
-> hostname que não existe). Role+database `keycloak` no Postgres e os secrets
+> setado neste environment) o `fail` do template bloqueia o render. **Desde a issue #432** o
+> Traefik existe de verdade no lab (seção "Traefik + TLS autoassinado" acima), então a policy
+> fica **religada** (`networkPolicy.enabled=true`, ingress via `keycloak.192.168.1.65.nip.io`) em
+> vez do antigo `networkPolicy.enabled=false` (workaround só pela ausência de Traefik). `hostname.url`
+> aponta pro hostname do Traefik (`https://keycloak.192.168.1.65.nip.io/auth`) — precisa bater com
+> o que o browser bate, senão o `iss` claim dos tokens não confere com o esperado pelos clients.
+> Role+database `keycloak` no Postgres e os secrets
 > `secret/standalone/postgres/keycloak`/`secret/standalone/keycloak/admin` no Vault também não são
 > criados por `bootstrap.sh` nem `seed-vault-secrets.sh` — o `ExternalSecret` do chart consome os
 > dois via `envFrom` (ver pré-requisitos completos em `apps/keycloak-replica/README.md`):
@@ -287,12 +407,14 @@ follow-up para criá-lo).
 > vault kv put secret/standalone/keycloak/admin username=admin password=@<(printf '%s' "$KC_ADMIN_PW")
 > kill "$PF_PID" 2>/dev/null; unset VAULT_TOKEN VAULT_ADDR KC_DB_PW KC_ADMIN_PW PF_PID
 >
-> # 0c. Deploy
+> # 0c. Deploy — repassando TODOS os --set que o release já usava (não só o
+> # novo), senão helm upgrade reverte silenciosamente aos defaults do chart
+> # tudo que ficou de fora (lição da regressão de NetworkPolicy da Epic #395)
 > helm install keycloak-replica apps/keycloak-replica/ -f environments/lab-standalone-single/values.yaml \
 >   --set keycloak.enabled=true \
->   --set keycloak.networkPolicy.enabled=false \
 >   --set keycloak.database.host=192.168.1.65 \
 >   --set keycloak.hostname.strict=false \
+>   --set keycloak.realmReconcile.enabled=true \
 >   --namespace uniplus --create-namespace \
 >   --wait --timeout=300s
 > ```
@@ -384,15 +506,13 @@ lab abaixo.
 > `seed-vault-secrets.sh` não roda sozinho dentro do `bootstrap.sh` por essa razão.
 > `apps/keycloak-replica/` vem **desabilitado** por padrão e este `values.yaml` não liga
 > `keycloak.enabled`. `networkPolicy.enabled=true` é default do chart — sem `dataHostCIDR` (não
-> setado neste environment) o `fail` do template bloqueia o render; mesmo com ele setado, o
-> ingress só libera Traefik/Prometheus/o Job `realm-reconcile`, não os pods de
-> `uniplus-api-host`/`uniplus-api-portal` que também precisam falar com o Keycloak (OIDC
-> discovery/JWKS) — sem regra própria no chart para isso, desligar a policy inteira
-> (`networkPolicy.enabled=false`) é mais simples que reimplementá-la via `kubectl patch`
-> pós-install. `KC_HOSTNAME_STRICT=true` também é
-> default do chart, mas `hostname.url` vazio faz o Deployment omitir `KC_HOSTNAME` inteiro — sem
-> hostname público neste lab, `hostname.strict=false` evita o Keycloak falhar validando um
-> hostname que não existe). Role+database `keycloak` no Postgres e os secrets
+> setado neste environment) o `fail` do template bloqueia o render. **Desde a issue #432** o
+> Traefik existe de verdade no lab (seção "Traefik + TLS autoassinado" acima), então a policy
+> fica **religada** (`networkPolicy.enabled=true`, ingress via `keycloak.192.168.1.65.nip.io`) em
+> vez do antigo `networkPolicy.enabled=false` (workaround só pela ausência de Traefik). `hostname.url`
+> aponta pro hostname do Traefik (`https://keycloak.192.168.1.65.nip.io/auth`) — precisa bater com
+> o que o browser bate, senão o `iss` claim dos tokens não confere com o esperado pelos clients.
+> Role+database `keycloak` no Postgres e os secrets
 > `secret/standalone/postgres/keycloak`/`secret/standalone/keycloak/admin` no Vault também não são
 > criados por `bootstrap.sh` nem `seed-vault-secrets.sh` — o `ExternalSecret` do chart consome os
 > dois via `envFrom` (ver pré-requisitos completos em `apps/keycloak-replica/README.md`):
@@ -420,12 +540,14 @@ lab abaixo.
 > vault kv put secret/standalone/keycloak/admin username=admin password=@<(printf '%s' "$KC_ADMIN_PW")
 > kill "$PF_PID" 2>/dev/null; unset VAULT_TOKEN VAULT_ADDR KC_DB_PW KC_ADMIN_PW PF_PID
 >
-> # 0c. Deploy
+> # 0c. Deploy — repassando TODOS os --set que o release já usava (não só o
+> # novo), senão helm upgrade reverte silenciosamente aos defaults do chart
+> # tudo que ficou de fora (lição da regressão de NetworkPolicy da Epic #395)
 > helm install keycloak-replica apps/keycloak-replica/ -f environments/lab-standalone-single/values.yaml \
 >   --set keycloak.enabled=true \
->   --set keycloak.networkPolicy.enabled=false \
 >   --set keycloak.database.host=192.168.1.65 \
 >   --set keycloak.hostname.strict=false \
+>   --set keycloak.realmReconcile.enabled=true \
 >   --namespace uniplus --create-namespace \
 >   --wait --timeout=300s
 > ```
@@ -483,8 +605,57 @@ Kafka + Schema Registry ligados desde a issue #423 (ver seção "Apicurio
 Registry" acima): `SchemaRegistrationHostedService` registra o schema Avro
 do módulo Selecao (`processo_seletivo_events-value`) no Apicurio no boot e
 o Wolverine `KafkaTransport` cria o tópico correspondente — confirmado nos
-logs do pod. Pré-requisito de rede: a NetworkPolicy do Apicurio só libera
-ingress do namespace `traefik` (inexistente neste lab) — sem
-`apicurioRegistry.networkPolicy.enabled: false`, o Host entra em
-`CrashLoopBackOff` no boot (`Connection refused` na chamada ao Schema
-Registry), mesmo com o Service/DNS/Postgres/Redis/Keycloak todos saudáveis.
+logs do pod. `schemaRegistry.url`/`oidc.issuerUri` apontam pro hostname do
+Traefik (issue #432) — `apicurioRegistry.networkPolicy`/`keycloak.networkPolicy`
+voltaram a `enabled: true`, e o Host precisa confiar no certificado
+autoassinado (`customCA.enabled: true`) pra validar o JWKS via HTTPS — ver
+seção "Traefik + TLS autoassinado" acima pros dois gotchas reais
+encontrados (DNAT+NetworkPolicy, SSL_CERT_FILE não funciona pro .NET).
+
+## uniplus-web
+
+Issue #432. 3 SPAs Angular (portal, selecao, ingresso) — 1 chart, 1
+Deployment por app, imagens já publicadas em GHCR (`v0.2.1`, confirmadas
+pull-áveis via `docker manifest inspect`) — sem build local necessário,
+diferente do `uniplus-api-host`.
+
+> **Pré-requisito:** Traefik + TLS autoassinado + os 5 backends (Keycloak,
+> Apicurio, Host, Portal, Geo API) já no ar (seções acima). O client OIDC
+> público `uniplus-portal` (compartilhado pelas 3 SPAs) precisa existir no
+> realm — ver `keycloak.realmImport.portalClient` no `values.yaml` deste
+> environment.
+
+```bash
+export KUBECONFIG="$HOME/.kube/config"
+
+helm install uniplus-web apps/uniplus-web/ -f environments/lab-standalone-single/values.yaml \
+  --namespace uniplus --wait --timeout=180s
+```
+
+`ingress.tls.certManager.enabled` **precisa** ser explicitamente `false`
+neste `values.yaml` — ao contrário dos outros charts (default `false`), o
+default do `uniplus-web` é `certManager.enabled: true` (produção real usa
+Let's Encrypt); sem o override, o `helm upgrade` falha com
+`no matches for kind "Certificate" in version "cert-manager.io/v1"`
+(CRD inexistente no lab).
+
+### Validação: login OIDC real via browser (Playwright)
+
+Confirmado ponta a ponta com um browser de verdade (não só `curl`), usando
+um usuário de teste temporário criado via `kcadm.sh` e removido depois:
+
+1. `https://portal.192.168.1.65.nip.io/` carrega sem erro de Web Crypto
+   (`window.isSecureContext === true`, `crypto.subtle` disponível).
+2. Clicar em rota protegida ("Meu Perfil") redireciona pro Keycloak com
+   `code_challenge`/`code_challenge_method=S256` (PKCE gerado client-side
+   de verdade) e `redirect_uri` batendo com o registrado no client.
+3. Login com usuário/senha → tela de completar perfil (primeiro acesso) →
+   redirect de volta pro `redirect_uri` com o `code`.
+4. SPA troca o `code` pelo token (via `fragment` response mode) e mostra o
+   nome do usuário logado no cabeçalho — sessão autenticada confirmada.
+
+Nota sobre Playwright especificamente: o browser headless rejeita o
+certificado autoassinado por padrão (`net::ERR_CERT_AUTHORITY_INVALID`,
+igual a um usuário real veria um aviso antes de "Avançar mesmo assim") —
+contornado via CDP (`Security.setIgnoreCertificateErrors`), não uma
+limitação do fix em si.

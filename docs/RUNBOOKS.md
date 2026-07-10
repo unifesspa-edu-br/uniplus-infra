@@ -3677,11 +3677,13 @@ sistema operacional:
 | Kafka 4.2.0 (KRaft, SASL_SSL+SCRAM-SHA-512) | Docker+systemd (host) | `scripts/lab-standalone-single/setup-kafka.sh` |
 | Vault (single-node, Shamir manual 1/1) | K3s | `platform/vault/` |
 | External Secrets Operator | K3s | `platform/external-secrets/` |
+| Traefik (TLS autoassinado, substitui o Traefik embutido do k3s) | K3s | `platform/traefik/` |
 | Keycloak (realm `uniplus`) | K3s | `apps/keycloak-replica/` |
 | `unifesspa-geo-api` | K3s | `apps/unifesspa-geo-api/` |
 | Apicurio Registry (Schema Registry) | K3s | `apps/apicurio-registry/` |
 | `uniplus-api-host` (Selecao+Ingresso+Configuracao+OrganizacaoInstitucional, ADR-0097) | K3s | `apps/uniplus-api-host/` |
 | `uniplus-api-portal` | K3s | `apps/uniplus-api-portal/` |
+| `uniplus-web` (3 SPAs: portal, selecao, ingresso) | K3s | `apps/uniplus-web/` |
 
 Os charts `apps/uniplus-api-{selecao,ingresso}/` (topologia anterior, "uma API por módulo",
 abandonada pelo [ADR-0097](https://github.com/unifesspa-edu-br/uniplus-api/blob/main/docs/adrs/0097-topologia-de-deploy-em-tres-apis-monolito-modular.md)
@@ -3873,8 +3875,41 @@ Registry documentado em `environments/lab-standalone-single/README.md`) em
 | Hosts | 2 VMs (`k8s-host` + `data-host`) | 1 VM combinando os dois papéis |
 | Deploy | GitOps via ArgoCD | Manual (`helm install/upgrade -f`) |
 | Vault | Shamir 5/3, `service_registration "kubernetes"` | Shamir 1/1 (simplificado) |
-| Kafka nas APIs | Ligado, Apicurio Registry disponível | Ligado desde issue #423, Apicurio Registry disponível (NetworkPolicy desligada — sem Traefik no lab, ver §20.3) |
+| Kafka nas APIs | Ligado, Apicurio Registry disponível | Ligado desde issue #423, Apicurio Registry disponível, NetworkPolicies religadas desde #432 |
+| Ingress/TLS | Traefik + Let's Encrypt via cert-manager (DNS público) | Traefik + TLS autoassinado (`*.192.168.1.65.nip.io`, issue #432 — ver §20.6) |
+| Frontend | `uniplus-web` (3 SPAs) via Traefik | `uniplus-web` (3 SPAs) via Traefik, issue #432 |
 | Provisionamento | OpenTofu (`provisioning/oci/standalone/`) | VM provisionada fora deste repositório (VirtualBox) |
+
+### 20.6 Traefik + TLS autoassinado + frontend (issue #432)
+
+Detalhes completos, comandos e os 3 gotchas reais encontrados na
+implementação em `environments/lab-standalone-single/README.md` (seções
+"Traefik + TLS autoassinado" e "uniplus-web"). Resumo:
+
+1. **k3s já vem com Traefik embutido** (namespace `kube-system`) — precisa
+   desabilitar (`/etc/rancher/k3s/config.yaml` com `disable: [traefik]` +
+   `systemctl restart k3s`) antes de instalar `platform/traefik/`, senão
+   conflito de IngressClass/hostPort.
+2. **Browsers só liberam Web Crypto API (PKCE) em secure context** — HTTP
+   puro, mesmo em LAN privada, não qualifica; TLS autoassinado é
+   obrigatório pro login funcionar pela SPA (não é só sobre "esconder"
+   tráfego). Hostnames via `nip.io` (DNS público que resolve pro IP
+   embutido no nome, mesmo sendo privado).
+3. **NetworkPolicy de egress com hostPort quebra silenciosamente** —
+   `kube-router` avalia egress **depois** do DNAT do CNI portmap (mesma
+   classe de bug do Service `kubernetes`, ver §20.1/kubeApiCidrs); regra de
+   egress precisa apontar pro pod CIDR (`10.42.0.0/16`) + porta interna do
+   Traefik (`8443`), não pro IP da VM + porta externa.
+4. **`.NET` não respeita `SSL_CERT_FILE`/`SSL_CERT_DIR`** pra confiar num
+   certificado extra (funciona só pra `curl`/OpenSSL) — precisa de
+   `initContainer` rodando `update-ca-certificates` de verdade
+   (`customCA.enabled` nos charts `uniplus-api-host`/`uniplus-api-portal`/
+   `unifesspa-geo-api`). **Quarkus/Java** (`apicurio-registry`) resolve com
+   `QUARKUS_TLS_TRUST_ALL=true` — propriedades diferentes por runtime,
+   nenhum dos dois usável em produção real (só lab com cert autoassinado).
+
+Login OIDC completo (SPA → Keycloak → PKCE → token → sessão autenticada)
+validado com browser real via Playwright MCP — não só `curl`.
 
 ---
 
