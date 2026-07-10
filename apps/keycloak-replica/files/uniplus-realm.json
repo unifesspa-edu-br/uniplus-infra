@@ -210,6 +210,72 @@
         }
       ]
     },
+    {{/*
+      Composition root pós-ADR-0097 do uniplus-api (absorve Selecao+Ingresso+
+      Configuracao+OrganizacaoInstitucional num único processo). Os clients
+      legados uniplus-api-{selecao,ingresso} abaixo permanecem em uso apenas
+      em standalone-compact (produção real, ainda não migrada pro modelo
+      Host) — não remover/alterar.
+
+      CLIENT.DESCRIPTION no schema do Keycloak é varchar(255) — manter a
+      description abaixo curta (mesmo padrão dos demais clients M2M desta
+      lista) para não estourar o limite e quebrar o realm-reconcile-job com
+      "value too long for type character varying(255)".
+    */}}
+    {
+      "clientId": "uniplus-api-host",
+      "name": "Uni+ API Host — Service Account (M2M)",
+      "description": "Service Account M2M do uniplus-api-host → Apicurio SR. Confidential — secret em secret/standalone/keycloak/clients/uniplus-api-host via kcadm pós-import. Mappers: aud=apicurio-registry + groups=[/users/uniplus]→sr-developer. RUNBOOKS §15.6.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true,
+      "frontchannelLogout": false,
+      "redirectUris": [],
+      "webOrigins": [],
+      "attributes": {
+        "access.token.lifespan": "300"
+      },
+      "defaultClientScopes": [
+        "basic",
+        "web-origins",
+        "acr",
+        "profile",
+        "roles",
+        "email"
+      ],
+      "protocolMappers": [
+        {
+          "name": "audience-apicurio-registry",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.client.audience": "apicurio-registry",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        },
+        {
+          "name": "groups-hardcoded-developer",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-hardcoded-claim-mapper",
+          "consentRequired": false,
+          "config": {
+            "claim.name": "groups",
+            "claim.value": "[\"/users/uniplus\"]",
+            "jsonType.label": "JSON",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "access.tokenResponse.claim": "false"
+          }
+        }
+      ]
+    },
     {
       "clientId": "uniplus-api-portal",
       "name": "Uni+ API Portal — Service Account (M2M)",
