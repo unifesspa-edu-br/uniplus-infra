@@ -118,7 +118,7 @@ gera segredo novo:
 | `secret/standalone/redis/default` | `$DATA_BASE/redis/.bootstrap-creds` (Task #406) |
 | `secret/standalone/minio/root` | `$DATA_BASE/minio/.bootstrap-creds` (Task #407) |
 | `secret/standalone/kafka/admin` | `$DATA_BASE/kafka/.bootstrap-creds` + `/etc/uniplus-kafka/certs/ca.crt` (Task #408) |
-| `secret/standalone/keycloak/clients/uniplus-api-{selecao,portal,ingresso}` | `kcadm.sh get clients/.../client-secret` no pod `keycloak-replica` (clients M2M já existentes no realm, issue #163) |
+| `secret/standalone/keycloak/clients/uniplus-api-{selecao,portal,ingresso,host}` | `kcadm.sh get clients/.../client-secret` no pod `keycloak-replica` (clients M2M já existentes no realm — selecao/portal/ingresso desde a issue #163, host desde a issue #423) |
 
 **Não cobre** `secret/standalone/postgres/portal` — o role+db Postgres
 dedicado só existe a partir da Task #413, populado dentro do procedimento
@@ -169,7 +169,7 @@ kubectl exec -n uniplus deploy/keycloak-replica -- sh -c "
   CID=\$(/opt/keycloak/bin/kcadm.sh get clients -r uniplus -q clientId=apicurio-registry --fields id --format csv --noquotes | tail -1)
   /opt/keycloak/bin/kcadm.sh get clients/\$CID/client-secret -r uniplus --fields value --format csv --noquotes
 " | tail -1 > /tmp/apicurio-cs
-vault kv put secret/standalone/keycloak/clients/apicurio-registry password=@/tmp/apicurio-cs
+vault kv put secret/standalone/keycloak/clients/apicurio-registry client_secret=@/tmp/apicurio-cs
 shred -u /tmp/apicurio-cs
 kill "$PF_PID" 2>/dev/null; unset VAULT_TOKEN VAULT_ADDR ROLE_PW PF_PID KC_ADMIN_PW  # sem exit — o passo 4 segue no mesmo shell
 
