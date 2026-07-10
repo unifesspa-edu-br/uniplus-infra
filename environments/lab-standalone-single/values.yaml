@@ -106,19 +106,14 @@ clusterSecretStore:
 # então Production rejeitaria o issuerUri http:// abaixo. Development
 # também relaxa a obrigatoriedade de Cors:AllowedOrigins.
 #
-# LIMITAÇÃO CONHECIDA (issue #423): com Kafka desligado, o pod fica
-# `Running` mas nunca `Ready` (0/1) — o SDK Confluent.Kafka da aplicação
-# registra um producer ativo mesmo sem `Kafka:BootstrapServers` configurado
-# (cai no default `localhost:9092`, loop de reconexão eterno), e isso
-# mantém o Kafka health check dentro de `/health` (readiness, agregado)
-# permanentemente Unhealthy — mesmo com todas as outras dependências reais
-# (Postgres, Redis, MinIO, Keycloak) saudáveis. Confirmado via
-# `/health/live` (dependency-free) respondendo Healthy e teste direto de
-# conectividade. `readinessProbe` usa `/health` hardcoded no
-# deployment.yaml do chart (não configurável via values sem alterar o
-# contrato usado em produção, onde esse comportamento é desejado). Resolve
-# quando a issue #423 (Apicurio Registry no lab) permitir religar Kafka
-# com Schema Registry real.
+# Kafka ligado desde a issue #423 (Apicurio Registry no lab) — antes disso
+# o pod ficava `Running` mas nunca `Ready` (0/1): com Kafka desligado, o SDK
+# Confluent.Kafka registrava um producer ativo mesmo sem
+# `Kafka:BootstrapServers` configurado (cai no default `localhost:9092`,
+# loop de reconexão eterno), mantendo o Kafka health check dentro de
+# `/health` (readiness, agregado) permanentemente Unhealthy. O template do
+# chart também foi corrigido para sempre renderizar `Kafka__BootstrapServers`
+# (nunca omitir), mesmo padrão já usado em uniplus-api-host.
 # ============================================================================
 uniplusApiPortal:
   enabled: true
@@ -131,7 +126,14 @@ uniplusApiPortal:
   redis:
     host: 192.168.1.65
   kafka:
-    enabled: false
+    enabled: true
+    bootstrapServers: 192.168.1.65:9092
+  schemaRegistry:
+    url: http://apicurio-registry-apicurio-registry.uniplus.svc.cluster.local:8080/apis/ccompat/v7
+    authType: OAuthBearer
+    oauth:
+      tokenEndpoint: http://keycloak-replica.uniplus.svc.cluster.local:8080/auth/realms/uniplus/protocol/openid-connect/token
+      clientId: uniplus-api-portal
   storage:
     endpoint: 192.168.1.65:9000
 
@@ -195,14 +197,21 @@ uniplusApiHost:
   redis:
     host: 192.168.1.65
 
-  # Desligado — mesma razão documentada no values.yaml do chart: sem
-  # Apicurio Registry no lab (issue #423), e o módulo Selecao (co-hospedado
-  # aqui) exige Schema Registry alcançável no boot quando Kafka está
-  # configurado. Kafka__BootstrapServers é sempre renderizado com " "
-  # (espaço) pelo template, não omitido — ver comentário completo no
-  # values.yaml do chart.
+  # Ligado desde a issue #423 (Apicurio Registry no lab) — o módulo Selecao
+  # (co-hospedado aqui) exige Schema Registry alcançável no boot quando
+  # Kafka está configurado. Kafka__BootstrapServers é sempre renderizado
+  # (nunca omitido) pelo template — ver comentário completo no values.yaml
+  # do chart.
   kafka:
-    enabled: false
+    enabled: true
+    bootstrapServers: 192.168.1.65:9092
+
+  schemaRegistry:
+    url: http://apicurio-registry-apicurio-registry.uniplus.svc.cluster.local:8080/apis/ccompat/v7
+    authType: OAuthBearer
+    oauth:
+      tokenEndpoint: http://keycloak-replica.uniplus.svc.cluster.local:8080/auth/realms/uniplus/protocol/openid-connect/token
+      clientId: uniplus-api-host
 
   storage:
     endpoint: 192.168.1.65:9000
@@ -232,3 +241,39 @@ uniplusApiHost:
 
   otel:
     enabled: false
+
+# ============================================================================
+# Apicurio Registry — Schema Registry para uniplus-api-host/uniplus-api-portal
+# (issue #423). Referência direta: environments/standalone-compact/values.yaml
+# (já validado em produção real), adaptado pro IP/hostnames do lab.
+# ============================================================================
+apicurioRegistry:
+  enabled: true
+
+  storage:
+    host: 192.168.1.65
+
+  oidc:
+    # In-cluster (mesmo padrão do resto do lab — sem Traefik/TLS de edge,
+    # Keycloak servido só via Service ClusterIP HTTP).
+    issuerUri: http://keycloak-replica.uniplus.svc.cluster.local:8080/auth/realms/uniplus
+
+  ingress:
+    enabled: false # acesso via kubectl port-forward, mesmo padrão do resto do lab
+
+  # DESLIGADA — mesmo racional já aplicado ao keycloak-replica neste lab.
+  # A ingress rule do chart só libera a porta 8080 para pods do namespace
+  # `traefik` (produção: todo tráfego HTTP ao Apicurio, mesmo intra-cluster,
+  # passa pelo Traefik — ver schemaRegistry.url em standalone-compact, que
+  # usa o hostname público https://schema-registry.standalone.portaluni.com.br,
+  # não o Service ClusterIP). Este lab não tem Traefik (ingress.enabled=false
+  # em todo o arquivo), então uniplus-api-host/uniplus-api-portal (namespace
+  # uniplus) nunca bateriam no allow-list — Connection refused no boot do
+  # SchemaRegistrationHostedService, CrashLoopBackOff (issue #423). Sem
+  # NetworkPolicy real fazendo falta num lab single-node sem fronteira de
+  # segurança a proteger, ao contrário de standalone-compact.
+  networkPolicy:
+    enabled: false
+
+  serviceMonitor:
+    enabled: false # sem Prometheus Operator no lab
