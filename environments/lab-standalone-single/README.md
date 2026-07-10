@@ -141,8 +141,11 @@ follow-up para criá-lo).
 
 > **Pré-requisito:** `./scripts/lab-standalone-single/seed-vault-secrets.sh` já deve ter rodado com
 > sucesso — o `ExternalSecret` desta API também referencia `secret/standalone/{redis/default,minio/root}`,
-> não só o Postgres escrito abaixo. Esse script exige o Keycloak já deployado (ver seção acima);
-> numa VM nova ele não roda sozinho dentro do `bootstrap.sh` por essa razão.
+> não só o Postgres escrito abaixo. Esse script exige o Keycloak já deployado — chart
+> `apps/keycloak-replica/` vem **desabilitado** por padrão, este `values.yaml` não liga
+> `keycloak.enabled`; precisa `--set keycloak.enabled=true` além dos pré-requisitos próprios
+> documentados em `apps/keycloak-replica/README.md`. Numa VM nova, `seed-vault-secrets.sh` não
+> roda sozinho dentro do `bootstrap.sh` por essa razão.
 
 Pré-requisitos específicos desta API, feitos manualmente (não cobertos por
 `seed-vault-secrets.sh`):
@@ -221,8 +224,11 @@ lab abaixo.
 
 > **Pré-requisito:** `./scripts/lab-standalone-single/seed-vault-secrets.sh` já deve ter rodado com
 > sucesso — o `ExternalSecret` desta API também referencia `secret/standalone/{redis/default,minio/root}`,
-> não só o Postgres escrito abaixo. Esse script exige o Keycloak já deployado (ver seção acima);
-> numa VM nova ele não roda sozinho dentro do `bootstrap.sh` por essa razão.
+> não só o Postgres escrito abaixo. Esse script exige o Keycloak já deployado — chart
+> `apps/keycloak-replica/` vem **desabilitado** por padrão, este `values.yaml` não liga
+> `keycloak.enabled`; precisa `--set keycloak.enabled=true` além dos pré-requisitos próprios
+> documentados em `apps/keycloak-replica/README.md`. Numa VM nova, `seed-vault-secrets.sh` não
+> roda sozinho dentro do `bootstrap.sh` por essa razão.
 
 ```bash
 export KUBECONFIG="$HOME/.kube/config"   # ver RUNBOOKS.md §20.3 — sem isso, kubectl/helm bare falham com "permission denied"
