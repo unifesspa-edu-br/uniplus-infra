@@ -10,9 +10,27 @@ metadata:
   labels:
     {{- include "keycloak-replica.labels" . | nindent 4 }}
 spec:
+  # matchExpressions (não matchLabels) para EXCLUIR o pod do Job
+  # realm-reconcile — ele herda os mesmos labels name/instance do pod real
+  # do Keycloak (template realm-reconcile-job.yaml usa o helper
+  # keycloak-replica.labels completo), então um podSelector simples por
+  # name+instance também o selecionaria, sujeitando-o ao mesmo egress
+  # restritivo desta policy (só Postgres+DNS) — o Job chama a REST API do
+  # Keycloak via Service de rede (KEYCLOAK_URL=http://<service>.svc...:8080),
+  # não localhost, e essa chamada é egress, não ingress (a regra de ingress
+  # abaixo para uniplus.io/job-role=realm-reconcile cobre só a direção
+  # oposta). Sem essa exclusão, o Job trava/falha em backoffLimit tentando
+  # falar com o próprio Keycloak que deveria reconciliar.
   podSelector:
-    matchLabels:
-      {{- include "keycloak-replica.selectorLabels" . | nindent 6 }}
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: [{{ include "keycloak-replica.name" . | quote }}]
+      - key: app.kubernetes.io/instance
+        operator: In
+        values: [{{ .Release.Name | quote }}]
+      - key: uniplus.io/job-role
+        operator: DoesNotExist
   policyTypes:
     - Ingress
     - Egress
