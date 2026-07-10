@@ -3741,6 +3741,8 @@ Procedimento manual — não coberto pelo `bootstrap.sh` (§20.2). Resumo para `
 (idêntico em espírito para `uniplus-api-portal`, com banco/role próprios):
 
 ```bash
+export KUBECONFIG="$HOME/.kube/config"   # ver §20.3 — sem isso, kubectl/helm bare falham com "permission denied"
+
 # 1. Role + database únicos no Postgres (banco compartilhado pelos 4 módulos do Host)
 sudo docker exec -i uniplus-postgres psql -U postgres <<SQL
 CREATE ROLE uniplus WITH LOGIN PASSWORD '<senha gerada com openssl rand -hex 32>';
@@ -3750,7 +3752,7 @@ SQL
 # 2. A MESMA senha usada acima no Vault — vault CLI local via port-forward,
 #    mesma higiene de credenciais da §8.4.3 (nunca token/senha em argv;
 #    process substitution evita gravar a senha em disco)
-sudo kubectl -n vault port-forward vault-0 8200:8200 > /tmp/vault-pf.log 2>&1 &
+kubectl -n vault port-forward vault-0 8200:8200 > /tmp/vault-pf.log 2>&1 &
 PF_PID=$!
 trap 'kill "$PF_PID" 2>/dev/null; unset VAULT_TOKEN VAULT_ADDR ROLE_PW' EXIT
 export VAULT_ADDR=http://127.0.0.1:8200
