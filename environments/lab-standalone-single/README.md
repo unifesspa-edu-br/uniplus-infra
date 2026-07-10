@@ -148,10 +148,35 @@ follow-up para criá-lo).
 > esse CIDR quando `networkPolicy.enabled=true`, default do chart. `KC_HOSTNAME_STRICT=true` também é
 > default do chart, mas `hostname.url` vazio faz o Deployment omitir `KC_HOSTNAME` inteiro — sem
 > hostname público neste lab, `hostname.strict=false` evita o Keycloak falhar validando um
-> hostname que não existe):
+> hostname que não existe). Role+database `keycloak` no Postgres e os secrets
+> `secret/standalone/postgres/keycloak`/`secret/standalone/keycloak/admin` no Vault também não são
+> criados por `bootstrap.sh` nem `seed-vault-secrets.sh` — o `ExternalSecret` do chart consome os
+> dois via `envFrom` (ver pré-requisitos completos em `apps/keycloak-replica/README.md`):
 >
 > ```bash
 > export KUBECONFIG="$HOME/.kube/config"   # ver RUNBOOKS.md §20.3 — sem isso, kubectl/helm bare falham com "permission denied"
+>
+> # 0a. Role + database do Keycloak no Postgres
+> sudo docker exec -i uniplus-postgres psql -U postgres <<SQL
+> CREATE ROLE keycloak WITH LOGIN PASSWORD '<senha gerada com openssl rand -hex 32>';
+> CREATE DATABASE keycloak WITH OWNER = keycloak ENCODING = 'UTF8' LC_COLLATE = 'C.UTF-8' LC_CTYPE = 'C.UTF-8' TEMPLATE = template0;
+> SQL
+>
+> # 0b. Secrets do Keycloak no Vault — mesma higiene de credenciais da §8.4.3 do RUNBOOKS.md
+> kubectl -n vault port-forward vault-0 8200:8200 > /tmp/vault-pf.log 2>&1 &
+> PF_PID=$!
+> trap 'kill "$PF_PID" 2>/dev/null; unset VAULT_TOKEN VAULT_ADDR' EXIT
+> export VAULT_ADDR=http://127.0.0.1:8200
+> until curl -s --max-time 1 "$VAULT_ADDR/v1/sys/health" >/dev/null 2>&1; do sleep 1; done
+> read -rsp "Root token: " VAULT_TOKEN; echo
+> export VAULT_TOKEN
+> read -rsp "Senha do role keycloak (a mesma do passo 0a): " KC_DB_PW; echo
+> vault kv put secret/standalone/postgres/keycloak host=192.168.1.65 port=5432 database=keycloak username=keycloak password=@<(printf '%s' "$KC_DB_PW")
+> read -rsp "Senha do admin bootstrap do Keycloak (nova, escolha do operador): " KC_ADMIN_PW; echo
+> vault kv put secret/standalone/keycloak/admin username=admin password=@<(printf '%s' "$KC_ADMIN_PW")
+> kill "$PF_PID" 2>/dev/null; unset VAULT_TOKEN VAULT_ADDR KC_DB_PW KC_ADMIN_PW PF_PID
+>
+> # 0c. Deploy
 > helm install keycloak-replica apps/keycloak-replica/ -f environments/lab-standalone-single/values.yaml \
 >   --set keycloak.enabled=true \
 >   --set keycloak.networkPolicy.dataHostCIDR=192.168.1.65/32 \
@@ -159,10 +184,6 @@ follow-up para criá-lo).
 >   --set keycloak.hostname.strict=false \
 >   --namespace uniplus --create-namespace
 > ```
->
-> Além disso: role+database `keycloak` no Postgres e os secrets `secret/standalone/postgres/keycloak`
-> e `secret/standalone/keycloak/admin` no Vault — nenhum dos dois é criado por `bootstrap.sh` nem
-> `seed-vault-secrets.sh`; ver pré-requisitos completos em `apps/keycloak-replica/README.md`.
 
 Pré-requisitos específicos desta API, feitos manualmente (não cobertos por
 `seed-vault-secrets.sh`):
@@ -248,10 +269,35 @@ lab abaixo.
 > esse CIDR quando `networkPolicy.enabled=true`, default do chart. `KC_HOSTNAME_STRICT=true` também é
 > default do chart, mas `hostname.url` vazio faz o Deployment omitir `KC_HOSTNAME` inteiro — sem
 > hostname público neste lab, `hostname.strict=false` evita o Keycloak falhar validando um
-> hostname que não existe):
+> hostname que não existe). Role+database `keycloak` no Postgres e os secrets
+> `secret/standalone/postgres/keycloak`/`secret/standalone/keycloak/admin` no Vault também não são
+> criados por `bootstrap.sh` nem `seed-vault-secrets.sh` — o `ExternalSecret` do chart consome os
+> dois via `envFrom` (ver pré-requisitos completos em `apps/keycloak-replica/README.md`):
 >
 > ```bash
 > export KUBECONFIG="$HOME/.kube/config"   # ver RUNBOOKS.md §20.3 — sem isso, kubectl/helm bare falham com "permission denied"
+>
+> # 0a. Role + database do Keycloak no Postgres
+> sudo docker exec -i uniplus-postgres psql -U postgres <<SQL
+> CREATE ROLE keycloak WITH LOGIN PASSWORD '<senha gerada com openssl rand -hex 32>';
+> CREATE DATABASE keycloak WITH OWNER = keycloak ENCODING = 'UTF8' LC_COLLATE = 'C.UTF-8' LC_CTYPE = 'C.UTF-8' TEMPLATE = template0;
+> SQL
+>
+> # 0b. Secrets do Keycloak no Vault — mesma higiene de credenciais da §8.4.3 do RUNBOOKS.md
+> kubectl -n vault port-forward vault-0 8200:8200 > /tmp/vault-pf.log 2>&1 &
+> PF_PID=$!
+> trap 'kill "$PF_PID" 2>/dev/null; unset VAULT_TOKEN VAULT_ADDR' EXIT
+> export VAULT_ADDR=http://127.0.0.1:8200
+> until curl -s --max-time 1 "$VAULT_ADDR/v1/sys/health" >/dev/null 2>&1; do sleep 1; done
+> read -rsp "Root token: " VAULT_TOKEN; echo
+> export VAULT_TOKEN
+> read -rsp "Senha do role keycloak (a mesma do passo 0a): " KC_DB_PW; echo
+> vault kv put secret/standalone/postgres/keycloak host=192.168.1.65 port=5432 database=keycloak username=keycloak password=@<(printf '%s' "$KC_DB_PW")
+> read -rsp "Senha do admin bootstrap do Keycloak (nova, escolha do operador): " KC_ADMIN_PW; echo
+> vault kv put secret/standalone/keycloak/admin username=admin password=@<(printf '%s' "$KC_ADMIN_PW")
+> kill "$PF_PID" 2>/dev/null; unset VAULT_TOKEN VAULT_ADDR KC_DB_PW KC_ADMIN_PW PF_PID
+>
+> # 0c. Deploy
 > helm install keycloak-replica apps/keycloak-replica/ -f environments/lab-standalone-single/values.yaml \
 >   --set keycloak.enabled=true \
 >   --set keycloak.networkPolicy.dataHostCIDR=192.168.1.65/32 \
@@ -259,10 +305,6 @@ lab abaixo.
 >   --set keycloak.hostname.strict=false \
 >   --namespace uniplus --create-namespace
 > ```
->
-> Além disso: role+database `keycloak` no Postgres e os secrets `secret/standalone/postgres/keycloak`
-> e `secret/standalone/keycloak/admin` no Vault — nenhum dos dois é criado por `bootstrap.sh` nem
-> `seed-vault-secrets.sh`; ver pré-requisitos completos em `apps/keycloak-replica/README.md`.
 
 ```bash
 export KUBECONFIG="$HOME/.kube/config"   # ver RUNBOOKS.md §20.3 — sem isso, kubectl/helm bare falham com "permission denied"
