@@ -161,7 +161,7 @@ read -rsp "Root token: " VAULT_TOKEN; echo
 export VAULT_TOKEN
 read -rsp "Senha do role (a mesma do passo 1): " ROLE_PW; echo
 vault kv put secret/standalone/postgres/portal password=@<(printf '%s' "$ROLE_PW")
-exit  # dispara o trap acima (kill port-forward + unset)
+kill "$PF_PID" 2>/dev/null; unset VAULT_TOKEN VAULT_ADDR ROLE_PW PF_PID  # sem exit — os passos 3-5 seguem no mesmo shell
 
 # 3. LocalKey de cifragem (encryption.provider=local) — Secret K8s manual,
 #    não versionado; cada environment gera a sua
@@ -228,7 +228,7 @@ read -rsp "Root token: " VAULT_TOKEN; echo
 export VAULT_TOKEN
 read -rsp "Senha do role (a mesma do passo 1): " ROLE_PW; echo
 vault kv put secret/standalone/postgres/uniplus password=@<(printf '%s' "$ROLE_PW")
-exit  # dispara o trap acima (kill port-forward + unset)
+kill "$PF_PID" 2>/dev/null; unset VAULT_TOKEN VAULT_ADDR ROLE_PW PF_PID  # sem exit — os passos 3-5 seguem no mesmo shell
 
 # 3. LocalKey de cifragem — Secret K8s manual, não versionado
 kubectl create secret generic uniplus-api-host-encryption-local \
