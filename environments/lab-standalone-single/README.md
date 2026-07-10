@@ -162,7 +162,7 @@ follow-up para criá-lo).
 > export KUBECONFIG="$HOME/.kube/config"   # ver RUNBOOKS.md §20.3 — sem isso, kubectl/helm bare falham com "permission denied"
 >
 > # 0a. Role + database do Keycloak no Postgres
-> sudo docker exec -i uniplus-postgres psql -U postgres <<SQL
+> sudo docker exec -i uniplus-postgres psql -U postgres -v ON_ERROR_STOP=1 <<SQL
 > CREATE ROLE keycloak WITH LOGIN PASSWORD '<senha gerada com openssl rand -hex 32>';
 > CREATE DATABASE keycloak WITH OWNER = keycloak ENCODING = 'UTF8' LC_COLLATE = 'C.UTF-8' LC_CTYPE = 'C.UTF-8' TEMPLATE = template0;
 > SQL
@@ -197,7 +197,7 @@ Pré-requisitos específicos desta API, feitos manualmente (não cobertos por
 export KUBECONFIG="$HOME/.kube/config"   # ver RUNBOOKS.md §20.3 — sem isso, kubectl/helm bare falham com "permission denied"
 
 # 1. Role + database dedicados no Postgres
-sudo docker exec -i uniplus-postgres psql -U postgres <<SQL
+sudo docker exec -i uniplus-postgres psql -U postgres -v ON_ERROR_STOP=1 <<SQL
 CREATE ROLE portal WITH LOGIN PASSWORD '<senha gerada com openssl rand -hex 32>';
 CREATE DATABASE uniplus_portal WITH OWNER = portal ENCODING = 'UTF8' LC_COLLATE = 'C.UTF-8' LC_CTYPE = 'C.UTF-8' TEMPLATE = template0;
 SQL
@@ -288,7 +288,7 @@ lab abaixo.
 > export KUBECONFIG="$HOME/.kube/config"   # ver RUNBOOKS.md §20.3 — sem isso, kubectl/helm bare falham com "permission denied"
 >
 > # 0a. Role + database do Keycloak no Postgres
-> sudo docker exec -i uniplus-postgres psql -U postgres <<SQL
+> sudo docker exec -i uniplus-postgres psql -U postgres -v ON_ERROR_STOP=1 <<SQL
 > CREATE ROLE keycloak WITH LOGIN PASSWORD '<senha gerada com openssl rand -hex 32>';
 > CREATE DATABASE keycloak WITH OWNER = keycloak ENCODING = 'UTF8' LC_COLLATE = 'C.UTF-8' LC_CTYPE = 'C.UTF-8' TEMPLATE = template0;
 > SQL
@@ -320,7 +320,7 @@ lab abaixo.
 export KUBECONFIG="$HOME/.kube/config"   # ver RUNBOOKS.md §20.3 — sem isso, kubectl/helm bare falham com "permission denied"
 
 # 1. Role + database únicos no Postgres (banco compartilhado pelos 4 módulos)
-sudo docker exec -i uniplus-postgres psql -U postgres <<SQL
+sudo docker exec -i uniplus-postgres psql -U postgres -v ON_ERROR_STOP=1 <<SQL
 CREATE ROLE uniplus WITH LOGIN PASSWORD '<senha gerada com openssl rand -hex 32>';
 CREATE DATABASE uniplus WITH OWNER = uniplus ENCODING = 'UTF8' LC_COLLATE = 'C.UTF-8' LC_CTYPE = 'C.UTF-8' TEMPLATE = template0;
 SQL
