@@ -40,6 +40,13 @@ spec:
     metadata:
       labels:
         {{- include "unifesspaGeoApi.labels" . | nindent 8 }}
+      {{- if .Values.unifesspaGeoApi.customCA.enabled }}
+      annotations:
+        # Ver comentário completo em apps/uniplus-api-host/templates/
+        # deployment.yaml — sem isso, rotacionar customCA.certPEM não
+        # dispara rollout, pods já rodando ficam com o bundle antigo.
+        checksum/custom-ca: {{ .Values.unifesspaGeoApi.customCA.certPEM | sha256sum }}
+      {{- end }}
     spec:
       serviceAccountName: {{ include "unifesspaGeoApi.serviceAccountName" . }}
       # automountServiceAccountToken=true é necessário quando Provider=vault:
