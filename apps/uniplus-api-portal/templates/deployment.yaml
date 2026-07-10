@@ -106,13 +106,23 @@ spec:
                   key: REDIS_PASSWORD
             - name: Redis__ConnectionString
               value: "{{ .Values.uniplusApiPortal.redis.host }}:{{ .Values.uniplusApiPortal.redis.port }},user={{ .Values.uniplusApiPortal.redis.username }},password=$(REDIS_PASSWORD)"
+            # === Kafka — BootstrapServers SEMPRE setado (nunca omitido). A API
+            # lê via string.IsNullOrWhiteSpace em WolverineOutboxConfiguration
+            # (uniplus-api) — " " (espaço) é tratado como "vazio" por essa
+            # checagem, desligando o transporte Kafka de forma limpa. Omitir a
+            # env var por completo faz o SDK Confluent.Kafka cair no default
+            # localhost:9092 e entrar em loop de reconexão eterno, mantendo o
+            # Kafka health check dentro de /health (readiness) permanentemente
+            # Unhealthy mesmo com o transporte desligado (bug real descoberto
+            # na Task #412, revertida — issue #423). Mesmo padrão já usado em
+            # apps/uniplus-api-host/templates/deployment.yaml.
+            - name: Kafka__BootstrapServers
+              value: {{ if .Values.uniplusApiPortal.kafka.enabled }}{{ .Values.uniplusApiPortal.kafka.bootstrapServers | quote }}{{ else }}" "{{ end }}
             {{- if .Values.uniplusApiPortal.kafka.enabled }}
             # === Kafka (SASL_SSL + SCRAM via .NET nested binding) ===
             # Confluent.Kafka client lê estas env como AdminClientConfig/
             # ProducerConfig.SecurityProtocol/SaslMechanism/SaslUsername/etc
             # quando bind via IConfiguration.GetSection("Kafka").
-            - name: Kafka__BootstrapServers
-              value: {{ .Values.uniplusApiPortal.kafka.bootstrapServers | quote }}
             - name: Kafka__SecurityProtocol
               value: {{ .Values.uniplusApiPortal.kafka.securityProtocol | quote }}
             - name: Kafka__SaslMechanism
