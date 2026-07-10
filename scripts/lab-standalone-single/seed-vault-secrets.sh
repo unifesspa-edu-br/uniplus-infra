@@ -2,7 +2,7 @@
 # scripts/lab-standalone-single/seed-vault-secrets.sh
 #
 # Popula no Vault do lab (platform/vault/, Task #409) os secrets que os
-# charts uniplus-api-{selecao,portal,ingresso} e keycloak-replica esperam
+# charts uniplus-api-{selecao,portal,ingresso,host} e keycloak-replica esperam
 # nos vaultPaths default (ver apps/uniplus-api-*/values.yaml
 # externalSecrets.*.vaultPath). Lê as credenciais das fontes de verdade já
 # existentes nesta VM — nunca gera segredo novo — e apenas sincroniza o
@@ -97,7 +97,7 @@ done
 
 log_info "Recuperando client_secrets M2M do Keycloak (deploy/$KEYCLOAK_DEPLOYMENT -n $KEYCLOAK_NAMESPACE)..."
 declare -A client_secrets
-for client in uniplus-api-selecao uniplus-api-portal uniplus-api-ingresso; do
+for client in uniplus-api-selecao uniplus-api-portal uniplus-api-ingresso uniplus-api-host; do
     if $DRY_RUN; then
         log_warn "Dry-run: client_secret de $client seria recuperado via kcadm.sh"
         client_secrets[$client]="DRY-RUN-PLACEHOLDER"
@@ -150,6 +150,7 @@ printf '%s' "$kafka_pw" > "$tmpdir/kafka_pw"
 printf '%s' "${client_secrets[uniplus-api-selecao]}" > "$tmpdir/oidc_selecao"
 printf '%s' "${client_secrets[uniplus-api-portal]}" > "$tmpdir/oidc_portal"
 printf '%s' "${client_secrets[uniplus-api-ingresso]}" > "$tmpdir/oidc_ingresso"
+printf '%s' "${client_secrets[uniplus-api-host]}" > "$tmpdir/oidc_host"
 cp "$KAFKA_CA_CERT" "$tmpdir/ca_crt" 2>/dev/null || sudo cp "$KAFKA_CA_CERT" "$tmpdir/ca_crt"
 # Fallback via sudo deixa ca_crt dono root — chown de volta pro usuário atual
 # antes do chmod não-privilegiado abaixo (senão "Operation not permitted"
@@ -190,9 +191,12 @@ vault kv put secret/standalone/keycloak/clients/uniplus-api-portal \
 
 vault kv put secret/standalone/keycloak/clients/uniplus-api-ingresso \
     client_secret=@/tmp/vault-seed/oidc_ingresso >/dev/null
+
+vault kv put secret/standalone/keycloak/clients/uniplus-api-host \
+    client_secret=@/tmp/vault-seed/oidc_host >/dev/null
 REMOTE_SCRIPT
 
 unset redis_pw minio_user minio_pw kafka_pw vault_root_token client_secrets
 
-log_success "Secrets populados no Vault: redis/default, minio/root, kafka/admin, keycloak/clients/uniplus-api-{selecao,portal,ingresso}."
+log_success "Secrets populados no Vault: redis/default, minio/root, kafka/admin, keycloak/clients/uniplus-api-{selecao,portal,ingresso,host}."
 log_warn "secret/standalone/postgres/{selecao,portal,ingresso} pendente — populado dentro das Tasks #412/#413/#414."
