@@ -161,14 +161,16 @@ vault kv put secret/standalone/postgres/apicurio username=apicurio password=@<(p
 
 # 3. client_secret do client "apicurio-registry" (já existe no realm.json
 #    desde a issue #152) — recuperar via kcadm dentro do próprio pod do
-#    Keycloak, nunca em argv local
+#    Keycloak. Senha via stdin (sh -c de aspas simples, sem interpolação
+#    local) — nunca em argv local nem do pod.
 KC_ADMIN_PW=$(vault kv get -field=password secret/standalone/keycloak/admin)
-kubectl exec -n uniplus deploy/keycloak-replica -- sh -c "
+printf '%s' "$KC_ADMIN_PW" | kubectl exec -i -n uniplus deploy/keycloak-replica -- sh -c '
+  read -r ADMIN_PW
   /opt/keycloak/bin/kcadm.sh config credentials --server http://localhost:8080/auth \
-    --realm master --user admin --password '$KC_ADMIN_PW'
-  CID=\$(/opt/keycloak/bin/kcadm.sh get clients -r uniplus -q clientId=apicurio-registry --fields id --format csv --noquotes | tail -1)
-  /opt/keycloak/bin/kcadm.sh get clients/\$CID/client-secret -r uniplus --fields value --format csv --noquotes
-" | tail -1 > /tmp/apicurio-cs
+    --realm master --user admin --password "$ADMIN_PW"
+  CID=$(/opt/keycloak/bin/kcadm.sh get clients -r uniplus -q clientId=apicurio-registry --fields id --format csv --noquotes | tail -1)
+  /opt/keycloak/bin/kcadm.sh get clients/$CID/client-secret -r uniplus --fields value --format csv --noquotes
+' | tail -1 > /tmp/apicurio-cs
 vault kv put secret/standalone/keycloak/clients/apicurio-registry client_secret=@/tmp/apicurio-cs
 shred -u /tmp/apicurio-cs
 kill "$PF_PID" 2>/dev/null; unset VAULT_TOKEN VAULT_ADDR ROLE_PW PF_PID KC_ADMIN_PW  # sem exit — o passo 4 segue no mesmo shell
