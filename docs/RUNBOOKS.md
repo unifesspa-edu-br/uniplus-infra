@@ -3754,6 +3754,7 @@ Procedimento manual — não coberto pelo `bootstrap.sh` (§20.2). Resumo para `
 > hostname que não existe):
 >
 > ```bash
+> export KUBECONFIG="$HOME/.kube/config"   # ver §20.3 — sem isso, kubectl/helm bare falham com "permission denied"
 > helm install keycloak-replica apps/keycloak-replica/ -f environments/lab-standalone-single/values.yaml \
 >   --set keycloak.enabled=true \
 >   --set keycloak.networkPolicy.dataHostCIDR=192.168.1.65/32 \
