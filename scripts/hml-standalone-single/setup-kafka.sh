@@ -192,10 +192,21 @@ fi
 # --add-scram só é honrado no format inicial. Roda ANTES do systemctl start
 # na 1ª execução, em container ad-hoc; runs subsequentes veem storage já
 # formatado (meta.properties presente) e pulam este passo.
+#
+# `kafka-storage.sh format --add-scram` só aceita a senha como argumento
+# posicional — não há alternativa via arquivo/env na própria ferramenta
+# (kafka-storage.sh do Kafka 4.2 não lê SCRAM de stdin nem de config file).
+# Passar `--add-scram "...password=$admin_pw_init"` direto no `docker run`
+# exporia a senha no argv do processo HOST (visível via ps/`/proc/<pid>/
+# cmdline` a qualquer usuário local enquanto o comando roda). Mitigado
+# montando a senha como arquivo (mode 400, só root) e construindo o
+# argumento --add-scram DENTRO do container via `sh -c` com script FIXO
+# (sem a senha interpolada na string do script — só o comando `cat` que a
+# lê em runtime): o argv do `docker run` visível no host mostra o texto
+# fixo do script, nunca o valor da senha.
 if ! $DRY_RUN && ! $already_initialized && sudo test -f "$CREDS_FILE"; then
     log_info "Format do storage com --add-scram (admin SCRAM-SHA-512 embarcada)..."
     cluster_id_init=$(sudo grep '^cluster_id=' "$CREDS_FILE" | cut -d= -f2)
-    admin_pw_init=$(sudo grep '^admin_pw=' "$CREDS_FILE" | cut -d= -f2)
 
     fmt_props=$(sudo mktemp)
     sudo tee "$fmt_props" >/dev/null <<EOF
@@ -211,21 +222,25 @@ log.dirs=/var/lib/kafka/data
 EOF
     sudo chmod 644 "$fmt_props"
 
+    admin_pw_file=$(sudo mktemp)
+    sudo grep '^admin_pw=' "$CREDS_FILE" | cut -d= -f2 | sudo tee "$admin_pw_file" >/dev/null
+    sudo chmod 400 "$admin_pw_file"
+
     if ! sudo docker run --rm \
         -v "$DATA_BASE/kafka/data:/var/lib/kafka/data" \
         -v "$fmt_props:/opt/kafka/config/format.properties:ro" \
-        --entrypoint /opt/kafka/bin/kafka-storage.sh \
+        -v "$admin_pw_file:/run/secrets/admin_pw:ro" \
+        --entrypoint /bin/sh \
         "$KAFKA_IMAGE" \
-        format --config /opt/kafka/config/format.properties \
-               --cluster-id "$cluster_id_init" \
-               --add-scram "SCRAM-SHA-512=[name=admin,password=$admin_pw_init]" \
-               --ignore-formatted >/dev/null 2>&1; then
+        -c 'exec /opt/kafka/bin/kafka-storage.sh format --config /opt/kafka/config/format.properties --cluster-id "$1" --add-scram "SCRAM-SHA-512=[name=admin,password=$(cat /run/secrets/admin_pw)]" --ignore-formatted' \
+        -- "$cluster_id_init" >/dev/null 2>&1; then
         log_error "Format do storage falhou. Re-rode manualmente em verbose para diagnosticar."
-        sudo rm -f "$fmt_props"
+        sudo rm -f "$fmt_props" "$admin_pw_file"
         exit 1
     fi
     sudo rm -f "$fmt_props"
-    unset cluster_id_init admin_pw_init
+    sudo shred -u "$admin_pw_file"
+    unset cluster_id_init
     log_success "Storage formatado com admin SCRAM-SHA-512 embarcada."
 fi
 
