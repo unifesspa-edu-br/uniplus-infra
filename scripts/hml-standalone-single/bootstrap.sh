@@ -452,8 +452,19 @@ UNIT
         # postgis/postgis, ~1-2GB na 1ª vez, mais o ciclo initdb+restart dos
         # entrypoints oficiais excedeu o timeout fixo anterior; achado #4 do
         # spike, não corrigido lá por não ser bloqueante — corrigido aqui.
+        #
+        # `-h 127.0.0.1` força o probe via TCP, não Unix socket: num data dir
+        # novo, o entrypoint oficial do Postgres (herdado pelo postgis/postgis)
+        # sobe um servidor TEMPORÁRIO socket-only (listen_addresses='') pra
+        # rodar os scripts de init, para esse servidor, e só DEPOIS sobe o
+        # servidor final com listen_addresses=0.0.0.0 (o que o unit systemd
+        # configura). `pg_isready` sem -h usa o socket local por padrão — sem
+        # forçar TCP, o probe passaria contra o servidor temporário, e
+        # step_setup_postgres_databases correria o risco de bater exatamente
+        # na janela entre o temporário cair e o final subir (connection
+        # refused).
         local attempts=0
-        until sudo docker exec uniplus-postgres pg_isready -U postgres &>/dev/null; do
+        until sudo docker exec uniplus-postgres pg_isready -h 127.0.0.1 -U postgres &>/dev/null; do
             attempts=$(( attempts + 1 ))
             if (( attempts >= 60 )); then
                 log_error "Postgres não ficou ready em 5min. Ver: sudo journalctl -u uniplus-postgres -n 50"
