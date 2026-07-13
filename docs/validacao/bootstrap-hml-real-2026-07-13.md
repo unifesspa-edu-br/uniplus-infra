@@ -116,13 +116,27 @@ Nenhum agente autônomo deveria ser o único a manusear essas chaves sem um oper
 para recebê-las.
 
 **Procedimento para retomar** (`docs/RUNBOOKS.md §8.4`, adaptado — threshold 5/3 já é o padrão de
-lá, só o pod/namespace mudam para `platform-vault-in-cluster` / `vault`):
+lá, só o pod/namespace mudam para `platform-vault-in-cluster` / `vault`). **Não** rodar
+`vault operator init` direto no terminal (imprimiria as 5 unseal keys + root token em texto
+puro no stdout/scrollback, sem nenhum artefato protegido para custódia) — seguir o fluxo seguro
+de `docs/RUNBOOKS.md §8.4.1` (arquivo mode 0600 criado ANTES do redirect, nunca no terminal):
 
 ```bash
 ssh jeferson@192.168.21.134
-kubectl -n vault exec -it platform-vault-in-cluster-0 -- vault operator init -key-shares=5 -key-threshold=3
-# Distribuir as 5 shares entre custodiantes distintos (ver ADR-014). Depois:
-kubectl -n vault exec -it platform-vault-in-cluster-0 -- vault operator unseal   # x3, prompt mascarado
+
+# Init — output (5 unseal keys + root token) vai DIRETO pro arquivo, nunca pro terminal.
+# mode 600 criado ANTES do redirect (evita janela de exposição a outros usuários do host).
+INIT_FILE=$(mktemp -t vault-init.XXXXXX.json)
+chmod 600 "$INIT_FILE"
+kubectl -n vault exec platform-vault-in-cluster-0 -- \
+  vault operator init -format=json -key-shares=5 -key-threshold=3 > "$INIT_FILE"
+echo "Init output em $INIT_FILE — exportar para gestor institucional (distribuir as 5 shares"
+echo "entre custodiantes distintos, ver ADR-014) e rodar 'shred -u $INIT_FILE' depois."
+
+# Unseal (3x, prompt mascarado nativo — chave nunca toca terminal/argv):
+kubectl -n vault exec -it platform-vault-in-cluster-0 -- vault operator unseal
+kubectl -n vault exec -it platform-vault-in-cluster-0 -- vault operator unseal
+kubectl -n vault exec -it platform-vault-in-cluster-0 -- vault operator unseal
 # Configurar auth Kubernetes + policy/role external-secrets (docs/RUNBOOKS.md §8.4.3, adaptado)
 # ArgoCD reconcilia sozinho (self-heal) assim que a role existir — sem precisar re-sync manual
 ```
