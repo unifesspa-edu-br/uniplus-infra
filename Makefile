@@ -12,8 +12,14 @@ MAKEFLAGS += --no-print-directory
 # ============================================================================
 
 # Charts a serem processados. Atualizar se nova área surgir.
+#
+# platform/*/Chart.yaml sozinho não pega platform/observability/<x>/Chart.yaml
+# (1 nível a mais) — combinado explicitamente, senão helm-lint/schema-validate/
+# helm-template pulam os 5 charts de observability silenciosamente (achado real
+# em 2026-07-13: nenhum dos três cobria observability, embora o job "Manifest
+# Validate" do CI, que não usa este Makefile, já cobrisse via glob próprio).
 CHARTS_APPS     := $(wildcard apps/*/Chart.yaml)
-CHARTS_PLATFORM := $(wildcard platform/*/Chart.yaml)
+CHARTS_PLATFORM := $(wildcard platform/*/Chart.yaml) $(wildcard platform/observability/*/Chart.yaml)
 CHARTS_ALL      := $(CHARTS_APPS) $(CHARTS_PLATFORM)
 CHART_DIRS      := $(dir $(CHARTS_ALL))
 
