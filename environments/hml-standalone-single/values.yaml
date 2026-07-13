@@ -138,15 +138,25 @@ serviceMonitor:
 # (que também commita `true` direto).
 #
 # vaultServer: release do Vault, gerado pelo ApplicationSet como
-# `platform-vault-<cluster>` (o chart não usa fullnameOverride). O ArgoCD do
-# `standalone-compact` roda self-hosted no próprio cluster que gerencia,
-# registrado via `argocd cluster add ... --in-cluster` — e o nome resultante
-# usado pelo ApplicationSet é sempre o literal `in-cluster`, não o valor
-# passado em `--name` (empírico, ver comentário em
-# `environments/standalone-compact/values.yaml` linha ~674). A Story #442
-# instala ArgoCD na própria VM HML seguindo o mesmo padrão (self-hosted,
-# `--in-cluster`) — então o release aqui É `platform-vault-in-cluster`, igual
-# ao `standalone-compact`, não um nome específico do HML.
+# `platform-vault-<cluster>` (o chart não usa fullnameOverride), onde
+# `<cluster>` é o `.name` do cluster ArgoCD — reflete o valor passado em
+# `--name` no `argocd cluster add` (ou o contexto kubeconfig, se `--name`
+# for omitido); `--in-cluster` sozinho NÃO força esse nome para `in-cluster`
+# (a doc do `argocd cluster add` documenta `--name` como parâmetro que
+# sobrescreve o nome do cluster, independente de `--in-cluster`).
+#
+# Em `standalone-compact` o resultado observado é o literal `in-cluster`
+# (`platform-vault-in-cluster`, ver comentário em
+# `environments/standalone-compact/values.yaml` linha ~674) — presumivelmente
+# porque `--name in-cluster` foi passado explicitamente no registro original.
+# A Story #442 instala ArgoCD na própria VM HML seguindo o mesmo padrão
+# self-hosted, então este arquivo já assume `platform-vault-in-cluster` —
+# mas isso só fica correto se a Story #445 passar `--name in-cluster`
+# EXPLICITAMENTE ao registrar o cluster (contrato documentado em
+# `docs/RUNBOOKS.md §21.7` e no resumo de
+# `scripts/hml-standalone-single/bootstrap.sh`). Registrar com qualquer
+# outro nome (ou sem `--name`, herdando o contexto kubeconfig) quebra este
+# endereço — o Vault seria liberado como `platform-vault-<outro-nome>`.
 #
 # CONTRATO para a Story #445 (ordem = mesma de `standalone-compact`, ver
 # `docs/RUNBOOKS.md §8.3`→`§8.4`): registrar o cluster no ArgoCD (que já
