@@ -47,8 +47,19 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 export KUBECONFIG="$HOME/.kube/config"
 
 # ============== Versões pinadas ==============
-K3S_VERSION="v1.31.4+k3s1"
-HELM_VERSION="v3.16.4"
+# Atualizado em 2026-07-12: v1.31.4+k3s1 estava EOL desde nov/2025 (achado
+# durante o spike de PathPrefix, ver docs/validacao/spike-pathprefix-hml-
+# 2026-07-12.md). K3s 1.36.2+k3s1 é a mais recente estável (release
+# 2026-05-27) — bootstrap é sempre from-scratch (sem upgrade de cluster
+# vivo), então o salto de minor version não tem caminho de migração a
+# validar. Helm fica na última minor da série 3.x (3.21.2, jun/2026) —
+# Helm 4 já é a série estável atual, mas é major version nova, sem
+# validação de compatibilidade com os charts deste repo; não trocar sem
+# avaliação própria. Reconfirmar ambas em https://docs.k3s.io/release-notes
+# e https://github.com/helm/helm/releases antes do próximo bootstrap —
+# release cadence de ambos é rápida.
+K3S_VERSION="v1.36.2+k3s1"
+HELM_VERSION="v3.21.2"
 
 # ============== Defaults ==============
 DRY_RUN=false
