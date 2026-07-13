@@ -31,8 +31,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # ============== Versões pinadas ==============
-K3S_VERSION="v1.31.4+k3s1"
-HELM_VERSION="v3.16.4"
+# K3s/Helm atualizados em 2026-07-12 (mesmo racional do
+# scripts/lab-standalone-single/bootstrap.sh — ver comentário lá e
+# docs/validacao/spike-pathprefix-hml-2026-07-12.md). K3s 1.31.4 estava
+# EOL desde nov/2025.
+K3S_VERSION="v1.36.2+k3s1"
+HELM_VERSION="v3.21.2"
+# ArgoCD NÃO atualizado agora — v2.14→v3.x é salto de major version com
+# guia de migração dedicado (breaking changes documentados pelo upstream,
+# ver https://argo-cd.readthedocs.io/en/stable/operator-manual/upgrading/2.14-3.0/),
+# não uma troca de pin compatível por padrão. standalone-compact é
+# produção real — avaliar a migração como trabalho dedicado à parte, não
+# como parte desta atualização de rotina.
 ARGOCD_VERSION="v2.14.3"
 
 # ============== Defaults ==============
