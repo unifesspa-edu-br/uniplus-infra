@@ -28,7 +28,7 @@
 #   ./setup-kafka.sh [--dry-run]
 #
 # Variáveis de ambiente:
-#   DATA_HOST_IP   IPv4 privado a bindar (default: auto-detectado via `hostname -I`)
+#   DATA_HOST_IP   IPv4 privado a bindar (default: auto-detectado via `ip route get`)
 #   DATA_BASE      Diretório base dos volumes de dados (default: /var/lib/uniplus)
 #
 # Pré-requisitos: Docker instalado, usuário com sudo sem senha (ou rodar via sudo).
@@ -48,23 +48,19 @@ done
 
 # `ip route get` resolve pela rota default — sempre a interface real de
 # saída, imune a bridges locais (docker0, cni0/flannel) que também têm IP
-# em range privado. Quando chamado via bootstrap.sh, DATA_HOST_IP já chega
-# explícito (capturado antes de Docker/K3s existirem) e este bloco nem roda;
-# a auto-detecção só importa em execução direta (`./setup-kafka.sh`), onde
-# Docker/K3s já podem estar instalados — daí a preferência por `ip route
-# get` sobre `hostname -I` (que listaria as bridges também, com risco real
-# de pegar a IP errada). Fallback pro método antigo só se `ip` não estiver
-# disponível.
+# em range privado (diferente do antigo `hostname -I | grep <range
+# privado> | head -1`, que listaria as bridges também, com risco real de
+# pegar a interface errada se Docker/K3s já estiverem instalados no
+# momento da chamada — ex.: execução direta deste script, fora de
+# bootstrap.sh, que já passa DATA_HOST_IP explícito). Sem fallback pro
+# método antigo: `ip` (pacote iproute2) é parte da instalação base de
+# qualquer Ubuntu Server, incluindo 24.04 — exigir DATA_HOST_IP explícito
+# na ausência de `ip` é mais seguro que arriscar detectar a bridge errada.
 if [[ -z "${DATA_HOST_IP:-}" ]] && command -v ip &>/dev/null; then
     DATA_HOST_IP=$(ip route get 8.8.8.8 2>/dev/null | awk '{for(i=1;i<=NF;i++) if ($i=="src") print $(i+1); exit}')
 fi
-if [[ -z "${DATA_HOST_IP:-}" ]] && command -v hostname &>/dev/null; then
-    DATA_HOST_IP=$(hostname -I 2>/dev/null | tr ' ' '\n' \
-        | grep -E '^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)' \
-        | head -1)
-fi
 if [[ -z "${DATA_HOST_IP:-}" ]]; then
-    echo "ERRO: não consegui auto-detectar DATA_HOST_IP. Defina explicitamente: DATA_HOST_IP=x.x.x.x $0" >&2
+    echo "ERRO: não consegui auto-detectar DATA_HOST_IP (comando 'ip' ausente ou 'ip route get' sem resultado). Defina explicitamente: DATA_HOST_IP=x.x.x.x $0" >&2
     exit 1
 fi
 

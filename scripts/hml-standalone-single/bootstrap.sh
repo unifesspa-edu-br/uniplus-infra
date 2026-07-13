@@ -499,13 +499,37 @@ step_setup_postgres_databases() {
 
 # $1 = nome do role/database/creds file (ex.: "keycloak", "apicurio")
 # $2 = super_pw do Postgres
-_setup_app_database() {
+#
+# Senhas passadas via `docker exec --env-file <tmp>` (não `-e NAME=value`):
+# `-e` expõe o valor no argv do processo `docker` no HOST (visível via
+# `ps`/`/proc/<pid>/cmdline` a qualquer usuário local enquanto o comando
+# roda) — diferente de `/proc/<pid>/environ` (root-only, mode 400) do
+# processo DENTRO do container, que é o que o comentário original de
+# scripts/bootstrap-standalone.sh (step_data_setup_apicurio_db) endereça.
+# --env-file lê de um arquivo (mode 600, shredded ao final) e não aparece em
+# nenhum argv, nem do container nem do host.
+#
+# Corpo inteiro roda num subshell com trap EXIT próprio — chamado 2x (keycloak,
+# apicurio) por step_setup_postgres_databases; um `trap ... EXIT` direto na
+# função (sem subshell) seria substituído pela segunda chamada antes de
+# disparar para a primeira (trap EXIT não é function-scoped em bash), e
+# `trap ... RETURN` não dispara em abort por `set -e` no meio do corpo
+# (mesmo gotcha corrigido em step_generate_tls_secret). Falha dentro do
+# subshell propaga como retorno não-zero da função, `set -e` do chamador
+# aborta o script normalmente.
+_setup_app_database() (
     local app_name="$1"
     local super_pw="$2"
     local app_creds="$DATA_BASE/postgres/.bootstrap-creds-$app_name"
 
+    local envfile
+    envfile=$(sudo mktemp /etc/credstore/pg-envfile-XXXXXX)
+    trap 'sudo shred -u "$envfile" 2>/dev/null || true' EXIT
+    sudo chmod 600 "$envfile"
+    printf 'PGPASSWORD=%s\n' "$super_pw" | sudo tee "$envfile" >/dev/null
+
     local role_exists=false
-    if sudo docker exec -e PGPASSWORD="$super_pw" uniplus-postgres \
+    if sudo docker exec --env-file "$envfile" uniplus-postgres \
          psql -U postgres -tAc "SELECT 1 FROM pg_catalog.pg_roles WHERE rolname='$app_name'" 2>/dev/null \
          | grep -q '^1$'; then
         role_exists=true
@@ -540,10 +564,10 @@ EOF
         log_error "${app_name}_pw vazio em $app_creds. Abortando."
         exit 1
     fi
+    printf 'PGPASSWORD=%s\nAPP_PW=%s\n' "$super_pw" "$app_pw" | sudo tee "$envfile" >/dev/null
 
     sudo docker exec \
-        -e PGPASSWORD="$super_pw" \
-        -e APP_PW="$app_pw" \
+        --env-file "$envfile" \
         -i uniplus-postgres \
         psql -U postgres -v ON_ERROR_STOP=1 <<SQL 2>&1 | tail -10
 \getenv app_pw APP_PW
@@ -555,17 +579,15 @@ SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '$app_name') AS
 \endif
 SQL
 
-    sudo docker exec -e PGPASSWORD="$super_pw" uniplus-postgres \
+    sudo docker exec --env-file "$envfile" uniplus-postgres \
         psql -U postgres -tc "SELECT 1 FROM pg_database WHERE datname = '$app_name'" 2>/dev/null \
         | grep -q 1 \
-      || sudo docker exec -e PGPASSWORD="$super_pw" uniplus-postgres \
+      || sudo docker exec --env-file "$envfile" uniplus-postgres \
         psql -U postgres -c "CREATE DATABASE $app_name OWNER $app_name ENCODING 'UTF8' LC_COLLATE 'C' LC_CTYPE 'C' TEMPLATE template0" 2>&1 | tail -3
 
-    sudo docker exec -e PGPASSWORD="$super_pw" uniplus-postgres \
+    sudo docker exec --env-file "$envfile" uniplus-postgres \
         psql -U postgres -c "GRANT ALL PRIVILEGES ON DATABASE $app_name TO $app_name" >/dev/null 2>&1
-
-    unset app_pw
-}
+)
 
 step_setup_kafka() {
     log_info "Configurando Kafka (delegando para setup-kafka.sh)..."
