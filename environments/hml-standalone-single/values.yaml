@@ -218,7 +218,10 @@ traefik:
 #
 # realmImport.portalClient fica com os defaults do chart (redirectUris
 # vazio) — sem consumidor real enquanto uniplusWeb não roda nesta fase;
-# Feature 2/4 preenche quando ligar o frontend.
+# Feature 2/4 preenche quando ligar o frontend. realmImport.apicurioClient
+# É sobrescrito abaixo — diferente do portal, o Apicurio roda nesta fase, e
+# sem o override o client OIDC herdaria o hostname do standalone-compact
+# (default do chart), rejeitando o login pela UI deste ambiente.
 # ============================================================================
 keycloak:
   enabled: true
@@ -248,6 +251,18 @@ keycloak:
   # documentado em feedback_keycloak_realm_reconcile_gated).
   realmReconcile:
     enabled: true
+
+  realmImport:
+    # Sem isso, o client apicurio-registry herdaria o default do chart
+    # (hostname do standalone-compact) — login pela UI do Apicurio neste
+    # HML seria rejeitado pelo Keycloak (redirect_uri/origin não batem).
+    apicurioClient:
+      clientId: apicurio-registry
+      redirectUris:
+        - https://apicurio.192.168.21.134.nip.io/*
+        - https://apicurio.192.168.21.134.nip.io/ui/*
+      webOrigins:
+        - https://apicurio.192.168.21.134.nip.io
 
 # ============================================================================
 # Apicurio Registry (chart apps/apicurio-registry/) — Schema Registry.

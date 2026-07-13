@@ -105,6 +105,20 @@ keycloak:
       webOrigins:
         - "+"
 
+    # Client OIDC do Apicurio Registry (UI + Confluent SR API). Default
+    # aqui reproduz o valor que estava hardcoded no uniplus-realm.json antes
+    # da parametrização — preserva o comportamento de standalone-compact.
+    # Qualquer outro environment que habilite apicurioRegistry.ingress DEVE
+    # sobrescrever com o próprio host, ou o login pela UI do Apicurio é
+    # rejeitado pelo Keycloak (redirect_uri/origin não batem com o client).
+    apicurioClient:
+      clientId: apicurio-registry
+      redirectUris:
+        - https://schema-registry.standalone.portaluni.com.br/*
+        - https://schema-registry.standalone.portaluni.com.br/ui/*
+      webOrigins:
+        - https://schema-registry.standalone.portaluni.com.br
+
   # Realm reconcile — Job Helm hook (post-install,post-upgrade) que
   # executa keycloak-config-cli (adorsys) para reconciliar o realm
   # declarativamente em runtime, depois do --import-realm já ter sido

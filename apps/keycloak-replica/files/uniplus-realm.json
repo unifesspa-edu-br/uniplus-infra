@@ -156,7 +156,7 @@
       ]
     },
     {
-      "clientId": "apicurio-registry",
+      "clientId": {{ .Values.keycloak.realmImport.apicurioClient.clientId | quote }},
       "name": "Apicurio Registry — Schema Registry (Confluent SR API)",
       "description": "Cliente OIDC do Apicurio Registry (apps/apicurio-registry). Confidential — secret em secret/standalone/keycloak/clients/apicurio-registry via kcadm pós-import. directAccessGrantsEnabled=true para smoke (revisar em prod). RUNBOOKS §15.1.",
       "enabled": true,
@@ -167,11 +167,8 @@
       "directAccessGrantsEnabled": true,
       "serviceAccountsEnabled": true,
       "frontchannelLogout": true,
-      "redirectUris": [
-        "https://schema-registry.standalone.portaluni.com.br/*",
-        "https://schema-registry.standalone.portaluni.com.br/ui/*"
-      ],
-      "webOrigins": ["https://schema-registry.standalone.portaluni.com.br"],
+      "redirectUris": {{ .Values.keycloak.realmImport.apicurioClient.redirectUris | toJson }},
+      "webOrigins": {{ .Values.keycloak.realmImport.apicurioClient.webOrigins | toJson }},
       "attributes": {
         "post.logout.redirect.uris": "+"
       },
