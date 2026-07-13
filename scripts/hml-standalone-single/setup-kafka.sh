@@ -222,8 +222,18 @@ log.dirs=/var/lib/kafka/data
 EOF
     sudo chmod 644 "$fmt_props"
 
+    # chown 1000:1000 (não root:root): a imagem apache/kafka:4.2.0 roda como
+    # appuser (UID 1000) por default, sem --user root neste `docker run` —
+    # um arquivo root:root mode 400 seria ilegível de dentro do container
+    # (permission denied no `cat`), quebrando o format inteiro. UID 1000
+    # aqui é literal, não uma suposição sobre o usuário do host — Docker sem
+    # user namespace remapping (default) mapeia o UID do container 1:1 pro
+    # host, então "1000" sempre resolve ao mesmo UID numérico dentro do
+    # container, independente de qual usuário local esse número representa
+    # (ou não representa) no host.
     admin_pw_file=$(sudo mktemp)
     sudo grep '^admin_pw=' "$CREDS_FILE" | cut -d= -f2 | sudo tee "$admin_pw_file" >/dev/null
+    sudo chown 1000:1000 "$admin_pw_file"
     sudo chmod 400 "$admin_pw_file"
 
     if ! sudo docker run --rm \
