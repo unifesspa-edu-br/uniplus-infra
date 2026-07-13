@@ -135,32 +135,31 @@ serviceMonitor:
 # External Secrets Operator — o chart tem `enabled: true` como default
 # (mantido). ClusterSecretStore fica `enabled: true` aqui — é o estado FINAL
 # desejado, mesmo padrão de `environments/standalone-compact/values.yaml`
-# (que também commita `true` direto). NÃO é um toggle de duas fases: ao
-# contrário do lab (manual, `--set clusterSecretStore.enabled=false` só no
-# primeiro `helm install`, depois `helm upgrade` sem o override), este
-# ambiente é reconciliado continuamente — declarar `false` aqui faria o
-# ArgoCD manter isso para sempre (self-heal), e os 4 `ExternalSecret` do
-# Keycloak/Apicurio (que dependem do Secret que só o ClusterSecretStore
-# entrega) ficariam permanentemente em `CreateContainerConfigError`, não
-# "em retry até convergir".
-#
-# CONTRATO para a Story #445 (ordem obrigatória, mesma de `standalone-compact`
-# — ver comentário lá): completar `vault operator init` + unseal + policy
-# `external-secrets-read` + role `external-secrets` (auth k8s) ANTES de
-# registrar o cluster no ArgoCD (`argocd cluster add`). Registrar primeiro e
-# inicializar o Vault depois inverte a ordem esperada — o primeiro sync do
-# ArgoCD falharia (Vault ainda sem a role) e ficaria em retry (5x, backoff até
-# 3min) até esgotar, exigindo re-sync manual depois de corrigido.
+# (que também commita `true` direto).
 #
 # vaultServer: release do Vault, gerado pelo ApplicationSet como
-# `platform-vault-<cluster>` (o chart não usa fullnameOverride). CONTRATO
-# adicional para a Story #445: o cluster PRECISA ser registrado no ArgoCD com
-# `--name hml-standalone-single` (idêntico ao label `environment` usado
-# abaixo) — qualquer nome diferente quebra este endereço.
+# `platform-vault-<cluster>` (o chart não usa fullnameOverride). O ArgoCD do
+# `standalone-compact` roda self-hosted no próprio cluster que gerencia,
+# registrado via `argocd cluster add ... --in-cluster` — e o nome resultante
+# usado pelo ApplicationSet é sempre o literal `in-cluster`, não o valor
+# passado em `--name` (empírico, ver comentário em
+# `environments/standalone-compact/values.yaml` linha ~674). A Story #442
+# instala ArgoCD na própria VM HML seguindo o mesmo padrão (self-hosted,
+# `--in-cluster`) — então o release aqui É `platform-vault-in-cluster`, igual
+# ao `standalone-compact`, não um nome específico do HML.
+#
+# CONTRATO para a Story #445 (ordem = mesma de `standalone-compact`, ver
+# `docs/RUNBOOKS.md §8.3`→`§8.4`): registrar o cluster no ArgoCD (que já
+# provisiona Vault/ESO sealed/sem role, via ApplicationSet) ANTES de
+# `vault operator init`. O primeiro sync do ClusterSecretStore fica
+# OutOfSync/Degraded até o Vault ser inicializado e a role
+# `external-secrets` configurada manualmente — esperado, não é erro; ArgoCD
+# reconcilia automaticamente (self-heal) assim que a role existir, sem
+# precisar recriar o cluster nem re-registrar nada.
 # ============================================================================
 clusterSecretStore:
   enabled: true
-  vaultServer: "http://platform-vault-hml-standalone-single.vault.svc.cluster.local:8200"
+  vaultServer: "http://platform-vault-in-cluster.vault.svc.cluster.local:8200"
 
 # ============================================================================
 # StorageClass (chart platform/storage/) — nome obrigatório por tier
