@@ -26,8 +26,8 @@ CHART_DIRS      := $(dir $(CHARTS_ALL))
 # Diretórios validados pelo yamllint (mesma lista do CI).
 YAML_DIRS := apps/ platform/ data/ environments/ argocd/
 
-# Environments existentes (atualizar quando san-* / hml-* / 3-DC forem criados).
-ENVS := standalone-compact
+# Environments existentes (atualizar quando san-* / 3-DC forem criados).
+ENVS := standalone-compact hml-standalone-single
 
 # Comando markdownlint via npx (não exige instalação global).
 MARKDOWNLINT := npx --yes markdownlint-cli2
