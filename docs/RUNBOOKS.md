@@ -4191,6 +4191,46 @@ Para não conferir a este documento uma precisão que ele não tem:
   esperado, já que ainda não foram solicitados; não deve ser lido como indício de que já existem
   ou não numa view DNS interna específica.
 
+### 21.7 Bootstrap da fundação (Story #442)
+
+`scripts/hml-standalone-single/bootstrap.sh` — adaptado de
+`scripts/lab-standalone-single/bootstrap.sh` (já validado no lab e no spike de PathPrefix
+executado nesta mesma VM real), mas cobrindo só o que precisa existir **antes** do cluster ser
+registrado no ArgoCD: Docker, K3s, Helm, ArgoCD self-hosted (mesmo padrão de
+`scripts/bootstrap-standalone.sh --role=standalone-k8s`), Postgres (banco do Keycloak), Kafka
+(Feature 1 do Epic #434) e o certificado TLS autoassinado provisório (`uniplus-wildcard-nip-io-tls`,
+namespace `uniplus`) que Traefik/Keycloak/Apicurio Registry esperam já existir na primeira
+sincronização.
+
+**Diferença estrutural em relação ao lab:** este ambiente é GitOps (`environments/
+hml-standalone-single/values.yaml`, Story #439) — Vault, ESO, Traefik, Keycloak e Apicurio
+Registry **não** são instalados por este script. O `ApplicationSet` os cria automaticamente assim
+que o cluster for registrado (mesma sequência já operada em `standalone-compact`, §8.3): registro
+primeiro, depois `kubectl apply` de `argocd/project.yaml` + `argocd/applicationset.yaml` — os
+manifests aplicam normalmente (`Synced`), mas os Pods de Vault/Keycloak/Apicurio Registry ficam
+`Degraded`/`Progressing` até o `vault operator init` manual (mesmo procedimento de §8.4, ainda não
+scriptado nem em produção real — Story #445 documenta a variante específica deste ambiente,
+incluindo Shamir **5/3**, não o 1/1 simplificado do lab, e o seed dos secrets que Keycloak/Apicurio
+esperam via `ExternalSecret`). O self-heal do ArgoCD reconcilia drift entre Git e estado live — não
+resolve por si só a indisponibilidade do Vault, que depende exclusivamente do passo manual.
+
+Este script também reaplica os dois fixes de DNS achados no spike (Docker daemon.json + patch do
+CoreDNS — ambos com o nameserver IPv4 do host inalcançável) e provisiona role+database do Keycloak
+e do Apicurio Registry no Postgres via `docker exec ... psql` pós-cluster-ready — **não** via bind
+mount em `/docker-entrypoint-initdb.d` (a imagem `postgis/postgis` já usa esse path para o próprio
+script de extensões; um bind mount nosso o esconderia e o cluster subiria sem PostGIS).
+
+**CONTRATO de nomenclatura (Story #445):** o cluster precisa ser registrado com
+`argocd cluster add ... --in-cluster --name in-cluster --label environment=hml-standalone-single`
+— `--name in-cluster` **explícito**, não implícito. O nome usado pelo `ApplicationSet` para nomear
+as Applications reflete o valor passado em `--name` (ou o contexto kubeconfig, se omitido) — em
+`standalone-compact` o resultado observado foi o literal `in-cluster` (ver comentário em
+`environments/standalone-compact/values.yaml`), presumivelmente porque `--name in-cluster` foi
+passado explicitamente no registro original, não por comportamento implícito de `--in-cluster`. Por
+isso `environments/hml-standalone-single/values.yaml` já aponta `clusterSecretStore.vaultServer`
+para `platform-vault-in-cluster...`, igual ao `standalone-compact` — mas isso só fica correto se a
+Story #445 passar `--name in-cluster` explicitamente no registro deste cluster.
+
 ---
 
 *Documento mantido pelo CTIC/UNIFESSPA. Atualizações via Pull Request.*
