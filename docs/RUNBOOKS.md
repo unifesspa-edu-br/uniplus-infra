@@ -1001,7 +1001,9 @@ echo "Init output em $INIT_FILE — exportar para gestor institucional e shred."
 
 Cada vez que o Pod do Vault reinicia (upgrade K3s, manutenção da VM, OOMKill etc.) o Vault sobe `Sealed=true` e exige 3 das 5 unseal keys para destravar. **Não é one-shot — é um procedimento operacional recorrente em standalone.**
 
-> **Pré-requisito**: HashiCorp `vault` CLI instalada na workstation do operador (`brew install vault` / pacote oficial). Os blocos abaixo evitam expandir as unseal keys em argv de `kubectl exec` (que vazaria via `/proc/<pid>/cmdline`, `ps`, auditoria) — em vez disso, conectamos `vault` CLI local ao Vault via port-forward e passamos cada share por **stdin** (`vault operator unseal -`).
+> **Pré-requisito**: HashiCorp `vault` CLI instalada na workstation do operador (`brew install vault` / pacote oficial). O bloco abaixo evita expandir as unseal keys em argv de `kubectl exec` (que vazaria via `/proc/<pid>/cmdline`, `ps`, auditoria) — em vez disso, conectamos `vault` CLI local ao Vault via port-forward.
+>
+> **Correção 2026-07-12** (achado no spike de PathPrefix, ver `docs/validacao/spike-pathprefix-hml-2026-07-12.md`): a versão anterior deste procedimento orientava `printf '%s\n' "$K" | vault operator unseal -`, presumindo que `-` faz o Vault CLI ler a key via stdin. **Isso está errado** — o Vault CLI não suporta essa convenção; `-` é tratado como valor literal da key e falha com `Error unsealing: ... 'key' must be a valid hex or base64 string` (confirmado empiricamente contra Vault 1.21.2). O jeito correto — e mais simples — é usar o prompt interativo mascarado nativo do próprio `vault operator unseal` (sem argumento nenhum): a key nunca toca variável de shell, argv ou stdin explícito, só o prompt `Unseal Key (will be hidden):`.
 
 ```bash
 # 1) Port-forward local do Vault + apontar a CLI (mesmo pattern de §8.4.3)
@@ -1009,32 +1011,25 @@ sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml \
   -n vault port-forward platform-vault-uniplus-standalone-0 8200:8200 \
   > /tmp/vault-pf.log 2>&1 &
 PF_PID=$!
-trap 'kill "$PF_PID" 2>/dev/null; unset K1 K2 K3 VAULT_ADDR' EXIT
+trap 'kill "$PF_PID" 2>/dev/null; unset VAULT_ADDR' EXIT
 export VAULT_ADDR=http://127.0.0.1:8200
 
 # Aguardar port-forward subir
 until curl -s --max-time 1 "$VAULT_ADDR/v1/sys/health" >/dev/null 2>&1; do sleep 1; done
 
-# 2) Ler 3 das 5 keys do gestor institucional (sem echo, sem history).
-#    Cada `read -rs` desabilita o eco (chave não aparece no terminal) e
-#    NÃO vai para ~/.bash_history.
-read -rsp "Unseal Key 1: " K1; echo
-read -rsp "Unseal Key 2: " K2; echo
-read -rsp "Unseal Key 3: " K3; echo
+# 2) Unseal com 3 das 5 keys do gestor institucional — rodar o comando
+#    3 vezes, uma por key. Cada chamada pede "Unseal Key (will be
+#    hidden): " no próprio terminal (requer TTY interativo real — não
+#    rodar isso via pipe/redirecionamento). Colar/digitar uma key por vez.
+vault operator unseal
+vault operator unseal
+vault operator unseal
 
-# 3) Unseal via stdin do `vault operator unseal -` — chave NÃO entra em argv,
-#    invisível em /proc/<pid>/cmdline. Após 3 shares válidas, Sealed=false.
-for K in "$K1" "$K2" "$K3"; do
-  printf '%s\n' "$K" | vault operator unseal -
-done
-unset K K1 K2 K3
-history -c 2>/dev/null || true
-
-# 4) Confirmar:
+# 3) Confirmar:
 vault status | grep Sealed
 # Esperado: Sealed          false
 
-# trap EXIT ao sair do shell encerra port-forward + cleanup das envs
+# trap EXIT ao sair do shell encerra port-forward
 ```
 
 #### 8.4.3 Configuração inicial pós-unseal (Kubernetes auth + ESO role)
