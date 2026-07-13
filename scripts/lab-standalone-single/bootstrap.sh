@@ -459,9 +459,17 @@ step_init_unseal_vault() {
         fi
         local unseal_key
         unseal_key=$(sudo python3 -c "import json; print(json.load(open('$creds_file'))['unseal_keys_b64'][0])")
-        # `-` faz o Vault CLI ler a key do stdin — nunca em argv (visível via
-        # /proc/<pid>/cmdline ou `ps` local enquanto o comando roda).
-        printf '%s' "$unseal_key" | kubectl exec -i -n "$VAULT_NAMESPACE" "$VAULT_POD" -- vault operator unseal - >/dev/null
+        # BUG CORRIGIDO 2026-07-12 (achado no spike, ver docs/validacao/
+        # spike-pathprefix-hml-2026-07-12.md): o Vault CLI NÃO lê a unseal
+        # key via stdin com "-" como sentinel — "-" é tratado como valor
+        # literal da key e falha com "must be a valid hex or base64
+        # string" (confirmado empiricamente contra Vault 1.21.2). Passar
+        # como argumento posicional é a única forma de automatizar sem TTY
+        # interativo — expõe a key brevemente em `ps`/`/proc/<pid>/cmdline`
+        # dentro do pod durante a única chamada, aceitável neste contexto
+        # (bootstrap non-interativo, sem outro operador com acesso ao pod
+        # nesse instante).
+        kubectl exec -n "$VAULT_NAMESPACE" "$VAULT_POD" -- vault operator unseal "$unseal_key" >/dev/null
         unset unseal_key
         log_success "Vault desselado."
     else
