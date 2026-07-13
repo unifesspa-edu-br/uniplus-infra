@@ -263,6 +263,22 @@ step_patch_coredns() {
     fi
 
     log_info "Aguardando CoreDNS ficar disponível para patch..."
+    # `kubectl wait --for=condition=available` exige que o objeto JÁ EXISTA —
+    # falha imediatamente com NotFound se o deployment ainda não foi criado,
+    # não espera pela criação. Logo após `systemctl start k3s`, o deploy
+    # controller do K3s ainda não aplicou os addons bundled (coredns,
+    # local-path-provisioner, metrics-server) — leva alguns segundos.
+    # Achado real na execução contra a VM (não reproduzível em dry-run, que
+    # nunca consulta a API do K3s).
+    local attempts=0
+    until kubectl get deployment coredns -n kube-system &>/dev/null; do
+        attempts=$(( attempts + 1 ))
+        if (( attempts >= 24 )); then
+            log_error "Deployment coredns não apareceu em 120s. Ver: kubectl get pods -n kube-system"
+            exit 1
+        fi
+        sleep 5
+    done
     kubectl wait --for=condition=available --timeout=120s deployment/coredns -n kube-system
 
     local corefile
