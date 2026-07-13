@@ -25,3 +25,4 @@ Este diretório contém as decisões arquiteturais da infraestrutura da platafor
 | 011 | [Loki SingleBinary com storage S3-MinIO em standalone](ADR-011-loki-singlebinary-s3-standalone.md) | ✅ Aceito | 2026-05-08 | — |
 | 012 | [Tempo single-binary com storage S3-MinIO em standalone](ADR-012-tempo-singlebinary-s3-standalone.md) | ✅ Aceito | 2026-05-08 | — |
 | 013 | [OpenTelemetry Collector em DaemonSet único em standalone](ADR-013-otel-collector-daemonset-standalone.md) | ✅ Aceito | 2026-05-08 | — |
+| 014 | [Custódia do Vault via Shamir manual no `hml-standalone-single`](ADR-014-vault-shamir-hml-standalone-single.md) | ✅ Aceito | 2026-07-13 | [#439](https://github.com/unifesspa-edu-br/uniplus-infra/issues/439) |
