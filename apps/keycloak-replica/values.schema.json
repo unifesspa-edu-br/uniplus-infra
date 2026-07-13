@@ -110,6 +110,21 @@
                   "items": { "type": "string" }
                 }
               }
+            },
+            "apicurioClient": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "clientId": { "type": "string" },
+                "redirectUris": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                },
+                "webOrigins": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                }
+              }
             }
           }
         },
