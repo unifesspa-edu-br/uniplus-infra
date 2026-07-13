@@ -172,7 +172,7 @@ step_fix_docker_dns() {
     local daemon_json="/etc/docker/daemon.json"
 
     if $DRY_RUN; then
-        echo "[DRY-RUN] Garantiria dns: [1.1.1.1, 8.8.8.8] em $daemon_json (+ restart docker se mudou)"
+        echo "[DRY-RUN] Faria merge de dns: [1.1.1.1, 8.8.8.8] em $daemon_json, preservando outras chaves (+ restart docker se mudou)"
         return
     fi
 
@@ -182,15 +182,29 @@ step_fix_docker_dns() {
     fi
 
     log_info "Configurando DNS explícito no Docker (achado do spike — nameserver do host inalcançável)..."
-    sudo tee "$daemon_json" >/dev/null <<'JSON'
-{
-  "dns": ["1.1.1.1", "8.8.8.8"]
-}
-JSON
+    # Merge via python3 (sempre presente em Ubuntu Server 24.04, mesma
+    # dependência já usada em scripts/lab-standalone-single/bootstrap.sh para
+    # parsear `vault status -format=json`) — NUNCA sobrescrever o arquivo
+    # inteiro: se já existir com outras chaves (registry mirrors, insecure-
+    # registries, logging, storage-driver), um `tee` sem merge apagaria essas
+    # configurações.
+    local merged
+    merged=$(sudo python3 -c "
+import json, sys
+path = '$daemon_json'
+try:
+    with open(path) as f:
+        data = json.load(f)
+except (FileNotFoundError, json.JSONDecodeError):
+    data = {}
+data['dns'] = ['1.1.1.1', '8.8.8.8']
+print(json.dumps(data, indent=2))
+")
+    printf '%s\n' "$merged" | sudo tee "$daemon_json" >/dev/null
     if systemctl is-active --quiet docker 2>/dev/null; then
         sudo systemctl restart docker
     fi
-    log_success "Docker DNS configurado."
+    log_success "Docker DNS configurado (demais chaves de $daemon_json preservadas)."
 }
 
 step_install_docker() {
