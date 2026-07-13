@@ -46,6 +46,18 @@ for arg in "$@"; do
     esac
 done
 
+# `ip route get` resolve pela rota default — sempre a interface real de
+# saída, imune a bridges locais (docker0, cni0/flannel) que também têm IP
+# em range privado. Quando chamado via bootstrap.sh, DATA_HOST_IP já chega
+# explícito (capturado antes de Docker/K3s existirem) e este bloco nem roda;
+# a auto-detecção só importa em execução direta (`./setup-kafka.sh`), onde
+# Docker/K3s já podem estar instalados — daí a preferência por `ip route
+# get` sobre `hostname -I` (que listaria as bridges também, com risco real
+# de pegar a IP errada). Fallback pro método antigo só se `ip` não estiver
+# disponível.
+if [[ -z "${DATA_HOST_IP:-}" ]] && command -v ip &>/dev/null; then
+    DATA_HOST_IP=$(ip route get 8.8.8.8 2>/dev/null | awk '{for(i=1;i<=NF;i++) if ($i=="src") print $(i+1); exit}')
+fi
 if [[ -z "${DATA_HOST_IP:-}" ]] && command -v hostname &>/dev/null; then
     DATA_HOST_IP=$(hostname -I 2>/dev/null | tr ' ' '\n' \
         | grep -E '^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)' \
