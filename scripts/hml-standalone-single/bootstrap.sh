@@ -97,8 +97,12 @@ run() {
 # ============== Arquitetura ==============
 case "$(uname -m)" in
     x86_64)  ARCH="amd64" ;;
-    aarch64) ARCH="arm64" ;;
-    *)       log_error "Arquitetura não suportada: $(uname -m). Esperado x86_64 ou aarch64."; exit 1 ;;
+    # `postgis/postgis:18-3.6` (step_setup_postgres) só publica manifest
+    # amd64 (confirmado via `docker manifest inspect`) — arm64 seguiria até
+    # Docker/K3s/ArgoCD instalarem para só então falhar tarde, no primeiro
+    # `docker run` do Postgres. Falhar cedo aqui evita esse desperdício.
+    aarch64) log_error "Arquitetura arm64 não suportada — postgis/postgis:18-3.6 (step_setup_postgres) só publica imagem amd64."; exit 1 ;;
+    *)       log_error "Arquitetura não suportada: $(uname -m). Esperado x86_64."; exit 1 ;;
 esac
 
 usage() {
@@ -137,6 +141,20 @@ if ! sudo -n true 2>/dev/null; then
     log_error "sudo sem senha é obrigatório para este usuário (ver docs/RUNBOOKS.md)."
     exit 1
 fi
+
+# Capturado UMA VEZ, antes de qualquer step que crie interfaces de rede
+# adicionais (docker0 do Docker, cni0/flannel do K3s) — `hostname -I` listaria
+# essas IPs privadas também, e tanto `awk '{print $1}'` (ordem de listagem
+# não garantida) quanto o grep por range privado de
+# scripts/lab-standalone-single/setup-kafka.sh poderiam pegar a interface
+# errada se computados depois. `ip route get` resolve pela rota default —
+# sempre a interface real de saída, nunca uma bridge/CNI local.
+NODE_IP=$(ip route get 8.8.8.8 2>/dev/null | awk '{for(i=1;i<=NF;i++) if ($i=="src") print $(i+1); exit}')
+if [[ -z "$NODE_IP" ]]; then
+    log_error "Não consegui determinar o IP real do host via 'ip route get 8.8.8.8'."
+    exit 1
+fi
+log_info "IP real do host (via rota default): $NODE_IP"
 
 # ============================================================================
 # Steps — Docker + K3s + Helm + ArgoCD
@@ -195,10 +213,7 @@ step_install_k3s() {
     if command -v k3s &>/dev/null; then
         log_success "K3s já instalado: $(k3s --version | head -1)"
     else
-        local node_ip
-        node_ip=$(hostname -I | awk '{print $1}')
-
-        log_info "Instalando K3s $K3S_VERSION (host combinado, IP: $node_ip)..."
+        log_info "Instalando K3s $K3S_VERSION (host combinado, IP: $NODE_IP)..."
 
         # --disable traefik/servicelb: platform/traefik/ (ArgoCD, pós-registro)
         # é o IngressController real deste ambiente — o Traefik/ServiceLB
@@ -207,7 +222,7 @@ step_install_k3s() {
         # scripts/lab-standalone-single/bootstrap.sh e scripts/bootstrap-standalone.sh.
         run "curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=$K3S_VERSION sh -s - \
             --node-name uniplus-hml \
-            --tls-san $node_ip \
+            --tls-san $NODE_IP \
             --disable servicelb \
             --disable traefik \
             --write-kubeconfig-mode 644"
@@ -540,10 +555,15 @@ SQL
 
 step_setup_kafka() {
     log_info "Configurando Kafka (delegando para setup-kafka.sh)..."
+    # DATA_HOST_IP explícito (NODE_IP, capturado ANTES de Docker/K3s criarem
+    # interfaces adicionais) — sem isso, setup-kafka.sh auto-detectaria via
+    # seu próprio `hostname -I | grep <range privado> | head -1`, que neste
+    # ponto do fluxo (Docker + K3s já instalados) já lista docker0/cni0 além
+    # da interface real, com risco real de pegar a IP errada.
     if $DRY_RUN; then
-        "$SCRIPT_DIR/setup-kafka.sh" --dry-run
+        DATA_HOST_IP="$NODE_IP" "$SCRIPT_DIR/setup-kafka.sh" --dry-run
     else
-        "$SCRIPT_DIR/setup-kafka.sh"
+        DATA_HOST_IP="$NODE_IP" "$SCRIPT_DIR/setup-kafka.sh"
     fi
 }
 
@@ -566,12 +586,9 @@ step_setup_kafka() {
 step_generate_tls_secret() {
     log_info "Gerando certificado TLS autoassinado provisório..."
 
-    local node_ip
-    node_ip=$(hostname -I | awk '{print $1}')
-
     if $DRY_RUN; then
         echo "[DRY-RUN] kubectl create namespace $TLS_NAMESPACE (idempotente)"
-        echo "[DRY-RUN] openssl req -x509 -newkey rsa:2048 ... SAN=*.${node_ip}.nip.io"
+        echo "[DRY-RUN] openssl req -x509 -newkey rsa:2048 ... SAN=*.${NODE_IP}.nip.io"
         echo "[DRY-RUN] kubectl create secret tls $TLS_SECRET_NAME -n $TLS_NAMESPACE (se ainda não existir)"
         return
     fi
@@ -600,7 +617,7 @@ step_generate_tls_secret() {
         openssl req -x509 -newkey rsa:2048 -nodes \
             -keyout "$tmpdir/tls.key" -out "$tmpdir/tls.crt" -days 825 \
             -subj "/CN=uniplus-hml" \
-            -addext "subjectAltName=DNS:*.${node_ip}.nip.io,DNS:${node_ip}.nip.io" \
+            -addext "subjectAltName=DNS:*.${NODE_IP}.nip.io,DNS:${NODE_IP}.nip.io" \
             >/dev/null 2>&1
 
         kubectl create secret tls "$TLS_SECRET_NAME" \
@@ -608,7 +625,7 @@ step_generate_tls_secret() {
             --dry-run=client -o yaml | kubectl apply -f -
     )
 
-    log_warn "Certificado autoassinado gerado (SAN: *.${node_ip}.nip.io) — chave privada descartada após criar o Secret."
+    log_warn "Certificado autoassinado gerado (SAN: *.${NODE_IP}.nip.io) — chave privada descartada após criar o Secret."
     log_success "Secret $TLS_SECRET_NAME criado em $TLS_NAMESPACE."
 }
 
