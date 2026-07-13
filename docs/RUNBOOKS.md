@@ -16,6 +16,7 @@
 - [8. Bootstrap e Teardown — Ambiente Standalone OCI](#8-bootstrap-e-teardown--ambiente-standalone-oci)
 - [9. Data services no data-host (standalone)](#9-data-services-no-data-host-standalone)
 - [20. Ambiente de laboratório — host único (`lab-standalone-single`)](#20-ambiente-de-laboratório--host-único-lab-standalone-single)
+- [21. Ambiente de homologação real — host único (`hml-standalone-single`) — planejamento](#21-ambiente-de-homologação-real--host-único-hml-standalone-single--planejamento)
 
 ## 1. Procedimentos Rotineiros
 
@@ -3905,6 +3906,290 @@ implementação em `environments/lab-standalone-single/README.md` (seções
 
 Login OIDC completo (SPA → Keycloak → PKCE → token → sessão autenticada)
 validado com browser real via Playwright MCP — não só `curl`.
+
+## 21. Ambiente de homologação real — host único (`hml-standalone-single`) — planejamento
+
+> **Status: planejamento, pré-bootstrap.** Ao contrário das seções 8–9 (`standalone-compact`, em
+> operação) e 20 (`lab-standalone-single`, implementado), esta seção descreve um ambiente **ainda
+> não provisionado**. A VM de destino (`192.168.21.134`, Ubuntu 24.04.4, 6 vCPU/31 GB RAM, 97 GB
+> disco) é real, dedicada e reservada exclusivamente para este HML, mas hoje só tem Docker
+> instalado — sem k3s/kubectl/helm. Diferente do lab (VirtualBox, `nip.io`, TLS autoassinado), esta
+> VM é **alcançável apenas via VPN/rede interna da UNIFESSPA**, sem IP público. Objetivo desta
+> seção: consolidar os hostnames DNS e o desenho de roteamento Traefik que servem de base ao pedido
+> formal de rede à CTIC — o passo-a-passo de bootstrap (equivalente ao §20.2) só é escrito depois
+> que a rede estiver disponível.
+
+### 21.1 Topologia
+
+Mesmo modelo do `standalone-compact` (§8–9) — K3s numa VM + dados stateful (Postgres, Kafka,
+MinIO, Redis) via Docker+systemd — mas hoje comprimido numa única VM (só há 1 VM disponível),
+igual ao `lab-standalone-single` (§20.1). Diferente do lab, o objetivo aqui é validar acesso real
+de usuários institucionais, não só a mecânica dos charts — por isso TLS via certificado confiável
+(não autoassinado) é obrigatório **antes de qualquer usuário real acessar o ambiente para
+homologação**. Um certificado temporário (autoassinado ou importado manualmente) só é aceitável
+durante o bootstrap administrativo (smoke tests internos da equipe), nunca para a fase de
+homologação com usuários — ver §21.2, item 2.
+
+### 21.2 Hostnames DNS a solicitar à CTIC
+
+| # | Hostname | Tipo | Aponta para | Papel |
+|---|---|---|---|---|
+| 1 | `uniplus-hml.unifesspa.edu.br` | A (canônico) | `192.168.21.134` | Frontends SPA (`/portal`, `/ingresso`, `/selecao`; `/publicacoes` reservada — ver §21.3) |
+| 2 | `uniplus-api-hml.unifesspa.edu.br` | CNAME → `uniplus-hml...` | — | APIs backend (`/api/portal`, `/api/ingresso`, `/api/selecao`, `/api/publicacoes`) |
+| 3 | `uniplus-oidc-hml.unifesspa.edu.br` | CNAME → `uniplus-hml...` | — | Keycloak (`/auth`) |
+| 4 | `geo-api-hml.unifesspa.edu.br` | CNAME → `uniplus-hml...` | — | `unifesspa-geo-api` |
+| 5 | `grafana-hml.unifesspa.edu.br` | CNAME → `uniplus-hml...` | — | Observabilidade (dashboards) |
+| 6 | `kafka-ui-hml.unifesspa.edu.br` | CNAME → `uniplus-hml...` | — | Admin UI do Kafka (AKHQ) |
+| 7 | `apicurio-hml.unifesspa.edu.br` | CNAME → `uniplus-hml...` | — | Apicurio Registry (Schema Registry) |
+| 8 | `redis-ui-hml.unifesspa.edu.br` | CNAME → `uniplus-hml...` | — | Admin UI do Redis (RedisInsight, atrás de BasicAuth) |
+| 9 | `minio-hml.unifesspa.edu.br` | CNAME → `uniplus-hml...` | — | MinIO Console |
+
+**Recomendação, não requisito técnico rígido:** só `uniplus-hml.unifesspa.edu.br` precisa ser
+registro `A` (apontando pro IP da VM); os outros 8 podem ser `CNAME` para ele — reduz a uma única
+mudança uma eventual troca de IP futura (mesmo padrão já usado no `standalone-compact`, que mistura
+`A` canônico e `CNAME`s — ver a tabela de hosts em §8.3.1). Tecnicamente `A` individuais em todos
+também funcionam sem diferença de comportamento (Traefik distingue por SNI/`Host` header de
+qualquer forma); se a CTIC preferir só `A` por política interna da zona, isso é aceitável — não é
+uma exigência técnica deste lado.
+
+Admin UIs e Grafana ganham host próprio em vez de subpath de `uniplus-hml` porque (a) é o padrão
+já validado em `standalone-compact` para essas ferramentas (`kafka-ui` §14, `schema-registry`
+§15, `redis-ui` §16, `minio` §12 — ver a tabela de hosts em §8.3.1), (b) os charts já suportam
+`Host(...)`-only sem qualquer mudança de template, e (c) evita concorrência de `PathPrefix` com as
+rotas de negócio do host raiz.
+
+**Perguntas obrigatórias à CTIC, junto com a lista:**
+
+1. **Resolução** — o IP `192.168.21.134` é privado/VPN; os registros devem resolver só dentro da
+   rede/VPN institucional (split-horizon DNS), nunca numa zona pública apontando para IP privado.
+   Existe zona interna própria para isso, ou a zona `unifesspa.edu.br` já é só interna?
+2. **TLS (bloqueante) — três alternativas independentes, não uma escolha binária:** o único
+   mecanismo hoje implementado em `platform/cert-manager` é o desafio **HTTP-01** (dois
+   `ClusterIssuer` — `letsencrypt-staging` e `letsencrypt-prod` —, ambos HTTP-01; usado em
+   `standalone-compact` porque aquela VM tem IP público, ver §5.5.2 do `docs/ARCHITECTURE.md`).
+   HTTP-01 exige a porta 80 alcançável pelos servidores da Let's Encrypt a partir da internet
+   pública **E** que o próprio hostname resolva publicamente para esse ponto de entrada — não
+   basta abrir a porta 80 num NAT/DNAT, o registro DNS do host também precisaria deixar de ser
+   só-interno (conflita diretamente com a pergunta 1 acima, "resolução só dentro da VPN"). Não
+   implementado hoje para nenhum outro desafio, e esta VM é VPN-only sem esse ponto de entrada
+   público, então HTTP-01 **não serve para este ambiente** sem abrir mão do modelo VPN-only só
+   para essa finalidade — por isso as opções abaixo (DNS-01/PKI) são preferíveis. Perguntar à CTIC, cada
+   uma como opção independente:
+   - **(a) DNS-01 automatizado** — a zona `unifesspa.edu.br` (ou uma subzona delegada) suporta
+     atualização dinâmica (RFC2136/TSIG) para o cert-manager provisionar o desafio? **Atenção:**
+     mesmo que os hostnames de aplicação (§21.2) resolvam só internamente/VPN (split-horizon), o
+     desafio DNS-01 exige que o registro `TXT _acme-challenge.<host>` fique visível aos
+     validadores **públicos** da Let's Encrypt — ou seja, é necessária uma zona autoritativa
+     pública (ou delegação pública específica de `_acme-challenge`) além da view interna, não
+     apenas atualização da zona privada.
+   - **(b) AC SSL Corporativa ICPEdu/RNP** — a UNIFESSPA participa do programa ICPEdu Corporativo
+     da RNP (cadeia GlobalSign, reconhecida nativamente pelos navegadores)? Se sim, emitir
+     certificado Standard com SANs para os hosts do §21.2 (em vez de wildcard).
+   - **(c) PKI interna** — existe CA interna (ex. AD CS) da qual possamos emitir certificado? Se
+     sim, **em quais dispositivos essa CA raiz já é confiável por padrão** — só máquinas
+     institucionais gerenciadas, ou também navegadores de usuários externos à rede gerenciada?
+     Se a raiz já for amplamente confiável no público-alvo deste HML, (c) pode ser **solução
+     definitiva**, não apenas paliativa.
+   Sem viabilidade de (a), (b) ou (c) com confiança ampla, o ambiente sobe com certificado
+   manual/importado — aceitável só como paliativo explícito de bring-up administrativo (nunca
+   para a fase de homologação com usuários reais), já que um certificado importado manualmente
+   não passa a ser confiável para navegadores externos só por ter sido instalado.
+3. **TTL baixo (300s)** enquanto o ambiente está em bring-up, para permitir troca de IP sem espera
+   de propagação longa.
+
+#### 21.2.1 Matriz de fluxos de rede (complemento obrigatório ao pedido de DNS)
+
+Uma lista de hostnames sozinha não constitui um pedido formal de rede — falta a direção e a porta
+de cada fluxo. Completar pelo menos esta matriz antes de enviar à CTIC:
+
+| # | Origem | Destino | Protocolo/Porta | Motivo |
+|---|---|---|---|---|
+| 1 | Rede institucional/VPN (usuários finais) | `192.168.21.134` | TCP/443 | HTTPS via Traefik — todo tráfego de aplicação |
+| 2 | Internet pública (validadores Let's Encrypt) | Ponto de entrada público a definir (NAT/DNAT/LB na borda da CTIC que encaminhe para `192.168.21.134`) | TCP/80 | Só se HTTP-01 for adotado. **`192.168.21.134` é IP privado, não roteável da internet pública** — HTTP-01 exigiria a CTIC criar um ponto de entrada público (NAT/DNAT/LB) que hoje não existe; isso é, na prática, abrir mão do modelo VPN-only só para esta porta/finalidade. Redirect HTTP→HTTPS interno (sem HTTP-01) usa origem rede institucional/VPN, não internet pública |
+| 3 | Estações administrativas (via VPN) | `192.168.21.134` | TCP/22 | SSH administrativo |
+| 4 | `192.168.21.134` | Resolvedor DNS institucional | UDP+TCP/53 | Resolução de nomes |
+| 5 | `192.168.21.134` | Servidor(es) DNS autoritativo(s) da zona | UDP/53 (padrão do cert-manager para RFC2136; TCP/53 se a configuração exigir) | Só se DNS-01/TSIG (item 2a) for adotado |
+| 6 | `192.168.21.134` (saída) | ver lista de FQDNs confirmados abaixo | TCP/443 (HTTPS) e TCP/80 ou 443 (apt, conforme `sources.list` da VM) | Bootstrap do host, pull de charts/imagens de container, emissão de certificado |
+
+Ponto de partida — completar com outros fluxos que a CTIC exigir (ex. monitoramento externo,
+backup fora da VM).
+
+**FQDNs de egress confirmados por busca no repositório** (não é uma lista fechada — ver ressalva
+abaixo):
+
+- **Bootstrap do host**: `get.k3s.io`, `get.helm.sh`, `raw.githubusercontent.com`
+  (`scripts/bootstrap-standalone.sh`).
+- **Registries de imagem de container**: `ghcr.io` (imagens Uni+); `docker.io` (`postgres`,
+  `redis`, e as imagens usadas por `apps/apicurio-registry`, `apps/clamav-scanner`,
+  `apps/kafka-ui`, `apps/redis-ui` — `registry: docker.io` nos respectivos `values.yaml`);
+  `quay.io` (`keycloak-config-cli` usado por `apps/keycloak-replica`; e MinIO/`mc`, usados em
+  `scripts/bootstrap-standalone.sh` — a imagem principal do Keycloak é a composta própria em
+  `ghcr.io/unifesspa-edu-br/uniplus-keycloak`, já coberta pelo item `ghcr.io` acima).
+- **Repositórios Helm dos charts wrapper**: `charts.jetstack.io`, `charts.external-secrets.io`,
+  `grafana.github.io`, `prometheus-community.github.io`, `open-telemetry.github.io`,
+  `traefik.github.io`, `helm.releases.hashicorp.com` (declarados nos `Chart.yaml` de
+  `platform/*`).
+- **ACME (Let's Encrypt)**: `acme-staging-v02.api.letsencrypt.org`,
+  `acme-v02.api.letsencrypt.org` (`platform/cert-manager/values.yaml`) — só se HTTP-01/DNS-01
+  público for adotado.
+- **APT**: repositórios configurados no `sources.list` da VM (ex. `archive.ubuntu.com`/
+  `security.ubuntu.com` ou mirror institucional) — porta e protocolo dependem da configuração
+  real da VM, não verificados neste documento.
+
+**Ressalva explícita:** esta lista foi obtida por busca textual no repositório (scripts + valores
+declarados), não por observação de tráfego real nem auditoria das dependências transitivas dos
+charts upstream (subcharts do `kube-prometheus-stack`, `grafana/*`, `traefik/traefik` etc. podem
+puxar imagens adicionais de `registry.k8s.io` ou outros registries não referenciados
+diretamente neste repositório). Recomenda-se complementar o pedido com uma política de egress
+HTTPS mais ampla (ou um proxy/mirror interno) em vez de depender de uma lista de FQDNs
+fechada, e confirmar via observação real do tráfego durante o primeiro bootstrap.
+
+### 21.3 Roteamento Traefik
+
+| Host | Path | Backend (chart) | `PathPrefix`? | Mudança necessária |
+|---|---|---|---|---|
+| `uniplus-hml...` | `/portal`, `/ingresso`, `/selecao` | `apps/uniplus-web` (3 Deployments) | Sim | **Código** — `templates/ingressroute.yaml` hoje só suporta `Host(...)` |
+| `uniplus-hml...` | `/publicacoes` | — | — | **Não criar rota** — não existe SPA de Publicações em `uniplus-web` ainda; ativar só quando o 4º Deployment existir |
+| `uniplus-api-hml...` | `/api/portal` | `apps/uniplus-api-portal` | Sim | **Código** — idem. Hoje o Portal só tem endpoint-esqueleto (`/api/portal/ping`) — API de negócio ainda não implementada |
+| `uniplus-api-hml...` | `/api/ingresso`, `/api/selecao`, `/api/publicacoes` | `apps/uniplus-api-host` (composition root — Selecao+Ingresso+Configuracao+OrganizacaoInstitucional+Publicacoes, [ADR-0097](https://github.com/unifesspa-edu-br/uniplus-api/blob/main/docs/adrs/0097-topologia-de-deploy-em-tres-apis-monolito-modular.md)/[ADR-0105](https://github.com/unifesspa-edu-br/uniplus-api/blob/main/docs/adrs/0105-modulo-publicacoes-registro-central-dos-atos.md) do `uniplus-api`) | Sim | **Código** (IngressRoute) + **chart** (`templates/deployment.yaml` injeta só 5 connection strings — falta `ConnectionStrings__PublicacoesDb`) + registrar no ApplicationSet (ver nota abaixo) + **imagem publicada** — não há build do Host publicado em GHCR ainda. `/api/ingresso` é reserva de rota: módulo Ingresso ainda sem controller HTTP implementado |
+| `uniplus-oidc-hml...` | `/auth` | `apps/keycloak-replica` | Sim (já suportado) | Só `values.yaml` |
+| `geo-api-hml...` | `/` | `apps/unifesspa-geo-api` | Não | Só `values.yaml` + registrar no ApplicationSet (ver nota abaixo) |
+| `grafana-hml...` | `/` | `platform/observability/grafana` | Não (`pathPrefix: ""`) | `values.yaml` — o template já suporta os dois modos (subpath e subdomínio); **falta provisionar o `Certificate`/`secretName`** que a IngressRoute referencia — o chart não cria o certificado sozinho |
+| `kafka-ui-hml...`, `apicurio-hml...`, `redis-ui-hml...`, `minio-hml...` | `/` | charts respectivos | Não | Só `values.yaml` |
+
+**Nota sobre o ApplicationSet:** registrar `apps/uniplus-api-host` e `apps/unifesspa-geo-api` em
+`argocd/applicationset.yaml` **não é uma mudança pontual**. O generator combina cada item da lista
+com **todo cluster gerenciado** — ou seja, adicionar os dois à lista compartilhada cria uma
+`Application` desses charts em **todo** cluster registrado, não só no futuro cluster HML. Como os
+dois charts vêm com `enabled: false` por default, o Helm renderiza zero manifests nos clusters que
+não sobrescreverem isso (ex. `standalone-compact`) — resultando em `Application`s vazias/no-op
+espalhadas por todo cluster que não precisa delas (ruído operacional no ArgoCD, não uma falha de
+sync — a proteção `allowEmpty: false` existe para impedir prune acidental de todos os recursos de
+uma Application que **já estava populada**, não para bloquear uma Application que nasce vazia por
+design). Ainda assim, esse ruído por si só já justifica não fazer a mudança pontual: este HML
+precisa de um mecanismo por ambiente (Applications específicas do cluster HML, ou overrides
+explícitos por cluster no generator) — desenho a definir antes da implementação, não resolvido por
+este documento.
+
+**`uniplus-api-hml.../api/{ingresso,selecao,publicacoes}` é servido pelo `uniplus-api-host`, não
+pelos charts legados `apps/uniplus-api-{selecao,ingresso}`** — decisão deliberada, já que este HML
+existe para validar a arquitetura-alvo (ADR-0097/ADR-0105) antes de migrar `standalone-compact`
+(nota: a seção 20 descreve o Host com 4 módulos porque antecede o ADR-0105 — este documento já
+reflete os 5 módulos atuais do `uniplus-api`). Os charts legados continuam ativos só em
+`standalone-compact` até depreciação formal. Os módulos `Configuracao` e `OrganizacaoInstitucional`
+(também internos ao Host) ficam reservados/não roteados por enquanto — **sem novo workload**
+(mesmo Service), mas ainda exigem decisão própria de roteamento, CORS e autorização quando forem
+habilitados.
+
+**Política de prefixo de path é por backend, não uma regra universal:**
+
+- **APIs .NET e Keycloak** — preservar o path completo no Traefik (sem `StripPrefix`) está
+  correto, porque os controllers já registram a rota com o prefixo completo (ex.
+  `[Route("api/portal/ping")]`, `[Route("api/publicacoes")]`). Aplicar `UsePathBase` no pipeline
+  ASP.NET Core removeria esse prefixo de `Request.Path` e tenderia a produzir 404 — além disso,
+  uma única chamada global de `UsePathBase` não serve bases diferentes (`/api/portal`,
+  `/api/selecao`, `/api/ingresso`, `/api/publicacoes`) no mesmo host. **Não aplicar
+  `UsePathBase`** — os controllers já esperam o path prefixado, o Traefik só precisa encaminhá-lo
+  sem alterar.
+
+**Rotas transversais (sem prefixo de módulo) — decisão de dono no roteamento, não mudança de
+código.** Investigação em `uniplus-api` (SHA `778e380`) confirmou que todas as rotas de negócio
+dos módulos hospedados no Host (Selecao, Configuracao, OrganizacaoInstitucional, Publicacoes) já
+nascem 100% prefixadas (`api/{modulo}/...`, disciplina manual por controller, sem convenção
+central que force isso — ver nota abaixo). Ingresso não tem endpoint algum ainda (só esqueleto de
+domínio/infra). Só 10 rotas (depois de remover `/api/_smoke/*`, ver adiante) não têm prefixo
+algum, porque são registradas uma vez no Host e replicadas identicamente no Portal (mesmo pacote
+compartilhado `Unifesspa.UniPlus.Infrastructure.Core`):
+
+| Rota | Origem | Decisão de roteamento |
+|---|---|---|
+| `GET /api/auth/me` | `AuthEndpointsExtensions` | **Host é o dono** — única `IngressRoute` (`PathPrefix(/api/auth)`) aponta pro Service do Host. A cópia do Portal não fica alcançável externamente sob o host compartilhado (Portal hoje só tem o `ping` dummy, não há necessidade real de identidade própria) |
+| `GET /api/profile/me` | `ProfileEndpointsExtensions` | Idem — Host é o dono (`PathPrefix(/api/profile)`) |
+| `GET /openapi/{modulo}.json` × 5 | `Program.cs` + `ModuleApiGroupingConvention` | Idem — Host é o dono (`PathPrefix(/openapi)`); doc do Portal (se um dia existir) só via port-forward/uso interno |
+| `GET/POST /api/_smoke/*` × 3 | `SmokeEndpointsExtensions` | **Removidas do código** — [uniplus-api#829](https://github.com/unifesspa-edu-br/uniplus-api/issues/829), não precisam mais de decisão de roteamento |
+| `GET /health`, `/health/live`, `/health/ready` | `Program.cs` (`MapHealthChecks`) | **Sem rota no Traefik** — liveness/readiness do Kubernetes batem direto no IP do pod, nunca através do Ingress; não há necessidade de exposição externa |
+
+Autenticação/perfil são preocupação transversal por natureza (não pertencem a nenhum módulo de
+negócio específico) — faz sentido o Host, como composition root, ser o dono canônico. Só
+reconsiderar se um módulo/deployable diferente (Portal, Ingresso) precisar de semântica de
+auth/perfil genuinamente independente da do Host — não é o caso hoje.
+
+**Nota**: o prefixo `api/{modulo}` dos controllers de negócio é 100% manual (`[Route("api/{modulo}")]`
+por classe) — não há `IControllerModelConvention` nem classe base que force isso. O teste
+existente (`RoteamentoSemColisaoTests.cs`, `tests/Unifesspa.UniPlus.Host.IntegrationTests/`) só
+garante "existe pelo menos uma rota com esse prefixo" e ausência de colisão, não "100% das rotas
+do módulo respeitam o prefixo" — considerar uma issue própria em `uniplus-api` para (a) uma
+convenção que derive o prefixo automaticamente do namespace (mesmo padrão já usado por
+`ModuleApiGroupingConvention` para `GroupName`) e/ou (b) tornar esse teste exaustivo. Não é
+bloqueante para este documento.
+- **Angular (`uniplus-web`)** — "preservar o prefixo" **não resolve sozinho** aqui, e o
+  inventário de mudanças é maior do que só o build. Hoje o Nginx do `uniplus-web` serve o
+  conteúdo na raiz (`docker/nginx.conf`) e o runtime-config é buscado num caminho fixo
+  (`RUNTIME_CONFIG_PATH` em `runtime-config.provider.ts`) — `--base-href=/portal/` no build,
+  sozinho, não é suficiente. Também precisam de revisão: a configuração do Nginx para servir cada
+  SPA sob seu subpath, e os redirects OIDC do client-side (`silentCheckSsoRedirectUri` e a URI de
+  logout em `auth.service.ts`), que hoje presumem a SPA na raiz do domínio. Dependência cross-repo
+  real (repositório `uniplus-web`), não resolvida por este documento.
+- **Keycloak** — `redirectUris`/`webOrigins` dos clients do realm atualizados para os hosts
+  `*-hml.unifesspa.edu.br` via `environments/<env>/values.yaml` — sem mudança de template.
+
+### 21.4 Observabilidade
+
+Só o **Grafana** é exposto via Traefik (host dedicado `grafana-hml...`, OIDC real contra
+`uniplus-oidc-hml...`, mesmo padrão de `standalone-compact` — ver `environments/standalone-compact/values.yaml`,
+bloco `grafana.oidc`). **Prometheus, Loki, Tempo e o OTel Collector não têm `IngressRoute` em
+nenhum chart do repositório — nenhum pedido de DNS é necessário para eles.** Isso é o **estado
+desejado** para este HML, não uma garantia já imposta pelos defaults do repositório: o OTel
+Collector, por exemplo, configura `hostPort` 4317/4318 em
+`platform/observability/otelcol/values.yaml` (exposição potencial, dependendo do que o
+`values.yaml` do ambiente sobrescrever — o `environments/<env-hml>/values.yaml` deve remover
+explicitamente esse `hostPort`, não confiar só em `NetworkPolicy` para compensar), e a
+`NetworkPolicy` do Prometheus vem **desligada por padrão** no chart wrapper
+(`platform/observability/prometheus/values.yaml`). O `environments/<env-hml>/values.yaml` deste
+ambiente precisa habilitar/reforçar explicitamente essas proteções (mesmo nível ou mais estrito
+que `standalone-compact`) — não presumir que "sem
+IngressRoute" já implica isolamento de rede. Acesso de operação continua sendo via túnel VPN +
+`kubectl port-forward`/`exec`. Registrar isso explicitamente no pedido à CTIC evita que a ausência
+desses 4 nomes na lista do §21.2 seja lida como omissão.
+
+**CORS não pode ficar de fora do desenho.** Os charts de API já esperam `cors.allowedOrigins`
+configurável (ex. `apps/uniplus-api-portal/values.yaml`) — o `environments/<env-hml>/values.yaml`
+precisa listar os novos hosts de frontend (`uniplus-hml...`) como origem permitida em cada API,
+senão o SPA sobe mas as chamadas às APIs falham por CORS.
+
+### 21.5 Fora de escopo deste documento
+
+Registrado para rastreabilidade, não desenvolvido aqui — cada um é um documento/decisão à parte:
+
+- **Custódia do Vault** — o `standalone-compact` real hoje usa **Shamir manual (5 shares/3
+  threshold)**, não auto-unseal Transit. Auto-unseal Transit depende de alcançar em rede outro
+  Vault Transit + credencial — não de hardware TPM local (a hipótese de que a ausência de vTPM
+  bloquearia Transit estava incorreta e foi removida desta seção). O que fica pendente de decisão
+  para este HML é: seguir o mesmo padrão Shamir manual do `standalone-compact` (aceitando operação
+  manual de unseal/custódia de chaves), ou avaliar se há um Vault Transit alcançável em rede a
+  partir desta VM que justifique auto-unseal — decisão técnica separada, fora do escopo deste
+  documento.
+- **GitOps vs. bootstrap script** — registrar `apps/uniplus-api-host` e `apps/unifesspa-geo-api`
+  no `argocd/applicationset.yaml` não é pontual (ver nota em §21.3) — o desenho do mecanismo por
+  ambiente fica como decisão arquitetural separada, não resolvida aqui.
+- **K3s EOL** — `scripts/bootstrap-standalone.sh` pina `v1.31.4+k3s1` (Kubernetes 1.31 é EOL desde
+  novembro/2025); atualização de versão é pré-requisito técnico do bootstrap, fora do escopo de
+  DNS/roteamento deste documento.
+
+### 21.6 Suposições e verificações pendentes
+
+Para não conferir a este documento uma precisão que ele não tem:
+
+- **Especificações da VM** (IP `192.168.21.134`, SO Ubuntu 24.04.4, 6 vCPU/31 GB RAM, 97 GB disco,
+  Docker já instalado, ausência de IP público, VPN-only, dedicação exclusiva a este HML, ausência
+  de vTPM) — conforme relatado/levantado por SSH em sessão anterior, **não re-verificadas nesta
+  revisão documental**. Reconfirmar antes do bootstrap.
+- **Capacidade de rede da CTIC** — existência de DNS interno/split-horizon, suporte a
+  RFC2136/TSIG, adesão da UNIFESSPA ao ICPEdu Corporativo, compatibilidade de registro CAA e
+  aceitação de TTL 300s — dependem de resposta da CTIC, não de decisão deste time.
+- **Os 9 hostnames propostos não retornam registro DNS hoje** (verificado durante revisão) —
+  esperado, já que ainda não foram solicitados; não deve ser lido como indício de que já existem
+  ou não numa view DNS interna específica.
 
 ---
 
