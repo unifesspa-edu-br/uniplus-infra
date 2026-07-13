@@ -1,0 +1,322 @@
+# Ambiente: hml-standalone-single
+#
+# Topologia de host único (mesmo modelo do `lab-standalone-single`, ADR-008),
+# mas na VM REAL dedicada da UNIFESSPA (`192.168.21.134`, Ubuntu 24.04.4,
+# 6 vCPU/31GB RAM, rede interna VPN-only, sem IP público). Diferente do lab
+# (VirtualBox, aplicado manualmente via `helm install/upgrade -f`), este
+# ambiente é **gerenciado continuamente pelo ArgoCD**
+# (`argocd/applicationset.yaml`, label `uniplus.io/managed=true`,
+# `environment: hml-standalone-single`) — o generator combina o cluster
+# registrado com TODOS os 9 apps + 14 componentes de platform, aplicando
+# este arquivo como overlay em TODOS eles, não só nos referenciados abaixo.
+#
+# Isso muda a regra do jogo em relação ao lab: qualquer chart cujo default
+# seja `enabled: true` e que não pertença ao escopo desta fase PRECISA de
+# override explícito para `false` aqui — omitir a chave não é seguro (ao
+# contrário do lab, que só instala manualmente o que é explicitamente
+# comandado). Ver "Escopo desta fase" abaixo.
+#
+# Contexto completo: Epic #434, Feature #435, Story #439. Planejamento em
+# `docs/RUNBOOKS.md §21`. Decisão de custódia do Vault em
+# [ADR-014](../../docs/adrs/ADR-014-vault-shamir-hml-standalone-single.md).
+#
+# ============================================================================
+# Escopo desta fase (Feature 1 do Epic #434 — "Bootstrap da fundação real")
+# ============================================================================
+#
+# Habilitados: Vault, External Secrets Operator, Traefik+TLS (autoassinado,
+# provisório — ADR/RUNBOOKS §21.2 item 2), Keycloak, Apicurio Registry,
+# StorageClass. Kafka roda fora do K8s (systemd no data-host, escopo do
+# script de bootstrap #442) — não aparece neste arquivo.
+#
+# Deliberadamente FORA de escopo (Features 2-4 do Epic #434 ainda não têm
+# base de código pronta — ver `docs/RUNBOOKS.md §21.3`, coluna "Mudança
+# necessária: Código"):
+#   - uniplusApiHost / uniplusApiPortal / unifesspaGeoApi — chart não tem
+#     `ConnectionStrings__PublicacoesDb` nativo (Feature 3), IngressRoute
+#     não suporta `PathPrefix` (Feature 2), sem imagem publicada em GHCR
+#     (Feature 3). Também evita o problema de que o certificado autoassinado
+#     real desta VM só existe DEPOIS do bootstrap (#442/#445) — os apps .NET
+#     precisariam de `customCA.certPEM`, que não pode ser fabricado agora.
+#   - uniplusWeb — default `enabled: true` no chart; desligado explicitamente
+#     abaixo. Mesma falta de suporte a `PathPrefix`/subpath (Feature 2) +
+#     trabalho cross-repo em `uniplus-web` (Feature 4).
+#   - cert-manager, Vault Transit (auto-unseal), Vault Transit Bootstrap
+#     (engine transit local p/ idempotência do uniplus-api — sem consumidor
+#     enquanto uniplusApiHost não roda aqui), observabilidade completa
+#     (Prometheus/Grafana/Loki/Tempo/OTel Collector) — nenhum mencionado no
+#     escopo da Feature 1; RUNBOOKS §21.4 documenta requisitos adicionais
+#     (hostPort do OTel Collector, NetworkPolicy do Prometheus) que exigem
+#     tratamento próprio antes de ligar, fora do escopo desta Story.
+#
+# Provisionamento de DB/roles (Postgres do Keycloak) e do client secret do
+# Apicurio é responsabilidade do script de bootstrap (#442/#445) — mesma
+# sequência já operada em `lab-standalone-single` (ver seu README.md).
+
+cluster:
+  name: hml-standalone-single
+  region: unifesspa-interna
+  dc: hml-standalone-single
+
+# ============================================================================
+# Vault (chart platform/vault/) — custódia Shamir manual, ver ADR-014.
+# Mesma configuração de `lab-standalone-single`/`standalone-compact`: HA
+# Raft com 1 réplica (host único), sem PDB (nada a preservar durante drain),
+# `service_registration "kubernetes"` removido (K3s/flannel + auth por
+# service-account gera nil response no GET do Pod, bloqueando requests
+# síncronos do Vault — mesmo bug documentado em standalone-compact/lab).
+# ============================================================================
+vault:
+  enabled: true
+
+  global:
+    tlsDisable: true # TLS terminado no Traefik, mesmo padrão do lab/standalone-compact
+
+  server:
+    ha:
+      enabled: true
+      replicas: 1
+
+      disruptionBudget:
+        enabled: false
+
+      raft:
+        enabled: true
+        setNodeId: true
+        config: |
+          ui = true
+
+          listener "tcp" {
+            tls_disable     = 1
+            address         = "0.0.0.0:8200"
+            cluster_address = "0.0.0.0:8201"
+          }
+
+          storage "raft" {
+            path = "/vault/data"
+          }
+
+    dataStorage:
+      size: 2Gi
+      storageClass: hml-local-nvme
+    auditStorage:
+      size: 2Gi
+      storageClass: hml-local-nvme
+
+# Vault Transit (auto-unseal centralizado) e o bootstrap da engine Transit
+# LOCAL (usada pela feature de idempotência do uniplus-api) — ambos
+# desligados. O primeiro por decisão da ADR-014 (Shamir manual, sem Transit
+# alcançável em rede). O segundo por falta de consumidor: uniplusApiHost
+# não roda nesta fase (ver "Escopo desta fase" acima).
+vaultTransit:
+  enabled: false
+
+vaultTransitBootstrap:
+  enabled: false
+
+# NetworkPolicy compartilhada pelos wrappers platform/vault/ e
+# platform/external-secrets/ — kubeApiCidrs precisa do CIDR do host, não só
+# do service CIDR (K3s: apiserver roda como processo no host, não Pod; o
+# kube-router avalia egress DEPOIS do DNAT do kube-proxy — mesmo bug
+# documentado em lab-standalone-single/standalone-compact).
+networkPolicy:
+  enabled: true
+  kubeApiCidrs:
+    - 10.43.0.0/16
+    - 192.168.21.134/32
+
+ingress:
+  enabled: false # acesso administrativo via kubectl port-forward / túnel VPN
+
+serviceMonitor:
+  enabled: false # sem Prometheus Operator habilitado nesta fase
+
+# ============================================================================
+# External Secrets Operator — o chart tem `enabled: true` como default
+# (mantido). ClusterSecretStore fica `enabled: true` aqui — é o estado FINAL
+# desejado, mesmo padrão de `environments/standalone-compact/values.yaml`
+# (que também commita `true` direto). NÃO é um toggle de duas fases: ao
+# contrário do lab (manual, `--set clusterSecretStore.enabled=false` só no
+# primeiro `helm install`, depois `helm upgrade` sem o override), este
+# ambiente é reconciliado continuamente — declarar `false` aqui faria o
+# ArgoCD manter isso para sempre (self-heal), e os 4 `ExternalSecret` do
+# Keycloak/Apicurio (que dependem do Secret que só o ClusterSecretStore
+# entrega) ficariam permanentemente em `CreateContainerConfigError`, não
+# "em retry até convergir".
+#
+# CONTRATO para a Story #445 (ordem obrigatória, mesma de `standalone-compact`
+# — ver comentário lá): completar `vault operator init` + unseal + policy
+# `external-secrets-read` + role `external-secrets` (auth k8s) ANTES de
+# registrar o cluster no ArgoCD (`argocd cluster add`). Registrar primeiro e
+# inicializar o Vault depois inverte a ordem esperada — o primeiro sync do
+# ArgoCD falharia (Vault ainda sem a role) e ficaria em retry (5x, backoff até
+# 3min) até esgotar, exigindo re-sync manual depois de corrigido.
+#
+# vaultServer: release do Vault, gerado pelo ApplicationSet como
+# `platform-vault-<cluster>` (o chart não usa fullnameOverride). CONTRATO
+# adicional para a Story #445: o cluster PRECISA ser registrado no ArgoCD com
+# `--name hml-standalone-single` (idêntico ao label `environment` usado
+# abaixo) — qualquer nome diferente quebra este endereço.
+# ============================================================================
+clusterSecretStore:
+  enabled: true
+  vaultServer: "http://platform-vault-hml-standalone-single.vault.svc.cluster.local:8200"
+
+# ============================================================================
+# StorageClass (chart platform/storage/) — nome obrigatório por tier
+# (convenção do chart: lab-local-nvme, hml-local-nvme, prod-local-nvme...).
+# provisioner (rancher.io/local-path) e reclaimPolicy (Retain) mantêm os
+# defaults do chart — VM real não é descartável como o standalone-compact
+# PAYG, então preservar dados em delete de PVC é o comportamento certo.
+# ============================================================================
+storage:
+  enabled: true
+  storageClass:
+    name: hml-local-nvme
+
+# cert-manager fica desligado até a Feature 6 (pedido CTIC) resolver a
+# estratégia de TLS real (docs/RUNBOOKS.md §21.2, item 2) — os únicos
+# ClusterIssuer hoje implementados usam desafio HTTP-01, que não serve para
+# esta VM (VPN-only, sem IP público alcançável pela Let's Encrypt). Manter
+# ligado sem nenhum Certificate que ele consiga emitir só gera Applications
+# Degraded sem propósito.
+cert-manager:
+  enabled: false
+
+# ============================================================================
+# Traefik (chart platform/traefik/) — hostPort 80+443 bindam direto na VM
+# real (mesmo padrão do lab/standalone-compact). TLS autoassinado
+# provisório (secret `uniplus-wildcard-nip-io-tls`, criado manualmente via
+# `kubectl create secret tls` durante o bootstrap #442/#445 — não é
+# gerenciado pelo cert-manager nem versionado no Git, mesmo padrão do lab).
+# redirections: null mantém :80 servindo em paralelo, útil para smoke tests
+# via curl sem exigir secure context.
+# ============================================================================
+traefik:
+  service:
+    type: NodePort
+  ports:
+    web:
+      hostPort: 80
+      http:
+        redirections: null
+    websecure:
+      hostPort: 443
+
+# ============================================================================
+# Keycloak (chart apps/keycloak-replica/, default enabled=false).
+#
+# database.host e hostname.strict eram aplicados via `--set` ad-hoc no lab
+# (nunca persistidos no values.yaml dele, ver environments/lab-standalone-single/README.md)
+# — como este ambiente é GitOps (sem `--set` manual possível), precisam
+# estar aqui explicitamente.
+#
+# hostname.url precisa bater com o host do IngressRoute abaixo — o `iss`
+# claim dos tokens e os endpoints do discovery document derivam de
+# KC_HOSTNAME; divergência quebra o fluxo de login OIDC (redirect_uri
+# mismatch / iss inesperado).
+#
+# realmImport.portalClient fica com os defaults do chart (redirectUris
+# vazio) — sem consumidor real enquanto uniplusWeb não roda nesta fase;
+# Feature 2/4 preenche quando ligar o frontend.
+# ============================================================================
+keycloak:
+  enabled: true
+
+  database:
+    host: 192.168.21.134
+
+  hostname:
+    url: https://keycloak.192.168.21.134.nip.io/auth
+    strict: false
+
+  ingress:
+    enabled: true
+    entryPoint: websecure
+    host: keycloak.192.168.21.134.nip.io
+    tls:
+      enabled: true
+      secretName: uniplus-wildcard-nip-io-tls
+
+  networkPolicy:
+    enabled: true
+    dataHostCIDR: 192.168.21.134/32
+
+  # Precisa estar ligado: o realm-reconcile-job aplica mudanças de config
+  # (ex. portalClient, quando Feature 2/4 ligar) num Keycloak cujo realm já
+  # foi importado antes — `--import-realm` só roda no primeiro boot (gotcha
+  # documentado em feedback_keycloak_realm_reconcile_gated).
+  realmReconcile:
+    enabled: true
+
+# ============================================================================
+# Apicurio Registry (chart apps/apicurio-registry/) — Schema Registry.
+# Referência direta: lab-standalone-single (já validado, inclusive pelo
+# spike de PathPrefix na própria VM real — ver
+# docs/validacao/spike-pathprefix-hml-2026-07-12.md).
+# ============================================================================
+apicurioRegistry:
+  enabled: true
+
+  storage:
+    host: 192.168.21.134
+
+  oidc:
+    issuerUri: https://keycloak.192.168.21.134.nip.io/auth/realms/uniplus
+
+  # Quarkus rejeita o certificado autoassinado do Keycloak ao buscar o JWKS
+  # sem isso ("OIDC Server is not available"). trust-all é aceitável só
+  # porque o TLS é autoassinado nesta fase (nunca em produção real com
+  # Let's Encrypt via cert-manager).
+  extraEnv:
+    - name: QUARKUS_TLS_TRUST_ALL
+      value: "true"
+
+  ingress:
+    enabled: true
+    entryPoint: websecure
+    host: apicurio.192.168.21.134.nip.io
+    tls:
+      enabled: true
+      secretName: uniplus-wildcard-nip-io-tls
+
+  networkPolicy:
+    enabled: true
+    dataHostCIDR: 192.168.21.134/32
+    keycloakService: keycloak-replica
+    keycloakNamespace: uniplus
+    keycloakPort: 8080
+    # NÃO aponta pro IP da VM — o hostPort do Traefik é implementado via
+    # DNAT (CNI portmap), e o kube-router avalia egress DEPOIS do DNAT: o
+    # destino real pós-DNAT é o IP do Pod do Traefik (10.42.0.x), não o IP
+    # da VM (mesmo gotcha documentado em kubeApiCidrs acima, aqui via
+    # hostPort em vez de kube-proxy). Usa o pod CIDR do cluster + a porta
+    # real do container (8443, entryPoint websecure).
+    oidcIssuerCIDR: 10.42.0.0/16
+    oidcIssuerPort: 8443
+
+  serviceMonitor:
+    enabled: false # sem Prometheus Operator habilitado nesta fase
+
+# ============================================================================
+# Fora de escopo desta fase — desligados explicitamente porque o
+# ApplicationSet os habilitaria por default (enabled=true no chart) assim
+# que o cluster for registrado. Ver "Escopo desta fase" no topo do arquivo.
+# ============================================================================
+uniplusWeb:
+  enabled: false
+
+kubePrometheusStack:
+  enabled: false
+
+grafana:
+  enabled: false
+
+loki:
+  enabled: false
+
+tempo:
+  enabled: false
+
+otelCollector:
+  enabled: false
