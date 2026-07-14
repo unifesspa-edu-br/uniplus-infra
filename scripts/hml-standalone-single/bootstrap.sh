@@ -339,6 +339,23 @@ step_install_argocd() {
         deployment/argocd-applicationset-controller \
         -n argocd"
 
+    # K3s expõe .status.terminatingReplicas em Deployment/StatefulSet a partir
+    # da 1.32 — campo que o schema OpenAPI embutido no binário do ArgoCD ainda
+    # não reconhece nas versões testadas contra K3s <=1.31. Com
+    # ServerSideApply=true (necessário: CRDs do external-secrets/cert-manager
+    # estourariam os 262144 bytes de anotação do client-side apply), o ArgoCD
+    # usa por padrão a estratégia "structured merge diff" local, que tenta
+    # tipar o recurso live contra esse schema embutido e falha com
+    # ComparisonError assim que encontra o campo — travando toda a Application
+    # em Sync Status "Unknown" e impedindo até a criação de recursos novos
+    # dentro dela. Server-Side Diff delega o cálculo do diff a um dry-run no
+    # próprio API server (que conhece o campo de verdade), contornando o gap.
+    log_info "Habilitando Server-Side Diff no controller do ArgoCD..."
+    run "kubectl -n argocd patch configmap argocd-cmd-params-cm --type merge \
+        -p '{\"data\":{\"controller.diff.server.side\":\"true\"}}'"
+    run "kubectl -n argocd rollout restart statefulset/argocd-application-controller"
+    run "kubectl -n argocd rollout status statefulset/argocd-application-controller --timeout=180s"
+
     log_success "ArgoCD instalado."
 }
 
