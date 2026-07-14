@@ -17,6 +17,11 @@ Shamir que exigem custódia humana real (ver ADR-014), incompatível com execuç
 sem operador presente. Retomar via `docs/RUNBOOKS.md §8.4` (adaptado para 5/3), assim que houver
 disponibilidade de um operador humano.
 
+> **Atualização (operador humano, mesmo dia):** `vault operator init` (Shamir 5/3), unseal e a
+> configuração pós-init (auth Kubernetes + policy/role `external-secrets`, seção 6) foram
+> concluídos por um operador humano presente, seguindo o procedimento seguro descrito na seção 6.
+> O gap de schema K3s×ArgoCD (seção 7) também foi resolvido nessa mesma janela.
+
 ## 1. Estado inicial da VM (antes do bootstrap)
 
 Confirmado via SSH, batendo com o estado documentado em `docs/RUNBOOKS.md §21.6` e com o estado
@@ -141,10 +146,10 @@ kubectl -n vault exec -it platform-vault-in-cluster-0 -- vault operator unseal
 # ArgoCD reconcilia sozinho (self-heal) assim que a role existir — sem precisar re-sync manual
 ```
 
-## 7. Achado adicional (não bloqueante): gap de schema K3s 1.36 × ArgoCD 2.14.3
+## 7. Gap de schema K3s 1.36 × ArgoCD 2.14.3 — RESOLVIDO
 
 `platform-vault-in-cluster`, `platform-traefik-in-cluster` e `platform-external-secrets-in-cluster`
-mostram `ComparisonError`:
+mostravam `ComparisonError`:
 
 ```
 Failed to compare desired state to live state: failed to calculate diff: error calculating
@@ -157,26 +162,31 @@ embutida no K3s `v1.36.2+k3s1` já expõe, mas que o schema OpenAPI embutido no 
 ainda não reconhece — gap de 5 minors entre o K3s pinado e a matriz oficialmente testada pelo
 ArgoCD (`docs/RUNBOOKS.md §21.7` já sinalizava esse risco, achado de revisão do PR #463).
 
-**Confirmado que é cosmético, não bloqueia aplicação real:**
+**Não era só cosmético.** A comparação `Synced`/`OutOfSync` de fato quebrava nessas Applications,
+mas o problema ia além da exibição de status: quando o `ComparisonError` acontece antes do ArgoCD
+terminar de processar a lista de recursos de uma sync, tudo que vem depois do recurso que disparou
+o erro fica sem aplicar — foi o que bloqueou a criação do `ClusterSecretStore vault-default`
+(recurso `external-secrets.io`, sem relação nenhuma com o campo problemático, mas na mesma
+Application `platform-external-secrets-in-cluster`) até o Vault ser desselado e a configuração
+pós-init (seção 6) ser feita.
 
-```
-$ kubectl get pods -n traefik -n external-secrets
-platform-traefik-in-cluster-...            1/1   Running
-platform-external-secrets-in-cluster-...   1/1   Running
-platform-external-secrets-in-cluster-cert-controller-...   1/1   Running
-platform-external-secrets-in-cluster-webhook-...            1/1   Running
-```
+**Causa raiz:** `ServerSideApply=true` no `syncOptions` (`argocd/applicationset.yaml`) — necessário
+porque os CRDs do `external-secrets`/`cert-manager` estourariam os 262144 bytes de anotação do
+client-side apply — ativa por padrão a estratégia *structured merge diff* do ArgoCD, que tenta
+tipar o recurso live contra um schema OpenAPI embutido no próprio binário (desatualizado frente ao
+K3s 1.36).
 
-Os manifests aplicam e os Pods sobem normalmente — só a comparação de status do ArgoCD (usada para
-`Synced`/`OutOfSync`) erra nesses três Applications especificamente (todas têm Deployment ou
-StatefulSet). Não resolvido nesta sessão — fica registrado como acompanhamento: se persistir após
-o Vault desselado (quando dará pra validar Vault healthy de verdade), avaliar downgrade pontual do
-K3s para a faixa testada pelo ArgoCD 2.14.3 (até 1.31) ou aguardar upgrade do ArgoCD (fora de
-escopo de rotina, salto de major version).
+**Correção:** habilitar *Server-Side Diff* (`controller.diff.server.side=true` em
+`argocd-cmd-params-cm`, com restart do `argocd-application-controller`) — delega o cálculo do diff
+a um dry-run no próprio API server, que conhece o campo de verdade. Testado ao vivo nesta VM: as 22
+Applications convergiram para `Synced` (zero `Unknown`), e o `ClusterSecretStore` passou a
+`Valid`/`Ready` imediatamente após. Codificado como parte fixa de `step_install_argocd` em
+`scripts/hml-standalone-single/bootstrap.sh` e `scripts/bootstrap-standalone.sh` (mesma versão de
+K3s pinada nos dois, `v1.36.2+k3s1` — `standalone-compact` está sujeito ao mesmo gap) — reproduzido
+automaticamente em qualquer bootstrap futuro, não é mais um passo manual.
 
 ## 8. Não executado nesta sessão (para retomar)
 
-- `vault operator init` + unseal + configuração de auth/policy/role (seção 6)
 - Seed dos secrets que Keycloak/Apicurio esperam via `ExternalSecret` (senhas dos DBs já geradas em
   `/var/lib/uniplus/postgres/.bootstrap-creds-{keycloak,apicurio}` na VM, aguardando custódia +
   `vault kv put`)
@@ -184,4 +194,3 @@ escopo de rotina, salto de major version).
   arquivos `root:root 600` na VM, avisos de "custódia obrigatória" já emitidos pelo script
 - `scripts/validate-standalone.sh` (ou equivalente adaptado para este ambiente) após o Vault estar
   operacional
-- Acompanhamento do gap de schema K3s×ArgoCD (seção 7)
