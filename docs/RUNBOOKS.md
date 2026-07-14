@@ -1071,10 +1071,20 @@ path "secret/metadata/*" { capabilities = ["read"] }
 POLICY
 
 # 7) Role vinculando ServiceAccount external-secrets/external-secrets à policy
+#
+# audience: sem isso, o Vault aceita o JWT da ServiceAccount contra QUALQUER
+# audience presente no token — não restringe a validação ao TokenReview desta
+# role específica. Confirmado via `kubectl create token external-secrets -n
+# external-secrets` + decode do JWT que o K3s emite dois audiences por padrão
+# ([https://kubernetes.default.svc.cluster.local, k3s]) mesmo sem
+# `--api-audiences` explícito no kube-apiserver (K3s usa o
+# `--service-account-issuer` como default implícito) — usar o mesmo valor já
+# configurado em `kubernetes_host` acima garante que bate com um dos dois.
 vault write auth/kubernetes/role/external-secrets \
   bound_service_account_names=external-secrets \
   bound_service_account_namespaces=external-secrets \
   policies=external-secrets-read \
+  audience=https://kubernetes.default.svc.cluster.local \
   ttl=24h
 
 # 8) Habilitar KV v2 em `secret/` (não vem montado por default em HA Raft)
