@@ -22,6 +22,8 @@ spec:
   goTemplateOptions:
     - missingkey=error
   generators:
+    # Apps habilitados em todos os ambientes — combina cada cluster
+    # registrado com cada app desta lista, sem distinção por ambiente.
     - matrix:
         generators:
           # Cada cluster registrado
@@ -41,6 +43,30 @@ spec:
                 - app: kafka-ui
                 - app: apicurio-registry
                 - app: redis-ui
+    # Apps habilitados só em ambientes específicos — mecanismo genérico de
+    # habilitação por-ambiente (ver argocd/README.md § Habilitação por-ambiente).
+    # Cada elemento declara o chart + o(s) ambiente(s) (label `environment`
+    # do cluster) onde a Application deve ser gerada; o `list` generator
+    # produz `targetEnvironment`, consumido pelo `clusters` generator
+    # seguinte via `selector.matchLabels.environment` (matrix passa
+    # parâmetros de um generator filho para o próximo — o produtor precisa
+    # vir antes do consumidor). Para habilitar um chart em mais de um
+    # ambiente, repetir o elemento com `targetEnvironment` diferente; para
+    # habilitar um novo chart, adicionar um elemento novo — nenhum nome de
+    # chart é hardcoded na lógica de filtragem.
+    - matrix:
+        generators:
+          - list:
+              elements:
+                - app: uniplus-api-host
+                  targetEnvironment: hml-standalone-single
+                - app: unifesspa-geo-api
+                  targetEnvironment: hml-standalone-single
+          - clusters:
+              selector:
+                matchLabels:
+                  uniplus.io/managed: "true"
+                  environment: '{{.targetEnvironment}}'
 
   template:
     metadata:

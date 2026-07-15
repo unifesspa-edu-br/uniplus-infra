@@ -7,8 +7,11 @@
 # ambiente é **gerenciado continuamente pelo ArgoCD**
 # (`argocd/applicationset.yaml`, label `uniplus.io/managed=true`,
 # `environment: hml-standalone-single`) — o generator combina o cluster
-# registrado com TODOS os 9 apps + 14 componentes de platform, aplicando
-# este arquivo como overlay em TODOS eles, não só nos referenciados abaixo.
+# registrado com os 9 apps sempre-ligados + os apps habilitados só neste
+# ambiente via o mecanismo de habilitação por-ambiente (`uniplus-api-host` e
+# `unifesspa-geo-api`, ver `argocd/README.md` — story #457) + 14 componentes
+# de platform, aplicando este arquivo como overlay em TODOS eles, não só nos
+# referenciados abaixo.
 #
 # Isso muda a regra do jogo em relação ao lab: qualquer chart cujo default
 # seja `enabled: true` e que não pertença ao escopo desta fase PRECISA de
@@ -32,11 +35,19 @@
 # Deliberadamente FORA de escopo (Features 2-4 do Epic #434 ainda não têm
 # base de código pronta — ver `docs/RUNBOOKS.md §21.3`, coluna "Mudança
 # necessária: Código"):
-#   - uniplusApiHost / uniplusApiPortal / unifesspaGeoApi — sem imagem
-#     publicada em GHCR (Feature 3). Também evita o problema de que o
-#     certificado autoassinado real desta VM só existe DEPOIS do bootstrap
-#     (#442/#445) — os apps .NET precisariam de `customCA.certPEM`, que não
-#     pode ser fabricado agora.
+#   - uniplusApiHost — registrado no ApplicationSet (story #457), mas chart
+#     default é `enabled: false` e assim permanece aqui: sem imagem
+#     publicada em GHCR ainda (Feature 3). A Application sincroniza vazia
+#     (mesmo padrão de uniplusWeb abaixo) até a imagem existir e o chart ser
+#     ligado.
+#   - unifesspaGeoApi — registrado no ApplicationSet (story #457); imagem já
+#     publicada em GHCR, mas `enabled: false` aqui até o provisionamento dos
+#     secrets (Vault: postgres/geo, redis, geo/encryption) e a decisão do
+#     hostname de ingress — follow-up ainda sem issue própria.
+#   - uniplusApiPortal — já registrado, imagem publicada, mas TLS real desta
+#     VM depende do certificado autoassinado gerado no bootstrap
+#     (#442/#445) — os apps .NET precisariam de `customCA.certPEM`,
+#     acompanhar quando o app for de fato ligado neste ambiente.
 #   - uniplusWeb — default `enabled: true` no chart; desligado explicitamente
 #     abaixo. Mesma falta de suporte a `PathPrefix`/subpath (Feature 2) +
 #     trabalho cross-repo em `uniplus-web` (Feature 4).

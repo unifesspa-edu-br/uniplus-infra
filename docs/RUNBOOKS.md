@@ -4061,25 +4061,27 @@ fechada, e confirmar via observação real do tráfego durante o primeiro bootst
 | `uniplus-hml...` | `/portal`, `/ingresso`, `/selecao` | `apps/uniplus-web` (3 Deployments) | Sim | **Código** — `templates/ingressroute.yaml` hoje só suporta `Host(...)` |
 | `uniplus-hml...` | `/publicacoes` | — | — | **Não criar rota** — não existe SPA de Publicações em `uniplus-web` ainda; ativar só quando o 4º Deployment existir |
 | `uniplus-api-hml...` | `/api/portal` | `apps/uniplus-api-portal` | Sim | **Código** — idem. Hoje o Portal só tem endpoint-esqueleto (`/api/portal/ping`) — API de negócio ainda não implementada |
-| `uniplus-api-hml...` | `/api/ingresso`, `/api/selecao`, `/api/publicacoes` | `apps/uniplus-api-host` (composition root — Selecao+Ingresso+Configuracao+OrganizacaoInstitucional+Publicacoes, [ADR-0097](https://github.com/unifesspa-edu-br/uniplus-api/blob/main/docs/adrs/0097-topologia-de-deploy-em-tres-apis-monolito-modular.md)/[ADR-0105](https://github.com/unifesspa-edu-br/uniplus-api/blob/main/docs/adrs/0105-modulo-publicacoes-registro-central-dos-atos.md) do `uniplus-api`) | Sim | **Código** (IngressRoute) + registrar no ApplicationSet (ver nota abaixo) + **imagem publicada** — não há build do Host publicado em GHCR ainda. `/api/ingresso` é reserva de rota: módulo Ingresso ainda sem controller HTTP implementado |
+| `uniplus-api-hml...` | `/api/ingresso`, `/api/selecao`, `/api/publicacoes` | `apps/uniplus-api-host` (composition root — Selecao+Ingresso+Configuracao+OrganizacaoInstitucional+Publicacoes, [ADR-0097](https://github.com/unifesspa-edu-br/uniplus-api/blob/main/docs/adrs/0097-topologia-de-deploy-em-tres-apis-monolito-modular.md)/[ADR-0105](https://github.com/unifesspa-edu-br/uniplus-api/blob/main/docs/adrs/0105-modulo-publicacoes-registro-central-dos-atos.md) do `uniplus-api`) | Sim (já suportado) | **Imagem publicada** — já registrado no ApplicationSet (story #457, ver nota abaixo) e o `templates/ingressroute.yaml` já suporta `ingress.pathPrefixes` (sem `StripPrefix`); falta só o build do Host em GHCR, então segue `enabled: false`. `/api/ingresso` é reserva de rota: módulo Ingresso ainda sem controller HTTP implementado |
 | `uniplus-oidc-hml...` | `/auth` | `apps/keycloak-replica` | Sim (já suportado) | Só `values.yaml` |
-| `geo-api-hml...` | `/` | `apps/unifesspa-geo-api` | Não | Só `values.yaml` + registrar no ApplicationSet (ver nota abaixo) |
+| `geo-api-hml...` | `/` | `apps/unifesspa-geo-api` | Não | Já registrado no ApplicationSet (story #457, ver nota abaixo); imagem publicada em GHCR — falta só `values.yaml` (`unifesspaGeoApi.enabled: true` + secrets do Vault, follow-up ainda sem issue própria) |
 | `grafana-hml...` | `/` | `platform/observability/grafana` | Não (`pathPrefix: ""`) | `values.yaml` — o template já suporta os dois modos (subpath e subdomínio); **falta provisionar o `Certificate`/`secretName`** que a IngressRoute referencia — o chart não cria o certificado sozinho |
 | `kafka-ui-hml...`, `apicurio-hml...`, `redis-ui-hml...`, `minio-hml...` | `/` | charts respectivos | Não | Só `values.yaml` |
 
-**Nota sobre o ApplicationSet:** registrar `apps/uniplus-api-host` e `apps/unifesspa-geo-api` em
-`argocd/applicationset.yaml` **não é uma mudança pontual**. O generator combina cada item da lista
-com **todo cluster gerenciado** — ou seja, adicionar os dois à lista compartilhada cria uma
-`Application` desses charts em **todo** cluster registrado, não só no futuro cluster HML. Como os
-dois charts vêm com `enabled: false` por default, o Helm renderiza zero manifests nos clusters que
-não sobrescreverem isso (ex. `standalone-compact`) — resultando em `Application`s vazias/no-op
-espalhadas por todo cluster que não precisa delas (ruído operacional no ArgoCD, não uma falha de
-sync — a proteção `allowEmpty: false` existe para impedir prune acidental de todos os recursos de
-uma Application que **já estava populada**, não para bloquear uma Application que nasce vazia por
-design). Ainda assim, esse ruído por si só já justifica não fazer a mudança pontual: este HML
-precisa de um mecanismo por ambiente (Applications específicas do cluster HML, ou overrides
-explícitos por cluster no generator) — desenho a definir antes da implementação, não resolvido por
-este documento.
+**Nota sobre o ApplicationSet:** `apps/uniplus-api-host` e `apps/unifesspa-geo-api` estão
+registrados em `argocd/applicationset.yaml` via o mecanismo de habilitação por-ambiente
+(story #457, documentado em [`argocd/README.md` § Habilitação por-ambiente](../argocd/README.md#habilitação-por-ambiente-quais-charts-existem-em-cada-ambiente)) —
+um segundo `matrix` generator (chart + `targetEnvironment`) só gera a `Application` desses 2
+charts para clusters cujo label `environment` seja `hml-standalone-single`; `standalone-compact` e
+`lab-standalone-single` não geram `Application` nenhuma para eles (regressão zero). Como os dois
+charts vêm com `enabled: false` por default e a `hml-standalone-single` não sobrescreve isso (ver
+`environments/hml-standalone-single/values.yaml`), a `Application` em HML sincroniza com zero
+manifests — `Synced`/`Healthy` sem `Deployment`/`Service`, mesmo padrão hoje usado por `uniplusWeb`
+nesse ambiente (a proteção `allowEmpty: false` existe para impedir prune acidental de todos os
+recursos de uma Application que **já estava populada**, não bloqueia uma Application que nasce
+vazia por design). Ligar o workload de fato é decisão independente, por chart: `uniplus-api-host`
+aguarda a primeira imagem publicada em GHCR; `unifesspa-geo-api` já tem imagem, mas aguarda o
+provisionamento dos secrets do Vault (follow-up ainda sem issue própria) antes de
+`unifesspaGeoApi.enabled: true`.
 
 **`uniplus-api-hml.../api/{ingresso,selecao,publicacoes}` é servido pelo `uniplus-api-host`, não
 pelos charts legados `apps/uniplus-api-{selecao,ingresso}`** — decisão deliberada, já que este HML
@@ -4179,9 +4181,6 @@ Registrado para rastreabilidade, não desenvolvido aqui — cada um é um docume
   manual de unseal/custódia de chaves), ou avaliar se há um Vault Transit alcançável em rede a
   partir desta VM que justifique auto-unseal — decisão técnica separada, fora do escopo deste
   documento.
-- **GitOps vs. bootstrap script** — registrar `apps/uniplus-api-host` e `apps/unifesspa-geo-api`
-  no `argocd/applicationset.yaml` não é pontual (ver nota em §21.3) — o desenho do mecanismo por
-  ambiente fica como decisão arquitetural separada, não resolvida aqui.
 - **K3s EOL** — `scripts/bootstrap-standalone.sh` pina `v1.31.4+k3s1` (Kubernetes 1.31 é EOL desde
   novembro/2025); atualização de versão é pré-requisito técnico do bootstrap, fora do escopo de
   DNS/roteamento deste documento.
