@@ -70,6 +70,11 @@ uniplusWeb:
       image: uniplus-portal
       tag: v0.2.1  # tag publicada em GHCR (override per-app possível)
       host: ""  # ex.: portal.standalone.portaluni.com.br
+      # Subpath opcional (Host + PathPrefix, sem StripPrefix) — RUNBOOKS §21.3.
+      # Vazio/ausente → rota `Host()` pura (preserva standalone-compact/lab).
+      # Servir SPA sob subpath exige ajustes cross-repo no uniplus-web
+      # (base-href, nginx, redirects OIDC) — Feature #436. Ex. HML: /portal
+      pathPrefix: ""
       # Conteúdo escrito em /assets/runtime-config.json via ConfigMap.
       # Schema é a interface AppConfig em libs/shared-data/lib/config/
       # app-config.model.ts do uniplus-web (ADR-0021).
@@ -93,6 +98,7 @@ uniplusWeb:
       image: uniplus-web-selecao
       tag: v0.2.1
       host: ""
+      pathPrefix: ""  # subpath opcional — ver nota em apps.portal.pathPrefix. Ex. HML: /selecao
       runtimeConfig:
         apiUrl: ""
         keycloak:
@@ -113,6 +119,7 @@ uniplusWeb:
       image: uniplus-web-ingresso
       tag: v0.2.1
       host: ""
+      pathPrefix: ""  # subpath opcional — ver nota em apps.portal.pathPrefix. Ex. HML: /ingresso
       runtimeConfig:
         apiUrl: ""
         keycloak:

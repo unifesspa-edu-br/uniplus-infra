@@ -152,6 +152,10 @@ uniplusApiPortal:
     enabled: false
     entryPoint: websecure
     host: ""                    # ex.: api-portal.standalone.portaluni.com.br
+    # Prefixo de path opcional (Host + PathPrefix, sem StripPrefix) — RUNBOOKS §21.3.
+    # Vazio/ausente → rota `Host()` pura (preserva standalone-compact/lab).
+    # Ex. HML: pathPrefix: /api/portal
+    pathPrefix: ""
     tls:
       enabled: true
       secretName: ""

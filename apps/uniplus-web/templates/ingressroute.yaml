@@ -15,7 +15,10 @@ spec:
   entryPoints:
     - {{ $.Values.uniplusWeb.ingress.entryPoint }}
   routes:
-    - match: Host(`{{ $cfg.host }}`)
+    # PathPrefix opcional, sem StripPrefix — permite servir múltiplas SPAs sob o
+    # mesmo FQDN por subpath (`/portal`, `/selecao`, `/ingresso`). Vazio → `Host()`
+    # puro (comportamento atual). Ver docs/RUNBOOKS.md §21.3.
+    - match: Host(`{{ $cfg.host }}`){{ if $cfg.pathPrefix }} && PathPrefix(`{{ $cfg.pathPrefix }}`){{ end }}
       kind: Rule
       services:
         - name: {{ include "uniplusWeb.appFullname" (dict "ctx" $ "app" $app) }}
