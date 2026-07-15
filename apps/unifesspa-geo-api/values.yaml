@@ -4,13 +4,14 @@
 # estiver publicada e os pré-requisitos atendidos (DB, secrets, OIDC) ligam
 # via `unifesspaGeoApi.enabled: true`.
 #
-# NOTA: este chart ainda NÃO está registrado em argocd/applicationset.yaml.
-# Registrar antes de provisionar os secrets do Vault (postgres/geo, redis já
-# compartilhado, geo/encryption) e decidir o hostname de ingress geraria uma
-# Application vazia no standalone-compact — a syncPolicy do AppSet usa
-# `allowEmpty: false`, então o Application ficaria bloqueado/barulhento.
-# Registrar no AppSet + habilitar via environments/standalone-compact/values.yaml
-# é follow-up, junto do provisionamento dos secrets (issue #395).
+# NOTA: registrado em argocd/applicationset.yaml só para `hml-standalone-single`
+# (mecanismo de habilitação por-ambiente, story #457/task #458 — ver
+# argocd/README.md § Habilitação por-ambiente). Continua fora do
+# `standalone-compact` — não faz parte deste chart nem do valueFiles
+# desse ambiente. Ligar de fato (`unifesspaGeoApi.enabled: true`) em
+# qualquer ambiente é follow-up separado, condicionado ao provisionamento
+# dos secrets do Vault (postgres/geo, redis já compartilhado, geo/encryption)
+# e à decisão do hostname de ingress.
 
 commonLabels:
   app.kubernetes.io/part-of: uniplus
