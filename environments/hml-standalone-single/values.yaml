@@ -32,12 +32,11 @@
 # Deliberadamente FORA de escopo (Features 2-4 do Epic #434 ainda não têm
 # base de código pronta — ver `docs/RUNBOOKS.md §21.3`, coluna "Mudança
 # necessária: Código"):
-#   - uniplusApiHost / uniplusApiPortal / unifesspaGeoApi — chart não tem
-#     `ConnectionStrings__PublicacoesDb` nativo (Feature 3), IngressRoute
-#     não suporta `PathPrefix` (Feature 2), sem imagem publicada em GHCR
-#     (Feature 3). Também evita o problema de que o certificado autoassinado
-#     real desta VM só existe DEPOIS do bootstrap (#442/#445) — os apps .NET
-#     precisariam de `customCA.certPEM`, que não pode ser fabricado agora.
+#   - uniplusApiHost / uniplusApiPortal / unifesspaGeoApi — sem imagem
+#     publicada em GHCR (Feature 3). Também evita o problema de que o
+#     certificado autoassinado real desta VM só existe DEPOIS do bootstrap
+#     (#442/#445) — os apps .NET precisariam de `customCA.certPEM`, que não
+#     pode ser fabricado agora.
 #   - uniplusWeb — default `enabled: true` no chart; desligado explicitamente
 #     abaixo. Mesma falta de suporte a `PathPrefix`/subpath (Feature 2) +
 #     trabalho cross-repo em `uniplus-web` (Feature 4).

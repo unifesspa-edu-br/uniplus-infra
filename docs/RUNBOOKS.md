@@ -3869,7 +3869,7 @@ escopo de uma Task de lab. Quando a primeira release real existir
 (`ghcr.io/unifesspa-edu-br/uniplus-api-host`), atualizar `image.registry`/`image.repository`/
 `image.tag`/`pullPolicy` no environment e remover o passo 4.
 
-Detalhes completos (banco único com 5 connection strings, Kafka + Schema Registry ligados desde a
+Detalhes completos (banco único com 6 connection strings, Kafka + Schema Registry ligados desde a
 issue [#423](https://github.com/unifesspa-edu-br/uniplus-infra/issues/423) — deploy do Apicurio
 Registry documentado em `environments/lab-standalone-single/README.md`) em
 `apps/uniplus-api-host/README.md` e `environments/lab-standalone-single/README.md`.
@@ -4061,7 +4061,7 @@ fechada, e confirmar via observação real do tráfego durante o primeiro bootst
 | `uniplus-hml...` | `/portal`, `/ingresso`, `/selecao` | `apps/uniplus-web` (3 Deployments) | Sim | **Código** — `templates/ingressroute.yaml` hoje só suporta `Host(...)` |
 | `uniplus-hml...` | `/publicacoes` | — | — | **Não criar rota** — não existe SPA de Publicações em `uniplus-web` ainda; ativar só quando o 4º Deployment existir |
 | `uniplus-api-hml...` | `/api/portal` | `apps/uniplus-api-portal` | Sim | **Código** — idem. Hoje o Portal só tem endpoint-esqueleto (`/api/portal/ping`) — API de negócio ainda não implementada |
-| `uniplus-api-hml...` | `/api/ingresso`, `/api/selecao`, `/api/publicacoes` | `apps/uniplus-api-host` (composition root — Selecao+Ingresso+Configuracao+OrganizacaoInstitucional+Publicacoes, [ADR-0097](https://github.com/unifesspa-edu-br/uniplus-api/blob/main/docs/adrs/0097-topologia-de-deploy-em-tres-apis-monolito-modular.md)/[ADR-0105](https://github.com/unifesspa-edu-br/uniplus-api/blob/main/docs/adrs/0105-modulo-publicacoes-registro-central-dos-atos.md) do `uniplus-api`) | Sim | **Código** (IngressRoute) + **chart** (`templates/deployment.yaml` injeta só 5 connection strings — falta `ConnectionStrings__PublicacoesDb`) + registrar no ApplicationSet (ver nota abaixo) + **imagem publicada** — não há build do Host publicado em GHCR ainda. `/api/ingresso` é reserva de rota: módulo Ingresso ainda sem controller HTTP implementado |
+| `uniplus-api-hml...` | `/api/ingresso`, `/api/selecao`, `/api/publicacoes` | `apps/uniplus-api-host` (composition root — Selecao+Ingresso+Configuracao+OrganizacaoInstitucional+Publicacoes, [ADR-0097](https://github.com/unifesspa-edu-br/uniplus-api/blob/main/docs/adrs/0097-topologia-de-deploy-em-tres-apis-monolito-modular.md)/[ADR-0105](https://github.com/unifesspa-edu-br/uniplus-api/blob/main/docs/adrs/0105-modulo-publicacoes-registro-central-dos-atos.md) do `uniplus-api`) | Sim | **Código** (IngressRoute) + registrar no ApplicationSet (ver nota abaixo) + **imagem publicada** — não há build do Host publicado em GHCR ainda. `/api/ingresso` é reserva de rota: módulo Ingresso ainda sem controller HTTP implementado |
 | `uniplus-oidc-hml...` | `/auth` | `apps/keycloak-replica` | Sim (já suportado) | Só `values.yaml` |
 | `geo-api-hml...` | `/` | `apps/unifesspa-geo-api` | Não | Só `values.yaml` + registrar no ApplicationSet (ver nota abaixo) |
 | `grafana-hml...` | `/` | `platform/observability/grafana` | Não (`pathPrefix: ""`) | `values.yaml` — o template já suporta os dois modos (subpath e subdomínio); **falta provisionar o `Certificate`/`secretName`** que a IngressRoute referencia — o chart não cria o certificado sozinho |
