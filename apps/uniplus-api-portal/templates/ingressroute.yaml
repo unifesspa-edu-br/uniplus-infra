@@ -12,7 +12,10 @@ spec:
   entryPoints:
     - {{ .Values.uniplusApiPortal.ingress.entryPoint }}
   routes:
-    - match: Host(`{{ .Values.uniplusApiPortal.ingress.host }}`)
+    # PathPrefix opcional, sem StripPrefix: o controller .NET registra a rota com o
+    # prefixo completo (`/api/portal`), então o Traefik encaminha o path intacto —
+    # não aplicar UsePathBase. Vazio → `Host()` puro. Ver docs/RUNBOOKS.md §21.3.
+    - match: Host(`{{ .Values.uniplusApiPortal.ingress.host }}`){{ if .Values.uniplusApiPortal.ingress.pathPrefix }} && PathPrefix(`{{ .Values.uniplusApiPortal.ingress.pathPrefix }}`){{ end }}
       kind: Rule
       services:
         - name: {{ include "uniplusApiPortal.fullname" . }}

@@ -51,7 +51,8 @@ templates/
 |-----------|---------|-----------|
 | `apps.portal.enabled` | `true` | Habilita Portal |
 | `apps.portal.replicas` | `2` | Réplicas do Portal |
-| `apps.portal.path` | `/portal` | Path prefix no Ingress |
+| `apps.portal.host` | `""` | Hostname público do app (obrigatório quando ingress habilitado) |
+| `apps.portal.pathPrefix` | `""` | Subpath opcional (Host + PathPrefix, sem StripPrefix). Vazio → `Host()` puro |
 | `apps.selecao.*` | similar | Mesma estrutura para Seleção |
 | `apps.ingresso.*` | similar | Mesma estrutura para Ingresso |
 | `ingress.host` | `uniplus.unifesspa.edu.br` | Hostname público |

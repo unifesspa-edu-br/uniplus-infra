@@ -196,6 +196,21 @@ uniplusApiHost:
     enabled: false
     entryPoint: websecure
     host: ""                    # ex.: api.standalone.portaluni.com.br
+    # Roteamento path-based (Host + PathPrefix, sem StripPrefix) — RUNBOOKS §21.3.
+    # Lista opcional de prefixos servidos no MESMO host: cada entrada gera uma rota
+    # apontando pro mesmo Service (o Host multiplexa módulos + rotas transversais).
+    # Vazia/ausente → rota `Host()` pura (comportamento atual; preserva
+    # standalone-compact/lab). Semântica de prefixo literal do Traefik v3
+    # (`/api/selecao` casa com `/api/selecao/...`); entradas duplicadas/sobrepostas
+    # são permitidas (todas → mesmo Service). Ex. HML:
+    #   pathPrefixes:
+    #     - /api/selecao
+    #     - /api/ingresso
+    #     - /api/publicacoes
+    #     - /api/auth        # transversal — Host é o dono
+    #     - /api/profile     # transversal — Host é o dono
+    #     - /openapi         # transversal — Host é o dono
+    pathPrefixes: []
     tls:
       enabled: true
       secretName: ""

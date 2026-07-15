@@ -12,11 +12,25 @@ spec:
   entryPoints:
     - {{ .Values.uniplusApiHost.ingress.entryPoint }}
   routes:
+  {{- if .Values.uniplusApiHost.ingress.pathPrefixes }}
+    # Host + PathPrefix sem StripPrefix: o Host é composition root e serve vários
+    # módulos (e rotas transversais) sob o mesmo FQDN. Os controllers .NET já
+    # registram a rota com o prefixo completo (não aplicar UsePathBase) — o Traefik
+    # apenas encaminha o path intacto. Uma rota por prefixo. Ver docs/RUNBOOKS.md §21.3.
+  {{- range .Values.uniplusApiHost.ingress.pathPrefixes }}
+    - match: Host(`{{ $.Values.uniplusApiHost.ingress.host }}`) && PathPrefix(`{{ . }}`)
+      kind: Rule
+      services:
+        - name: {{ include "uniplusApiHost.fullname" $ }}
+          port: 8080
+  {{- end }}
+  {{- else }}
     - match: Host(`{{ .Values.uniplusApiHost.ingress.host }}`)
       kind: Rule
       services:
         - name: {{ include "uniplusApiHost.fullname" . }}
           port: 8080
+  {{- end }}
   {{- if .Values.uniplusApiHost.ingress.tls.enabled }}
   tls:
     secretName: {{ .Values.uniplusApiHost.ingress.tls.secretName | default (printf "%s-tls" (include "uniplusApiHost.fullname" .)) }}
