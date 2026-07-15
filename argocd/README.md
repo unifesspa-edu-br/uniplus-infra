@@ -66,8 +66,10 @@ O mecanismo — um segundo `matrix` generator dentro do MESMO ApplicationSet `un
       - list:
           elements:
             - app: uniplus-api-host
+              namespace: uniplus
               targetEnvironment: hml-standalone-single
             - app: unifesspa-geo-api
+              namespace: geo
               targetEnvironment: hml-standalone-single
       # 2) `clusters.selector.matchLabels` referencia `{{.targetEnvironment}}`
       #    do elemento acima — só o cluster com esse `environment` label
@@ -79,7 +81,9 @@ O mecanismo — um segundo `matrix` generator dentro do MESMO ApplicationSet `un
               environment: '{{.targetEnvironment}}'
 ```
 
-**Para habilitar um chart num ambiente:** adicionar um elemento `{app: <chart>, targetEnvironment: <ambiente>}` na `list`. **Para habilitar o mesmo chart em mais de um ambiente:** repetir o elemento trocando só o `targetEnvironment`. Nenhuma edição em `clusters`/`selector` é necessária — o padrão já é genérico para qualquer combinação chart×ambiente.
+**Para habilitar um chart num ambiente:** adicionar um elemento `{app: <chart>, namespace: <namespace>, targetEnvironment: <ambiente>}` na `list`. **Para habilitar o mesmo chart em mais de um ambiente:** repetir o elemento trocando só o `targetEnvironment`. Nenhuma edição em `clusters`/`selector` é necessária — o padrão já é genérico para qualquer combinação chart×ambiente.
+
+**`namespace` é obrigatório em todo elemento, dos dois grupos (sempre-ligado e seletivo).** `destination.namespace` do template é `'{{.namespace}}'`, não um literal — com `goTemplateOptions: [missingkey=error]`, esquecer o campo num elemento novo quebra a geração de **toda** a Application daquele elemento. A maioria dos charts compartilha o namespace `uniplus` (mesmo bounded context — portal/selecao/ingresso/host, web, platform de apoio); `unifesspa-geo-api` é a exceção: aplicação independente com bounded context próprio (só compartilha o emissor OIDC com as demais APIs), roda no namespace `geo`.
 
 **Importante:** este mecanismo controla só se a `Application` é **gerada** pelo ArgoCD — não se o workload dentro dela está de fato ativo. Quando o chart tiver `<chart>.enabled: false` por padrão (caso de `uniplus-api-host`/`unifesspa-geo-api` hoje), uma `Application` gerada para um ambiente que não sobrescreve essa chave sincroniza com **zero recursos** (`Synced`/`Healthy`, sem `Deployment`/`Service`) até o ambiente ligar o chart explicitamente em `environments/<ambiente>/values.yaml`. O mesmo vale no sentido inverso — um chart cujo default seja `enabled: true` (caso de `uniplusWeb`) precisa de override explícito para `false` no ambiente que não deva rodá-lo ainda (é o que `hml-standalone-single` faz hoje com `uniplusWeb`, registrado no `matrix` sempre-ligado, mas desligado no overlay do ambiente). Em ambos os casos, habilitar a Application e habilitar o workload são duas decisões independentes.
 

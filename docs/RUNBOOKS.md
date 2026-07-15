@@ -4071,16 +4071,21 @@ fechada, e confirmar via observação real do tráfego durante o primeiro bootst
 registrados em `argocd/applicationset.yaml` via o mecanismo de habilitação por-ambiente
 (story #457, documentado em [`argocd/README.md` § Habilitação por-ambiente](../argocd/README.md#habilitação-por-ambiente-quais-charts-existem-em-cada-ambiente)) —
 um segundo `matrix` generator (chart + `targetEnvironment`) só gera a `Application` desses 2
-charts para clusters cujo label `environment` seja `hml-standalone-single`; `standalone-compact` e
-`lab-standalone-single` não geram `Application` nenhuma para eles (regressão zero). Como os dois
-charts vêm com `enabled: false` por default e a `hml-standalone-single` não sobrescreve isso (ver
-`environments/hml-standalone-single/values.yaml`), a `Application` em HML sincroniza com zero
-manifests — `Synced`/`Healthy` sem `Deployment`/`Service`, mesmo padrão hoje usado por `uniplusWeb`
-nesse ambiente (a proteção `allowEmpty: false` existe para impedir prune acidental de todos os
-recursos de uma Application que **já estava populada**, não bloqueia uma Application que nasce
-vazia por design). Ligar o workload de fato é decisão independente, por chart: `uniplus-api-host`
-aguarda a primeira imagem publicada em GHCR; `unifesspa-geo-api` já tem imagem, mas aguarda o
-provisionamento dos secrets do Vault (follow-up ainda sem issue própria) antes de
+charts para clusters cujo label `environment` seja `hml-standalone-single`; `standalone-compact`
+(único outro cluster ArgoCD-managed hoje) continua sem gerar `Application` para eles — regressão
+zero (`lab-standalone-single` nem entra na comparação: não tem cluster ArgoCD registrado, é
+aplicado manualmente via `helm install/upgrade -f`, fora do escopo deste ApplicationSet).
+`uniplus-api-host` roda no namespace `uniplus` (mesmo bounded context do Portal/Selecao/Ingresso);
+`unifesspa-geo-api` roda em namespace próprio, `geo` — aplicação independente, só compartilha o
+emissor OIDC com as demais APIs. Como os dois charts vêm com `enabled: false` por default e a
+`hml-standalone-single` não sobrescreve isso (ver `environments/hml-standalone-single/values.yaml`),
+a `Application` em HML sincroniza com zero manifests — `Synced`/`Healthy` sem `Deployment`/`Service`,
+mesmo padrão hoje usado por `uniplusWeb` nesse ambiente (a proteção `allowEmpty: false` existe para
+impedir prune acidental de todos os recursos de uma Application que **já estava populada**, não
+bloqueia uma Application que nasce vazia por design). Ligar o workload de fato é decisão
+independente, por chart: `uniplus-api-host` aguarda a primeira imagem publicada em GHCR;
+`unifesspa-geo-api` já tem imagem, mas aguarda o provisionamento dos secrets do Vault (follow-up
+ainda sem issue própria) antes de
 `unifesspaGeoApi.enabled: true`.
 
 **`uniplus-api-hml.../api/{ingresso,selecao,publicacoes}` é servido pelo `uniplus-api-host`, não

@@ -31,18 +31,30 @@ spec:
               selector:
                 matchLabels:
                   uniplus.io/managed: "true"
-          # Cada app em apps/
+          # Cada app em apps/. `namespace` é explícito por elemento (não um
+          # literal fixo no template) porque nem todo app deste ApplicationSet
+          # compartilha o mesmo namespace — ver bloco seletivo abaixo
+          # (unifesspa-geo-api usa `geo`, não `uniplus`).
           - list:
               elements:
                 - app: uniplus-web
+                  namespace: uniplus
                 - app: uniplus-api-portal
+                  namespace: uniplus
                 - app: uniplus-api-selecao
+                  namespace: uniplus
                 - app: uniplus-api-ingresso
+                  namespace: uniplus
                 - app: clamav-scanner
+                  namespace: uniplus
                 - app: keycloak-replica
+                  namespace: uniplus
                 - app: kafka-ui
+                  namespace: uniplus
                 - app: apicurio-registry
+                  namespace: uniplus
                 - app: redis-ui
+                  namespace: uniplus
     # Apps habilitados só em ambientes específicos — mecanismo genérico de
     # habilitação por-ambiente (ver argocd/README.md § Habilitação por-ambiente).
     # Cada elemento declara o chart + o(s) ambiente(s) (label `environment`
@@ -58,9 +70,16 @@ spec:
         generators:
           - list:
               elements:
+                # uniplus-api-host é composition root do mesmo bounded
+                # context de portal/selecao/ingresso — namespace `uniplus`.
                 - app: uniplus-api-host
+                  namespace: uniplus
                   targetEnvironment: hml-standalone-single
+                # unifesspa-geo-api é aplicação independente (bounded
+                # context próprio — só compartilha o emissor OIDC com as
+                # demais APIs) — namespace `geo`, não `uniplus`.
                 - app: unifesspa-geo-api
+                  namespace: geo
                   targetEnvironment: hml-standalone-single
           - clusters:
               selector:
@@ -95,7 +114,7 @@ spec:
           ref: values
       destination:
         server: '{{.server}}'
-        namespace: uniplus
+        namespace: '{{.namespace}}'
       syncPolicy:
         automated:
           prune: true
