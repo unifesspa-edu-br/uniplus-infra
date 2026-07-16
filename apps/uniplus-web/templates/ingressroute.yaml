@@ -4,6 +4,7 @@
 {{- if not $cfg.host -}}
 {{- fail (printf "uniplusWeb.apps.%s.host é obrigatório quando uniplusWeb.ingress.enabled=true (ex.: %s.standalone.portaluni.com.br). IngressRoute Traefik exige Host(...) válido." $app $app) -}}
 {{- end }}
+{{- $pathPrefix := trimSuffix "/" (default "" $cfg.pathPrefix) -}}
 ---
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
@@ -18,7 +19,7 @@ spec:
     # PathPrefix opcional, sem StripPrefix — permite servir múltiplas SPAs sob o
     # mesmo FQDN por subpath (`/portal`, `/selecao`, `/ingresso`). Vazio → `Host()`
     # puro (comportamento atual). Ver docs/RUNBOOKS.md §21.3.
-    - match: Host(`{{ $cfg.host }}`){{ if $cfg.pathPrefix }} && PathPrefix(`{{ $cfg.pathPrefix }}`){{ end }}
+    - match: Host(`{{ $cfg.host }}`){{ if $pathPrefix }} && PathPrefix(`{{ $pathPrefix }}`){{ end }}
       kind: Rule
       services:
         - name: {{ include "uniplusWeb.appFullname" (dict "ctx" $ "app" $app) }}

@@ -52,7 +52,7 @@ templates/
 | `apps.portal.enabled` | `true` | Habilita Portal |
 | `apps.portal.replicas` | `2` | Réplicas do Portal |
 | `apps.portal.host` | `""` | Hostname público do app (obrigatório quando ingress habilitado) |
-| `apps.portal.pathPrefix` | `""` | Subpath opcional (Host + PathPrefix, sem StripPrefix). Vazio → `Host()` puro; o chart injeta o valor normalizado em `APP_BASE_HREF` |
+| `apps.portal.pathPrefix` | `""` | Subpath opcional (Host + PathPrefix, sem StripPrefix). Vazio → `Host()` puro; `/portal` e `/portal/` são normalizados para o mesmo mount point e `APP_BASE_HREF` |
 | `apps.selecao.*` | similar | Mesma estrutura para Seleção |
 | `apps.ingresso.*` | similar | Mesma estrutura para Ingresso |
 | `ingress.host` | `uniplus.unifesspa.edu.br` | Hostname público |
