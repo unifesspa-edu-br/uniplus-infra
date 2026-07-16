@@ -29,6 +29,13 @@ YAML_DIRS := apps/ platform/ data/ environments/ argocd/
 # Environments existentes (atualizar quando san-* / 3-DC forem criados).
 ENVS := standalone-compact hml-standalone-single
 
+# Regressão de roteamento path-based: os três charts que compartilham a
+# convenção Host() + PathPrefix() precisam continuar renderizando nos dois
+# ambientes existentes antes do rollout. O lab não integra ENVS porque nem
+# todos os charts de plataforma são aplicáveis nele.
+ROUTING_CHART_DIRS := apps/uniplus-api-host/ apps/uniplus-api-portal/ apps/uniplus-web/
+ROUTING_ENVS       := standalone-compact lab-standalone-single
+
 # Comando markdownlint via npx (não exige instalação global).
 MARKDOWNLINT := npx --yes markdownlint-cli2
 
@@ -177,6 +184,37 @@ helm-template:  ## Renderiza todos os charts × environments (smoke local)
 	        fi; \
 	    done; \
 	done
+
+.PHONY: routing-validate
+routing-validate: helm-deps  ## Valida os charts path-based em standalone-compact e lab
+	@printf "$(BLUE)→ validação de roteamento path-based$(RESET)\n"
+	@FAILS=0; \
+	for chart_dir in $(ROUTING_CHART_DIRS); do \
+	    chart_name=$$(basename "$$chart_dir"); \
+	    printf "  $$chart_name: helm lint\n"; \
+	    if ! helm lint "$$chart_dir" >/tmp/routing-lint-$$$$.log 2>&1; then \
+	        cat /tmp/routing-lint-$$$$.log; FAILS=$$((FAILS+1)); \
+	    fi; \
+	    rm -f /tmp/routing-lint-$$$$.log; \
+	    for env in $(ROUTING_ENVS); do \
+	        printf "  $$chart_name × $$env: helm template\n"; \
+	        if ! helm template "$$chart_name" "$$chart_dir" \
+	                -f "environments/$$env/values.yaml" \
+	                >/tmp/routing-template-$$$$.yaml 2>/tmp/routing-template-$$$$.log; then \
+	            cat /tmp/routing-template-$$$$.log; FAILS=$$((FAILS+1)); \
+	        fi; \
+	        rm -f /tmp/routing-template-$$$$.yaml /tmp/routing-template-$$$$.log; \
+	    done; \
+	    if [ -f "$$chart_dir/values.schema.json" ]; then \
+	        printf "  $$chart_name: values.schema.json validado por helm template\n"; \
+	    else \
+	        printf "  $$chart_name: sem values.schema.json (não aplicável)\n"; \
+	    fi; \
+	done; \
+	if [ "$$FAILS" -gt 0 ]; then \
+	    printf "$(RED)✗ $$FAILS validação(ões) de roteamento falharam$(RESET)\n"; \
+	    exit 1; \
+	fi
 
 .PHONY: helm-docs
 helm-docs:  ## Gera README.md dos charts a partir de values.yaml e README.md.gotmpl
