@@ -53,10 +53,35 @@ templates/
 | `apps.portal.replicas` | `2` | Réplicas do Portal |
 | `apps.portal.host` | `""` | Hostname público do app (obrigatório quando ingress habilitado) |
 | `apps.portal.pathPrefix` | `""` | Subpath opcional (Host + PathPrefix, sem StripPrefix). Vazio → `Host()` puro; `/portal` e `/portal/` são normalizados para o mesmo mount point e `APP_BASE_HREF` |
-| `apps.selecao.*` | similar | Mesma estrutura para Seleção |
-| `apps.ingresso.*` | similar | Mesma estrutura para Ingresso |
-| `ingress.host` | `uniplus.unifesspa.edu.br` | Hostname público |
-| `ingress.tls.enabled` | `true` | TLS via cert-manager |
+| `apps.selecao.host` / `apps.ingresso.host` | `""` | Hostname público de cada SPA |
+| `apps.selecao.pathPrefix` / `apps.ingresso.pathPrefix` | `""` | Mesmo comportamento de subpath do Portal |
+| `ingress.enabled` | `true` | Habilita os IngressRoutes das SPAs ativas |
+| `ingress.tls.enabled` | `true` | Configura TLS para os IngressRoutes |
+
+## Roteamento path-based
+
+Cada SPA define o próprio `host` e `pathPrefix`. Quando há prefixo, o chart
+gera `Host() && PathPrefix()` sem middleware de `StripPrefix`, e injeta o
+mesmo mount point em `APP_BASE_HREF` para a imagem Angular. Assim, o Nginx e o
+frontend recebem o caminho completo.
+
+```yaml
+uniplusWeb:
+  apps:
+    portal:
+      host: uniplus-hml.192.168.21.134.nip.io
+      pathPrefix: /portal
+    selecao:
+      host: uniplus-hml.192.168.21.134.nip.io
+      pathPrefix: /selecao
+    ingresso:
+      host: uniplus-hml.192.168.21.134.nip.io
+      pathPrefix: /ingresso
+```
+
+`pathPrefix` vazio ou `/` mantém a regra `Host()` pura. O valor `/portal/` é
+normalizado para `/portal`, evitando regras duplicadas e mantendo o
+`APP_BASE_HREF` consistente.
 
 ## Override por ambiente
 
