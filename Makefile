@@ -30,11 +30,11 @@ YAML_DIRS := apps/ platform/ data/ environments/ argocd/
 ENVS := standalone-compact hml-standalone-single
 
 # Regressão de roteamento path-based: os três charts que compartilham a
-# convenção Host() + PathPrefix() precisam continuar renderizando nos dois
+# convenção Host() + PathPrefix() precisam continuar renderizando nos
 # ambientes existentes antes do rollout. O lab não integra ENVS porque nem
 # todos os charts de plataforma são aplicáveis nele.
 ROUTING_CHART_DIRS := apps/uniplus-api-host/ apps/uniplus-api-portal/ apps/uniplus-web/
-ROUTING_ENVS       := standalone-compact lab-standalone-single
+ROUTING_ENVS       := standalone-compact lab-standalone-single hml-standalone-single
 
 # Comando markdownlint via npx (não exige instalação global).
 MARKDOWNLINT := npx --yes markdownlint-cli2
@@ -139,7 +139,7 @@ schema-validate:  ## Valida values.yaml dos environments contra os schemas dos c
 lint: yaml-lint helm-lint markdown-lint shellcheck  ## Roda todos os linters
 
 .PHONY: validate
-validate: helm-deps lint schema-validate  ## Lint + render de templates contra schemas
+validate: helm-deps lint schema-validate routing-validate  ## Lint + render de templates contra schemas
 # Ordem importa: helm-deps PRIMEIRO popula charts/ — sem isso, helm-lint e
 # schema-validate podem falhar em fresh checkout com "missing in charts/ directory".
 
@@ -186,7 +186,7 @@ helm-template:  ## Renderiza todos os charts × environments (smoke local)
 	done
 
 .PHONY: routing-validate
-routing-validate: helm-deps  ## Valida os charts path-based em standalone-compact e lab
+routing-validate:  ## Valida os charts path-based em standalone-compact, lab e HML
 	@printf "$(BLUE)→ validação de roteamento path-based$(RESET)\n"
 	@FAILS=0; \
 	for chart_dir in $(ROUTING_CHART_DIRS); do \
