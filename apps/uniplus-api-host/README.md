@@ -79,6 +79,32 @@ Quando o pipeline publicar a primeira release real (`ghcr.io/unifesspa-edu-br/un
 atualizar `image.registry`/`image.repository`/`image.tag`/`pullPolicy` no
 environment e remover o build local.
 
+## Roteamento path-based
+
+Para expor o Host junto de outras APIs sob o mesmo FQDN, configure
+`uniplusApiHost.ingress.pathPrefixes`. Cada item cria uma rota Traefik
+`Host() && PathPrefix()` apontando para este mesmo Service, sem middleware de
+`StripPrefix`: os controllers do Host recebem o caminho completo.
+
+```yaml
+uniplusApiHost:
+  ingress:
+    enabled: true
+    host: uniplus-api-hml.192.168.21.134.nip.io
+    pathPrefixes:
+      - /api/selecao
+      - /api/ingresso
+      - /api/publicacoes
+      - /api/auth
+      - /api/profile
+      - /openapi
+```
+
+`pathPrefixes` é opcional. Quando a lista está vazia ou ausente, o chart
+mantém a rota `Host()` pura usada pelos ambientes existentes. Os prefixos
+`/api/auth`, `/api/profile` e `/openapi` também pertencem ao Host e devem ser
+incluídos quando forem expostos no mesmo domínio.
+
 ## Variáveis principais
 
 | Variável | Default | Notas |
@@ -87,3 +113,4 @@ environment e remover o build local.
 | `uniplusApiHost.kafka.enabled` | `false` | Desligado até o Apicurio Registry entrar no lab (issue #423) |
 | `uniplusApiHost.schemaRegistry.url` | `""` | Feature off; ver bloco Kafka acima |
 | `uniplusApiHost.oidc.enabled` | `true` | Bearer validation apenas — o Host não se autentica como client M2M contra nada |
+| `uniplusApiHost.ingress.pathPrefixes` | `[]` | Lista opcional de subpaths do Host. Cada item gera `Host() && PathPrefix()` sem `StripPrefix`; vazia mantém `Host()` puro |
