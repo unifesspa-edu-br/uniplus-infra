@@ -242,6 +242,11 @@ step_install_k3s() {
             --write-kubeconfig-mode 600"
     fi
 
+    # Em reexecuções, o K3s pode ter sido instalado por uma versão anterior
+    # do bootstrap que usava modo 0644. Não depender apenas da flag do
+    # instalador mantém o kubeconfig administrativo restrito também nesses
+    # hosts já existentes.
+    run "sudo chmod 600 /etc/rancher/k3s/k3s.yaml"
     run "install -d -m 700 $HOME/.kube"
     run "sudo install -m 600 -o $(id -u) -g $(id -g) /etc/rancher/k3s/k3s.yaml $HOME/.kube/config"
     log_success "K3s pronto."
