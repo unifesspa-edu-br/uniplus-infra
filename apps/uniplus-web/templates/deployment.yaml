@@ -4,6 +4,13 @@
 {{- if not $cfg.image -}}
 {{- fail (printf "uniplusWeb.apps.%s.image é obrigatório (nome da imagem em ghcr.io/unifesspa-edu-br/, ex.: uniplus-portal)." $app) -}}
 {{- end }}
+{{- if and $cfg.pathPrefix (not (regexMatch "^/([A-Za-z0-9_-]+/)*[A-Za-z0-9_-]*$" $cfg.pathPrefix)) -}}
+{{- fail (printf "uniplusWeb.apps.%s.pathPrefix deve ser vazio, / ou um caminho absoluto com segmentos alfanuméricos, hífen ou underscore (ex.: /portal ou /selecao/hml)." $app) -}}
+{{- end }}
+{{- $baseHref := "/" -}}
+{{- if $cfg.pathPrefix -}}
+{{- $baseHref = printf "%s/" (trimSuffix "/" $cfg.pathPrefix) -}}
+{{- end -}}
 {{/*
   `host` NÃO é validado aqui — só é consumido por ingressroute.yaml e
   certificate.yaml, que disparam o `fail` por conta própria quando
@@ -63,6 +70,12 @@ spec:
           imagePullPolicy: {{ $.Values.uniplusWeb.image.pullPolicy }}
           securityContext:
             {{- toYaml $.Values.uniplusWeb.containerSecurityContext | nindent 12 }}
+          # A imagem Nginx substitui a tag <base> a partir desta variável.
+          # `pathPrefix` vazio mantém standalone/lab na raiz; um prefixo é
+          # normalizado com barra final para resolver assets e deep links.
+          env:
+            - name: APP_BASE_HREF
+              value: {{ $baseHref | quote }}
           ports:
             - name: http
               containerPort: 8080
