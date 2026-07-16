@@ -4,12 +4,14 @@
 {{- if not $cfg.image -}}
 {{- fail (printf "uniplusWeb.apps.%s.image é obrigatório (nome da imagem em ghcr.io/unifesspa-edu-br/, ex.: uniplus-portal)." $app) -}}
 {{- end }}
-{{- if and $cfg.pathPrefix (not (regexMatch "^/([A-Za-z0-9_-]+/)*[A-Za-z0-9_-]*$" $cfg.pathPrefix)) -}}
+{{- $pathPrefix := default "" $cfg.pathPrefix -}}
+{{- if and $pathPrefix (not (regexMatch "^/([A-Za-z0-9_-]+/)*[A-Za-z0-9_-]*$" $pathPrefix)) -}}
 {{- fail (printf "uniplusWeb.apps.%s.pathPrefix deve ser vazio, / ou um caminho absoluto com segmentos alfanuméricos, hífen ou underscore (ex.: /portal ou /selecao/hml)." $app) -}}
 {{- end }}
+{{- $normalizedPathPrefix := trimSuffix "/" $pathPrefix -}}
 {{- $baseHref := "/" -}}
-{{- if $cfg.pathPrefix -}}
-{{- $baseHref = printf "%s/" (trimSuffix "/" $cfg.pathPrefix) -}}
+{{- if $normalizedPathPrefix -}}
+{{- $baseHref = printf "%s/" $normalizedPathPrefix -}}
 {{- end -}}
 {{/*
   `host` NÃO é validado aqui — só é consumido por ingressroute.yaml e
