@@ -231,20 +231,19 @@ step_install_k3s() {
 
         # --disable traefik/servicelb: platform/traefik/ (ArgoCD, pós-registro)
         # é o IngressController real deste ambiente — o Traefik/ServiceLB
-        # bundled do K3s competiria pelo bind 80/443. --write-kubeconfig-mode
-        # 644: kubeconfig legível sem sudo, mesmo padrão de
-        # scripts/lab-standalone-single/bootstrap.sh e scripts/bootstrap-standalone.sh.
+        # bundled do K3s competiria pelo bind 80/443. O kubeconfig contém
+        # credenciais administrativas: restringi-lo a root e copiar uma
+        # versão privada para o operador autorizado abaixo.
         run "curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=$K3S_VERSION sh -s - \
             --node-name uniplus-hml \
             --tls-san $NODE_IP \
             --disable servicelb \
             --disable traefik \
-            --write-kubeconfig-mode 644"
+            --write-kubeconfig-mode 600"
     fi
 
-    run "mkdir -p $HOME/.kube"
-    run "sudo cp /etc/rancher/k3s/k3s.yaml $HOME/.kube/config"
-    run "sudo chown $(id -u):$(id -g) $HOME/.kube/config"
+    run "install -d -m 700 $HOME/.kube"
+    run "sudo install -m 600 -o $(id -u) -g $(id -g) /etc/rancher/k3s/k3s.yaml $HOME/.kube/config"
     log_success "K3s pronto."
 }
 
