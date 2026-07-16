@@ -723,6 +723,8 @@ summary() {
     echo "  systemctl status uniplus-{postgres,kafka}"
     echo ""
     echo "K3s + ArgoCD:"
+    echo "  # Em uma nova sessão de operador, usar o kubeconfig privado:"
+    echo "  export KUBECONFIG=$HOME/.kube/config"
     echo "  kubectl get nodes"
     echo "  kubectl get pods -n argocd"
     echo "  kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d"
