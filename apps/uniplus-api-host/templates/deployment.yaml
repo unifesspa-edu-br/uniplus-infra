@@ -56,7 +56,7 @@ spec:
     metadata:
       labels:
         {{- include "uniplusApiHost.labels" . | nindent 8 }}
-      {{- if .Values.uniplusApiHost.customCA.enabled }}
+      {{- if and .Values.uniplusApiHost.customCA.enabled (not .Values.uniplusApiHost.customCA.existingSecretName) }}
       annotations:
         # Sem isso, rotacionar customCA.certPEM (ex.: renovar o certificado
         # autoassinado do lab) só atualiza o ConfigMap — pods já rodando
@@ -302,6 +302,45 @@ spec:
             periodSeconds: {{ .Values.uniplusApiHost.readinessProbe.periodSeconds }}
           resources:
             {{- toYaml .Values.uniplusApiHost.resources | nindent 12 }}
+      {{- if .Values.uniplusApiHost.customCA.enabled }}
+        # Volumes projected de Secret são atualizados pelo kubelet sem mudar o
+        # PodTemplate. O initContainer acima só executa na criação do Pod,
+        # portanto um Secret TLS rotacionado deixaria o bundle em emptyDir
+        # obsoleto. Este sidecar observa o PEM e recompõe o bundle do sistema;
+        # a substituição de ca-certificates.crt é atômica para que novas
+        # conexões TLS do Host usem a CA atual sem rollout manual.
+        - name: refresh-custom-ca
+          image: "{{ .Values.uniplusApiHost.image.registry }}/{{ .Values.uniplusApiHost.image.repository }}:{{ .Values.uniplusApiHost.image.tag }}"
+          imagePullPolicy: {{ .Values.uniplusApiHost.image.pullPolicy }}
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              previous_hash=""
+              while true; do
+                current_hash=$(sha256sum /custom-ca/ca.crt | awk '{print $1}')
+                if [ "$current_hash" != "$previous_hash" ]; then
+                  install -D -m 0644 /custom-ca/ca.crt /usr/local/share/ca-certificates/lab-custom-ca.crt
+                  update-ca-certificates
+                  temp_bundle=$(mktemp /merged-ca-certs/.ca-certificates.crt.XXXXXX)
+                  cp /etc/ssl/certs/ca-certificates.crt "$temp_bundle"
+                  chmod 0644 "$temp_bundle"
+                  mv "$temp_bundle" /merged-ca-certs/ca-certificates.crt
+                  previous_hash="$current_hash"
+                fi
+                sleep 15
+              done
+          volumeMounts:
+            - name: custom-ca-source
+              mountPath: /custom-ca
+              readOnly: true
+            - name: merged-ca-certs
+              mountPath: /merged-ca-certs
+      {{- end }}
       {{- if or .Values.uniplusApiHost.kafka.enabled .Values.uniplusApiHost.customCA.enabled }}
       volumes:
         {{- if .Values.uniplusApiHost.kafka.enabled }}
@@ -314,8 +353,16 @@ spec:
         {{- end }}
         {{- if .Values.uniplusApiHost.customCA.enabled }}
         - name: custom-ca-source
+          {{- if .Values.uniplusApiHost.customCA.existingSecretName }}
+          secret:
+            secretName: {{ .Values.uniplusApiHost.customCA.existingSecretName }}
+            items:
+              - key: {{ .Values.uniplusApiHost.customCA.existingSecretKey }}
+                path: ca.crt
+          {{- else }}
           configMap:
             name: {{ include "uniplusApiHost.fullname" . }}-custom-ca
+          {{- end }}
         - name: merged-ca-certs
           emptyDir: {}
         {{- end }}

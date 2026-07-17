@@ -153,6 +153,14 @@ uniplusApiHost:
   customCA:
     enabled: false
     certPEM: ""                 # PEM completo do certificado (não a chave privada)
+    # Alternativa ao PEM versionado: Secret TLS existente no namespace da
+    # aplicação. Útil para certificados autoassinados criados pelo bootstrap,
+    # pois o Host sempre lê o certificado que o Traefik está servindo.
+    # O sidecar refresh-custom-ca observa mudanças no volume projetado e
+    # recompõe atomically /etc/ssl/certs/ca-certificates.crt; portanto a
+    # rotação do Secret não depende de rollout manual do Deployment.
+    existingSecretName: ""
+    existingSecretKey: tls.crt
 
   # === CORS (obrigatório fora de Development) ===
   cors:
