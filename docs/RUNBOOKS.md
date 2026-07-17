@@ -4205,7 +4205,30 @@ Para não conferir a este documento uma precisão que ele não tem:
   esperado, já que ainda não foram solicitados; não deve ser lido como indício de que já existem
   ou não numa view DNS interna específica.
 
-### 21.7 Bootstrap da fundação (Story #442)
+### 21.7 Consulta interativa de segredos custodiados
+
+Para manutenção e testes no HML, usar
+`scripts/hml-standalone-single/vault-secret-selector.sh` **na própria VM**. O script lista os
+caminhos e campos sob `secret/standalone` sem exibir valores; o operador escolhe um campo e
+confirma a exibição no console. Ele usa `kubectl`, `curl`, `jq` e um port-forward temporário para
+o pod do Vault, portanto não exige instalar o CLI Vault no host.
+
+```bash
+source ~/.bashrc
+./scripts/hml-standalone-single/vault-secret-selector.sh
+```
+
+Para revisar apenas os caminhos/campos, sem possibilidade de revelar valores:
+
+```bash
+./scripts/hml-standalone-single/vault-secret-selector.sh --list
+```
+
+O `ROOT_TOKEN` é carregado apenas em memória, transmitido ao Vault por um arquivo temporário com
+permissão `0600` e removido ao final. Nunca redirecionar a saída do modo interativo para arquivos,
+logs ou tickets.
+
+### 21.8 Bootstrap da fundação (Story #442)
 
 `scripts/hml-standalone-single/bootstrap.sh` — adaptado de
 `scripts/lab-standalone-single/bootstrap.sh` (já validado no lab e no spike de PathPrefix
