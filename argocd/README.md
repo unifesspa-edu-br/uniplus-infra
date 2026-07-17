@@ -23,7 +23,8 @@ argocd/
 
 `project.yaml` define um AppProject chamado `uniplus` que:
 
-- Permite repos da org `unifesspa-edu-br`
+- Permite os repositórios Git da org `unifesspa-edu-br` e os repositórios Helm
+  upstream explicitamente usados pelos charts da plataforma
 - Restringe destinos a este cluster
 - Define roles RBAC (ctic-admin, developer)
 - Bloqueia ResourceQuota/NetworkPolicy de virem do Git (gerenciados localmente)

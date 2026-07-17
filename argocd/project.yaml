@@ -11,6 +11,16 @@ spec:
     - https://github.com/unifesspa-edu-br/uniplus-infra
     - https://github.com/unifesspa-edu-br/uniplus-web
     - https://github.com/unifesspa-edu-br/uniplus-api
+    # Repositórios upstream das dependências Helm declaradas pelos charts da
+    # plataforma. Manter a lista explícita evita ampliar a permissão com
+    # curingas e permite ao ArgoCD reconstruir as dependências quando preciso.
+    - https://charts.external-secrets.io
+    - https://charts.jetstack.io
+    - https://grafana.github.io/helm-charts
+    - https://helm.releases.hashicorp.com
+    - https://open-telemetry.github.io/opentelemetry-helm-charts
+    - https://prometheus-community.github.io/helm-charts
+    - https://traefik.github.io/charts
 
   destinations:
     - namespace: '*'
