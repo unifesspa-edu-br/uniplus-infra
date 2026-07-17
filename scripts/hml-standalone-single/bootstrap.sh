@@ -711,6 +711,12 @@ step_generate_tls_secret() {
 
     log_warn "Certificado autoassinado gerado (SAN: *.${NODE_IP}.nip.io) — chave privada descartada após criar o Secret."
     log_success "Secret $TLS_SECRET_NAME criado em $TLS_NAMESPACE."
+
+    # O Host mescla a CA no trust store durante o initContainer. Quando uma
+    # recuperação recria este Secret, reiniciar o Deployment faz o init rodar
+    # com o novo tls.crt; sem isso o emptyDir do Pod preservaria a CA antiga.
+    kubectl get deployment -n "$TLS_NAMESPACE" -l app.kubernetes.io/name=uniplus-api-host -o name \
+        | xargs -r kubectl -n "$TLS_NAMESPACE" rollout restart
 }
 
 summary() {
@@ -757,6 +763,14 @@ summary() {
     echo "     secret/standalone/keycloak/admin + secret/standalone/keycloak/clients/"
     echo "     apicurio-registry — este último só existe DEPOIS do primeiro"
     echo "     --import-realm do Keycloak, recuperado via kcadm)."
+    echo ""
+    echo "     Antes de considerar o Host disponível, executar NA VM, depois de"
+    echo "     o Vault estar unsealed e a role external-secrets configurada:"
+    echo "       $SCRIPT_DIR/provision-api-host-prerequisites.sh"
+    echo "     O helper provisiona Redis/MinIO/Postgres, grava os paths Vault do"
+    echo "     Host e cria somente a cópia runtime da chave local no Kubernetes."
+    echo "     Isso é obrigatório antes de validar o Deployment GitOps do Host;"
+    echo "     aguardar os ExternalSecrets do namespace uniplus sincronizarem."
     echo ""
     echo "  4. Validar convergência do ArgoCD (self-heal automático após o passo 3 —"
     echo "     reconcilia drift Git-vs-live; a disponibilidade de Vault/Keycloak/"
