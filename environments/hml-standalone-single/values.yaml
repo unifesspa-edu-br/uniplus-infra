@@ -462,10 +462,12 @@ uniplusWeb:
         # arquivo) — chamadas à API vão falhar em runtime até lá. apiUrl
         # vazio não é aceito pelo chart (ADR-0021 assertNaoEhPlaceholder).
         apiUrl: https://uniplus-api-hml.unifesspa.edu.br
+        oidc:
+          issuerUrl: https://uniplus-oidc-hml.unifesspa.edu.br/auth/realms/unifesspa
+          clientId: uniplus-portal
         keycloak:
           url: https://uniplus-oidc-hml.unifesspa.edu.br/auth
           realm: unifesspa
-          clientId: uniplus-portal
 
     selecao:
       enabled: true
@@ -477,10 +479,12 @@ uniplusWeb:
         # monta /api/selecao/... no cliente. Backend real: já roteado no
         # uniplus-api-host (pathPrefixes acima).
         apiUrl: https://uniplus-api-hml.unifesspa.edu.br
+        oidc:
+          issuerUrl: https://uniplus-oidc-hml.unifesspa.edu.br/auth/realms/unifesspa
+          clientId: uniplus-portal
         keycloak:
           url: https://uniplus-oidc-hml.unifesspa.edu.br/auth
           realm: unifesspa
-          clientId: uniplus-portal
 
     ingresso:
       enabled: true
@@ -493,10 +497,12 @@ uniplusWeb:
         # mas o módulo Ingresso ainda não tem controller HTTP implementado
         # (RUNBOOKS §21.3) — chamadas à API vão 404 até lá.
         apiUrl: https://uniplus-api-hml.unifesspa.edu.br
+        oidc:
+          issuerUrl: https://uniplus-oidc-hml.unifesspa.edu.br/auth/realms/unifesspa
+          clientId: uniplus-portal
         keycloak:
           url: https://uniplus-oidc-hml.unifesspa.edu.br/auth
           realm: unifesspa
-          clientId: uniplus-portal
 
   ingress:
     enabled: true
