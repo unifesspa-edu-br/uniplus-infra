@@ -72,7 +72,11 @@ DRY_RUN=false
 
 DATA_BASE="/var/lib/uniplus"
 TLS_NAMESPACE="uniplus"
-TLS_SECRET_NAME="uniplus-wildcard-nip-io-tls"
+TLS_SECRET_NAME="uniplus-hml-unifesspa-tls"
+# 9 hostnames de docs/RUNBOOKS.md §21.2, já registrados pela CTIC
+# (issue #486) — substitui o SAN provisório *.${NODE_IP}.nip.io usado
+# antes do DNS real existir.
+TLS_SANS="DNS:uniplus-hml.unifesspa.edu.br,DNS:uniplus-api-hml.unifesspa.edu.br,DNS:uniplus-oidc-hml.unifesspa.edu.br,DNS:geo-api-hml.unifesspa.edu.br,DNS:grafana-hml.unifesspa.edu.br,DNS:kafka-ui-hml.unifesspa.edu.br,DNS:apicurio-hml.unifesspa.edu.br,DNS:redis-ui-hml.unifesspa.edu.br,DNS:minio-hml.unifesspa.edu.br"
 
 # ============== Logging ==============
 RED='\033[0;31m'
@@ -656,9 +660,10 @@ step_setup_kafka() {
 # obrigatório antes de qualquer usuário real, aceitável como paliativo de
 # bring-up administrativo). Mesmo procedimento manual documentado em
 # environments/lab-standalone-single/README.md, scriptado e tornado
-# idempotente — Traefik/Keycloak/Apicurio Registry (ApplicationSet, pós-
-# registro no ArgoCD) esperam o Secret `uniplus-wildcard-nip-io-tls` já
-# existente no namespace `uniplus` na primeira sincronização.
+# idempotente — Traefik/Keycloak/Apicurio Registry/uniplus-web
+# (ApplicationSet, pós-registro no ArgoCD) esperam o Secret
+# `$TLS_SECRET_NAME` já existente no namespace `uniplus` na primeira
+# sincronização.
 #
 # Diferente do lab: aqui NÃO copiamos o PEM para nenhum values.yaml (a
 # fundação desta Story não inclui os apps .NET que precisariam de
@@ -672,7 +677,7 @@ step_generate_tls_secret() {
 
     if $DRY_RUN; then
         echo "[DRY-RUN] kubectl create namespace $TLS_NAMESPACE (idempotente)"
-        echo "[DRY-RUN] openssl req -x509 -newkey rsa:2048 ... SAN=*.${NODE_IP}.nip.io"
+        echo "[DRY-RUN] openssl req -x509 -newkey rsa:2048 ... SAN=$TLS_SANS"
         echo "[DRY-RUN] kubectl create secret tls $TLS_SECRET_NAME -n $TLS_NAMESPACE (se ainda não existir)"
         return
     fi
@@ -700,8 +705,8 @@ step_generate_tls_secret() {
 
         openssl req -x509 -newkey rsa:2048 -nodes \
             -keyout "$tmpdir/tls.key" -out "$tmpdir/tls.crt" -days 825 \
-            -subj "/CN=uniplus-hml" \
-            -addext "subjectAltName=DNS:*.${NODE_IP}.nip.io,DNS:${NODE_IP}.nip.io" \
+            -subj "/CN=uniplus-hml.unifesspa.edu.br" \
+            -addext "subjectAltName=$TLS_SANS" \
             >/dev/null 2>&1
 
         kubectl create secret tls "$TLS_SECRET_NAME" \
@@ -709,7 +714,7 @@ step_generate_tls_secret() {
             --dry-run=client -o yaml | kubectl apply -f -
     )
 
-    log_warn "Certificado autoassinado gerado (SAN: *.${NODE_IP}.nip.io) — chave privada descartada após criar o Secret."
+    log_warn "Certificado autoassinado gerado (SAN: $TLS_SANS) — chave privada descartada após criar o Secret."
     log_success "Secret $TLS_SECRET_NAME criado em $TLS_NAMESPACE."
 
     # O Host mescla a CA no trust store durante o initContainer. Quando uma
