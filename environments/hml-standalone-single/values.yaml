@@ -454,13 +454,15 @@ uniplusWeb:
       pathPrefix: /portal
       tag: v0.2.2
       runtimeConfig:
-        # uniplus-api-portal ainda não está ligado nesta fase (TLS real
-        # depende do customCA do certificado autoassinado — ver "Escopo
-        # desta fase" no topo do arquivo) — chamadas à API vão falhar em
-        # runtime até lá. URL segue a convenção de roteamento já reservada
-        # em docs/RUNBOOKS.md §21.2 (host uniplus-api-hml, path /api/portal);
-        # apiUrl vazio não é aceito pelo chart (ADR-0021 assertNaoEhPlaceholder).
-        apiUrl: https://uniplus-api-hml.unifesspa.edu.br/api/portal
+        # apiUrl é só a origem — os apps já montam o path com o prefixo do
+        # módulo (/api/portal/...) no cliente; concatenar aqui duplicaria
+        # (/api/portal/api/portal/...). Mesmo padrão de
+        # environments/lab-standalone-single/values.yaml. uniplus-api-portal
+        # ainda não está ligado nesta fase (TLS real depende do customCA do
+        # certificado autoassinado — ver "Escopo desta fase" no topo do
+        # arquivo) — chamadas à API vão falhar em runtime até lá. apiUrl
+        # vazio não é aceito pelo chart (ADR-0021 assertNaoEhPlaceholder).
+        apiUrl: https://uniplus-api-hml.unifesspa.edu.br
         keycloak:
           url: https://uniplus-oidc-hml.unifesspa.edu.br/auth
           realm: unifesspa
@@ -472,9 +474,10 @@ uniplusWeb:
       pathPrefix: /selecao
       tag: v0.2.2
       runtimeConfig:
-        # /api/selecao já roteado no uniplus-api-host (pathPrefixes acima) —
-        # backend real, diferente do portal.
-        apiUrl: https://uniplus-api-hml.unifesspa.edu.br/api/selecao
+        # apiUrl é só a origem (ver comentário do portal acima) — o app já
+        # monta /api/selecao/... no cliente. Backend real: já roteado no
+        # uniplus-api-host (pathPrefixes acima).
+        apiUrl: https://uniplus-api-hml.unifesspa.edu.br
         keycloak:
           url: https://uniplus-oidc-hml.unifesspa.edu.br/auth
           realm: unifesspa
@@ -486,10 +489,11 @@ uniplusWeb:
       pathPrefix: /ingresso
       tag: v0.2.2
       runtimeConfig:
-        # /api/ingresso roteado no uniplus-api-host, mas o módulo Ingresso
-        # ainda não tem controller HTTP implementado (RUNBOOKS §21.3) —
-        # chamadas à API vão 404 até lá; host é real, só falta o backend.
-        apiUrl: https://uniplus-api-hml.unifesspa.edu.br/api/ingresso
+        # apiUrl é só a origem (ver comentário do portal acima) — o app já
+        # monta /api/ingresso/... no cliente. Rota existe no uniplus-api-host,
+        # mas o módulo Ingresso ainda não tem controller HTTP implementado
+        # (RUNBOOKS §21.3) — chamadas à API vão 404 até lá.
+        apiUrl: https://uniplus-api-hml.unifesspa.edu.br
         keycloak:
           url: https://uniplus-oidc-hml.unifesspa.edu.br/auth
           realm: unifesspa
