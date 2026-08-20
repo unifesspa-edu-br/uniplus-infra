@@ -42,9 +42,11 @@
 #     VM depende do certificado autoassinado gerado no bootstrap
 #     (#442/#445) — os apps .NET precisariam de `customCA.certPEM`,
 #     acompanhar quando o app for de fato ligado neste ambiente.
-#   - uniplusWeb — default `enabled: true` no chart; desligado explicitamente
-#     abaixo. Mesma falta de suporte a `PathPrefix`/subpath (Feature 2) +
-#     trabalho cross-repo em `uniplus-web` (Feature 4).
+#   - uniplusWeb — só o app `portal` ligado (issue #486), servido na raiz do
+#     host `uniplus-hml.unifesspa.edu.br` (sem `pathPrefix`) como smoke test
+#     do pipeline de deploy. `selecao`/`ingresso` continuam desligados, e
+#     nenhum dos três usa `PathPrefix`/subpath ainda — depende de
+#     `uniplus-web#447`/`#448`/`#449` (Feature 4, ainda abertas).
 #   - cert-manager, Vault Transit (auto-unseal), Vault Transit Bootstrap
 #     (engine transit local p/ idempotência do uniplus-api — sem consumidor
 #     enquanto uniplusApiHost não roda aqui), observabilidade completa
@@ -243,16 +245,16 @@ keycloak:
     host: 192.168.21.134
 
   hostname:
-    url: https://keycloak.192.168.21.134.nip.io/auth
+    url: https://uniplus-oidc-hml.unifesspa.edu.br/auth
     strict: false
 
   ingress:
     enabled: true
     entryPoint: websecure
-    host: keycloak.192.168.21.134.nip.io
+    host: uniplus-oidc-hml.unifesspa.edu.br
     tls:
       enabled: true
-      secretName: uniplus-wildcard-nip-io-tls
+      secretName: uniplus-hml-unifesspa-tls
 
   networkPolicy:
     enabled: true
@@ -266,16 +268,36 @@ keycloak:
     enabled: true
 
   realmImport:
+    # Alinha com o nome de realm já usado localmente (uniplus-web e
+    # uniplus-api têm realm-export.json com "realm": "unifesspa") e com o
+    # Keycloak institucional de produção que este ambiente vai eventualmente
+    # substituir. O realm anterior ("uniplus") fica órfão no Postgres do
+    # Keycloak após esta troca — `--import-realm` só roda no primeiro boot
+    # por realm (gotcha documentado em feedback_keycloak_realm_reconcile_gated),
+    # então o realm novo é importado no próximo restart do pod (o checksum
+    # do ConfigMap muda com esta edição), sem afetar o realm antigo, que
+    # segue existindo até uma limpeza manual futura.
+    realmName: unifesspa
+    # Portal está ligado nesta fase (issue #486) — sem isso o client
+    # uniplus-portal herda o default do chart (redirectUris vazio) e o
+    # Keycloak rejeita o callback OIDC com invalid redirect_uri.
+    portalClient:
+      clientId: uniplus-portal
+      rootUrl: https://uniplus-hml.unifesspa.edu.br
+      redirectUris:
+        - https://uniplus-hml.unifesspa.edu.br/*
+      webOrigins:
+        - https://uniplus-hml.unifesspa.edu.br
     # Sem isso, o client apicurio-registry herdaria o default do chart
     # (hostname do standalone-compact) — login pela UI do Apicurio neste
     # HML seria rejeitado pelo Keycloak (redirect_uri/origin não batem).
     apicurioClient:
       clientId: apicurio-registry
       redirectUris:
-        - https://apicurio.192.168.21.134.nip.io/*
-        - https://apicurio.192.168.21.134.nip.io/ui/*
+        - https://apicurio-hml.unifesspa.edu.br/*
+        - https://apicurio-hml.unifesspa.edu.br/ui/*
       webOrigins:
-        - https://apicurio.192.168.21.134.nip.io
+        - https://apicurio-hml.unifesspa.edu.br
 
 # ============================================================================
 # uniplus-api-host — Host dos módulos internos Seleção, Ingresso,
@@ -368,7 +390,7 @@ apicurioRegistry:
     host: 192.168.21.134
 
   oidc:
-    issuerUri: https://keycloak.192.168.21.134.nip.io/auth/realms/uniplus
+    issuerUri: https://uniplus-oidc-hml.unifesspa.edu.br/auth/realms/unifesspa
 
   # Quarkus rejeita o certificado autoassinado do Keycloak ao buscar o JWKS
   # sem isso ("OIDC Server is not available"). trust-all é aceitável só
@@ -381,10 +403,10 @@ apicurioRegistry:
   ingress:
     enabled: true
     entryPoint: websecure
-    host: apicurio.192.168.21.134.nip.io
+    host: apicurio-hml.unifesspa.edu.br
     tls:
       enabled: true
-      secretName: uniplus-wildcard-nip-io-tls
+      secretName: uniplus-hml-unifesspa-tls
 
   networkPolicy:
     enabled: true
@@ -405,12 +427,43 @@ apicurioRegistry:
     enabled: false # sem Prometheus Operator habilitado nesta fase
 
 # ============================================================================
-# Fora de escopo desta fase — desligados explicitamente porque o
-# ApplicationSet os habilitaria por default (enabled=true no chart) assim
-# que o cluster for registrado. Ver "Escopo desta fase" no topo do arquivo.
+# uniplus-web (chart apps/uniplus-web/) — só o app portal, servido na RAIZ
+# do host (sem pathPrefix). Smoke test do pipeline de deploy: valida que o
+# chart/IngressRoute/TLS funcionam ponta-a-ponta contra um hostname real.
+# `selecao`/`ingresso` continuam desligados (default do chart), e portal
+# continua sem pathPrefix — uniplus-web#448 (nginx.conf parametrizado por
+# subpath) ainda está aberta; servir sob `/portal` quebraria
+# runtime-config.json/silent-check-sso.html (âncoras sem prefixo no
+# nginx.conf hoje). Ativar pathPrefix quando #447/#448/#449 fecharem.
 # ============================================================================
 uniplusWeb:
-  enabled: false
+  enabled: true
+
+  apps:
+    portal:
+      enabled: true
+      host: uniplus-hml.unifesspa.edu.br
+      runtimeConfig:
+        # uniplus-api-portal ainda não está ligado nesta fase (TLS real
+        # depende do customCA do certificado autoassinado — ver "Escopo
+        # desta fase" no topo do arquivo) — chamadas à API vão falhar em
+        # runtime até lá. URL segue a convenção de roteamento já reservada
+        # em docs/RUNBOOKS.md §21.2 (host uniplus-api-hml, path /api/portal);
+        # apiUrl vazio não é aceito pelo chart (ADR-0021 assertNaoEhPlaceholder).
+        apiUrl: https://uniplus-api-hml.unifesspa.edu.br/api/portal
+        keycloak:
+          url: https://uniplus-oidc-hml.unifesspa.edu.br/auth
+          realm: unifesspa
+          clientId: uniplus-portal
+
+  ingress:
+    enabled: true
+    entryPoint: websecure
+    tls:
+      enabled: true
+      secretName: uniplus-hml-unifesspa-tls
+      certManager:
+        enabled: false
 
 kubePrometheusStack:
   enabled: false
