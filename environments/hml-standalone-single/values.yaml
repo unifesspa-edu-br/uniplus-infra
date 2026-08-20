@@ -29,7 +29,9 @@
 #
 # Habilitados: Vault, External Secrets Operator, Traefik+TLS (autoassinado,
 # provisório — ADR/RUNBOOKS §21.2 item 2), Keycloak, Apicurio Registry,
-# StorageClass e uniplusApiHost. Kafka roda fora do K8s (systemd no data-host,
+# StorageClass, uniplusApiHost e uniplusWeb (portal + selecao + ingresso,
+# issue #488) — os 3 sob PathPrefix real (`/portal`, `/selecao`,
+# `/ingresso`) no mesmo host. Kafka roda fora do K8s (systemd no data-host,
 # escopo do script de bootstrap #442), mas permanece desativado no Host nesta
 # primeira publicação.
 #
@@ -42,11 +44,8 @@
 #     VM depende do certificado autoassinado gerado no bootstrap
 #     (#442/#445) — os apps .NET precisariam de `customCA.certPEM`,
 #     acompanhar quando o app for de fato ligado neste ambiente.
-#   - uniplusWeb — só o app `portal` ligado (issue #486), servido na raiz do
-#     host `uniplus-hml.unifesspa.edu.br` (sem `pathPrefix`) como smoke test
-#     do pipeline de deploy. `selecao`/`ingresso` continuam desligados, e
-#     nenhum dos três usa `PathPrefix`/subpath ainda — depende de
-#     `uniplus-web#447`/`#448`/`#449` (Feature 4, ainda abertas).
+#   - (removido — uniplusWeb saiu do "fora de escopo"; os 3 apps estão
+#     habilitados, ver bloco `uniplusWeb` abaixo e issue #488)
 #   - cert-manager, Vault Transit (auto-unseal), Vault Transit Bootstrap
 #     (engine transit local p/ idempotência do uniplus-api — sem consumidor
 #     enquanto uniplusApiHost não roda aqui), observabilidade completa
@@ -428,14 +427,14 @@ apicurioRegistry:
     enabled: false # sem Prometheus Operator habilitado nesta fase
 
 # ============================================================================
-# uniplus-web (chart apps/uniplus-web/) — só o app portal, servido na RAIZ
-# do host (sem pathPrefix). Smoke test do pipeline de deploy: valida que o
-# chart/IngressRoute/TLS funcionam ponta-a-ponta contra um hostname real.
-# `selecao`/`ingresso` continuam desligados (default do chart), e portal
-# continua sem pathPrefix — uniplus-web#448 (nginx.conf parametrizado por
-# subpath) ainda está aberta; servir sob `/portal` quebraria
-# runtime-config.json/silent-check-sso.html (âncoras sem prefixo no
-# nginx.conf hoje). Ativar pathPrefix quando #447/#448/#449 fecharem.
+# uniplus-web (chart apps/uniplus-web/) — os 3 apps (portal/selecao/ingresso)
+# ligados, cada um sob seu PathPrefix real (/portal, /selecao, /ingresso) no
+# mesmo host, sem StripPrefix (RUNBOOKS §21.3). uniplus-web#448 (nginx.conf
+# parametrizado por subpath) fechou via PR uniplus-web#556 — o base href
+# autofechado do build do Angular 21 não casava no sub_filter original,
+# corrigido e validado com docker build+run+curl. Imagem v0.2.2 (issue #488).
+# #447 (logout redireciona pro subpath) e #449 (validação E2E) da Feature
+# #444 seguem abertas, não bloqueiam este deploy.
 # ============================================================================
 uniplusWeb:
   enabled: true
