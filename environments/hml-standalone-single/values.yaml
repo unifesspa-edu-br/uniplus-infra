@@ -440,10 +440,19 @@ apicurioRegistry:
 uniplusWeb:
   enabled: true
 
+  # Tag override: uniplus-web#448 (nginx.conf parametrizado por subpath)
+  # fechou via PR uniplus-web#556, publicado em v0.2.2 — mais recente que o
+  # default do chart (v0.2.1). Pin explícito aqui, não no chart, pra não
+  # afetar standalone-compact (segue no default até bump deliberado
+  # próprio). Ver issue #488.
   apps:
     portal:
       enabled: true
       host: uniplus-hml.unifesspa.edu.br
+      # PathPrefix real — migrado do smoke provisório na raiz (issue #486)
+      # agora que uniplus-web#448 corrigiu o base href sob subpath (issue #488).
+      pathPrefix: /portal
+      tag: v0.2.2
       runtimeConfig:
         # uniplus-api-portal ainda não está ligado nesta fase (TLS real
         # depende do customCA do certificado autoassinado — ver "Escopo
@@ -452,6 +461,35 @@ uniplusWeb:
         # em docs/RUNBOOKS.md §21.2 (host uniplus-api-hml, path /api/portal);
         # apiUrl vazio não é aceito pelo chart (ADR-0021 assertNaoEhPlaceholder).
         apiUrl: https://uniplus-api-hml.unifesspa.edu.br/api/portal
+        keycloak:
+          url: https://uniplus-oidc-hml.unifesspa.edu.br/auth
+          realm: unifesspa
+          clientId: uniplus-portal
+
+    selecao:
+      enabled: true
+      host: uniplus-hml.unifesspa.edu.br
+      pathPrefix: /selecao
+      tag: v0.2.2
+      runtimeConfig:
+        # /api/selecao já roteado no uniplus-api-host (pathPrefixes acima) —
+        # backend real, diferente do portal.
+        apiUrl: https://uniplus-api-hml.unifesspa.edu.br/api/selecao
+        keycloak:
+          url: https://uniplus-oidc-hml.unifesspa.edu.br/auth
+          realm: unifesspa
+          clientId: uniplus-portal
+
+    ingresso:
+      enabled: true
+      host: uniplus-hml.unifesspa.edu.br
+      pathPrefix: /ingresso
+      tag: v0.2.2
+      runtimeConfig:
+        # /api/ingresso roteado no uniplus-api-host, mas o módulo Ingresso
+        # ainda não tem controller HTTP implementado (RUNBOOKS §21.3) —
+        # chamadas à API vão 404 até lá; host é real, só falta o backend.
+        apiUrl: https://uniplus-api-hml.unifesspa.edu.br/api/ingresso
         keycloak:
           url: https://uniplus-oidc-hml.unifesspa.edu.br/auth
           realm: unifesspa
