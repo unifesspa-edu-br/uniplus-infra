@@ -4,14 +4,17 @@
 {{- if not $cfg.runtimeConfig.apiUrl -}}
 {{- fail (printf "uniplusWeb.apps.%s.runtimeConfig.apiUrl é obrigatório (URL pública da API correspondente, ex.: https://api-%s.standalone.portaluni.com.br). Sem URL real, runtime-config.json contém placeholder e o app aborta o bootstrap (ADR-0021 assertNaoEhPlaceholder)." $app $app) -}}
 {{- end -}}
+{{- if not $cfg.runtimeConfig.oidc.issuerUrl -}}
+{{- fail (printf "uniplusWeb.apps.%s.runtimeConfig.oidc.issuerUrl é obrigatório (URL completa do realm, ex.: https://standalone.portaluni.com.br/auth/realms/uniplus)." $app) -}}
+{{- end -}}
+{{- if not $cfg.runtimeConfig.oidc.clientId -}}
+{{- fail (printf "uniplusWeb.apps.%s.runtimeConfig.oidc.clientId é obrigatório (ex.: uniplus-portal)." $app) -}}
+{{- end -}}
 {{- if not $cfg.runtimeConfig.keycloak.url -}}
-{{- fail (printf "uniplusWeb.apps.%s.runtimeConfig.keycloak.url é obrigatório (URL do realm Keycloak, ex.: https://standalone.portaluni.com.br/auth)." $app) -}}
+{{- fail (printf "uniplusWeb.apps.%s.runtimeConfig.keycloak.url é obrigatório — mantido em paralelo a oidc.issuerUrl enquanto standalone-compact/lab rodam v0.2.1 (pré-contrato neutro)." $app) -}}
 {{- end -}}
 {{- if not $cfg.runtimeConfig.keycloak.realm -}}
 {{- fail (printf "uniplusWeb.apps.%s.runtimeConfig.keycloak.realm é obrigatório (ex.: uniplus)." $app) -}}
-{{- end -}}
-{{- if not $cfg.runtimeConfig.keycloak.clientId -}}
-{{- fail (printf "uniplusWeb.apps.%s.runtimeConfig.keycloak.clientId é obrigatório (ex.: uniplus-portal)." $app) -}}
 {{- end }}
 ---
 # ConfigMap montado sobre /usr/share/nginx/html/assets/runtime-config.json
@@ -21,6 +24,16 @@
 # bumps de ConfigMap chegam imediatamente ao browser sem rolling restart
 # do pod (mas restart não dói — `data.runtime-config.json` muda hash do
 # objeto, ConfigMap reload é automático via subPath no volume).
+#
+# Renderiza os dois formatos de OIDC em paralelo — "oidc" (contrato
+# neutro, uniplus-web commit 9884c64, 2026-05-31) e "keycloak" (formato
+# anterior). standalone-compact/lab seguem pinados em v0.2.1 (chart
+# default), publicada ANTES da mudança de contrato — o binário dessa tag
+# só entende "keycloak". HML já roda v0.2.2+, que só lê "oidc". Um campo
+# extra e desconhecido no JSON não quebra nenhum dos dois lados
+# (`resolveOidcConfig` em app-config.model.ts só valida a chave que usa).
+# Remover "keycloak" quando standalone-compact/lab também migrarem pra
+# uma tag pós-contrato-neutro.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -31,10 +44,14 @@ data:
   runtime-config.json: |
     {
       "apiUrl": {{ $cfg.runtimeConfig.apiUrl | quote }},
+      "oidc": {
+        "issuerUrl": {{ $cfg.runtimeConfig.oidc.issuerUrl | quote }},
+        "clientId": {{ $cfg.runtimeConfig.oidc.clientId | quote }}
+      },
       "keycloak": {
         "url": {{ $cfg.runtimeConfig.keycloak.url | quote }},
         "realm": {{ $cfg.runtimeConfig.keycloak.realm | quote }},
-        "clientId": {{ $cfg.runtimeConfig.keycloak.clientId | quote }}
+        "clientId": {{ $cfg.runtimeConfig.oidc.clientId | quote }}
       }
     }
 {{- end }}

@@ -545,6 +545,8 @@ uniplusWeb:
       host: portal.192.168.1.65.nip.io
       runtimeConfig:
         apiUrl: https://api-portal.192.168.1.65.nip.io
+        oidc:
+          issuerUrl: https://keycloak.192.168.1.65.nip.io/auth/realms/uniplus
         keycloak:
           url: https://keycloak.192.168.1.65.nip.io/auth
 
@@ -554,6 +556,8 @@ uniplusWeb:
       host: selecao.192.168.1.65.nip.io
       runtimeConfig:
         apiUrl: https://api-host.192.168.1.65.nip.io
+        oidc:
+          issuerUrl: https://keycloak.192.168.1.65.nip.io/auth/realms/uniplus
         keycloak:
           url: https://keycloak.192.168.1.65.nip.io/auth
 
@@ -563,6 +567,8 @@ uniplusWeb:
       host: ingresso.192.168.1.65.nip.io
       runtimeConfig:
         apiUrl: https://api-host.192.168.1.65.nip.io
+        oidc:
+          issuerUrl: https://keycloak.192.168.1.65.nip.io/auth/realms/uniplus
         keycloak:
           url: https://keycloak.192.168.1.65.nip.io/auth
 

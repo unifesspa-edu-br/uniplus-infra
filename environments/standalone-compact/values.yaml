@@ -1207,10 +1207,12 @@ uniplusWeb:
       host: portal.standalone.portaluni.com.br
       runtimeConfig:
         apiUrl: https://api-portal.standalone.portaluni.com.br
+        oidc:
+          issuerUrl: https://standalone.portaluni.com.br/auth/realms/uniplus
+          clientId: uniplus-portal
         keycloak:
           url: https://standalone.portaluni.com.br/auth
           realm: uniplus
-          clientId: uniplus-portal
 
     selecao:
       enabled: true
@@ -1219,10 +1221,12 @@ uniplusWeb:
       host: selecao.standalone.portaluni.com.br
       runtimeConfig:
         apiUrl: https://api-selecao.standalone.portaluni.com.br
+        oidc:
+          issuerUrl: https://standalone.portaluni.com.br/auth/realms/uniplus
+          clientId: uniplus-portal
         keycloak:
           url: https://standalone.portaluni.com.br/auth
           realm: uniplus
-          clientId: uniplus-portal
 
     ingresso:
       enabled: true
@@ -1231,10 +1235,12 @@ uniplusWeb:
       host: ingresso.standalone.portaluni.com.br
       runtimeConfig:
         apiUrl: https://api-ingresso.standalone.portaluni.com.br
+        oidc:
+          issuerUrl: https://standalone.portaluni.com.br/auth/realms/uniplus
+          clientId: uniplus-portal
         keycloak:
           url: https://standalone.portaluni.com.br/auth
           realm: uniplus
-          clientId: uniplus-portal
 
 # ----------------------------------------------------------------------------
 # Componentes stateful no data-host (Postgres, Kafka, MinIO, Redis) rodam

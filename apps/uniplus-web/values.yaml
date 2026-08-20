@@ -80,10 +80,17 @@ uniplusWeb:
       # app-config.model.ts do uniplus-web (ADR-0021).
       runtimeConfig:
         apiUrl: ""  # ex.: https://api-portal.standalone.portaluni.com.br
+        # Contrato neutro (uniplus-web commit 9884c64): oidc.issuerUrl já
+        # inclui o path do realm. keycloak.{url,realm} mantido em paralelo
+        # (template renderiza os dois) enquanto standalone-compact/lab
+        # rodam v0.2.1, publicada antes da mudança de contrato — ver
+        # comentário em templates/configmap-runtime.yaml.
+        oidc:
+          issuerUrl: ""  # ex.: https://standalone.portaluni.com.br/auth/realms/uniplus
+          clientId: uniplus-portal
         keycloak:
           url: ""  # ex.: https://standalone.portaluni.com.br/auth
           realm: uniplus
-          clientId: uniplus-portal
       resources:
         requests:
           cpu: 50m
@@ -101,10 +108,12 @@ uniplusWeb:
       pathPrefix: ""  # subpath opcional — ver nota em apps.portal.pathPrefix. Ex. HML: /selecao
       runtimeConfig:
         apiUrl: ""
+        oidc:
+          issuerUrl: ""
+          clientId: uniplus-portal
         keycloak:
           url: ""
           realm: uniplus
-          clientId: uniplus-portal
       resources:
         requests:
           cpu: 50m
@@ -122,10 +131,12 @@ uniplusWeb:
       pathPrefix: ""  # subpath opcional — ver nota em apps.portal.pathPrefix. Ex. HML: /ingresso
       runtimeConfig:
         apiUrl: ""
+        oidc:
+          issuerUrl: ""
+          clientId: uniplus-portal
         keycloak:
           url: ""
           realm: uniplus
-          clientId: uniplus-portal
       resources:
         requests:
           cpu: 50m
