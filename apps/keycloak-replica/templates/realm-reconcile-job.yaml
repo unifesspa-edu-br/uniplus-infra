@@ -102,8 +102,12 @@ spec:
               value: "{{ .Values.keycloak.realmReconcile.availabilityCheckTimeout | default "120s" }}"
             # Caminho do realm.json montado via ConfigMap (mesmo arquivo
             # consumido pelo --import-realm inicial em deployment.yaml).
+            # Nome do arquivo segue realmImport.realmName (ver
+            # configmap-realm.yaml) — hardcoded pra "uniplus-realm.json"
+            # quebrava o Job sempre que um ambiente sobrescrevia o nome do
+            # realm (ex. hml-standalone-single usa "unifesspa").
             - name: IMPORT_FILES_LOCATIONS
-              value: "/realm/uniplus-realm.json"
+              value: "/realm/{{ .Values.keycloak.realmImport.realmName }}-realm.json"
             # ${VAR} no realm.json (ex.: ${UNIPLUS_PORTAL_CLIENT_SECRET})
             # é substituído por env vars do Pod — mesmo pattern do KC.
             - name: IMPORT_VARSUBSTITUTION_ENABLED
