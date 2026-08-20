@@ -231,12 +231,11 @@ traefik:
 # KC_HOSTNAME; divergência quebra o fluxo de login OIDC (redirect_uri
 # mismatch / iss inesperado).
 #
-# realmImport.portalClient fica com os defaults do chart (redirectUris
-# vazio) — sem consumidor real enquanto uniplusWeb não roda nesta fase;
-# Feature 2/4 preenche quando ligar o frontend. realmImport.apicurioClient
-# É sobrescrito abaixo — diferente do portal, o Apicurio roda nesta fase, e
-# sem o override o client OIDC herdaria o hostname do standalone-compact
-# (default do chart), rejeitando o login pela UI deste ambiente.
+# realmImport.portalClient e realmImport.apicurioClient são sobrescritos
+# abaixo (issue #486, uniplusWeb.apps.portal ligado) — sem o override,
+# ambos os clients OIDC herdariam os defaults do chart (redirectUris vazio
+# no portal; hostname do standalone-compact no Apicurio), rejeitando o
+# login pela UI/callback deste ambiente.
 # ============================================================================
 keycloak:
   enabled: true
