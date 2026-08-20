@@ -201,9 +201,10 @@ cert-manager:
 # ============================================================================
 # Traefik (chart platform/traefik/) — hostPort 80+443 bindam direto na VM
 # real (mesmo padrão do lab/standalone-compact). TLS autoassinado
-# provisório (secret `uniplus-wildcard-nip-io-tls`, criado manualmente via
-# `kubectl create secret tls` durante o bootstrap #442/#445 — não é
-# gerenciado pelo cert-manager nem versionado no Git, mesmo padrão do lab).
+# provisório (secret `uniplus-hml-unifesspa-tls`, criado manualmente via
+# `kubectl create secret tls` durante o bootstrap #442/#445 e regenerado
+# com SANs reais na issue #486 — não é gerenciado pelo cert-manager nem
+# versionado no Git, mesmo padrão do lab).
 # redirections: null mantém :80 servindo em paralelo, útil para smoke tests
 # via curl sem exigir secure context.
 # ============================================================================
@@ -323,24 +324,25 @@ uniplusApiHost:
     endpoint: 192.168.21.134:9000
 
   oidc:
-    issuerUri: https://keycloak.192.168.21.134.nip.io/auth/realms/uniplus
+    issuerUri: https://uniplus-oidc-hml.unifesspa.edu.br/auth/realms/unifesspa
 
   customCA:
     enabled: true
     # Lê o mesmo certificado público usado pelo Traefik. Assim, recriar ou
     # rotacionar o Secret TLS não deixa uma cópia PEM obsoleta no Git.
-    existingSecretName: uniplus-wildcard-nip-io-tls
+    existingSecretName: uniplus-hml-unifesspa-tls
     existingSecretKey: tls.crt
 
   cors:
     allowedOrigins:
-      # O Web HML usa o mesmo host com PathPrefix (/portal, /selecao e
-      # /ingresso). CORS compara somente esquema, host e porta — nunca o
-      # path — portanto esta é a origem efetiva das três SPAs.
-      - https://uniplus-hml.192.168.21.134.nip.io
-      - https://portal.192.168.21.134.nip.io
-      - https://selecao.192.168.21.134.nip.io
-      - https://ingresso.192.168.21.134.nip.io
+      # As 3 SPAs (portal/selecao/ingresso) vivem sob o MESMO host com
+      # PathPrefix (/portal, /selecao, /ingresso — RUNBOOKS §21.2/§21.3),
+      # não em subdomínios próprios. CORS compara só esquema+host+porta,
+      # nunca o path, então esta é a única origem efetiva das três —
+      # `portal.*`/`selecao.*`/`ingresso.*` do valor anterior eram
+      # subdomínios que nunca existiram nesta topologia (nem em nip.io,
+      # nem nos 9 hostnames registrados pela CTIC — RUNBOOKS §21.2).
+      - https://uniplus-hml.unifesspa.edu.br
 
   encryption:
     provider: local
@@ -355,7 +357,7 @@ uniplusApiHost:
   ingress:
     enabled: true
     entryPoint: websecure
-    host: uniplus-api-hml.192.168.21.134.nip.io
+    host: uniplus-api-hml.unifesspa.edu.br
     pathPrefixes:
       - /api/ingresso
       - /api/selecao
@@ -365,7 +367,7 @@ uniplusApiHost:
       - /openapi
     tls:
       enabled: true
-      secretName: uniplus-wildcard-nip-io-tls
+      secretName: uniplus-hml-unifesspa-tls
 
   networkPolicy:
     enabled: true
