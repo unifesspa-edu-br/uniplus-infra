@@ -686,6 +686,7 @@ step_generate_tls_secret() {
     primary_ns=$(awk '{print $1}' <<< "$TLS_NAMESPACES")
 
     if $DRY_RUN; then
+        echo "[DRY-RUN] apt-get install -y jq (se ainda não instalado)"
         for ns in $TLS_NAMESPACES; do
             echo "[DRY-RUN] kubectl create namespace $ns (idempotente)"
         done
@@ -693,14 +694,29 @@ step_generate_tls_secret() {
         echo "[DRY-RUN] kubectl create secret tls $TLS_SECRET_NAME -n $primary_ns (se ainda não existir)"
         for ns in $TLS_NAMESPACES; do
             [ "$ns" = "$primary_ns" ] && continue
-            echo "[DRY-RUN] replicar Secret $TLS_SECRET_NAME de $primary_ns para $ns (se ainda não existir)"
+            echo "[DRY-RUN] sincronizar Secret $TLS_SECRET_NAME de $primary_ns para $ns (se divergente)"
         done
         return
+    fi
+
+    # jq faz a transformação de namespace do Secret replicado abaixo — este
+    # host segue o mesmo pré-requisito documentado (Ubuntu 24.04.4), mas
+    # nada nos steps anteriores (docker/k3s/helm/argocd) garante jq
+    # instalado. Sem checagem, `set -euo pipefail` aborta aqui num host
+    # limpo, deixando o Deployment da geo-api habilitado sem Secret pra
+    # montar (achado do Codex AI, uniplus-infra#492).
+    if ! command -v jq &>/dev/null; then
+        log_info "Instalando jq..."
+        run "sudo apt-get update -qq"
+        run "sudo apt-get install -y jq"
+        log_success "jq instalado."
     fi
 
     for ns in $TLS_NAMESPACES; do
         kubectl create namespace "$ns" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
     done
+
+    local changed=false
 
     if kubectl get secret "$TLS_SECRET_NAME" -n "$primary_ns" &>/dev/null; then
         log_success "Secret $TLS_SECRET_NAME já existe em $primary_ns — preservando."
@@ -732,31 +748,50 @@ step_generate_tls_secret() {
 
         log_warn "Certificado autoassinado gerado (SAN: $TLS_SANS) — chave privada descartada após criar o Secret."
         log_success "Secret $TLS_SECRET_NAME criado em $primary_ns."
+        changed=true
     fi
 
-    # Replica o MESMO Secret (cert+key) pros demais namespaces consumidores —
-    # nunca gera identidade nova por namespace. IngressRoute e
-    # customCA.existingSecretName são namespace-scoped: sem a cópia, apps com
-    # namespace próprio (unifesspa-geo-api usa `geo` — bounded context
+    # Sincroniza o MESMO Secret (cert+key) pros demais namespaces
+    # consumidores — nunca gera identidade nova por namespace. IngressRoute
+    # e customCA.existingSecretName são namespace-scoped: sem a cópia, apps
+    # com namespace próprio (unifesspa-geo-api usa `geo` — bounded context
     # dedicado, argocd/applicationset.yaml) não enxergam o Secret e o pod
     # fica pending pra sempre (achado do Codex AI na habilitação da geo-api,
     # uniplus-infra#492).
+    #
+    # Compara pelo próprio dado (tls.crt), não só "existe?" — um guard de
+    # existência preservaria pra sempre uma cópia desatualizada quando o
+    # Secret primário for rotacionado (ex.: certificado real da CTIC
+    # substituindo o autoassinado, Feature 6): a IngressRoute e o sidecar
+    # refresh-custom-ca de geo continuariam servindo/confiando na
+    # identidade antiga, só a cópia primária se atualizaria (2º achado do
+    # Codex AI, uniplus-infra#492).
     for ns in $TLS_NAMESPACES; do
         [ "$ns" = "$primary_ns" ] && continue
-        if kubectl get secret "$TLS_SECRET_NAME" -n "$ns" &>/dev/null; then
-            log_success "Secret $TLS_SECRET_NAME já existe em $ns — preservando."
+        src_crt=$(kubectl get secret "$TLS_SECRET_NAME" -n "$primary_ns" -o jsonpath='{.data.tls\.crt}')
+        dst_crt=$(kubectl get secret "$TLS_SECRET_NAME" -n "$ns" -o jsonpath='{.data.tls\.crt}' 2>/dev/null || true)
+        if [ "$src_crt" = "$dst_crt" ]; then
+            log_success "Secret $TLS_SECRET_NAME em $ns já está sincronizado — preservando."
             continue
         fi
         kubectl get secret "$TLS_SECRET_NAME" -n "$primary_ns" -o json \
             | jq --arg ns "$ns" 'del(.metadata.namespace,.metadata.uid,.metadata.resourceVersion,.metadata.creationTimestamp,.metadata.selfLink,.metadata.ownerReferences,.metadata.managedFields) | .metadata.namespace = $ns' \
             | kubectl apply -f -
-        log_success "Secret $TLS_SECRET_NAME replicado para $ns."
+        log_success "Secret $TLS_SECRET_NAME sincronizado para $ns."
+        changed=true
     done
 
+    if ! $changed; then
+        return
+    fi
+
     # O Host/API mescla a CA no trust store durante o initContainer. Quando
-    # uma recuperação recria este Secret, reiniciar o Deployment faz o init
-    # rodar com o novo tls.crt; sem isso o emptyDir do Pod preservaria a CA
-    # antiga. Cobre os 2 consumidores atuais de customCA.existingSecretName.
+    # o Secret muda (criação, recuperação ou resync de rotação — acima),
+    # reiniciar o Deployment faz o init rodar com o tls.crt atual; sem isso
+    # o emptyDir do Pod preservaria a CA antiga. Só roda quando algo de fato
+    # mudou — reruns idempotentes do bootstrap não devem reiniciar pods
+    # saudáveis à toa. Cobre os 2 consumidores atuais de
+    # customCA.existingSecretName.
     for ns in $TLS_NAMESPACES; do
         kubectl get deployment -n "$ns" -l app.kubernetes.io/name=uniplus-api-host -o name \
             | xargs -r kubectl -n "$ns" rollout restart
