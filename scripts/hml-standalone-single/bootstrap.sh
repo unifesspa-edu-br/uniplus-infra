@@ -71,7 +71,14 @@ ARGOCD_VERSION="v2.14.3"
 DRY_RUN=false
 
 DATA_BASE="/var/lib/uniplus"
-TLS_NAMESPACE="uniplus"
+# uniplus: portal/selecao/ingresso/configuracao + uniplus-api-host +
+# Keycloak/Apicurio. geo: unifesspa-geo-api — bounded context próprio,
+# namespace dedicado (argocd/applicationset.yaml) — precisa do MESMO
+# Secret (IngressRoute e customCA.existingSecretName são namespace-scoped).
+# O primeiro da lista é o namespace onde o certificado é de fato gerado;
+# os demais recebem cópia do mesmo Secret (mesma identidade, nunca cert
+# novo por namespace).
+TLS_NAMESPACES="uniplus geo"
 TLS_SECRET_NAME="uniplus-hml-unifesspa-tls"
 # 9 hostnames de docs/RUNBOOKS.md §21.2, já registrados pela CTIC
 # (issue #486) — substitui o SAN provisório *.${NODE_IP}.nip.io usado
@@ -675,53 +682,87 @@ step_setup_kafka() {
 step_generate_tls_secret() {
     log_info "Gerando certificado TLS autoassinado provisório..."
 
+    local primary_ns
+    primary_ns=$(awk '{print $1}' <<< "$TLS_NAMESPACES")
+
     if $DRY_RUN; then
-        echo "[DRY-RUN] kubectl create namespace $TLS_NAMESPACE (idempotente)"
+        for ns in $TLS_NAMESPACES; do
+            echo "[DRY-RUN] kubectl create namespace $ns (idempotente)"
+        done
         echo "[DRY-RUN] openssl req -x509 -newkey rsa:2048 ... SAN=$TLS_SANS"
-        echo "[DRY-RUN] kubectl create secret tls $TLS_SECRET_NAME -n $TLS_NAMESPACE (se ainda não existir)"
+        echo "[DRY-RUN] kubectl create secret tls $TLS_SECRET_NAME -n $primary_ns (se ainda não existir)"
+        for ns in $TLS_NAMESPACES; do
+            [ "$ns" = "$primary_ns" ] && continue
+            echo "[DRY-RUN] replicar Secret $TLS_SECRET_NAME de $primary_ns para $ns (se ainda não existir)"
+        done
         return
     fi
 
-    kubectl create namespace "$TLS_NAMESPACE" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+    for ns in $TLS_NAMESPACES; do
+        kubectl create namespace "$ns" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+    done
 
-    if kubectl get secret "$TLS_SECRET_NAME" -n "$TLS_NAMESPACE" &>/dev/null; then
-        log_success "Secret $TLS_SECRET_NAME já existe em $TLS_NAMESPACE — preservando."
-        return
+    if kubectl get secret "$TLS_SECRET_NAME" -n "$primary_ns" &>/dev/null; then
+        log_success "Secret $TLS_SECRET_NAME já existe em $primary_ns — preservando."
+    else
+        # Subshell + trap EXIT (não RETURN): sob `set -e`, uma falha no meio do
+        # bloco (openssl, kubectl create) sai do subshell sem passar por um
+        # `return` normal — trap RETURN não dispara nesse caminho, deixando a
+        # chave privada órfã em /tmp. trap EXIT roda em qualquer saída do
+        # subshell (sucesso, erro, sinal), mesmo padrão já usado em
+        # scripts/lab-standalone-single/bootstrap.sh (step_configure_vault_auth)
+        # para material sensível. `kubectl create secret` (não idempotente) trocado
+        # por gerar+aplicar via `apply`, seguro para re-run se a checagem acima
+        # falhar por race entre dois bootstraps concorrentes.
+        (
+            tmpdir=$(mktemp -d)
+            trap 'shred -u "$tmpdir"/*.key 2>/dev/null; rm -rf "$tmpdir"' EXIT
+            chmod 700 "$tmpdir"
+
+            openssl req -x509 -newkey rsa:2048 -nodes \
+                -keyout "$tmpdir/tls.key" -out "$tmpdir/tls.crt" -days 825 \
+                -subj "/CN=uniplus-hml.unifesspa.edu.br" \
+                -addext "subjectAltName=$TLS_SANS" \
+                >/dev/null 2>&1
+
+            kubectl create secret tls "$TLS_SECRET_NAME" \
+                --cert="$tmpdir/tls.crt" --key="$tmpdir/tls.key" -n "$primary_ns" \
+                --dry-run=client -o yaml | kubectl apply -f -
+        )
+
+        log_warn "Certificado autoassinado gerado (SAN: $TLS_SANS) — chave privada descartada após criar o Secret."
+        log_success "Secret $TLS_SECRET_NAME criado em $primary_ns."
     fi
 
-    # Subshell + trap EXIT (não RETURN): sob `set -e`, uma falha no meio do
-    # bloco (openssl, kubectl create) sai do subshell sem passar por um
-    # `return` normal — trap RETURN não dispara nesse caminho, deixando a
-    # chave privada órfã em /tmp. trap EXIT roda em qualquer saída do
-    # subshell (sucesso, erro, sinal), mesmo padrão já usado em
-    # scripts/lab-standalone-single/bootstrap.sh (step_configure_vault_auth)
-    # para material sensível. `kubectl create secret` (não idempotente) trocado
-    # por gerar+aplicar via `apply`, seguro para re-run se a checagem acima
-    # falhar por race entre dois bootstraps concorrentes.
-    (
-        tmpdir=$(mktemp -d)
-        trap 'shred -u "$tmpdir"/*.key 2>/dev/null; rm -rf "$tmpdir"' EXIT
-        chmod 700 "$tmpdir"
+    # Replica o MESMO Secret (cert+key) pros demais namespaces consumidores —
+    # nunca gera identidade nova por namespace. IngressRoute e
+    # customCA.existingSecretName são namespace-scoped: sem a cópia, apps com
+    # namespace próprio (unifesspa-geo-api usa `geo` — bounded context
+    # dedicado, argocd/applicationset.yaml) não enxergam o Secret e o pod
+    # fica pending pra sempre (achado do Codex AI na habilitação da geo-api,
+    # uniplus-infra#492).
+    for ns in $TLS_NAMESPACES; do
+        [ "$ns" = "$primary_ns" ] && continue
+        if kubectl get secret "$TLS_SECRET_NAME" -n "$ns" &>/dev/null; then
+            log_success "Secret $TLS_SECRET_NAME já existe em $ns — preservando."
+            continue
+        fi
+        kubectl get secret "$TLS_SECRET_NAME" -n "$primary_ns" -o json \
+            | jq --arg ns "$ns" 'del(.metadata.namespace,.metadata.uid,.metadata.resourceVersion,.metadata.creationTimestamp,.metadata.selfLink,.metadata.ownerReferences,.metadata.managedFields) | .metadata.namespace = $ns' \
+            | kubectl apply -f -
+        log_success "Secret $TLS_SECRET_NAME replicado para $ns."
+    done
 
-        openssl req -x509 -newkey rsa:2048 -nodes \
-            -keyout "$tmpdir/tls.key" -out "$tmpdir/tls.crt" -days 825 \
-            -subj "/CN=uniplus-hml.unifesspa.edu.br" \
-            -addext "subjectAltName=$TLS_SANS" \
-            >/dev/null 2>&1
-
-        kubectl create secret tls "$TLS_SECRET_NAME" \
-            --cert="$tmpdir/tls.crt" --key="$tmpdir/tls.key" -n "$TLS_NAMESPACE" \
-            --dry-run=client -o yaml | kubectl apply -f -
-    )
-
-    log_warn "Certificado autoassinado gerado (SAN: $TLS_SANS) — chave privada descartada após criar o Secret."
-    log_success "Secret $TLS_SECRET_NAME criado em $TLS_NAMESPACE."
-
-    # O Host mescla a CA no trust store durante o initContainer. Quando uma
-    # recuperação recria este Secret, reiniciar o Deployment faz o init rodar
-    # com o novo tls.crt; sem isso o emptyDir do Pod preservaria a CA antiga.
-    kubectl get deployment -n "$TLS_NAMESPACE" -l app.kubernetes.io/name=uniplus-api-host -o name \
-        | xargs -r kubectl -n "$TLS_NAMESPACE" rollout restart
+    # O Host/API mescla a CA no trust store durante o initContainer. Quando
+    # uma recuperação recria este Secret, reiniciar o Deployment faz o init
+    # rodar com o novo tls.crt; sem isso o emptyDir do Pod preservaria a CA
+    # antiga. Cobre os 2 consumidores atuais de customCA.existingSecretName.
+    for ns in $TLS_NAMESPACES; do
+        kubectl get deployment -n "$ns" -l app.kubernetes.io/name=uniplus-api-host -o name \
+            | xargs -r kubectl -n "$ns" rollout restart
+        kubectl get deployment -n "$ns" -l app.kubernetes.io/name=unifesspa-geo-api -o name \
+            | xargs -r kubectl -n "$ns" rollout restart
+    done
 }
 
 summary() {
