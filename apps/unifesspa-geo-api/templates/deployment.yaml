@@ -210,10 +210,57 @@ spec:
           resources:
             {{- toYaml .Values.unifesspaGeoApi.resources | nindent 12 }}
       {{- if .Values.unifesspaGeoApi.customCA.enabled }}
+        # Volumes projected de Secret são atualizados pelo kubelet sem mudar o
+        # PodTemplate. O initContainer acima só executa na criação do Pod,
+        # portanto um Secret TLS rotacionado deixaria o bundle em emptyDir
+        # obsoleto. Este sidecar observa o PEM e recompõe o bundle do sistema;
+        # a substituição de ca-certificates.crt é atômica para que novas
+        # conexões TLS da API usem a CA atual sem rollout manual.
+        - name: refresh-custom-ca
+          image: "{{ .Values.unifesspaGeoApi.image.registry }}/{{ .Values.unifesspaGeoApi.image.repository }}:{{ .Values.unifesspaGeoApi.image.tag }}"
+          imagePullPolicy: {{ .Values.unifesspaGeoApi.image.pullPolicy }}
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              previous_hash=""
+              while true; do
+                current_hash=$(sha256sum /custom-ca/ca.crt | awk '{print $1}')
+                if [ "$current_hash" != "$previous_hash" ]; then
+                  install -D -m 0644 /custom-ca/ca.crt /usr/local/share/ca-certificates/lab-custom-ca.crt
+                  update-ca-certificates
+                  temp_bundle=$(mktemp /merged-ca-certs/.ca-certificates.crt.XXXXXX)
+                  cp /etc/ssl/certs/ca-certificates.crt "$temp_bundle"
+                  chmod 0644 "$temp_bundle"
+                  mv "$temp_bundle" /merged-ca-certs/ca-certificates.crt
+                  previous_hash="$current_hash"
+                fi
+                sleep 15
+              done
+          volumeMounts:
+            - name: custom-ca-source
+              mountPath: /custom-ca
+              readOnly: true
+            - name: merged-ca-certs
+              mountPath: /merged-ca-certs
+      {{- end }}
+      {{- if .Values.unifesspaGeoApi.customCA.enabled }}
       volumes:
         - name: custom-ca-source
+          {{- if .Values.unifesspaGeoApi.customCA.existingSecretName }}
+          secret:
+            secretName: {{ .Values.unifesspaGeoApi.customCA.existingSecretName }}
+            items:
+              - key: {{ .Values.unifesspaGeoApi.customCA.existingSecretKey }}
+                path: ca.crt
+          {{- else }}
           configMap:
             name: {{ include "unifesspaGeoApi.fullname" . }}-custom-ca
+          {{- end }}
         - name: merged-ca-certs
           emptyDir: {}
       {{- end }}

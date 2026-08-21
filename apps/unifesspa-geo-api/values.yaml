@@ -81,7 +81,16 @@ unifesspaGeoApi:
   # apps/uniplus-api-host/values.yaml customCA. ===
   customCA:
     enabled: false
-    certPEM: ""
+    certPEM: ""                 # PEM completo do certificado (não a chave privada)
+    # Alternativa ao PEM versionado: Secret TLS existente no namespace da
+    # aplicação. Preferir esta opção quando o certificado é o mesmo servido
+    # pelo Traefik (autoassinado de bootstrap) — nunca versionar esse PEM em
+    # git (CLAUDE.md "nunca commitar... certificados"). O sidecar
+    # refresh-custom-ca observa mudanças no volume projetado e recompõe
+    # atomically /etc/ssl/certs/ca-certificates.crt; a rotação do Secret não
+    # depende de rollout manual do Deployment.
+    existingSecretName: ""
+    existingSecretKey: tls.crt
 
   # === Cifragem (Geo:Encryption — AES-GCM local ou Vault Transit) ===
   # Provider=local exige LocalKey (Base64, 32 bytes) via Secret; Provider=vault
