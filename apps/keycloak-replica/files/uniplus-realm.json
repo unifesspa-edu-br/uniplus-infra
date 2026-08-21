@@ -461,7 +461,11 @@
     "realm": [
       { "name": "uniplus-user", "description": "Usuário autenticado básico do Uni+" },
       { "name": "uniplus-staff", "description": "Servidor/colaborador da Unifesspa" },
-      { "name": "uniplus-admin", "description": "Administrador da plataforma Uni+" }
+      { "name": "uniplus-admin", "description": "Administrador da plataforma Uni+" },
+      { "name": "admin", "description": "Acesso administrativo em Seleção/Ingresso (roleGuard uniplus-web)" },
+      { "name": "gestor", "description": "Gestor de processo seletivo em Seleção/Ingresso (roleGuard uniplus-web)" },
+      { "name": "avaliador", "description": "Avaliador de recursos/homologação em Seleção (roleGuard uniplus-web)" },
+      { "name": "plataforma-admin", "description": "Administrador da Configuração (cadastros base institucionais — roleGuard uniplus-web)" }
     ]
   },
   "requiredCredentials": ["password"],
