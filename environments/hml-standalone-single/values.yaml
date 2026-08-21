@@ -384,6 +384,7 @@ uniplusApiHost:
       - /api/ingresso
       - /api/selecao
       - /api/configuracao
+      - /api/organizacao
       - /api/publicacoes
       - /api/auth
       - /api/profile
