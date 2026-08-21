@@ -25,6 +25,12 @@
 # do pod (mas restart não dói — `data.runtime-config.json` muda hash do
 # objeto, ConfigMap reload é automático via subPath no volume).
 #
+# geoApiUrl é opcional (issue #508): só renderiza quando
+# $cfg.runtimeConfig.geoApiUrl está definido, sem `fail` de validação —
+# nem todo app consome endpoints geo. Necessário quando geo-api é
+# deployable separado do apiUrl (host próprio, ex. HML); o frontend cai
+# no apiUrl quando o campo está ausente (dev local, gateway único).
+#
 # Renderiza os dois formatos de OIDC em paralelo — "oidc" (contrato
 # neutro, uniplus-web commit 9884c64, 2026-05-31) e "keycloak" (formato
 # anterior). standalone-compact/lab seguem pinados em v0.2.1 (chart
@@ -44,6 +50,9 @@ data:
   runtime-config.json: |
     {
       "apiUrl": {{ $cfg.runtimeConfig.apiUrl | quote }},
+      {{- if $cfg.runtimeConfig.geoApiUrl }}
+      "geoApiUrl": {{ $cfg.runtimeConfig.geoApiUrl | quote }},
+      {{- end }}
       "oidc": {
         "issuerUrl": {{ $cfg.runtimeConfig.oidc.issuerUrl | quote }},
         "clientId": {{ $cfg.runtimeConfig.oidc.clientId | quote }}
