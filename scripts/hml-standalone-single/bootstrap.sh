@@ -768,9 +768,15 @@ step_generate_tls_secret() {
     # Codex AI, uniplus-infra#492).
     for ns in $TLS_NAMESPACES; do
         [ "$ns" = "$primary_ns" ] && continue
+        # Compara cert E chave, não só o cert — um par divergente (ex.: tls.crt
+        # certo mas tls.key desatualizado/corrompido por edição manual parcial)
+        # deixaria Traefik/geo com mismatch mesmo com este guard "sincronizado"
+        # (achado do Codex AI, uniplus-infra#492).
         src_crt=$(kubectl get secret "$TLS_SECRET_NAME" -n "$primary_ns" -o jsonpath='{.data.tls\.crt}')
+        src_key=$(kubectl get secret "$TLS_SECRET_NAME" -n "$primary_ns" -o jsonpath='{.data.tls\.key}')
         dst_crt=$(kubectl get secret "$TLS_SECRET_NAME" -n "$ns" -o jsonpath='{.data.tls\.crt}' 2>/dev/null || true)
-        if [ "$src_crt" = "$dst_crt" ]; then
+        dst_key=$(kubectl get secret "$TLS_SECRET_NAME" -n "$ns" -o jsonpath='{.data.tls\.key}' 2>/dev/null || true)
+        if [ "$src_crt" = "$dst_crt" ] && [ "$src_key" = "$dst_key" ]; then
             log_success "Secret $TLS_SECRET_NAME em $ns já está sincronizado — preservando."
             continue
         fi
