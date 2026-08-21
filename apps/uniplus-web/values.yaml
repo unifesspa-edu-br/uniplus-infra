@@ -186,6 +186,16 @@ uniplusWeb:
         enabled: true
         clusterIssuer: letsencrypt-prod
 
+    # Redirect opcional da raiz nua do host (Host() sem PathPrefix — sem rota
+    # própria por design quando múltiplos apps dividem o mesmo FQDN via
+    # subpath, RUNBOOKS §21.3; sem isso, a raiz cai no 404 do Traefik). Só
+    # tem efeito com `enabled: true` — default desligado, não muda nada em
+    # ambientes com host próprio por app (standalone-compact). `to` precisa
+    # apontar pro pathPrefix de um app habilitado, com barra final.
+    rootRedirect:
+      enabled: false
+      to: ""  # ex.: /portal/
+
   # NetworkPolicy: ingress só do namespace Traefik; egress só DNS (CoreDNS).
   # Nginx-unprivileged não chama upstream — todas as requests externas
   # (Keycloak, API) são feitas pelo browser do usuário, não pelo pod.

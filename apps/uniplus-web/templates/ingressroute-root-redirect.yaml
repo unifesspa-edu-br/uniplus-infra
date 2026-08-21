@@ -1,0 +1,61 @@
+{{- if and .Values.uniplusWeb.enabled .Values.uniplusWeb.ingress.enabled .Values.uniplusWeb.ingress.rootRedirect.enabled -}}
+{{- $rr := .Values.uniplusWeb.ingress.rootRedirect -}}
+{{- if not $rr.to -}}
+{{- fail "uniplusWeb.ingress.rootRedirect.to é obrigatório quando rootRedirect.enabled=true (ex.: /portal/)." -}}
+{{- end -}}
+{{- $targetApp := "" -}}
+{{- $host := "" -}}
+{{- range $app, $cfg := .Values.uniplusWeb.apps -}}
+{{- if $cfg.enabled -}}
+{{- if not $host -}}{{- $host = $cfg.host -}}{{- end -}}
+{{- if eq (printf "%s/" (trimSuffix "/" $cfg.pathPrefix)) $rr.to -}}
+{{- $targetApp = $app -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if not $host -}}
+{{- fail "uniplusWeb.ingress.rootRedirect.enabled=true mas nenhum app em uniplusWeb.apps está habilitado com host definido." -}}
+{{- end -}}
+{{- if not $targetApp -}}
+{{- fail (printf "uniplusWeb.ingress.rootRedirect.to (%s) não corresponde ao pathPrefix de nenhum app habilitado — confira a barra final e o valor exato de apps.<app>.pathPrefix." $rr.to) -}}
+{{- end -}}
+# Middleware + IngressRoute dedicados: só casam a raiz nua (Path exato "/"),
+# nunca conflitam com o PathPrefix de cada app (Traefik prioriza regras mais
+# longas automaticamente, mas o match explícito por Path evita qualquer
+# ambiguidade). O Service referenciado abaixo nunca é de fato chamado — o
+# CRD IngressRoute exige um `services` válido mesmo quando o Middleware
+# intercepta a resposta antes do proxy.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ include "uniplusWeb.fullname" . }}-root-redirect
+  labels:
+    {{- include "uniplusWeb.labels" (dict "ctx" $ "app" "root-redirect") | nindent 4 }}
+spec:
+  redirectRegex:
+    regex: "^https://([^/]+)/$"
+    replacement: "https://${1}{{ $rr.to }}"
+    permanent: false
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ include "uniplusWeb.fullname" . }}-root-redirect
+  labels:
+    {{- include "uniplusWeb.labels" (dict "ctx" $ "app" "root-redirect") | nindent 4 }}
+spec:
+  entryPoints:
+    - {{ .Values.uniplusWeb.ingress.entryPoint }}
+  routes:
+    - match: Host(`{{ $host }}`) && Path(`/`)
+      kind: Rule
+      middlewares:
+        - name: {{ include "uniplusWeb.fullname" . }}-root-redirect
+      services:
+        - name: {{ include "uniplusWeb.appFullname" (dict "ctx" $ "app" $targetApp) }}
+          port: 8080
+  {{- if .Values.uniplusWeb.ingress.tls.enabled }}
+  tls:
+    secretName: {{ .Values.uniplusWeb.ingress.tls.secretName | default (printf "%s-root-redirect-tls" (include "uniplusWeb.fullname" .)) }}
+  {{- end }}
+{{- end }}

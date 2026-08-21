@@ -604,6 +604,12 @@ uniplusWeb:
       secretName: uniplus-hml-unifesspa-tls
       certManager:
         enabled: false
+    # Raiz nua (https://uniplus-hml.unifesspa.edu.br/) não tem app próprio —
+    # redireciona pro portal, o app padrão dos 4 sob subpath. Sem isso, cai
+    # no 404 do Traefik (RUNBOOKS §21.3).
+    rootRedirect:
+      enabled: true
+      to: /portal/
 
 kubePrometheusStack:
   enabled: false

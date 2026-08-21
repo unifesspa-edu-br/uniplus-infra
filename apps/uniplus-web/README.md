@@ -57,6 +57,8 @@ templates/
 | `apps.selecao.pathPrefix` / `apps.ingresso.pathPrefix` | `""` | Mesmo comportamento de subpath do Portal |
 | `ingress.enabled` | `true` | Habilita os IngressRoutes das SPAs ativas |
 | `ingress.tls.enabled` | `true` | Configura TLS para os IngressRoutes |
+| `ingress.rootRedirect.enabled` | `false` | Redireciona a raiz nua do host (`Host()` sem `PathPrefix`, sem app próprio) pra um dos apps habilitados. Só relevante em ambientes com múltiplos apps sob o mesmo host (subpath) — não muda nada quando cada app tem host próprio |
+| `ingress.rootRedirect.to` | `""` | Path de destino do redirect, com barra final (ex.: `/portal/`) — precisa bater com o `pathPrefix` de um app habilitado, senão o chart falha o render |
 
 ## Roteamento path-based
 
