@@ -3940,6 +3940,13 @@ homologação**. Um certificado temporário (autoassinado ou importado manualmen
 durante o bootstrap administrativo (smoke tests internos da equipe), nunca para a fase de
 homologação com usuários — ver §21.2, item 2.
 
+**Resolvido (uniplus-infra#495):** o Secret `uniplus-hml-unifesspa-tls` (namespaces `uniplus` e
+`geo`) serve o certificado real desde 21/08/2026 — decisão **(b) AC SSL Corporativa ICPEdu/RNP**
+(cadeia GlobalSign, reconhecida nativamente pelos navegadores, sem aviso de certificado
+inválido). Wildcard `*.unifesspa.edu.br`, `notBefore=2026-05-11`, **`notAfter=2026-11-26`
+— renovar antes dessa data**. Material (chave privada + full chain) mantido só na VM
+(`/home/uniplus/`), nunca neste repositório.
+
 ### 21.2 Hostnames DNS a solicitar à CTIC
 
 | # | Hostname | Tipo | Aponta para | Papel |
@@ -4000,6 +4007,14 @@ rotas de negócio do host raiz.
      institucionais gerenciadas, ou também navegadores de usuários externos à rede gerenciada?
      Se a raiz já for amplamente confiável no público-alvo deste HML, (c) pode ser **solução
      definitiva**, não apenas paliativa.
+
+   **Decisão final (uniplus-infra#460/#495):** alternativa **(b)**. CTIC (Idelvandro Fonseca,
+   15/07/2026) confirmou participação no ICPEdu Corporativo e emitiu **wildcard**
+   `*.unifesspa.edu.br` (não SAN por host, como o texto acima cogitava — simplifica: cobre os 9
+   hostnames do §21.2 de uma vez, inclusive futuros sob o mesmo domínio) via
+   `RNP ICPEdu GR46 OV TLS CA 2025` → `GlobalSign Root R46`, cadeia nativamente confiável em
+   qualquer navegador/runtime padrão. Em uso desde 21/08/2026 — ver nota em §21.1.
+
    Sem viabilidade de (a), (b) ou (c) com confiança ampla, o ambiente sobe com certificado
    manual/importado — aceitável só como paliativo explícito de bring-up administrativo (nunca
    para a fase de homologação com usuários reais), já que um certificado importado manualmente
