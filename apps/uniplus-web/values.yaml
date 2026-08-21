@@ -145,6 +145,32 @@ uniplusWeb:
           cpu: 250m
           memory: 128Mi
 
+    configuracao:
+      enabled: false  # ativar em environments/<env>/values.yaml
+      replicas: 2
+      # v0.2.1/v0.2.2 não publicaram esta imagem (matrix de publish-images.yml
+      # só ganhou o módulo configuracao na issue #558) — primeira tag
+      # publicada com uniplus-web-configuracao é v0.2.3.
+      image: uniplus-web-configuracao
+      tag: v0.2.3
+      host: ""
+      pathPrefix: ""  # subpath opcional — ver nota em apps.portal.pathPrefix. Ex. HML: /configuracao
+      runtimeConfig:
+        apiUrl: ""
+        oidc:
+          issuerUrl: ""
+          clientId: uniplus-portal
+        keycloak:
+          url: ""
+          realm: uniplus
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 250m
+          memory: 128Mi
+
   ingress:
     enabled: true
     entryPoint: websecure
