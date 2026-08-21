@@ -1,4 +1,4 @@
-{{- if and .Values.unifesspaGeoApi.enabled .Values.unifesspaGeoApi.customCA.enabled -}}
+{{- if and .Values.unifesspaGeoApi.enabled .Values.unifesspaGeoApi.customCA.enabled (not .Values.unifesspaGeoApi.customCA.existingSecretName) -}}
 {{- if not .Values.unifesspaGeoApi.customCA.certPEM -}}
 {{- fail "unifesspaGeoApi.customCA.certPEM é obrigatório quando customCA.enabled=true." -}}
 {{- end -}}

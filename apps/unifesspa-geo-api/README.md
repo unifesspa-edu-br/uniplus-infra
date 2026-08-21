@@ -35,6 +35,10 @@ Transit). Health: /health (readiness agregado), /health/live (liveness),
 | unifesspaGeoApi.containerSecurityContext.runAsNonRoot | bool | `true` |  |
 | unifesspaGeoApi.containerSecurityContext.runAsUser | int | `999` |  |
 | unifesspaGeoApi.cors.allowedOrigins | list | `[]` |  |
+| unifesspaGeoApi.customCA.certPEM | string | `""` |  |
+| unifesspaGeoApi.customCA.enabled | bool | `false` |  |
+| unifesspaGeoApi.customCA.existingSecretKey | string | `"tls.crt"` |  |
+| unifesspaGeoApi.customCA.existingSecretName | string | `""` |  |
 | unifesspaGeoApi.database.connectionStringName | string | `"GeoDb"` |  |
 | unifesspaGeoApi.database.host | string | `""` |  |
 | unifesspaGeoApi.database.name | string | `"uniplus_geo"` |  |
@@ -76,6 +80,8 @@ Transit). Health: /health (readiness agregado), /health/live (liveness),
 | unifesspaGeoApi.networkPolicy.keycloakPort | int | `8080` |  |
 | unifesspaGeoApi.networkPolicy.keycloakService | string | `"keycloak-replica"` |  |
 | unifesspaGeoApi.networkPolicy.monitoringNamespace | string | `"observability-prometheus"` |  |
+| unifesspaGeoApi.networkPolicy.oidcIssuerCIDR | string | `""` |  |
+| unifesspaGeoApi.networkPolicy.oidcIssuerPort | int | `443` |  |
 | unifesspaGeoApi.networkPolicy.otelCollectorNamespace | string | `"observability-otelcol"` |  |
 | unifesspaGeoApi.networkPolicy.traefikNamespace | string | `"traefik"` |  |
 | unifesspaGeoApi.networkPolicy.vaultNamespace | string | `"vault"` |  |
