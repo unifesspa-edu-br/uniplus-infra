@@ -523,7 +523,7 @@ uniplusWeb:
       # PathPrefix real — migrado do smoke provisório na raiz (issue #486)
       # agora que uniplus-web#448 corrigiu o base href sob subpath (issue #488).
       pathPrefix: /portal
-      tag: v0.2.4
+      tag: v0.2.5
       runtimeConfig:
         # apiUrl é só a origem — os apps já montam o path com o prefixo do
         # módulo (/api/portal/...) no cliente; concatenar aqui duplicaria
@@ -545,12 +545,16 @@ uniplusWeb:
       enabled: true
       host: uniplus-hml.unifesspa.edu.br
       pathPrefix: /selecao
-      tag: v0.2.4
+      tag: v0.2.5
       runtimeConfig:
         # apiUrl é só a origem (ver comentário do portal acima) — o app já
         # monta /api/selecao/... no cliente. Backend real: já roteado no
         # uniplus-api-host (pathPrefixes acima).
         apiUrl: https://uniplus-api-hml.unifesspa.edu.br
+        # geo-api é deployable separado (issue #508) — próprio host, não
+        # atrás do uniplus-api-host. Sem isso, GET /api/cidades (wizard de
+        # processo seletivo) caía no apiUrl errado.
+        geoApiUrl: https://geo-api-hml.unifesspa.edu.br
         oidc:
           issuerUrl: https://uniplus-oidc-hml.unifesspa.edu.br/auth/realms/unifesspa
           clientId: uniplus-portal
@@ -562,7 +566,7 @@ uniplusWeb:
       enabled: true
       host: uniplus-hml.unifesspa.edu.br
       pathPrefix: /ingresso
-      tag: v0.2.4
+      tag: v0.2.5
       runtimeConfig:
         # apiUrl é só a origem (ver comentário do portal acima) — o app já
         # monta /api/ingresso/... no cliente. Rota existe no uniplus-api-host,
@@ -580,7 +584,7 @@ uniplusWeb:
       enabled: true
       host: uniplus-hml.unifesspa.edu.br
       pathPrefix: /configuracao
-      tag: v0.2.4
+      tag: v0.2.5
       runtimeConfig:
         # apiUrl é só a origem (ver comentário do portal acima) — o app já
         # monta /api/configuracao/... no cliente. Módulo Configuração já
@@ -590,6 +594,9 @@ uniplusWeb:
         # ao contrário do portal/ingresso, este módulo deve responder de
         # verdade, não só servir o shell estático.
         apiUrl: https://uniplus-api-hml.unifesspa.edu.br
+        # geo-api é deployable separado (issue #508) — usado no formulário
+        # de endereço (busca de CEP/cidade). Ver comentário do selecao acima.
+        geoApiUrl: https://geo-api-hml.unifesspa.edu.br
         oidc:
           issuerUrl: https://uniplus-oidc-hml.unifesspa.edu.br/auth/realms/unifesspa
           clientId: uniplus-portal
