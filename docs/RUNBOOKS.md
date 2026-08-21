@@ -4011,9 +4011,12 @@ rotas de negócio do host raiz.
    **Decisão final (uniplus-infra#460/#495):** alternativa **(b)**. CTIC (Idelvandro Fonseca,
    15/07/2026) confirmou participação no ICPEdu Corporativo e emitiu **wildcard**
    `*.unifesspa.edu.br` (não SAN por host, como o texto acima cogitava — simplifica: cobre os 9
-   hostnames do §21.2 de uma vez, inclusive futuros sob o mesmo domínio) via
-   `RNP ICPEdu GR46 OV TLS CA 2025` → `GlobalSign Root R46`, cadeia nativamente confiável em
-   qualquer navegador/runtime padrão. Em uso desde 21/08/2026 — ver nota em §21.1.
+   hostnames do §21.2 de uma vez, inclusive futuros hosts de 1 nível direto sob o domínio, ex.
+   `novo-servico.unifesspa.edu.br`) via `RNP ICPEdu GR46 OV TLS CA 2025` → `GlobalSign Root R46`,
+   cadeia nativamente confiável em qualquer navegador/runtime padrão. Em uso desde 21/08/2026 —
+   ver nota em §21.1. **Atenção:** wildcard cobre só 1 label — `*.unifesspa.edu.br` casa
+   `foo.unifesspa.edu.br`, não `foo.hml.unifesspa.edu.br` (2 níveis); hostname aninhado mais
+   fundo exige SAN adicional ou outro wildcard, não é coberto por este certificado.
 
    Sem viabilidade de (a), (b) ou (c) com confiança ampla, o ambiente sobe com certificado
    manual/importado — aceitável só como paliativo explícito de bring-up administrativo (nunca
