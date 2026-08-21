@@ -333,7 +333,7 @@ uniplusApiHost:
   enabled: true
 
   image:
-    tag: v0.4.1
+    tag: v0.5.0
 
   database:
     host: 192.168.21.134
@@ -523,7 +523,7 @@ uniplusWeb:
       # PathPrefix real — migrado do smoke provisório na raiz (issue #486)
       # agora que uniplus-web#448 corrigiu o base href sob subpath (issue #488).
       pathPrefix: /portal
-      tag: v0.2.2
+      tag: v0.2.4
       runtimeConfig:
         # apiUrl é só a origem — os apps já montam o path com o prefixo do
         # módulo (/api/portal/...) no cliente; concatenar aqui duplicaria
@@ -545,7 +545,7 @@ uniplusWeb:
       enabled: true
       host: uniplus-hml.unifesspa.edu.br
       pathPrefix: /selecao
-      tag: v0.2.2
+      tag: v0.2.4
       runtimeConfig:
         # apiUrl é só a origem (ver comentário do portal acima) — o app já
         # monta /api/selecao/... no cliente. Backend real: já roteado no
@@ -562,7 +562,7 @@ uniplusWeb:
       enabled: true
       host: uniplus-hml.unifesspa.edu.br
       pathPrefix: /ingresso
-      tag: v0.2.2
+      tag: v0.2.4
       runtimeConfig:
         # apiUrl é só a origem (ver comentário do portal acima) — o app já
         # monta /api/ingresso/... no cliente. Rota existe no uniplus-api-host,
@@ -580,7 +580,7 @@ uniplusWeb:
       enabled: true
       host: uniplus-hml.unifesspa.edu.br
       pathPrefix: /configuracao
-      tag: v0.2.3
+      tag: v0.2.4
       runtimeConfig:
         # apiUrl é só a origem (ver comentário do portal acima) — o app já
         # monta /api/configuracao/... no cliente. Módulo Configuração já
