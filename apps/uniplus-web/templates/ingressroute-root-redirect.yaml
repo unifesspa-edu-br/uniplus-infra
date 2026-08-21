@@ -3,18 +3,16 @@
 {{- if not $rr.to -}}
 {{- fail "uniplusWeb.ingress.rootRedirect.to é obrigatório quando rootRedirect.enabled=true (ex.: /portal/)." -}}
 {{- end -}}
+{{- if eq $rr.to "/" -}}
+{{- fail "uniplusWeb.ingress.rootRedirect.to não pode ser \"/\" — redirecionaria a raiz pra ela mesma (loop infinito). Precisa apontar pro pathPrefix de um app com subpath real, ex.: /portal/." -}}
+{{- end -}}
 {{- $targetApp := "" -}}
 {{- $host := "" -}}
 {{- range $app, $cfg := .Values.uniplusWeb.apps -}}
-{{- if $cfg.enabled -}}
-{{- if not $host -}}{{- $host = $cfg.host -}}{{- end -}}
-{{- if eq (printf "%s/" (trimSuffix "/" $cfg.pathPrefix)) $rr.to -}}
+{{- if and $cfg.enabled (eq (printf "%s/" (trimSuffix "/" $cfg.pathPrefix)) $rr.to) -}}
 {{- $targetApp = $app -}}
+{{- $host = $cfg.host -}}
 {{- end -}}
-{{- end -}}
-{{- end -}}
-{{- if not $host -}}
-{{- fail "uniplusWeb.ingress.rootRedirect.enabled=true mas nenhum app em uniplusWeb.apps está habilitado com host definido." -}}
 {{- end -}}
 {{- if not $targetApp -}}
 {{- fail (printf "uniplusWeb.ingress.rootRedirect.to (%s) não corresponde ao pathPrefix de nenhum app habilitado — confira a barra final e o valor exato de apps.<app>.pathPrefix." $rr.to) -}}
