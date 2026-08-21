@@ -677,6 +677,15 @@ step_setup_kafka() {
 # customCA.certPEM — ver comentário em
 # environments/hml-standalone-single/values.yaml) — só o Secret Kubernetes,
 # consumido diretamente pelos IngressRoute via `tls.secretName`.
+#
+# ATUALIZAÇÃO (uniplus-infra#495, 21/08/2026): este step só GERA um
+# autoassinado quando o Secret ainda não existe — já preserva, sem
+# sobrescrever, qualquer conteúdo prévio. O Secret em produção hoje já foi
+# substituído manualmente pelo certificado real da CTIC (alternativa (b)
+# ICPEdu/RNP, ver RUNBOOKS §21.2 item 2) — este step só volta a gerar
+# autoassinado se o Secret for apagado/recriado do zero (ex. bootstrap
+# limpo numa VM nova), cenário em que alguém precisa repetir a substituição
+# manual (material em `/home/uniplus/` na VM, nunca neste repositório).
 # ============================================================================
 
 step_generate_tls_secret() {
