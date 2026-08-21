@@ -31,8 +31,12 @@ metadata:
     {{- include "uniplusWeb.labels" (dict "ctx" $ "app" "root-redirect") | nindent 4 }}
 spec:
   redirectRegex:
-    regex: "^https://([^/]+)/$"
-    replacement: "https://${1}{{ $rr.to }}"
+    # Query string opcional e preservada — sem o grupo "(\?.*)?", uma URL como
+    # "/?utm_source=..." não bate no fim ancorado ($), e a requisição passa
+    # direto pro Service (Portal servido incorretamente sob "/" em vez de
+    # redirecionar pra "/portal/") — achado do Codex AI, uniplus-infra#499.
+    regex: "^https://([^/]+)/(\\?.*)?$"
+    replacement: "https://${1}{{ $rr.to }}${2}"
     permanent: false
 ---
 apiVersion: traefik.io/v1alpha1
