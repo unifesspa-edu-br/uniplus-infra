@@ -4063,7 +4063,7 @@ fechada, e confirmar via observação real do tráfego durante o primeiro bootst
 | `uniplus-api-hml...` | `/api/portal` | `apps/uniplus-api-portal` | Sim | **Código** — idem. Hoje o Portal só tem endpoint-esqueleto (`/api/portal/ping`) — API de negócio ainda não implementada |
 | `uniplus-api-hml...` | `/api/ingresso`, `/api/selecao`, `/api/publicacoes` | `apps/uniplus-api-host` (composition root — Selecao+Ingresso+Configuracao+OrganizacaoInstitucional+Publicacoes, [ADR-0097](https://github.com/unifesspa-edu-br/uniplus-api/blob/main/docs/adrs/0097-topologia-de-deploy-em-tres-apis-monolito-modular.md)/[ADR-0105](https://github.com/unifesspa-edu-br/uniplus-api/blob/main/docs/adrs/0105-modulo-publicacoes-registro-central-dos-atos.md) do `uniplus-api`) | Sim (já suportado) | **Imagem publicada** — já registrado no ApplicationSet (story #457, ver nota abaixo) e o `templates/ingressroute.yaml` já suporta `ingress.pathPrefixes` (sem `StripPrefix`); falta só o build do Host em GHCR, então segue `enabled: false`. `/api/ingresso` é reserva de rota: módulo Ingresso ainda sem controller HTTP implementado |
 | `uniplus-oidc-hml...` | `/auth` | `apps/keycloak-replica` | Sim (já suportado) | Só `values.yaml` |
-| `geo-api-hml...` | `/` | `apps/unifesspa-geo-api` | Não | Já registrado no ApplicationSet (story #457, ver nota abaixo); imagem publicada em GHCR — falta só `values.yaml` (`unifesspaGeoApi.enabled: true` + secrets do Vault, follow-up ainda sem issue própria) |
+| `geo-api-hml...` | `/` | `apps/unifesspa-geo-api` | Não | **Habilitado** (uniplus-infra#492) — `unifesspaGeoApi.enabled: true`, database `uniplus_geo` (PostGIS) restaurado de dump real, secrets no Vault |
 | `grafana-hml...` | `/` | `platform/observability/grafana` | Não (`pathPrefix: ""`) | `values.yaml` — o template já suporta os dois modos (subpath e subdomínio); **falta provisionar o `Certificate`/`secretName`** que a IngressRoute referencia — o chart não cria o certificado sozinho |
 | `kafka-ui-hml...`, `apicurio-hml...`, `redis-ui-hml...`, `minio-hml...` | `/` | charts respectivos | Não | Só `values.yaml` |
 
@@ -4077,16 +4077,15 @@ zero (`lab-standalone-single` nem entra na comparação: não tem cluster ArgoCD
 aplicado manualmente via `helm install/upgrade -f`, fora do escopo deste ApplicationSet).
 `uniplus-api-host` roda no namespace `uniplus` (mesmo bounded context do Portal/Selecao/Ingresso);
 `unifesspa-geo-api` roda em namespace próprio, `geo` — aplicação independente, só compartilha o
-emissor OIDC com as demais APIs. Como os dois charts vêm com `enabled: false` por default e a
-`hml-standalone-single` não sobrescreve isso (ver `environments/hml-standalone-single/values.yaml`),
-a `Application` em HML sincroniza com zero manifests — `Synced`/`Healthy` sem `Deployment`/`Service`,
-mesmo padrão hoje usado por `uniplusWeb` nesse ambiente (a proteção `allowEmpty: false` existe para
-impedir prune acidental de todos os recursos de uma Application que **já estava populada**, não
-bloqueia uma Application que nasce vazia por design). Ligar o workload de fato é decisão
-independente, por chart: `uniplus-api-host` aguarda a primeira imagem publicada em GHCR;
-`unifesspa-geo-api` já tem imagem, mas aguarda o provisionamento dos secrets do Vault (follow-up
-ainda sem issue própria) antes de
-`unifesspaGeoApi.enabled: true`.
+emissor OIDC com as demais APIs. Ambos os charts vêm com `enabled: false` por default; quando a
+`Application` correspondente não é sobrescrita, ela sincroniza com zero manifests —
+`Synced`/`Healthy` sem `Deployment`/`Service` (a proteção `allowEmpty: false` existe para impedir
+prune acidental de todos os recursos de uma Application que **já estava populada**, não bloqueia
+uma Application que nasce vazia por design). Ligar o workload de fato é decisão independente, por
+chart: `unifesspa-geo-api` já está ligado (uniplus-infra#492 — hostname registrado pela CTIC,
+database `uniplus_geo`/PostGIS provisionado e restaurado de dump real, secrets no Vault via
+custódia Shamir manual, ADR-014; namespace `geo` recebe cópia do mesmo Secret TLS que o Traefik
+serve, sincronizada por `scripts/hml-standalone-single/bootstrap.sh`).
 
 **`uniplus-api-hml.../api/{ingresso,selecao,publicacoes}` é servido pelo `uniplus-api-host`, não
 pelos charts legados `apps/uniplus-api-{selecao,ingresso}`** — decisão deliberada, já que este HML
