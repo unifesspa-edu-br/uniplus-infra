@@ -56,6 +56,11 @@ spec:
           port: 8080
   {{- if .Values.uniplusWeb.ingress.tls.enabled }}
   tls:
-    secretName: {{ .Values.uniplusWeb.ingress.tls.secretName | default (printf "%s-root-redirect-tls" (include "uniplusWeb.fullname" .)) }}
+    # Fallback reusa o Secret do app-alvo (certificate.yaml só cria Secret
+    # por-app, "<appFullname>-tls" — um "-root-redirect-tls" nunca existiria
+    # nesse chart). Correto por construção: a rota do redirect serve sob o
+    # MESMO host do app-alvo, TLS é por host, não por path (achado do Codex
+    # AI, uniplus-infra#499).
+    secretName: {{ .Values.uniplusWeb.ingress.tls.secretName | default (printf "%s-tls" (include "uniplusWeb.appFullname" (dict "ctx" $ "app" $targetApp))) }}
   {{- end }}
 {{- end }}
