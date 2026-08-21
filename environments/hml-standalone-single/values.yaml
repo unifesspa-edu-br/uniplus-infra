@@ -118,16 +118,39 @@ vaultTransit:
 vaultTransitBootstrap:
   enabled: false
 
-# NetworkPolicy compartilhada pelos wrappers platform/vault/ e
-# platform/external-secrets/ — kubeApiCidrs precisa do CIDR do host, não só
-# do service CIDR (K3s: apiserver roda como processo no host, não Pod; o
-# kube-router avalia egress DEPOIS do DNAT do kube-proxy — mesmo bug
-# documentado em lab-standalone-single/standalone-compact).
+# NetworkPolicy compartilhada pelos wrappers platform/vault/,
+# platform/external-secrets/ e platform/traefik/ — cada chart lê só as
+# sub-chaves que reconhece do MESMO bloco (convenção deste repo: 1 única
+# chave `networkPolicy:` de topo por environment, nunca uma por chart —
+# ver platform/vault/values.yaml, platform/external-secrets/values.yaml e
+# platform/traefik/values.yaml, os 3 default esse mesmo formato). Duas
+# chaves `networkPolicy:` de topo no MESMO arquivo colidem silenciosamente
+# no parse YAML (a última sobrescreve a primeira, sem erro) — achado do
+# Codex AI (uniplus-infra#492) que quase reproduziu esse bug ao acrescentar
+# appNamespaces num segundo bloco separado.
+#
+# kubeApiCidrs precisa do CIDR do host, não só do service CIDR (K3s:
+# apiserver roda como processo no host, não Pod; o kube-router avalia
+# egress DEPOIS do DNAT do kube-proxy — mesmo bug documentado em
+# lab-standalone-single/standalone-compact).
+#
+# appNamespaces (consumida só pelo platform/traefik/) é override total —
+# Helm não faz merge de listas — por isso repete o default do chart
+# (uniplus, vault, keycloak) e acrescenta `geo`: unifesspa-geo-api roda em
+# namespace próprio (bounded context dedicado, argocd/applicationset.yaml),
+# fora do `uniplus` compartilhado pelas demais apps. Sem `geo` aqui, a
+# NetworkPolicy do Traefik bloqueia egress pro Service da geo-api mesmo com
+# o pod Healthy — 502/503 silencioso.
 networkPolicy:
   enabled: true
   kubeApiCidrs:
     - 10.43.0.0/16
     - 192.168.21.134/32
+  appNamespaces:
+    - uniplus
+    - vault
+    - keycloak
+    - geo
 
 ingress:
   enabled: false # acesso administrativo via kubectl port-forward / túnel VPN
