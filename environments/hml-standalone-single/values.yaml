@@ -29,23 +29,27 @@
 #
 # Habilitados: Vault, External Secrets Operator, Traefik+TLS (autoassinado,
 # provisório — ADR/RUNBOOKS §21.2 item 2), Keycloak, Apicurio Registry,
-# StorageClass, uniplusApiHost e uniplusWeb (portal + selecao + ingresso,
-# issue #488) — os 3 sob PathPrefix real (`/portal`, `/selecao`,
-# `/ingresso`) no mesmo host. Kafka roda fora do K8s (systemd no data-host,
-# escopo do script de bootstrap #442), mas permanece desativado no Host nesta
-# primeira publicação.
+# StorageClass, uniplusApiHost e uniplusWeb (portal + selecao + ingresso +
+# configuracao, issues #488/#491) — os 4 sob PathPrefix real (`/portal`,
+# `/selecao`, `/ingresso`, `/configuracao`) no mesmo host. Kafka roda fora
+# do K8s (systemd no data-host, escopo do script de bootstrap #442), mas
+# permanece desativado no Host nesta primeira publicação.
 #
 # Deliberadamente FORA de escopo:
 #   - unifesspaGeoApi — registrado no ApplicationSet (story #457); imagem já
-#     publicada em GHCR, mas `enabled: false` aqui até o provisionamento dos
-#     secrets (Vault: postgres/geo, redis, geo/encryption) e a decisão do
-#     hostname de ingress — follow-up ainda sem issue própria.
+#     publicada em GHCR, `enabled: false` aqui até o provisionamento dos
+#     secrets no Vault (postgres/geo, geo/encryption — redis/default já
+#     existe, reutilizado). Hostname de ingress já decidido e registrado
+#     pela CTIC (`geo-api-hml.unifesspa.edu.br`, RUNBOOKS §21.2) e o
+#     database `uniplus_geo` (role `uniplus_geo_app`, template PostGIS) já
+#     restaurado no Postgres da VM — só falta o Vault (custódia Shamir
+#     manual, ADR-014). Acompanhar em uniplus-infra#492.
 #   - uniplusApiPortal — já registrado, imagem publicada, mas TLS real desta
 #     VM depende do certificado autoassinado gerado no bootstrap
 #     (#442/#445) — os apps .NET precisariam de `customCA.certPEM`,
 #     acompanhar quando o app for de fato ligado neste ambiente.
-#   - (removido — uniplusWeb saiu do "fora de escopo"; os 3 apps estão
-#     habilitados, ver bloco `uniplusWeb` abaixo e issue #488)
+#   - (removido — uniplusWeb saiu do "fora de escopo"; os 4 apps estão
+#     habilitados, ver bloco `uniplusWeb` abaixo e issues #488/#491)
 #   - cert-manager, Vault Transit (auto-unseal), Vault Transit Bootstrap
 #     (engine transit local p/ idempotência do uniplus-api — sem consumidor
 #     enquanto uniplusApiHost não roda aqui), observabilidade completa
@@ -334,13 +338,14 @@ uniplusApiHost:
 
   cors:
     allowedOrigins:
-      # As 3 SPAs (portal/selecao/ingresso) vivem sob o MESMO host com
-      # PathPrefix (/portal, /selecao, /ingresso — RUNBOOKS §21.2/§21.3),
-      # não em subdomínios próprios. CORS compara só esquema+host+porta,
-      # nunca o path, então esta é a única origem efetiva das três —
-      # `portal.*`/`selecao.*`/`ingresso.*` do valor anterior eram
-      # subdomínios que nunca existiram nesta topologia (nem em nip.io,
-      # nem nos 9 hostnames registrados pela CTIC — RUNBOOKS §21.2).
+      # As 4 SPAs (portal/selecao/ingresso/configuracao) vivem sob o MESMO
+      # host com PathPrefix (/portal, /selecao, /ingresso, /configuracao —
+      # RUNBOOKS §21.2/§21.3), não em subdomínios próprios. CORS compara só
+      # esquema+host+porta, nunca o path, então esta é a única origem
+      # efetiva das quatro — `portal.*`/`selecao.*`/`ingresso.*` do valor
+      # anterior eram subdomínios que nunca existiram nesta topologia (nem
+      # em nip.io, nem nos 9 hostnames registrados pela CTIC — RUNBOOKS
+      # §21.2).
       - https://uniplus-hml.unifesspa.edu.br
 
   encryption:
@@ -360,6 +365,7 @@ uniplusApiHost:
     pathPrefixes:
       - /api/ingresso
       - /api/selecao
+      - /api/configuracao
       - /api/publicacoes
       - /api/auth
       - /api/profile
@@ -496,6 +502,27 @@ uniplusWeb:
         # monta /api/ingresso/... no cliente. Rota existe no uniplus-api-host,
         # mas o módulo Ingresso ainda não tem controller HTTP implementado
         # (RUNBOOKS §21.3) — chamadas à API vão 404 até lá.
+        apiUrl: https://uniplus-api-hml.unifesspa.edu.br
+        oidc:
+          issuerUrl: https://uniplus-oidc-hml.unifesspa.edu.br/auth/realms/unifesspa
+          clientId: uniplus-portal
+        keycloak:
+          url: https://uniplus-oidc-hml.unifesspa.edu.br/auth
+          realm: unifesspa
+
+    configuracao:
+      enabled: true
+      host: uniplus-hml.unifesspa.edu.br
+      pathPrefix: /configuracao
+      tag: v0.2.3
+      runtimeConfig:
+        # apiUrl é só a origem (ver comentário do portal acima) — o app já
+        # monta /api/configuracao/... no cliente. Módulo Configuração já
+        # tem controllers HTTP reais no uniplus-api-host (Campi, Cursos,
+        # Modalidades, TiposBanca, FasesCanonicas etc. — bem mais completo
+        # que Ingresso) e /api/configuracao entrou no pathPrefixes acima —
+        # ao contrário do portal/ingresso, este módulo deve responder de
+        # verdade, não só servir o shell estático.
         apiUrl: https://uniplus-api-hml.unifesspa.edu.br
         oidc:
           issuerUrl: https://uniplus-oidc-hml.unifesspa.edu.br/auth/realms/unifesspa
