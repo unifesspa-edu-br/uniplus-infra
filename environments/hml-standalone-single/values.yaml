@@ -335,6 +335,20 @@ uniplusApiHost:
   image:
     tag: v0.6.0
 
+  # Override de memória: o default do chart (512Mi/1Gi) fica abaixo do consumo
+  # real deste ambiente — o processo assenta em ~861Mi, 84% do teto de 1Gi, e o
+  # pico de inicialização (migrations EF no StartAsync + warmup de criptografia
+  # + subida do Wolverine) estoura a margem restante e causa OOMKill. Fica aqui,
+  # e não no default do chart, para não arrastar standalone-compact nem
+  # lab-standalone-single, que não têm a mesma medição. Ver issue #512.
+  resources:
+    requests:
+      cpu: 250m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+
   database:
     host: 192.168.21.134
 
