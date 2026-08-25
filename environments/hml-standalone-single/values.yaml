@@ -333,7 +333,7 @@ uniplusApiHost:
   enabled: true
 
   image:
-    tag: v0.6.0
+    tag: v0.7.0
 
   # Override de memória: o default do chart (512Mi/1Gi) fica abaixo do consumo
   # real deste ambiente — o processo assenta em ~861Mi, 84% do teto de 1Gi, e o
@@ -537,7 +537,7 @@ uniplusWeb:
       # PathPrefix real — migrado do smoke provisório na raiz (issue #486)
       # agora que uniplus-web#448 corrigiu o base href sob subpath (issue #488).
       pathPrefix: /portal
-      tag: v0.2.7
+      tag: v0.3.0
       runtimeConfig:
         # apiUrl é só a origem — os apps já montam o path com o prefixo do
         # módulo (/api/portal/...) no cliente; concatenar aqui duplicaria
@@ -559,7 +559,7 @@ uniplusWeb:
       enabled: true
       host: uniplus-hml.unifesspa.edu.br
       pathPrefix: /selecao
-      tag: v0.2.7
+      tag: v0.3.0
       runtimeConfig:
         # apiUrl é só a origem (ver comentário do portal acima) — o app já
         # monta /api/selecao/... no cliente. Backend real: já roteado no
@@ -580,7 +580,7 @@ uniplusWeb:
       enabled: true
       host: uniplus-hml.unifesspa.edu.br
       pathPrefix: /ingresso
-      tag: v0.2.7
+      tag: v0.3.0
       runtimeConfig:
         # apiUrl é só a origem (ver comentário do portal acima) — o app já
         # monta /api/ingresso/... no cliente. Rota existe no uniplus-api-host,
@@ -598,7 +598,7 @@ uniplusWeb:
       enabled: true
       host: uniplus-hml.unifesspa.edu.br
       pathPrefix: /configuracao
-      tag: v0.2.7
+      tag: v0.3.0
       runtimeConfig:
         # apiUrl é só a origem (ver comentário do portal acima) — o app já
         # monta /api/configuracao/... no cliente. Módulo Configuração já
