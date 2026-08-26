@@ -15,7 +15,18 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 
 {{- define "uniplusApiHost.labels" -}}
 {{ include "uniplusApiHost.selectorLabels" . }}
-app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+{{/*
+  A tag da imagem, e não `.Chart.AppVersion`. O chart versiona a embalagem, e a
+  embalagem quase não muda: `appVersion` está em 0.1.0 desde o começo, enquanto a
+  imagem já vai em v0.8.0. Herdar dali põe um número errado no label que existe
+  justamente para responder "qual versão fez isto" — e label errado é pior que
+  ausente, porque a análise de incidente acredita nele.
+
+  A tag entra literal, com o `v`. Recortar o prefixo para parecer semver quebraria
+  em tag que não seja versão (`local-lab`, nos ambientes que sobem imagem
+  construída na hora), e o valor deixaria de ser o que se digita no `docker pull`.
+*/}}
+app.kubernetes.io/version: {{ .Values.uniplusApiHost.image.tag | default .Chart.AppVersion | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" }}
 {{- with .Values.commonLabels }}
