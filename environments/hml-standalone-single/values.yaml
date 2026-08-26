@@ -335,25 +335,18 @@ uniplusApiHost:
   image:
     tag: v0.7.0
 
-  # `Recreate` nesta promoção: a migration AdicionaRegimeDeTurnoOferta remove a
-  # coluna `turno` no boot do pod novo. Sob RollingUpdate o pod da versão
-  # anterior continua pronto e atendendo enquanto o schema já mudou sob ele —
-  # qualquer leitura de oferta de curso naquele pod falharia. Em homologação,
-  # alguns segundos sem a api custam menos que essa janela.
+  # A migration é aplicada pelo Job `pre-upgrade` (ADR-0127 do uniplus-api), e
+  # não mais no boot do pod. Com isso o RollingUpdate volta a ser seguro: uma
+  # migration quebrada aborta o sync com os pods anteriores intactos, em vez de
+  # ser descoberta com o pod já removido — que foi o que derrubou a api na
+  # promoção da v0.7.0, em 26/08.
   #
-  # A contrapartida, para quem repetir a promoção: aqui uma migration que falhe
-  # deixa a api inteira fora, e não a versão anterior de pé. O que a faria
-  # falhar é linha em `configuracao.oferta_curso` — as colunas novas são NOT
-  # NULL sem default. Conferir que a tabela está vazia imediatamente antes de
-  # promover, e forçar o refresh do ArgoCD logo após, em vez de esperar o
-  # polling. Se falhar mesmo assim: remover as linhas e deixar o pod subir; a
-  # migration não chegou a aplicar, então não há rollback a fazer.
-  #
-  # Esta chave é para VOLTAR a RollingUpdate assim que a promoção estiver
-  # validada — deixá-la ligada faria toda atualização de imagem seguinte
-  # derrubar o único pod da api sem necessidade, inclusive as que não carregam
-  # migration alguma. Rastreado na issue #520.
-  deploymentStrategy: Recreate
+  # O Deployment recebe `Skip` automaticamente quando este Job está ligado: os
+  # dois lados saem do mesmo interruptor, para não existir a combinação em que
+  # ninguém aplica o schema.
+  migrationJob:
+    enabled: true
+
 
   # Override de memória: o default do chart (512Mi/1Gi) fica abaixo do consumo
   # real deste ambiente — o processo assenta em ~861Mi, 84% do teto de 1Gi, e o
