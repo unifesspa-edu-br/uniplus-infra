@@ -9,15 +9,24 @@
   que a migration já alterou; sob Recreate, não sobra pod nenhum. Nos dois
   casos voltar a imagem não desfaz a migration.
 
-  Como funciona: hook `pre-install,pre-upgrade` sobe a MESMA imagem da api
-  com UniPlus__Migrations__Mode=ApplyAndExit. O processo aplica as migrations
+  Como funciona: hook `pre-upgrade` sobe a MESMA imagem da api com
+  UniPlus__Migrations__Mode=ApplyAndExit.
+
+  Só `pre-upgrade`, e não `pre-install`: numa instalação nova o hook rodaria
+  antes de o chart criar a ServiceAccount e os ExternalSecrets que este Job
+  consome, e o pod não teria como subir. Na primeira instalação o banco está
+  vazio e não há versão anterior a proteger — o schema é aplicado no boot do
+  pod, como sempre foi. O processo aplica as migrations
   e encerra — nenhum servidor HTTP escuta e nenhum consumidor de mensageria
   inicia, porque construir o host resolve o container mas não inicia serviço
   algum. O código de saída decide o rollout: não-zero aborta o sync com os
   pods anteriores intactos.
 
-  O Deployment complementa com UniPlus__Migrations__Mode=Skip, para o pod não
-  refazer o que este Job já fez.
+  O Deployment NÃO recebe `Skip` — ver o comentário em deployment.yaml. Com
+  `ApplyOutOfSyncOnly=true` no ApplicationSet, um sync seletivo aplica o
+  Deployment sem executar hooks; se o pod não aplicasse, subiria contra o schema
+  antigo sem ninguém para aplicá-lo. O pod segue aplicando, o que é idempotente,
+  e este Job é a rede que faz a falha aparecer antes do rollout.
 
   Sem sidecar de refresh de CA: o Job é efêmero e termina em segundos, então
   o initContainer basta — rotação de certificado no meio da execução não é
@@ -34,7 +43,7 @@ metadata:
   labels:
     {{- include "uniplusApiHost.labels" . | nindent 4 }}
   annotations:
-    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook": pre-upgrade
     "helm.sh/hook-weight": "-5"
     "helm.sh/hook-delete-policy": before-hook-creation
 spec:

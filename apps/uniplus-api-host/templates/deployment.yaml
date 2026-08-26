@@ -133,14 +133,25 @@ spec:
               protocol: TCP
           env:
             {{- include "uniplusApiHost.env" . | nindent 12 }}
-            {{- if .Values.uniplusApiHost.migrationJob.enabled }}
-            # Quem aplica o schema é o Job de migration (ADR-0127 do
-            # uniplus-api); o pod não refaz o que já foi feito. Sem isto, o pod
-            # aplicaria migration por conta própria e a garantia do Job — falhar
-            # antes de qualquer pod ser tocado — deixaria de valer.
-            - name: UniPlus__Migrations__Mode
-              value: Skip
-            {{- end }}
+            {{- /*
+              O pod NÃO recebe `Skip`, mesmo com o Job de migration ligado, e isso
+              é deliberado.
+
+              O ApplicationSet sincroniza com `ApplyOutOfSyncOnly=true`, e num sync
+              seletivo o ArgoCD não executa hooks. Um Deployment com imagem nova
+              seria aplicado enquanto o Job não roda — e, com `Skip`, os pods novos
+              subiriam contra o schema antigo, sem ninguém para aplicá-lo. O mesmo
+              vale para a primeira instalação, em que o hook `pre-upgrade` não roda.
+
+              Deixar o pod em `OnStartup` torna o Job uma rede a mais, não a única:
+              quando o hook roda, a migration falha ANTES de qualquer pod ser tocado,
+              que é o ganho principal; quando não roda, o comportamento é o de hoje.
+              Aplicar migration é idempotente — o EF consulta o histórico —, então a
+              redundância não custa nada além de uma consulta no boot.
+
+              Trocar isso por `Skip` seria preferir uma garantia mais forte no papel
+              a uma que não deixa nenhum caminho sem schema aplicado.
+            */}}
           {{- if or .Values.uniplusApiHost.kafka.enabled .Values.uniplusApiHost.customCA.enabled }}
           volumeMounts:
             {{- if .Values.uniplusApiHost.kafka.enabled }}
