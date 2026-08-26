@@ -188,17 +188,28 @@ spec:
   # `aplicaMigration` é declarado em TODOS os elementos, e não só onde é verdadeiro,
   # porque `goTemplateOptions: missingkey=error` transforma chave ausente em falha
   # de geração do AppSet inteiro.
+  # Como isto aparece na Application gerada, para que ninguém "conserte" o que está
+  # certo: `selfHeal: false` e `limit: 0` são zero-values e SOMEM na serialização, em
+  # vez de aparecerem escritos. A ausência é o resultado esperado — sem `selfHeal`,
+  # sem retry, e `automated` preservado com `prune`, que é o que mantém a promoção
+  # automática. Conferir por ausência, não por valor.
+  #
+  # O bloco `retry` inteiro fica de fora quando o app aplica migration. Emitir
+  # `limit: 0` deixaria um `retry` contendo só `backoff` — um bloco que não governa
+  # nada e confunde quem inspeciona.
   templatePatch: |
     spec:
       syncPolicy:
         automated:
           selfHeal: {{ not .aplicaMigration }}
+        {{- if not .aplicaMigration }}
         retry:
-          limit: {{ if .aplicaMigration }}0{{ else }}5{{ end }}
+          limit: 5
           backoff:
             duration: 5s
             factor: 2
             maxDuration: 3m
+        {{- end }}
 
 ---
 apiVersion: argoproj.io/v1alpha1
