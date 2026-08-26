@@ -34,6 +34,12 @@ uniplusApiHost:
   # API stateless. Em standalone 1 réplica para reduzir uso de recursos.
   replicas: 1
 
+  # Estratégia de atualização do Deployment: `RollingUpdate` (padrão) ou
+  # `Recreate`. Use `Recreate` na promoção que carrega migration destrutiva — as
+  # migrations rodam no boot do pod, e no RollingUpdate o pod anterior continua
+  # pronto enquanto o schema já mudou sob ele.
+  deploymentStrategy: RollingUpdate
+
   resources:
     # Processo único hospedando 4 módulos — requests/limits maiores que os
     # charts de API single-módulo (uniplus-api-portal usa 100m/256Mi).
