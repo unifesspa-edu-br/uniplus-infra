@@ -15,23 +15,40 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 
 {{- define "uniplusApiHost.labels" -}}
 {{ include "uniplusApiHost.selectorLabels" . }}
-{{/*
-  A tag da imagem, e não `.Chart.AppVersion`. O chart versiona a embalagem, e a
-  embalagem quase não muda: `appVersion` está em 0.1.0 desde o começo, enquanto a
-  imagem já vai em v0.8.0. Herdar dali põe um número errado no label que existe
-  justamente para responder "qual versão fez isto" — e label errado é pior que
-  ausente, porque a análise de incidente acredita nele.
-
-  A tag entra literal, com o `v`. Recortar o prefixo para parecer semver quebraria
-  em tag que não seja versão (`local-lab`, nos ambientes que sobem imagem
-  construída na hora), e o valor deixaria de ser o que se digita no `docker pull`.
-*/}}
-app.kubernetes.io/version: {{ .Values.uniplusApiHost.image.tag | default .Chart.AppVersion | quote }}
+app.kubernetes.io/version: {{ include "uniplusApiHost.versionLabel" . | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" }}
 {{- with .Values.commonLabels }}
 {{ toYaml . }}
 {{- end -}}
+{{- end -}}
+
+{{/*
+Valor de `app.kubernetes.io/version`: a tag da imagem, e não `.Chart.AppVersion`.
+
+O chart versiona a embalagem, e a embalagem quase não muda — `appVersion` está em
+0.1.0 desde o começo, enquanto a imagem já vai em v0.8.0. Herdar dali põe um número
+errado no label que existe justamente para responder "qual versão fez isto", e label
+errado é pior que ausente: a análise de incidente acredita nele.
+
+A tag entra literal, com o `v`. Recortar o prefixo para parecer semver quebraria em
+tag que não seja versão (`local-lab`, nos ambientes que sobem imagem construída na
+hora), e o valor deixaria de ser o que se digita no `docker pull`.
+
+Por isso este helper RECUSA em vez de sanear. Tag OCI aceita até 128 caracteres e
+pode começar com `_`; valor de label para em 63 e precisa começar e terminar com
+alfanumérico. Truncar um `sha-<64 hex>` para caber devolveria um label que não
+identifica imagem nenhuma — o mesmo defeito que motivou trocar o `appVersion`, por
+outro caminho. E copiar verbatim faria o apiserver recusar TODOS os recursos do
+chart, com uma mensagem que não aponta para a causa. Falhar no render diz o que
+houve e onde.
+*/}}
+{{- define "uniplusApiHost.versionLabel" -}}
+{{- $tag := .Values.uniplusApiHost.image.tag | default .Chart.AppVersion -}}
+{{- if not (regexMatch "^[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?$" $tag) -}}
+{{- fail (printf "uniplusApiHost.image.tag=%q não serve como valor de label: precisa ter no máximo 63 caracteres, começar e terminar com alfanumérico e usar só letras, dígitos, '-', '_' ou '.'. O label app.kubernetes.io/version carrega a tag literal, e o apiserver recusaria todos os recursos do chart." $tag) -}}
+{{- end -}}
+{{- $tag -}}
 {{- end -}}
 
 {{- define "uniplusApiHost.serviceAccountName" -}}

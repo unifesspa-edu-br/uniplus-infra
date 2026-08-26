@@ -340,7 +340,7 @@ uniplusApiHost:
   #
   # O que isso resolve: migration quebrada aborta o sync com os pods anteriores
   # intactos, em vez de ser descoberta com o pod já removido — que foi o que
-  # derrubou a api na promoção da v0.7.0, em 26/08.
+  # derrubou a api na promoção da v0.7.0, em 25/08.
   #
   # O que NÃO resolve: migration que passa mas é incompatível com a versão
   # anterior. O hook roda antes de o Deployment ser atualizado, então entre o
