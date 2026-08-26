@@ -2,7 +2,7 @@
 {{/*
   Aplica as migrations EF Core ANTES do rollout, e não durante o boot do pod.
 
-  Por que existe (ADR-0127 do uniplus-api, e o incidente de 26/08/2026):
+  Por que existe (ADR-0127 do uniplus-api, e o incidente de 25/08/2026):
   aplicar migration no StartAsync do host faz o cluster descobrir que ela
   falhou depois de já ter mexido nos pods. Sob RollingUpdate com
   maxUnavailable 0, o pod anterior segue pronto e atendendo contra um schema
@@ -17,15 +17,17 @@
   redundante ali, e no Helm puro traria de volta o caso em que o hook roda antes
   de o chart criar a ServiceAccount e os ExternalSecrets que este Job consome.
 
-  Esse caso permanece no bootstrap de um ambiente novo: como `PreSync` roda
-  antes dos recursos comuns, o primeiro sync de um chart ainda não instalado não
-  tem como satisfazer as dependências deste Job. Ali a chave fica desligada, o
-  schema é aplicado no boot do pod — que é o correto num banco vazio, sem versão
-  anterior a proteger — e o Job entra a partir da segunda promoção. O processo aplica as migrations
-  e encerra — nenhum servidor HTTP escuta e nenhum consumidor de mensageria
-  inicia, porque construir o host resolve o container mas não inicia serviço
-  algum. O código de saída decide o rollout: não-zero aborta o sync com os
-  pods anteriores intactos.
+  O processo aplica as migrations e encerra: nenhum servidor HTTP escuta e nenhum
+  consumidor de mensageria inicia, porque construir o host resolve o container
+  mas não inicia serviço algum. O código de saída decide o rollout — não-zero
+  aborta o sync com os pods anteriores intactos.
+
+  O caso da dependência ausente permanece no bootstrap de um ambiente novo: como
+  `PreSync` roda antes dos recursos comuns, o primeiro sync de um chart ainda não
+  instalado não tem como satisfazer a ServiceAccount e os Secrets deste Job. Ali
+  a chave fica desligada, o schema é aplicado no boot do pod — que é o correto
+  num banco vazio, sem versão anterior a proteger — e o Job entra a partir da
+  segunda promoção.
 
   O Deployment NÃO recebe `Skip` — ver o comentário em deployment.yaml. Em
   resumo: com o Job tendo aplicado, o pod não tem o que fazer de todo modo, e
