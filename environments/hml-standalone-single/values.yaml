@@ -333,17 +333,16 @@ uniplusApiHost:
   enabled: true
 
   image:
-    tag: v0.7.0
+    tag: v0.8.0
 
-  # A migration é aplicada pelo Job `pre-upgrade` (ADR-0127 do uniplus-api), e
-  # não mais no boot do pod. Com isso o RollingUpdate volta a ser seguro: uma
-  # migration quebrada aborta o sync com os pods anteriores intactos, em vez de
-  # ser descoberta com o pod já removido — que foi o que derrubou a api na
+  # A migration passa a ser aplicada pelo Job `pre-upgrade` (ADR-0127 do
+  # uniplus-api) antes do rollout. Com isso o RollingUpdate volta a ser seguro:
+  # uma migration quebrada aborta o sync com os pods anteriores intactos, em vez
+  # de ser descoberta com o pod já removido — que foi o que derrubou a api na
   # promoção da v0.7.0, em 26/08.
   #
-  # O Deployment recebe `Skip` automaticamente quando este Job está ligado: os
-  # dois lados saem do mesmo interruptor, para não existir a combinação em que
-  # ninguém aplica o schema.
+  # Exige imagem que conheça `UniPlus__Migrations__Mode`, o que a v0.8.0 fixada
+  # acima é a primeira a fazer.
   migrationJob:
     enabled: true
 
