@@ -670,9 +670,13 @@ pronto, atendendo contra um schema que a migration já havia alterado. Voltar a 
 desfaz migration.
 
 ```bash
-# Acompanhar o Job da promoção em curso
+# O nome do Job não é digitável de cabeça: o release vem do ApplicationSet como
+# `uniplus-api-host-<cluster>`, e o helper de fullname acrescenta o nome do chart
+# antes do sufixo — dá `uniplus-api-host-<cluster>-uniplus-api-host-migrate`.
+# Derive do label, que é estável.
 kubectl -n uniplus get jobs -l app.kubernetes.io/name=uniplus-api-host
-kubectl -n uniplus logs job/uniplus-api-host-migrate
+JOB=$(kubectl -n uniplus get jobs -l app.kubernetes.io/name=uniplus-api-host -o name | head -1)
+kubectl -n uniplus logs "$JOB"
 
 # O Job que falhou permanece no cluster para inspeção — só é removido quando o
 # próximo é criado (`before-hook-creation`). Os logs trazem a mensagem do banco.
