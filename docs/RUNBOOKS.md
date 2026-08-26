@@ -4325,3 +4325,143 @@ Story #445 passar `--name in-cluster` explicitamente no registro deste cluster.
 ---
 
 *Documento mantido pelo CTIC/UNIFESSPA. Atualizações via Pull Request.*
+
+## 22. Promoção de versão em homologação
+
+### Como o deploy acontece hoje
+
+A perna Git → cluster é automática: o ApplicationSet usa `syncPolicy.automated` com `prune` e
+`selfHeal`, e o ArgoCD detecta por polling. **Mergear o bump é o deploy** — não há passo posterior.
+A latência medida é de até ~6 minutos, e não há webhook porque a VM não é alcançável de fora da VPN.
+
+O que não era automático é a perna anterior: descobrir que há imagem publicada e escrever a tag no
+values. É o que o workflow `bump-tags-hml.yml` passou a fazer.
+
+### O que o cron faz
+
+A cada 10 minutos, e também sob acionamento manual:
+
+1. Lê as tags de `uniplus-api-host` e dos quatro `uniplus-web-*` no GHCR, **anonimamente** — as
+   imagens são públicas, e assim o workflow não precisa de segredo além do `GITHUB_TOKEN`.
+2. Compara com o que está fixado em `environments/hml-standalone-single/values.yaml`.
+3. Havendo diferença, valida o chart (`make validate`), publica a branch
+   `chore/bump-tags-hml` e abre — ou atualiza — uma issue com a etiqueta `bump-pendente`,
+   trazendo o link para abrir o pull request.
+4. Não havendo diferença, encerra a issue pendente, se houver: o bump chegou à base e o
+   aviso perdeu o motivo. Falha de consulta ao registry **não** encerra nada — um ciclo que
+   não conseguiu apurar não sabe se o pendente ainda existe.
+
+Imagens do mesmo repositório sobem juntas ou não sobem. Um release publica uma imagem de
+cada vez, e um ciclo que caia no meio veria parte já no registry e parte ainda na versão
+anterior — o values sairia com versões misturadas do mesmo frontend, combinação que nunca
+foi construída junto. Quando isso acontece, o grupo é adiado e o ciclo registra o motivo;
+dez minutos depois o release terminou e tudo entra de uma vez. Origens diferentes seguem
+independentes: api e web têm ciclos próprios.
+
+A branch e a issue são decididas por sinais diferentes, e de propósito. A branch é reescrita
+só quando o conteúdo do values muda, para não virar force-push de dez em dez minutos enquanto
+o PR anterior não é mergeado. A issue é reescrita quando o **texto** muda — a lista de
+migrations depende de a tag Git da api já existir, e no primeiro ciclo depois de a imagem
+aparecer no registry ela costuma sair como intervalo indeterminado; amarrar a issue ao values
+deixaria esse aviso congelado, porque a tag Git chegar não muda um byte do arquivo.
+
+**Branch com pull request aberto não é reescrita.** Trocar a HEAD de um PR com o
+`GITHUB_TOKEN` deixaria os checks obrigatórios pendentes para sempre — pelo mesmo motivo de
+o cron não abrir o PR. Se surgir versão mais recente enquanto o PR está aberto, a issue diz
+isso, e o bump sai no ciclo seguinte ao merge.
+
+### O que o cron não faz
+
+**Não abre o PR.** Evento originado pelo `GITHUB_TOKEN` não dispara workflows, então um PR criado
+pelo cron nasceria sem nenhum check — e com o gate obrigatório de autoria pendente para sempre, o
+que o deixaria impossível de mergear. Contornar isso exigiria um PAT ou GitHub App com escrita no
+repositório, credencial que não se justifica para economizar um clique. O cron deixa a branch pronta
+e validada; abrir o PR leva um clique no link da issue.
+
+**Não merga.** A promoção continua sendo decisão humana, e é por isso que o texto traz as migrations
+do intervalo, marcando as que mexem no schema de forma incompatível com a versão anterior — um bump
+de tag sozinho não dá base para decidir se o merge pode ser rotineiro.
+
+A classificação olha **apenas o corpo do `Up()`**: numa migration aditiva o `Down()` traz as
+operações inversas, e classificar pelo arquivo inteiro marcaria como destrutiva justamente a
+migration mais comum e inofensiva.
+
+São duas categorias, e a distinção importa.
+
+**Destrutivas** querem dizer uma coisa só: o objeto que o código anterior **nomeia** deixa de
+existir com aquele nome. São `DropColumn`, `DropTable`, `DropSchema`, `DropSequence`,
+`RenameColumn`, `RenameTable` e `RenameSequence`. Ganham destaque próprio no topo da seção.
+
+**Exigem revisão** vão inline em cada migration, e nomeiam o que conferir:
+
+| Operação | Por quê |
+|---|---|
+| `AlterColumn` | tanto aumenta um tamanho, inofensivo, quanto muda o tipo ou torna a coluna obrigatória |
+| `AddColumn` obrigatória sem valor padrão | a migration é recusada se a tabela já tem linhas, e no rollout a versão anterior insere sem a coluna |
+| `AddForeignKey`, `AddCheckConstraint`, `AddUniqueConstraint`, `AddPrimaryKey`, `CreateIndex` com `unique: true` | recusam a linha que já viola **e** a escrita da versão anterior, que não conhece a regra |
+| `AlterSequence` | muda incremento ou limites, que podem recusar o próximo valor |
+| `RestartSequence` | reiniciar abaixo do que já foi usado faz o próximo insert colidir com chave existente |
+| `DropIndex` | a escrita segue válida, mas consulta que dependia dele pode degradar |
+| `DropForeignKey` | deixa de haver garantia de integridade referencial |
+| `DropPrimaryKey` | conferir se outra a substitui na mesma migration |
+| `UpdateData` | altera linha existente; a versão anterior pode interpretar o valor novo de outro jeito |
+| `DeleteData` | remove linha de seed; o efeito depende de o registro ainda ser referenciado |
+| `migrationBuilder.Sql(...)` | pode ser um índice novo ou um `DELETE`; o nome da operação não diz |
+
+**O que fica de fora, e por quê.** O critério é sempre a incompatibilidade com quem ainda
+responde, não a remoção ou a mudança em si:
+
+| Operação | Por que não marca |
+|---|---|
+| `DropUniqueConstraint`, `DropCheckConstraint` | removem estrutura, mas **relaxam** a regra: a versão anterior segue escrevendo dados que a restrição aceitava |
+| `AlterDatabase`, `AlterTable` | anotações de provider, sem efeito sobre a escrita |
+| `RenameIndex` | nada no código de escrita nomeia índice; só o DDL o referencia |
+| `CreateTable`, `CreateSequence`, `EnsureSchema`, `InsertData` | acrescentam, e o que a versão anterior não conhece ela não usa |
+| `CreateIndex` sem `unique` | não recusa escrita |
+| `AddColumn` anulável ou com valor padrão | a escrita antiga continua válida |
+
+A lista das operações veio **por reflexão** sobre o `MigrationBuilder` do EF Core, não escrita
+de memória — a versão à mão saiu incompleta. Cada uma das 32 está classificada como destrutiva,
+como exigindo revisão, ou deliberadamente fora.
+
+E a classificação é **total**: operação que não caia em nenhuma das três — uma que só exista numa
+versão futura do EF — vira o aviso "operação X, que esta classificação não conhece". O silêncio
+deixa de ser o desfecho padrão do desconhecido.
+
+Para reconferir depois de atualizar o EF Core:
+
+```csharp
+typeof(MigrationBuilder)
+    .GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+    .Select(m => m.Name).Distinct().OrderBy(n => n)
+```
+Marcar categorias inteiras faria o aviso aparecer em quase todo bump, e aviso que sempre aparece
+deixa de ser lido. Distinguir exige ler os argumentos da chamada, e é por isso que a classificação
+usa um scanner que respeita literais de string em vez de busca por texto: um
+`defaultValueSql: "coalesce(a, 0)"` fecharia a chamada cedo demais numa contagem de parênteses.
+
+**Não silencia o que não conseguiu apurar.** Se a comparação das migrations falhar, o texto diz que
+não foi possível apurar, em vez de dizer que não há migration alguma.
+
+**Não promove parcialmente.** Se a consulta de qualquer imagem falhar, o ciclo termina sem publicar:
+api e web precisam andar juntas, e um bump pela metade por falha de rede seria pior que nenhum.
+
+**Não republica o que já propôs.** Enquanto o PR anterior não é mergeado, a comparação continua
+acusando a mesma diferença a cada ciclo. O workflow compara o values proposto com o que a branch já
+publica e não faz nada se forem iguais — sem isso, seria force-push de dez em dez minutos, com o CI
+reiniciando sem parar e os comentários da revisão pendurados em commits que deixaram de existir.
+
+### Como desligar
+
+Desabilitar o workflow em Actions, ou remover o bloco `schedule` de
+`.github/workflows/bump-tags-hml.yml`. O `workflow_dispatch` continua disponível para acionamento
+manual.
+
+### Quando a promoção carrega migration
+
+Desde a ADR-0127 do `uniplus-api`, as migrations são aplicadas por um Job `pre-upgrade`, e não no
+boot do pod. Uma migration que falha aborta o sync com os pods anteriores intactos, em vez de ser
+descoberta com o pod já removido. O que o Job **não** cobre é a compatibilidade do schema novo com a
+versão anterior da aplicação — durante o rollout, quem ainda responde é ela. Para migration
+destrutiva promovida sem indisponibilidade, a resposta continua sendo expandir e contrair em duas
+releases.
