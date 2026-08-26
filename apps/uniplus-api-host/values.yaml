@@ -49,11 +49,14 @@ uniplusApiHost:
   # `UniPlus__Migrations__Mode`, e o default preserva o comportamento de quem
   # ainda não migrou para esse desenho.
   #
-  # O pod continua aplicando migration no boot mesmo com o Job ligado. Não é
-  # descuido: com `ApplyOutOfSyncOnly=true` no ApplicationSet, um sync seletivo
-  # aplica o Deployment sem executar hooks, e um pod que não aplicasse subiria
-  # contra o schema antigo. A redundância é barata — aplicar é idempotente — e
-  # não deixa nenhum caminho sem schema.
+  # Deixar desligada no bootstrap de um ambiente novo: no ArgoCD o hook vira
+  # `PreSync` e roda antes dos recursos comuns, então o primeiro sync de um chart
+  # ainda não instalado não teria a ServiceAccount nem os secrets que o Job
+  # consome. Ligar a partir da segunda promoção.
+  #
+  # O pod continua aplicando migration no boot mesmo com o Job ligado, e isso é
+  # deliberado: aplicar é idempotente, então com o Job tendo aplicado o pod não
+  # faz nada, e mantê-lo capaz de aplicar cobre os cenários legítimos sem Job.
   #
   # O que o Job entrega é o momento da falha: uma migration quebrada aborta o
   # sync antes de qualquer pod ser criado ou removido.
