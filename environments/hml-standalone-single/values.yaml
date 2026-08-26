@@ -348,6 +348,11 @@ uniplusApiHost:
   # promover, e forçar o refresh do ArgoCD logo após, em vez de esperar o
   # polling. Se falhar mesmo assim: remover as linhas e deixar o pod subir; a
   # migration não chegou a aplicar, então não há rollback a fazer.
+  #
+  # Esta chave é para VOLTAR a RollingUpdate assim que a promoção estiver
+  # validada — deixá-la ligada faria toda atualização de imagem seguinte
+  # derrubar o único pod da api sem necessidade, inclusive as que não carregam
+  # migration alguma. Rastreado na issue #520.
   deploymentStrategy: Recreate
 
   # Override de memória: o default do chart (512Mi/1Gi) fica abaixo do consumo
