@@ -35,10 +35,43 @@ uniplusApiHost:
   replicas: 1
 
   # Estratégia de atualização do Deployment: `RollingUpdate` (padrão) ou
-  # `Recreate`. Use `Recreate` na promoção que carrega migration destrutiva — as
-  # migrations rodam no boot do pod, e no RollingUpdate o pod anterior continua
-  # pronto enquanto o schema já mudou sob ele.
+  # `Recreate`.
+  #
+  # Com `migrationJob.enabled`, `RollingUpdate` volta a ser seguro: a migration
+  # já rodou e passou antes de qualquer pod ser criado. `Recreate` fica para o
+  # ambiente que ainda aplica migration no boot do pod e precisa evitar que a
+  # versão anterior sirva um schema já alterado.
   deploymentStrategy: RollingUpdate
+
+  # Job que aplica as migrations ANTES do rollout, em vez de deixá-las no boot
+  # do pod (ADR-0127 do uniplus-api).
+  #
+  # Desligado por padrão: ligar exige uma imagem que conheça
+  # `UniPlus__Migrations__Mode`, e o default preserva o comportamento de quem
+  # ainda não migrou para esse desenho.
+  #
+  # Quando ligado, o Deployment passa a `Skip` automaticamente — os dois lados
+  # saem do mesmo interruptor, para não existir a combinação em que ninguém
+  # aplica o schema.
+  migrationJob:
+    enabled: false
+
+    # Migration que falha não melhora com nova tentativa: o motivo costuma ser
+    # schema ou dado, não instabilidade. Zero mantém o diagnóstico imediato.
+    backoffLimit: 0
+
+    # Teto de tempo do Job. Migration longa que trava seguraria o rollout
+    # indefinidamente sem esse limite.
+    activeDeadlineSeconds: 600
+
+    # Menores que os do Deployment: o processo aplica schema e encerra, sem
+    # servir requisição nem manter conexão de mensageria.
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+      limits:
+        memory: 1Gi
 
   resources:
     # Processo único hospedando 4 módulos — requests/limits maiores que os

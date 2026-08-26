@@ -1,0 +1,139 @@
+{{- if and .Values.uniplusApiHost.enabled .Values.uniplusApiHost.migrationJob.enabled }}
+{{/*
+  Aplica as migrations EF Core ANTES do rollout, e não durante o boot do pod.
+
+  Por que existe (ADR-0127 do uniplus-api, e o incidente de 26/08/2026):
+  aplicar migration no StartAsync do host faz o cluster descobrir que ela
+  falhou depois de já ter mexido nos pods. Sob RollingUpdate com
+  maxUnavailable 0, o pod anterior segue pronto e atendendo contra um schema
+  que a migration já alterou; sob Recreate, não sobra pod nenhum. Nos dois
+  casos voltar a imagem não desfaz a migration.
+
+  Como funciona: hook `pre-install,pre-upgrade` sobe a MESMA imagem da api
+  com UniPlus__Migrations__Mode=ApplyAndExit. O processo aplica as migrations
+  e encerra — nenhum servidor HTTP escuta e nenhum consumidor de mensageria
+  inicia, porque construir o host resolve o container mas não inicia serviço
+  algum. O código de saída decide o rollout: não-zero aborta o sync com os
+  pods anteriores intactos.
+
+  O Deployment complementa com UniPlus__Migrations__Mode=Skip, para o pod não
+  refazer o que este Job já fez.
+
+  Sem sidecar de refresh de CA: o Job é efêmero e termina em segundos, então
+  o initContainer basta — rotação de certificado no meio da execução não é
+  cenário aqui, diferente do Deployment que roda indefinidamente.
+
+  Falha do Job: `before-hook-creation` limpa o anterior só quando um novo vai
+  ser criado, então o Job que falhou permanece no cluster para inspeção dos
+  logs — que é onde a mensagem do banco aparece.
+*/}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "uniplusApiHost.fullname" . }}-migrate
+  labels:
+    {{- include "uniplusApiHost.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  # Migration que falha não melhora com nova tentativa cega: o motivo costuma
+  # ser schema ou dado, não instabilidade. Repetir só atrasa o diagnóstico.
+  backoffLimit: {{ .Values.uniplusApiHost.migrationJob.backoffLimit }}
+  {{- with .Values.uniplusApiHost.migrationJob.activeDeadlineSeconds }}
+  activeDeadlineSeconds: {{ . }}
+  {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- /* Mesmos selectorLabels do Deployment: é o que faz o Job herdar a
+               NetworkPolicy e alcançar o Postgres. Sem isso o egress é negado
+               e a falha parece de banco, não de rede. */}}
+        {{- include "uniplusApiHost.selectorLabels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "uniplusApiHost.serviceAccountName" . }}
+      {{- with .Values.uniplusApiHost.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.uniplusApiHost.podSecurityContext | nindent 8 }}
+      {{- if .Values.uniplusApiHost.customCA.enabled }}
+      initContainers:
+        - name: install-custom-ca
+          image: "{{ .Values.uniplusApiHost.image.registry }}/{{ .Values.uniplusApiHost.image.repository }}:{{ .Values.uniplusApiHost.image.tag }}"
+          imagePullPolicy: {{ .Values.uniplusApiHost.image.pullPolicy }}
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              cp /custom-ca/ca.crt /usr/local/share/ca-certificates/lab-custom-ca.crt
+              update-ca-certificates
+              cp -a /etc/ssl/certs/. /merged-ca-certs/
+          volumeMounts:
+            - name: custom-ca-source
+              mountPath: /custom-ca
+              readOnly: true
+            - name: merged-ca-certs
+              mountPath: /merged-ca-certs
+      {{- end }}
+      containers:
+        - name: migrate
+          image: "{{ .Values.uniplusApiHost.image.registry }}/{{ .Values.uniplusApiHost.image.repository }}:{{ .Values.uniplusApiHost.image.tag }}"
+          imagePullPolicy: {{ .Values.uniplusApiHost.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.uniplusApiHost.containerSecurityContext | nindent 12 }}
+          env:
+            {{- /* As mesmas variáveis do Deployment: a imagem é a mesma e o
+                   composition root valida a configuração inteira no boot. */}}
+            {{- include "uniplusApiHost.env" . | nindent 12 }}
+            - name: UniPlus__Migrations__Mode
+              value: ApplyAndExit
+          {{- if or .Values.uniplusApiHost.kafka.enabled .Values.uniplusApiHost.customCA.enabled }}
+          volumeMounts:
+            {{- if .Values.uniplusApiHost.kafka.enabled }}
+            - name: kafka-ca
+              mountPath: /etc/uniplus-kafka/ca.crt
+              subPath: ca.crt
+              readOnly: true
+            {{- end }}
+            {{- if .Values.uniplusApiHost.customCA.enabled }}
+            - name: merged-ca-certs
+              mountPath: /etc/ssl/certs
+              readOnly: true
+            {{- end }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.uniplusApiHost.migrationJob.resources | nindent 12 }}
+      {{- if or .Values.uniplusApiHost.kafka.enabled .Values.uniplusApiHost.customCA.enabled }}
+      volumes:
+        {{- if .Values.uniplusApiHost.kafka.enabled }}
+        - name: kafka-ca
+          secret:
+            secretName: {{ include "uniplusApiHost.kafkaSecretName" . }}
+            items:
+              - key: ca.crt
+                path: ca.crt
+        {{- end }}
+        {{- if .Values.uniplusApiHost.customCA.enabled }}
+        - name: custom-ca-source
+          {{- if .Values.uniplusApiHost.customCA.existingSecretName }}
+          secret:
+            secretName: {{ .Values.uniplusApiHost.customCA.existingSecretName }}
+            items:
+              - key: {{ .Values.uniplusApiHost.customCA.existingSecretKey }}
+                path: ca.crt
+          {{- else }}
+          configMap:
+            name: {{ include "uniplusApiHost.fullname" . }}-custom-ca
+          {{- end }}
+        - name: merged-ca-certs
+          emptyDir: {}
+        {{- end }}
+      {{- end }}
+{{- end }}
