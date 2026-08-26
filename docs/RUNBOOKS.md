@@ -687,6 +687,19 @@ o hook roda antes dos recursos comuns e o chart ainda não instalado não tem co
 a ServiceAccount e os Secrets que o Job consome. Num banco vazio não há versão anterior a
 proteger, então o boot do pod aplica o schema; a chave entra a partir da segunda promoção.
 
+**O Job não torna qualquer migration segura, e a distinção importa.** Ele garante que
+migration quebrada não derrube o ambiente. Não garante nada sobre migration que passa e é
+incompatível com a versão anterior: como o hook roda antes de o Deployment ser atualizado,
+entre o fim do Job e a morte do último pod anterior há código velho servindo sobre schema
+novo.
+
+Trocar `RollingUpdate` por `Recreate` não fecha essa janela — só a encurta, ao custo de
+indisponibilidade total em toda promoção. O que fecha é a migration ser compatível com as
+duas versões: **expandir numa promoção, contrair na seguinte**. Coluna que sai do código
+nesta versão só é removida do banco na próxima; coluna nova nasce anulável ou com valor
+padrão. O aviso de destrutividade no PR de bump existe para que isso seja visto antes do
+merge, não depois.
+
 **Restrição de promoção:** rodando em `PreSync`, o Job vê a ServiceAccount e os Secrets do
 estado anterior. Renomear a ServiceAccount ou trocar o caminho de um ExternalSecret no
 mesmo sync que aplica migration faz o Job referenciar nome inexistente ou usar credencial
