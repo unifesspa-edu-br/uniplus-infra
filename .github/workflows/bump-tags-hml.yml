@@ -1,0 +1,332 @@
+# Abre PR quando há versão nova publicada no GHCR.
+#
+# Por que agendamento e não notificação: a VM de homologação não é alcançável de
+# fora da VPN, então o ArgoCD não recebe webhook do GitHub. Mas o que falta
+# automatizar não é a perna Git -> cluster — essa já é automática, por polling do
+# próprio ArgoCD. É a anterior: descobrir que há imagem publicada e escrever a tag
+# no values. Era 100% manual, e foi por isso que homologação já ficou cinco semanas
+# atrasada.
+#
+# Por que aqui e não um dispatch da uniplus-api: um evento entre repositórios
+# exigiria PAT ou GitHub App com escrita neste repositório. Rodando aqui, a consulta
+# ao registry é anônima (as imagens são públicas) e o PR sai com o GITHUB_TOKEN que
+# o Actions já fornece — nenhum segredo novo.
+#
+# O que este workflow entrega é a branch pronta e validada, mais uma issue com as
+# migrations do intervalo. Abrir o PR fica com uma pessoa: evento originado pelo
+# GITHUB_TOKEN não dispara workflows, então um PR criado aqui nasceria sem checks e
+# com o gate obrigatório pendente para sempre. Contornar isso exigiria um PAT ou
+# GitHub App com escrita neste repositório, e essa credencial não se justifica para
+# economizar um clique.
+name: Bump de tags (HML)
+
+on:
+  schedule:
+    # A cada 10 minutos. O custo de um ciclo é uma consulta ao registry; o custo de
+    # não rodar é homologação envelhecendo em silêncio.
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  # Um ciclo por vez: dois em paralelo abririam PRs concorrentes para o mesmo bump.
+  group: bump-tags-hml
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  issues: write
+  # Só leitura: o workflow nunca cria nem edita PR — precisa apenas descobrir se já
+  # existe um aberto para a branch, para não reescrevê-la por baixo de quem revisa.
+  pull-requests: read
+
+env:
+  VALUES: environments/hml-standalone-single/values.yaml
+  BRANCH: chore/bump-tags-hml
+  # A base é sempre o branch padrão, e nunca o ref que disparou. No agendamento os
+  # dois coincidem, mas `workflow_dispatch` permite escolher qualquer ref: de uma
+  # branch de trabalho, o bump sairia carregando commits que ninguém pediu e o link
+  # de compare apontaria para ela; de uma tag, `origin/<tag>` não existe e o ciclo
+  # morreria depois de já ter validado tudo.
+  BASE: ${{ github.event.repository.default_branch }}
+
+jobs:
+  verificar:
+    name: Verificar versões e abrir PR
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          # O histórico completo é necessário para comparar a branch de bump já
+          # publicada com o que este ciclo propõe.
+          fetch-depth: 0
+
+      - name: Preparar as ferramentas
+        # As mesmas de que `make validate` depende no workflow de validação: yamllint
+        # vem por pip e o helm por action — nenhum dos dois está no runner. Sem eles a
+        # validação abaixo morre em `command not found`, e o ciclo terminaria sem
+        # publicar branch nem issue, justamente quando há versão nova a promover.
+        # PyYAML é do leitor/escritor de tags.
+        run: pip install --quiet pyyaml yamllint
+
+      - name: Preparar o Helm
+        uses: azure/setup-helm@v4
+
+      - name: Consultar o registry
+        id: comparar
+        run: |
+          set -euo pipefail
+          if ! PYTHONPATH=tools/bump-tags python3 tools/bump-tags/verificar_versoes.py \
+                 --values "$VALUES" > /tmp/comparacao.json; then
+            # Consulta que falha não autoriza promover o resto: sem saber em que
+            # versão uma das imagens está, o values sairia com um pin escolhido às
+            # cegas ao lado de pins conferidos.
+            echo "::warning::Consulta ao registry falhou; nada será promovido neste ciclo."
+            cat /tmp/comparacao.json || true
+            # `erro`, `aguardando` e `em-dia` são estados distintos de propósito. Os
+            # três não geram bump, mas só o último autoriza encerrar o aviso pendente:
+            # um ciclo que não apurou, ou que apurou um release pela metade, não sabe
+            # se o pendente ainda existe, e fechar a issue ali apagaria um aviso real.
+            echo "estado=erro" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          cat /tmp/comparacao.json
+
+          ADIADAS=$(jq '.adiadas | length' /tmp/comparacao.json)
+          if [ "$ADIADAS" != "0" ]; then
+            # Release publica uma imagem por vez, e o ciclo caiu no meio. Esperar os
+            # dez minutos do próximo custa menos que promover versões misturadas do
+            # mesmo frontend.
+            jq -r '.adiadas[] | "::notice::adiada \(.imagem): \(.motivo)"' /tmp/comparacao.json
+          fi
+
+          if [ "$(jq '.desatualizadas | length' /tmp/comparacao.json)" != "0" ]; then
+            echo "estado=bump" >> "$GITHUB_OUTPUT"
+          elif [ "$ADIADAS" != "0" ]; then
+            echo "Há versão nova, mas o release ainda está publicando. Próximo ciclo."
+            echo "estado=aguardando" >> "$GITHUB_OUTPUT"
+          else
+            echo "Tudo em dia."
+            echo "estado=em-dia" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Encerrar o aviso quando o bump já chegou à base
+        if: steps.comparar.outputs.estado == 'em-dia'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Sem isto a issue continuaria aberta depois do merge, anunciando uma
+          # promoção que já aconteceu — e um aviso que sobrevive ao próprio motivo
+          # ensina quem o lê a ignorá-lo.
+          ABERTA=$(gh issue list --label bump-pendente --state open --json number --jq '.[0].number // empty')
+          if [ -z "$ABERTA" ]; then
+            echo "Nada pendente."
+          else
+            gh issue close "$ABERTA" --comment \
+              "As tags do values já são as versões mais recentes publicadas no registry: o bump chegou à \`${BASE}\`."
+            echo "Issue #$ABERTA encerrada."
+          fi
+
+      - name: Buscar as migrations do intervalo
+        if: steps.comparar.outputs.estado == 'bump'
+        # Falhar aqui não pode abortar o ciclo: a lista de migrations é o que torna o
+        # bump revisável, não o que o autoriza. Sem este checkout — indisponibilidade,
+        # limite de requisições — o texto sai dizendo que não foi possível apurar, que
+        # é a mensagem certa e já está implementada. Perder o bump inteiro por causa
+        # disso seria trocar uma informação a menos por nenhuma promoção.
+        #
+        # `fetch-depth: 0` traz o histórico E as tags, que é o que o intervalo compara.
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          repository: unifesspa-edu-br/uniplus-api
+          path: .uniplus-api
+          fetch-depth: 0
+
+      - name: Aplicar o bump
+        if: steps.comparar.outputs.estado == 'bump'
+        run: |
+          set -euo pipefail
+          PYTHONPATH=tools/bump-tags python3 tools/bump-tags/aplicar_bump.py \
+            --values "$VALUES" \
+            --comparacao /tmp/comparacao.json \
+            --repo-api .uniplus-api \
+            --saida-corpo /tmp/corpo.md
+
+          # Antes de validar: `make markdown-lint` varre `**/*.md`, e com o checkout
+          # da api no lugar ele lintaria a documentação de outro repositório — que não
+          # segue as regras deste e reprovaria o ciclo por um motivo alheio ao bump.
+          rm -rf .uniplus-api
+
+      - name: Validar o chart com as versões novas
+        if: steps.comparar.outputs.estado == 'bump'
+        run: |
+          set -euo pipefail
+          # A validação roda aqui porque não rodará no PR: eventos originados pelo
+          # GITHUB_TOKEN não disparam workflows. Sem isto, a branch chegaria a quem
+          # revisa sem nenhuma verificação — pior que não automatizar.
+          #
+          # Só `validate`, e não `lint` antes: o alvo já tem `lint` entre seus
+          # prerequisitos, e o Makefile é explícito em que `helm-deps` precisa vir
+          # primeiro. Chamar `lint` sozinho numa checkout nova falha em `helm-lint`,
+          # porque os charts dependentes ainda não foram baixados.
+          make validate
+
+      - name: Publicar a branch e avisar
+        if: steps.comparar.outputs.estado == 'bump'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          TITULO="chore(hml): promove $(jq -r '[.desatualizadas[] | "\(.imagem) \(.para)"] | join(", ")' /tmp/comparacao.json)"
+
+          # O values já editado, antes de tocar em qualquer branch. É por ele que se
+          # decide se há algo novo a publicar.
+          PROPOSTO=$(git hash-object "$VALUES")
+
+          # Duas comparações, porque as duas decisões perguntam coisas diferentes.
+          #
+          # Publicar olha o ARQUIVO inteiro: se a base recebeu qualquer edição no
+          # values, a branch está defasada e republicá-la a rebaseia — o PR deixa de
+          # carregar uma reversão silenciosa dessa edição.
+          #
+          # Avisar que existe versão mais nova olha só as TAGS. Uma edição alheia na
+          # base muda o hash do arquivo sem mudar um pin sequer, e a issue passaria a
+          # anunciar versão nova que não existe.
+          PUBLICADO=""
+          TAGS_DA_BRANCH=""
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            git fetch --quiet origin "$BRANCH"
+            if git cat-file -p "origin/$BRANCH:$VALUES" > /tmp/values-da-branch.yaml 2>/dev/null; then
+              PUBLICADO=$(git hash-object /tmp/values-da-branch.yaml)
+              TAGS_DA_BRANCH=$(PYTHONPATH=tools/bump-tags python3 tools/bump-tags/verificar_versoes.py \
+                                 --values /tmp/values-da-branch.yaml --somente-fixadas)
+            fi
+          fi
+          TAGS_PROPOSTAS=$(PYTHONPATH=tools/bump-tags python3 tools/bump-tags/verificar_versoes.py \
+                             --values "$VALUES" --somente-fixadas)
+          # `--head` filtra por NOME de branch e não aceita `dono:branch`, então um PR
+          # vindo de fork cuja branch tenha o mesmo nome entraria aqui — e o ciclo
+          # deixaria de publicar para sempre, apontando a issue para um PR alheio.
+          # `isCrossRepository` descarta o que não vem deste repositório.
+          PR_ABERTO=$(gh pr list --head "$BRANCH" --state open \
+            --json number,isCrossRepository \
+            --jq '[.[] | select(.isCrossRepository == false)] | .[0].number // empty')
+
+          # Três situações, e o que distingue as duas últimas é o CONTEÚDO da branch,
+          # não a existência do PR.
+          #
+          # A branch já propõe exatamente isto: nada a empurrar. É o caso comum
+          # enquanto o PR anterior não é mergeado — a base segue com as tags antigas e
+          # cada ciclo redescobre a mesma diferença. Republicar seria force-push de dez
+          # em dez minutos sem um byte novo, e anunciar "versão mais recente" seria
+          # falso.
+          #
+          # A branch propõe algo diferente E existe PR aberto: há versão mais nova de
+          # verdade, mas a branch não se toca. Um force-push trocaria a HEAD do PR de
+          # uma pessoa, e como o push sai do GITHUB_TOKEN os workflows `pull_request`
+          # não rodam para o SHA novo: validação e gate de autoria ficariam pendentes
+          # para sempre, e um PR a um clique do merge viraria immergível. É o mesmo
+          # motivo pelo qual este workflow não abre o PR. O bump espera o merge; a
+          # issue avisa.
+          #
+          # Sem PR aberto: publica.
+          if [ "$PROPOSTO" = "$PUBLICADO" ]; then
+            echo "A branch já propõe exatamente estas versões; nada a empurrar."
+            PUBLICAR=nao
+            MAIS_NOVO=nao
+          elif [ -n "$PR_ABERTO" ]; then
+            echo "PR #$PR_ABERTO está aberto; a branch não será reescrita."
+            PUBLICAR=nao
+            if [ "$TAGS_PROPOSTAS" = "$TAGS_DA_BRANCH" ]; then
+              MAIS_NOVO=nao
+            else
+              MAIS_NOVO=sim
+            fi
+          else
+            PUBLICAR=sim
+            MAIS_NOVO=nao
+          fi
+
+          if [ "$PUBLICAR" = "sim" ]; then
+            # Sempre a partir da base, e não do que a branch acumulou: o alvo é "as
+            # versões mais recentes agora".
+            git stash push -- "$VALUES"
+            git checkout -B "$BRANCH" "origin/${BASE}"
+            git stash pop
+
+            git add "$VALUES"
+            git commit -m "$TITULO" -m "$(cat /tmp/corpo.md)"
+
+            # Reconferido aqui, e não só lá em cima: entre a primeira consulta e este
+            # ponto passam alguns segundos, e é tempo suficiente para alguém abrir o
+            # pull request pelo link da issue. Reescrever a branch nesse instante
+            # deixaria os checks obrigatórios pendentes para sempre num PR recém-aberto
+            # — o mesmo estrago que a checagem anterior existe para impedir.
+            SURGIU=$(gh pr list --head "$BRANCH" --state open \
+              --json number,isCrossRepository \
+              --jq '[.[] | select(.isCrossRepository == false)] | .[0].number // empty')
+            if [ -n "$SURGIU" ]; then
+              echo "::warning::PR #$SURGIU foi aberto durante este ciclo; a branch não será reescrita."
+              exit 0
+            fi
+
+            git push --force-with-lease origin "$BRANCH"
+          fi
+
+          # A branch fica pronta, mas quem abre o PR é uma pessoa — e é deliberado.
+          #
+          # PR criado com o GITHUB_TOKEN não dispara `pull_request`, então nasceria sem
+          # nenhum check: o gate obrigatório de autoria ficaria pendente para sempre e o
+          # PR não poderia ser mergeado. Um PR permanentemente bloqueado é pior que
+          # nenhum. A alternativa seria um PAT ou GitHub App com escrita aqui, e
+          # introduzir essa credencial não se justifica para economizar um clique.
+          #
+          # O trabalho que custa continua automatizado: detectar a versão, editar o
+          # values, listar as migrations e validar o chart. Sobra abrir o PR.
+          COMPARE="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/compare/${BASE}...${BRANCH}?expand=1"
+          {
+            if [ -n "$PR_ABERTO" ] && [ "$MAIS_NOVO" = "sim" ]; then
+              echo "> **Há versão mais recente que a proposta no #$PR_ABERTO.** A branch não foi"
+              echo "> reescrita: trocar a HEAD de um PR aberto com o token do Actions deixaria os"
+              echo "> checks obrigatórios pendentes para sempre. Depois que o #$PR_ABERTO for"
+              echo "> mergeado, o próximo ciclo publica o bump abaixo."
+            elif [ -n "$PR_ABERTO" ]; then
+              echo "O #$PR_ABERTO já propõe estas mesmas versões, e o chart foi validado neste"
+              echo "ciclo. Falta mergear."
+            else
+              echo "A branch \`$BRANCH\` está pronta com o bump, e o chart já foi validado neste ciclo."
+              echo
+              echo "**[Abrir o pull request]($COMPARE)** — o PR precisa partir de uma conta de pessoa"
+              echo "para que os checks obrigatórios rodem."
+            fi
+            echo
+            cat /tmp/corpo.md
+          } > /tmp/issue.md
+
+          # A issue é decidida pelo TEXTO, não pelo estado da branch. As duas coisas
+          # mudam em ritmos diferentes: a lista de migrations depende de a tag Git da
+          # api já existir, e no primeiro ciclo depois de a imagem aparecer no registry
+          # ela costuma não existir ainda — o aviso sai como intervalo indeterminado.
+          # Amarrar a issue ao hash do values deixaria esse aviso congelado para
+          # sempre, porque a tag Git chegar não muda um byte do values. Quem revisa
+          # leria "não foi possível determinar" num intervalo que já é determinável.
+          ABERTA=$(gh issue list --label bump-pendente --state open --json number --jq '.[0].number // empty')
+          if [ -z "$ABERTA" ]; then
+            gh issue create --label bump-pendente \
+              --title "$TITULO" --body-file /tmp/issue.md
+          else
+            # Normaliza a quebra de linha: o corpo volta da API com CRLF e compararia
+            # diferente a cada ciclo, reeditando a issue à toa.
+            ATUAL=$(gh issue view "$ABERTA" --json body --jq '.body' | tr -d '\r')
+            if [ "$ATUAL" = "$(tr -d '\r' < /tmp/issue.md)" ]; then
+              echo "Issue #$ABERTA já traz exatamente este texto."
+            else
+              gh issue edit "$ABERTA" --title "$TITULO" --body-file /tmp/issue.md
+              echo "Issue #$ABERTA atualizada."
+            fi
+          fi
