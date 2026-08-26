@@ -656,12 +656,39 @@ psql -h pgbouncer-portal.uniplus.svc -U readonly -d uniplus_portal
 
 **Padrão:** migrations gerenciadas pelo EF Core das APIs .NET.
 
-**Aplicação:**
-- Migrations rodam **automaticamente** no startup da aplicação (em ambientes não-produção)
-- Em produção, recomenda-se passo manual antes do deploy:
-  ```bash
-  kubectl exec deploy/api-portal -- dotnet ef database update
-  ```
+**Aplicação:** por um Job que roda **antes** do rollout, não pelo boot do pod. O chart
+`uniplus-api-host` renderiza `<release>-migrate` como hook `pre-upgrade` (que o ArgoCD
+traduz para `PreSync`), subindo a mesma imagem da api com
+`UniPlus__Migrations__Mode=ApplyAndExit`: o processo aplica o schema, encerra, e o código
+de saída decide se o sync prossegue. Não-zero aborta a promoção com os pods anteriores
+intactos.
+
+O desenho existe por causa da ordem em que a falha aparecia antes. Aplicando no
+`StartAsync` do host, o cluster só descobria que a migration falhou depois de já ter
+mexido nos pods — e sob `RollingUpdate` com `maxUnavailable: 0` o pod anterior seguia
+pronto, atendendo contra um schema que a migration já havia alterado. Voltar a imagem não
+desfaz migration.
+
+```bash
+# Acompanhar o Job da promoção em curso
+kubectl -n uniplus get jobs -l app.kubernetes.io/name=uniplus-api-host
+kubectl -n uniplus logs job/uniplus-api-host-migrate
+
+# O Job que falhou permanece no cluster para inspeção — só é removido quando o
+# próximo é criado (`before-hook-creation`). Os logs trazem a mensagem do banco.
+```
+
+Ligar em ambiente novo: `migrationJob.enabled` fica **desligado** no primeiro sync, porque
+o hook roda antes dos recursos comuns e o chart ainda não instalado não tem como satisfazer
+a ServiceAccount e os Secrets que o Job consome. Num banco vazio não há versão anterior a
+proteger, então o boot do pod aplica o schema; a chave entra a partir da segunda promoção.
+
+**Restrição de promoção:** rodando em `PreSync`, o Job vê a ServiceAccount e os Secrets do
+estado anterior. Renomear a ServiceAccount ou trocar o caminho de um ExternalSecret no
+mesmo sync que aplica migration faz o Job referenciar nome inexistente ou usar credencial
+que já não vale — mudança desse tipo vai num sync próprio, antes do bump de imagem.
+
+Detalhes da decisão: ADR-0127 do `uniplus-api`.
 
 ### 6.3 Adicionar nova base/usuário
 

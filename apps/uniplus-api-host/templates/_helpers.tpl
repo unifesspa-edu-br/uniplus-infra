@@ -56,18 +56,6 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" }}
 Variáveis de ambiente do processo da api.
 
 Compartilhadas entre o Deployment e o Job de migration (ADR-0127 do uniplus-api):
-os dois sobem a MESMA imagem e o composition root valida a configuração inteira no
-boot, então o Job precisa das mesmas variáveis do Deployment — o que muda entre
-eles é só o papel, declarado em `UniPlus__Migrations__Mode`.
-
-Manter isso num único lugar é o que impede o Job de divergir do Deployment em
-silêncio, que seria descoberto só quando a migration falhasse por configuração
-faltando.
-*/}}
-{{/*
-Variáveis de ambiente do processo da api.
-
-Compartilhadas entre o Deployment e o Job de migration (ADR-0127 do uniplus-api):
 os dois sobem a MESMA imagem, e o composition root valida a configuração inteira
 no boot — então o Job precisa das mesmas variáveis do Deployment. O que muda
 entre eles é só o papel, declarado em `UniPlus__Migrations__Mode`.
