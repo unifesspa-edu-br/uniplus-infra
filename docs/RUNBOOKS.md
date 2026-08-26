@@ -678,25 +678,20 @@ kubectl -n uniplus get jobs -l app.kubernetes.io/name=uniplus-api-host
 JOB=$(kubectl -n uniplus get jobs -l app.kubernetes.io/name=uniplus-api-host -o name | head -1)
 kubectl -n uniplus logs "$JOB"
 
-# O Job que falhou PERMANECE no cluster. Os logs trazem a mensagem do banco.
+# O Job que falhou fica no cluster até o próximo sync. Os logs trazem a mensagem do banco.
 ```
 
-Migration que falha exige intervenção, e o Job preservado é o que garante isso. Enquanto
-ele estiver lá, o próximo sync para ao tentar recriá-lo — sem reexecutar a migration.
-Sem essa trava, qualquer commit no repositório produziria revisão nova, habilitando um
-sync automático que rodaria a migration de novo: desligar retry e self-heal só protege
-enquanto a revisão não muda.
+**Leia os logs antes de commitar qualquer coisa no repositório.** O Job anterior é removido
+quando o próximo é criado (`before-hook-creation`), e como este app roda sem retry e sem
+self-heal, o próximo sync acontece quando a revisão muda — ou seja, no primeiro commit que
+entrar na `main`, ainda que não tenha relação nenhuma com a api.
 
-Retomar depois de corrigir a causa:
+Corrigida a causa, basta sincronizar: o hook é recriado e roda de novo. Não há passo manual
+de limpeza.
 
-```bash
-JOB=$(kubectl -n uniplus get jobs -l app.kubernetes.io/name=uniplus-api-host -o name | head -1)
-kubectl -n uniplus logs "$JOB"          # ler antes de apagar
-kubectl -n uniplus delete "$JOB"
-# sincronizar pelo ArgoCD; o hook é recriado e roda de novo
-```
-
-O Job que passa é removido sozinho, então em promoção normal não sobra nada.
+Um commit não relacionado pode, portanto, reexecutar uma migration que falhou. Ela é
+idempotente e falhará do mesmo jeito — o que se perde é o Job anterior e o tempo do ciclo,
+não a integridade do banco.
 
 Ligar em ambiente novo: `migrationJob.enabled` fica **desligado** no primeiro sync, porque
 o hook roda antes dos recursos comuns e o chart ainda não instalado não tem como satisfazer
