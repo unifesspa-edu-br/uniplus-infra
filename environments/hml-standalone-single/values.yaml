@@ -336,10 +336,19 @@ uniplusApiHost:
     tag: v0.8.0
 
   # A migration passa a ser aplicada pelo Job `pre-upgrade` (ADR-0127 do
-  # uniplus-api) antes do rollout. Com isso o RollingUpdate volta a ser seguro:
-  # uma migration quebrada aborta o sync com os pods anteriores intactos, em vez
-  # de ser descoberta com o pod já removido — que foi o que derrubou a api na
-  # promoção da v0.7.0, em 26/08.
+  # uniplus-api) antes do rollout, e não mais no boot do pod.
+  #
+  # O que isso resolve: migration quebrada aborta o sync com os pods anteriores
+  # intactos, em vez de ser descoberta com o pod já removido — que foi o que
+  # derrubou a api na promoção da v0.7.0, em 26/08.
+  #
+  # O que NÃO resolve: migration que passa mas é incompatível com a versão
+  # anterior. O hook roda antes de o Deployment ser atualizado, então entre o
+  # fim do Job e a morte do último pod anterior existe código velho servindo
+  # sobre schema novo. Trocar a estratégia de rollout não fecha essa janela —
+  # ver o comentário de `deploymentStrategy` no chart. O que fecha é a migration
+  # ser compatível com as duas versões: expandir numa promoção, contrair na
+  # seguinte.
   #
   # Exige imagem que conheça `UniPlus__Migrations__Mode`, o que a v0.8.0 fixada
   # acima é a primeira a fazer.
