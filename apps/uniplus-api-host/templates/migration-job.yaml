@@ -38,6 +38,20 @@
   Falha do Job: `before-hook-creation` limpa o anterior só quando um novo vai
   ser criado, então o Job que falhou permanece no cluster para inspeção dos
   logs — que é onde a mensagem do banco aparece.
+
+  RESTRIÇÃO DE PROMOÇÃO: por rodar em `PreSync`, este Job vê a ServiceAccount e
+  os Secrets do estado ANTERIOR — a fase Sync, que aplica `serviceaccount.yaml`
+  e `externalsecret.yaml`, só vem depois. Renomear a ServiceAccount ou trocar o
+  caminho de um ExternalSecret no MESMO sync que aplica migration faz o Job
+  referenciar nome que ainda não existe, ou usar credencial que já não vale.
+  Mudança desse tipo vai num sync próprio, antes do bump de imagem.
+
+  Não resolvemos isso anotando `serviceaccount.yaml` e `externalsecret.yaml`
+  como hooks: hook sai do inventário reconciliado do ArgoCD e deixa de ser
+  podado quando some do chart, e trocar deriva permanente por ordenação
+  pontual custa mais do que a restrição acima. A falha, quando acontece, é
+  segura — o Job aborta o sync com os pods anteriores intactos, que é o
+  comportamento que este desenho existe para garantir.
 */}}
 apiVersion: batch/v1
 kind: Job
@@ -59,10 +73,16 @@ spec:
   template:
     metadata:
       labels:
-        {{- /* Mesmos selectorLabels do Deployment: é o que faz o Job herdar a
-               NetworkPolicy e alcançar o Postgres. Sem isso o egress é negado
-               e a falha parece de banco, não de rede. */}}
-        {{- include "uniplusApiHost.selectorLabels" . | nindent 8 }}
+        {{- /* Os mesmos labels do pod do Deployment, e pelos dois motivos que
+               os labels servem aqui. Inventário: todo recurso do repositório
+               carrega name, instance, version, managed-by e part-of, e um pod
+               de migration que aparecesse sem eles seria justamente o que
+               ninguém conseguiria atribuir a uma versão ao investigar um
+               incidente. Rede: `uniplusApiHost.labels` contém os
+               `selectorLabels`, que é o que faz o Job herdar a NetworkPolicy e
+               alcançar o Postgres — sem eles o egress é negado e a falha parece
+               de banco, não de rede. */}}
+        {{- include "uniplusApiHost.labels" . | nindent 8 }}
     spec:
       restartPolicy: Never
       serviceAccountName: {{ include "uniplusApiHost.serviceAccountName" . }}
