@@ -44,11 +44,24 @@ metadata:
     {{- include "uniplusApiHost.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.uniplusApiHost.replicas }}
+  # RollingUpdate por padrão: o pod novo precisa ficar pronto antes de o antigo
+  # sair, e a api segue atendendo durante a promoção.
+  #
+  # `Recreate` existe para o caso em que isso é justamente o problema: as
+  # migrations rodam no boot do pod (MigrationHostedService, sem job Helm), então
+  # uma migration destrutiva altera o schema enquanto o pod da versão anterior
+  # continua pronto e atendendo contra um banco que já não é o dele. Nessa
+  # situação, derrubar antes de subir troca alguns segundos de indisponibilidade
+  # por uma janela em que ninguém serve o schema errado.
   strategy:
+    {{- if eq .Values.uniplusApiHost.deploymentStrategy "Recreate" }}
+    type: Recreate
+    {{- else }}
     type: RollingUpdate
     rollingUpdate:
       maxSurge: 1
       maxUnavailable: 0
+    {{- end }}
   selector:
     matchLabels:
       {{- include "uniplusApiHost.selectorLabels" . | nindent 6 }}
