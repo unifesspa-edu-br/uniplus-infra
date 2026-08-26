@@ -39,22 +39,31 @@ spec:
               elements:
                 - app: uniplus-web
                   namespace: uniplus
+                  retryLimit: 5
                 - app: uniplus-api-portal
                   namespace: uniplus
+                  retryLimit: 5
                 - app: uniplus-api-selecao
                   namespace: uniplus
+                  retryLimit: 5
                 - app: uniplus-api-ingresso
                   namespace: uniplus
+                  retryLimit: 5
                 - app: clamav-scanner
                   namespace: uniplus
+                  retryLimit: 5
                 - app: keycloak-replica
                   namespace: uniplus
+                  retryLimit: 5
                 - app: kafka-ui
                   namespace: uniplus
+                  retryLimit: 5
                 - app: apicurio-registry
                   namespace: uniplus
+                  retryLimit: 5
                 - app: redis-ui
                   namespace: uniplus
+                  retryLimit: 5
     # Apps habilitados só em ambientes específicos — mecanismo genérico de
     # habilitação por-ambiente (ver argocd/README.md § Habilitação por-ambiente).
     # Cada elemento declara o chart + o(s) ambiente(s) (label `environment`
@@ -75,11 +84,21 @@ spec:
                 - app: uniplus-api-host
                   namespace: uniplus
                   targetEnvironment: hml-standalone-single
+                  # Sem retry, e é o único assim. O chart tem um hook `PreSync` que
+                  # aplica as migrations, e o ArgoCD recria o hook a cada tentativa —
+                  # repetiria a migration até seis vezes, que é exatamente o que o
+                  # `backoffLimit: 0` do Job recusa fazer. Migration que falha não
+                  # melhora com nova tentativa cega: o motivo costuma ser schema ou
+                  # dado. E com o deadline de 600s por execução, a promoção ficaria
+                  # pendurada perto de uma hora antes de alguém ver a mensagem do
+                  # banco.
+                  retryLimit: 0
                 # unifesspa-geo-api é aplicação independente (bounded
                 # context próprio — só compartilha o emissor OIDC com as
                 # demais APIs) — namespace `geo`, não `uniplus`.
                 - app: unifesspa-geo-api
                   namespace: geo
+                  retryLimit: 5
                   targetEnvironment: hml-standalone-single
           - clusters:
               selector:
@@ -124,12 +143,12 @@ spec:
           - CreateNamespace=true
           - PruneLast=true
           - ApplyOutOfSyncOnly=true
-        retry:
-          limit: 5
-          backoff:
-            duration: 5s
-            factor: 2
-            maxDuration: 3m
+
+      # `retry` não fica no template: o campo é inteiro, e `limit: '{{.retryLimit}}'`
+      # produziria a string "5", que o apiserver recusa. Vem pelo `templatePatch` no
+      # fim deste AppSet, renderizado como texto antes de virar YAML — e por isso
+      # capaz de preservar o tipo.
+
       # O webhook do External Secrets Operator injeta defaults do CRD que os
       # manifests no Git não listam (conversionStrategy, decodingStrategy,
       # metadataPolicy, nullBytePolicy, deletionPolicy, engineVersion,
@@ -146,6 +165,27 @@ spec:
             - '.spec.target.deletionPolicy'
             - '.spec.target.template.engineVersion'
             - '.spec.target.template.mergePolicy'
+
+  # Política de nova tentativa, por app.
+  #
+  # Fica num patch, e não no `template`, por uma limitação de tipo: o `template` é
+  # um objeto já tipado, então `limit` só aceitaria a string renderizada. O
+  # `templatePatch` é renderizado como texto e depois interpretado, preservando o
+  # inteiro.
+  #
+  # `retryLimit` é declarado em TODOS os elementos, e não só onde difere, porque
+  # `goTemplateOptions: missingkey=error` transforma a chave ausente em falha de
+  # geração do AppSet inteiro. Explicitar custa uma linha por app e tira o valor de
+  # um default invisível.
+  templatePatch: |
+    spec:
+      syncPolicy:
+        retry:
+          limit: {{.retryLimit}}
+          backoff:
+            duration: 5s
+            factor: 2
+            maxDuration: 3m
 
 ---
 apiVersion: argoproj.io/v1alpha1
