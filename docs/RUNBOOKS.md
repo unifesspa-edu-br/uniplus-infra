@@ -678,9 +678,25 @@ kubectl -n uniplus get jobs -l app.kubernetes.io/name=uniplus-api-host
 JOB=$(kubectl -n uniplus get jobs -l app.kubernetes.io/name=uniplus-api-host -o name | head -1)
 kubectl -n uniplus logs "$JOB"
 
-# O Job que falhou permanece no cluster para inspeção — só é removido quando o
-# próximo é criado (`before-hook-creation`). Os logs trazem a mensagem do banco.
+# O Job que falhou PERMANECE no cluster. Os logs trazem a mensagem do banco.
 ```
+
+Migration que falha exige intervenção, e o Job preservado é o que garante isso. Enquanto
+ele estiver lá, o próximo sync para ao tentar recriá-lo — sem reexecutar a migration.
+Sem essa trava, qualquer commit no repositório produziria revisão nova, habilitando um
+sync automático que rodaria a migration de novo: desligar retry e self-heal só protege
+enquanto a revisão não muda.
+
+Retomar depois de corrigir a causa:
+
+```bash
+JOB=$(kubectl -n uniplus get jobs -l app.kubernetes.io/name=uniplus-api-host -o name | head -1)
+kubectl -n uniplus logs "$JOB"          # ler antes de apagar
+kubectl -n uniplus delete "$JOB"
+# sincronizar pelo ArgoCD; o hook é recriado e roda de novo
+```
+
+O Job que passa é removido sozinho, então em promoção normal não sobra nada.
 
 Ligar em ambiente novo: `migrationJob.enabled` fica **desligado** no primeiro sync, porque
 o hook roda antes dos recursos comuns e o chart ainda não instalado não tem como satisfazer
