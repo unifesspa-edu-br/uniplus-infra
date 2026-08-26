@@ -37,20 +37,21 @@
   o initContainer basta — rotação de certificado no meio da execução não é
   cenário aqui, diferente do Deployment que roda indefinidamente.
 
-  Falha do Job: `hook-succeeded` apaga o Job que passou e PRESERVA o que falhou,
-  e a escolha faz mais do que guardar log.
+  Falha do Job: `before-hook-creation` remove o anterior apenas quando um novo vai
+  ser criado, então o Job que falhou fica no cluster para inspeção dos logs — que
+  é onde a mensagem do banco aparece.
 
-  O Job preservado bloqueia a própria recriação, e é isso que impede a migration
-  de ser reexecutada sozinha. Retry e self-heal desligados só protegem enquanto a
-  revisão não muda; num monorepo, qualquer commit produz revisão nova e habilita
-  um sync automático, que recriaria o hook. Com o Job anterior ainda no cluster,
-  esse sync para na hora de criá-lo — sem tocar no banco de novo.
+  Até quando ele fica: até o próximo sync. Como este app roda sem retry e sem
+  self-heal (`aplicaMigration` no ApplicationSet), o próximo sync só acontece
+  quando a revisão muda — na prática, quando alguém commita no repositório. Isso
+  costuma dar tempo de ler os logs.
 
-  Retomar é deliberado: ler os logs, corrigir a causa, apagar o Job e
-  sincronizar. O runbook traz os comandos.
-
-  `before-hook-creation` faria o oposto — apagaria justamente o Job que guarda a
-  mensagem, e deixaria a migration rodar de novo a cada commit no repositório.
+  A alternativa seria `hook-succeeded`, que preserva o Job falho indefinidamente
+  e, por ele existir, trava os syncs seguintes até alguém removê-lo à mão. Foi
+  descartada por decisão operacional: a trava também barra promoções legítimas, e
+  cobra de quem topa com ela um conhecimento que não está à vista. O preço aceito
+  é que um commit não relacionado pode reexecutar a migration que falhou — ela é
+  idempotente e falhará igual, custando o ciclo e o Job anterior.
 
   RESTRIÇÃO DE PROMOÇÃO: por rodar em `PreSync`, este Job vê a ServiceAccount e
   os Secrets do estado ANTERIOR — a fase Sync, que aplica `serviceaccount.yaml`
@@ -75,9 +76,9 @@ metadata:
   annotations:
     "helm.sh/hook": pre-upgrade
     "helm.sh/hook-weight": "-5"
-    # Preserva o Job que falhou: guarda a mensagem do banco e, por existir, barra a
-    # recriação do hook no próximo sync — ver o cabeçalho.
-    "helm.sh/hook-delete-policy": hook-succeeded
+    # Remove o Job anterior só quando um novo vai ser criado — o que falhou fica
+    # para inspeção até o próximo sync. Ver o cabeçalho.
+    "helm.sh/hook-delete-policy": before-hook-creation
 spec:
   # Migration que falha não melhora com nova tentativa cega: o motivo costuma
   # ser schema ou dado, não instabilidade. Repetir só atrasa o diagnóstico.
