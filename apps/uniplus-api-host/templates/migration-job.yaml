@@ -12,21 +12,24 @@
   Como funciona: hook `pre-upgrade` sobe a MESMA imagem da api com
   UniPlus__Migrations__Mode=ApplyAndExit.
 
-  Só `pre-upgrade`, e não `pre-install`: numa instalação nova o hook rodaria
-  antes de o chart criar a ServiceAccount e os ExternalSecrets que este Job
-  consome, e o pod não teria como subir. Na primeira instalação o banco está
-  vazio e não há versão anterior a proteger — o schema é aplicado no boot do
-  pod, como sempre foi. O processo aplica as migrations
+  No ArgoCD, `pre-upgrade` vira `PreSync` e roda em TODO sync — a ferramenta não
+  distingue instalação de atualização. Declarar também `pre-install` seria
+  redundante ali, e no Helm puro traria de volta o caso em que o hook roda antes
+  de o chart criar a ServiceAccount e os ExternalSecrets que este Job consome.
+
+  Esse caso permanece no bootstrap de um ambiente novo: como `PreSync` roda
+  antes dos recursos comuns, o primeiro sync de um chart ainda não instalado não
+  tem como satisfazer as dependências deste Job. Ali a chave fica desligada, o
+  schema é aplicado no boot do pod — que é o correto num banco vazio, sem versão
+  anterior a proteger — e o Job entra a partir da segunda promoção. O processo aplica as migrations
   e encerra — nenhum servidor HTTP escuta e nenhum consumidor de mensageria
   inicia, porque construir o host resolve o container mas não inicia serviço
   algum. O código de saída decide o rollout: não-zero aborta o sync com os
   pods anteriores intactos.
 
-  O Deployment NÃO recebe `Skip` — ver o comentário em deployment.yaml. Com
-  `ApplyOutOfSyncOnly=true` no ApplicationSet, um sync seletivo aplica o
-  Deployment sem executar hooks; se o pod não aplicasse, subiria contra o schema
-  antigo sem ninguém para aplicá-lo. O pod segue aplicando, o que é idempotente,
-  e este Job é a rede que faz a falha aparecer antes do rollout.
+  O Deployment NÃO recebe `Skip` — ver o comentário em deployment.yaml. Em
+  resumo: com o Job tendo aplicado, o pod não tem o que fazer de todo modo, e
+  mantê-lo capaz de aplicar cobre os cenários legítimos sem Job.
 
   Sem sidecar de refresh de CA: o Job é efêmero e termina em segundos, então
   o initContainer basta — rotação de certificado no meio da execução não é
