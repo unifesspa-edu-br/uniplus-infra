@@ -28,7 +28,7 @@ keycloak:
     # Standalone usa a MESMA imagem que vai pra HML/PROD para garantir que o
     # smoke E2E valida exatamente o binário de produção (production parity).
     # Sincronizar com appVersion do Chart.yaml.
-    tag: "26.6.4-0"
+    tag: "26.7.2-0"
     pullPolicy: IfNotPresent
 
   imagePullSecrets: []
@@ -141,10 +141,13 @@ keycloak:
       # Tag matching Keycloak 26.x — major.minor obrigatório (versões
       # diferentes podem falhar em migrations de schema). Versões em
       # https://quay.io/repository/adorsys/keycloak-config-cli?tab=tags
-      # 6.5.0-26.5.4 é a tag mais recente disponível; KC 26.6.x ainda sem
-      # tag pareada upstream. Mesma major do KC vivo (26.6.4) → admin API
-      # estável (`/admin/realms/{realm}/clients/{id}/protocol-mappers/models`
-      # não muda). Quando adorsys publicar `*-26.6.x`, abrir follow-up.
+      # O adorsys ainda não publicou tag pareada para 26.6.x nem 26.7.x — a
+      # mais recente é `6.5.1-26.5.5`. Mantida a 26.5.4 contra o KC vivo
+      # (26.7.2): exercitada nas duas execuções que importam (criação do realm
+      # e reconciliação de realm já existente) contra 26.7.2, ambas exit 0,
+      # com o CLI reportando `Using version: 26.7.2`. A admin API que o CLI
+      # consome (`/admin/realms/{realm}/clients/{id}/protocol-mappers/models`)
+      # não mudou. Quando adorsys publicar `*-26.7.x`, abrir follow-up.
       tag: "6.5.0-26.5.4"
       pullPolicy: IfNotPresent
     # Tempo máximo de espera por Keycloak ficar disponível antes de
@@ -238,7 +241,7 @@ keycloak:
     periodSeconds: 5
 
   # SecurityContext do Pod e do container. Imagem oficial
-  # quay.io/keycloak/keycloak:26.6.4 roda como UID 1000.
+  # quay.io/keycloak/keycloak:26.7.2 roda como UID 1000.
   podSecurityContext:
     fsGroup: 1000
   containerSecurityContext:
