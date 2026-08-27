@@ -22,9 +22,28 @@ name: Bump de tags (HML)
 
 on:
   schedule:
-    # A cada 10 minutos. O custo de um ciclo é uma consulta ao registry; o custo de
-    # não rodar é homologação envelhecendo em silêncio.
-    - cron: "*/10 * * * *"
+    # De hora em hora, e não a cada dez minutos — a declaração agora corresponde ao
+    # que o GitHub entrega. Medido no primeiro dia com `*/10`: duas execuções em
+    # treze horas, onde a declaração pedia setenta e oito. O `schedule` não garante
+    # pontualidade, pula execuções sob carga, e intervalos curtos em repositório de
+    # baixa atividade são os primeiros a serem despriorizados.
+    #
+    # Pedir vinte e quatro e receber a maioria vale mais que pedir cento e quarenta
+    # e quatro e receber duas, porque o número declarado é o que forma a expectativa
+    # de quem corta uma release — e expectativa furada faz o mecanismo parecer
+    # quebrado quando ele está apenas esperando a vez.
+    #
+    # O minuto 37 não é decorativo: o início da hora é o pico de carga do Actions, e
+    # a própria documentação do GitHub recomenda agendar fora dele. Minuto zero
+    # colocaria TODAS as tentativas na janela mais congestionada, o que pioraria o
+    # problema que esta mudança existe para corrigir. Evitados também 15, 30 e 45,
+    # pelo mesmo motivo de aglomeração.
+    #
+    # O que este ciclo resolve é esquecimento, não latência: homologação chegou a
+    # ficar cinco semanas atrasada porque ninguém lembrava de consultar o registry.
+    # Algumas varreduras por dia já eliminam isso. Para promoção com pressa existe o
+    # disparo manual, abaixo.
+    - cron: "37 * * * *"
   workflow_dispatch:
 
 concurrency:
