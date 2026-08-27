@@ -4332,9 +4332,39 @@ A latência medida é de até ~6 minutos, e não há webhook porque a VM não é
 O que não era automático é a perna anterior: descobrir que há imagem publicada e escrever a tag no
 values. É o que o workflow `bump-tags-hml.yml` passou a fazer.
 
+### Quando o cron roda, e o que esperar
+
+A varredura é declarada de hora em hora, no minuto 37 (`37 * * * *`), e é **oportunista**: o `schedule` do
+GitHub Actions não garante pontualidade e pula execuções sob carga. No primeiro dia de operação,
+com `*/10` declarado, houve duas execuções em treze horas — por isso a declaração passou a ser
+horária, que corresponde melhor ao que se obtém.
+
+O minuto 37 é deliberado: o início da hora é o pico de carga do Actions, e a documentação do
+GitHub recomenda agendar fora dele. Minuto zero colocaria todas as tentativas na janela mais
+congestionada. Evitados também 15, 30 e 45, pela mesma aglomeração.
+
+**Conte com latência de horas, não de minutos.** Isso é suficiente para o problema que o ciclo
+resolve, que é esquecimento: homologação chegou a ficar cinco semanas atrasada porque ninguém
+lembrava de consultar o registry e escrever a tag.
+
+Para promoção com pressa, dispare à mão — é o caminho normal, não uma gambiarra:
+
+```bash
+gh workflow run "Bump de tags (HML)" --repo unifesspa-edu-br/uniplus-infra
+```
+
+Se você cortou uma release e o bump não apareceu, o mais provável é que a varredura ainda não
+tenha rodado desde a publicação. Confira antes de suspeitar do mecanismo:
+
+```bash
+gh run list --repo unifesspa-edu-br/uniplus-infra --limit 20 \
+  --json workflowName,event,conclusion,createdAt \
+  --jq '[.[] | select(.workflowName|test("Bump"))] | .[] | "\(.conclusion)\t\(.event)\t\(.createdAt)"'
+```
+
 ### O que o cron faz
 
-A cada 10 minutos, e também sob acionamento manual:
+A cada varredura, agendada ou manual:
 
 1. Lê as tags de `uniplus-api-host` e dos quatro `uniplus-web-*` no GHCR, **anonimamente** — as
    imagens são públicas, e assim o workflow não precisa de segredo além do `GITHUB_TOKEN`.
@@ -4350,11 +4380,11 @@ Imagens do mesmo repositório sobem juntas ou não sobem. Um release publica uma
 cada vez, e um ciclo que caia no meio veria parte já no registry e parte ainda na versão
 anterior — o values sairia com versões misturadas do mesmo frontend, combinação que nunca
 foi construída junto. Quando isso acontece, o grupo é adiado e o ciclo registra o motivo;
-dez minutos depois o release terminou e tudo entra de uma vez. Origens diferentes seguem
+na varredura seguinte o release terminou e tudo entra de uma vez. Origens diferentes seguem
 independentes: api e web têm ciclos próprios.
 
 A branch e a issue são decididas por sinais diferentes, e de propósito. A branch é reescrita
-só quando o conteúdo do values muda, para não virar force-push de dez em dez minutos enquanto
+só quando o conteúdo do values muda, para não virar force-push a cada varredura enquanto
 o PR anterior não é mergeado. A issue é reescrita quando o **texto** muda — a lista de
 migrations depende de a tag Git da api já existir, e no primeiro ciclo depois de a imagem
 aparecer no registry ela costuma sair como intervalo indeterminado; amarrar a issue ao values
@@ -4443,7 +4473,7 @@ api e web precisam andar juntas, e um bump pela metade por falha de rede seria p
 
 **Não republica o que já propôs.** Enquanto o PR anterior não é mergeado, a comparação continua
 acusando a mesma diferença a cada ciclo. O workflow compara o values proposto com o que a branch já
-publica e não faz nada se forem iguais — sem isso, seria force-push de dez em dez minutos, com o CI
+publica e não faz nada se forem iguais — sem isso, seria force-push a cada varredura, com o CI
 reiniciando sem parar e os comentários da revisão pendurados em commits que deixaram de existir.
 
 ### Como desligar
