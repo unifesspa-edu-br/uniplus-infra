@@ -103,12 +103,18 @@ markdown-lint:  ## Roda markdownlint-cli2 em todos os .md
 
 .PHONY: shellcheck
 shellcheck:  ## Roda shellcheck em scripts/*.sh (skip gracefully se não instalado)
+# `--severity=warning` acompanha o `severity: warning` do ludeeus/action-shellcheck
+# em .github/workflows/validate.yml. Sem a flag, o alvo usa o padrão do binário —
+# que inclui `style` e `info` — e reprova onde o CI aprova: o gate local passa a ser
+# mais estrito que o obrigatório, e quem roda `make validate` num ambiente com o
+# binário instalado leva reprovação por achado que ninguém precisa corrigir.
 	@printf "$(BLUE)→ shellcheck$(RESET)\n"
 	@if command -v shellcheck >/dev/null 2>&1; then \
-	    shellcheck scripts/*.sh; \
+	    shellcheck --severity=warning scripts/*.sh; \
 	else \
-	    printf "$(YELLOW)⚠ shellcheck não instalado localmente — pulando (CI cobre via ludeeus/action-shellcheck)$(RESET)\n"; \
-	    printf "  Instalar: pacman -S shellcheck (Arch) | apt install shellcheck (Ubuntu)\n"; \
+	    printf "$(YELLOW)⚠ shellcheck não instalado — esta verificação NÃO foi executada$(RESET)\n"; \
+	    printf "  O CI a executa no PR; localmente, instale para exercer o gate antes de abrir:\n"; \
+	    printf "  pacman -S shellcheck (Arch) | apt install shellcheck (Ubuntu)\n"; \
 	fi
 
 .PHONY: schema-validate
