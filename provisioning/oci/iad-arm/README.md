@@ -1,0 +1,275 @@
+# OpenTofu — iad-arm OCI
+
+Provisionamento OpenTofu do lab Uni+ em **`us-ashburn-1` (IAD)** sobre
+**`VM.Standard.A1.Flex`** (ARM Ampere). Esqueleto da Story
+[#323](https://github.com/unifesspa-edu-br/uniplus-infra/issues/323) (parte do
+Epic [#317](https://github.com/unifesspa-edu-br/uniplus-infra/issues/317) —
+migração do lab de GRU/E5 para IAD/A1 antes do trial OCI expirar em
+2026-06-03).
+
+Cobertura: VCN (10.1.0.0/16), 2 subnets, IGW, NAT GW, 2 route tables, 2
+security lists, 2 VMs A1.Flex (k8s-host + data-host), 4 block volumes
+(4×50 GB = 200 GB total — 50 GB é o mínimo da OCI), Reserved Public IP,
+11 DNS records sob `iad-arm.portaluni.com.br`, KMS Vault + Master Encryption
+Key, Dynamic Group, IAM Policy.
+
+> **Paralelo a `provisioning/oci/standalone/`:** este módulo NÃO substitui o
+> lab GRU enquanto a migração não completar. Os dois coexistem durante a
+> janela: `standalone.portaluni.com.br` aponta para GRU, `iad-arm.portaluni.com.br`
+> aponta para IAD. O cutover final (Story
+> [#359](https://github.com/unifesspa-edu-br/uniplus-infra/issues/359))
+> reaponta o domínio canônico e destrói o lab GRU.
+
+## Diferenças vs `provisioning/oci/standalone/`
+
+| Atributo | standalone (GRU) | iad-arm (IAD) |
+|---|---|---|
+| Região | `sa-saopaulo-1` | `us-ashburn-1` |
+| Shape | `VM.Standard.E5.Flex` (AMD x86) | `VM.Standard.A1.Flex` (ARM Ampere) |
+| Imagem | Ubuntu 24.04 LTS x86_64 | Ubuntu 24.04 LTS **aarch64** |
+| Profile default | `poc` (3 OCPU / 16 GB E5) | `poc_arm` (3 OCPU / 16 GB A1) |
+| VCN CIDR | 10.0.0.0/16 | 10.1.0.0/16 |
+| Block volumes | 550 GB total (postgres 200 + kafka 100 + minio 200 + vault 50) | 200 GB total (4×50, mínimo OCI) — Always Free Block Volume é só na home region (GRU); em IAD os volumes são PAYG ~$5/mês |
+| Tag `uniplus_environment` | `standalone` | `iad-arm` |
+| DNS subdomínio | `*.standalone.portaluni.com.br` | `*.iad-arm.portaluni.com.br` |
+| Custo (PAYG estimado) | ~$108/mês | **~$80/mês** (detalhamento abaixo) |
+
+### Detalhamento do custo IAD
+
+| Recurso | Custo/mês | Observação |
+|---|---|---|
+| Compute A1 (3 OCPU / 16 GB) | **~$39,40** | Oracle docs: "You must create the Always Free compute instances in your home region". Home = GRU, então A1 em IAD vai para PAYG (3 OCPU × $0,01/h + 16 GB × $0,0015/h ≈ $39,40/mês). Ver gate de validação abaixo |
+| Block volumes (4×50 GB = 200 GB, VPU 0) | **~$5,10** | Always Free Block Volume também é home-region-only — IAD é PAYG $0,0255/GB-mês |
+| Boot volumes (2× ~47 GB ≈ 94 GB) | **~$2,40** | Mesma regra dos block volumes |
+| NAT Gateway | **~$33** | Cobrado mesmo em Always Free; eliminação é follow-up |
+| **Total** | **~$79-80/mês** | Economia vs GRU (~$108): ~$28/mês (~26%) |
+
+> **Premissa que mudou:** O Epic #317 foi escrito assumindo `~$0-3/mês em IAD`
+> com base na interpretação de que Always Free A1 valeria cross-region.
+> Re-leitura da [doc oficial Oracle](https://docs.oracle.com/iaas/Content/FreeTier/freetier_topic-Always_Free_Resources.htm)
+> mostra que o texto `"In regions with multiple availability domains: You can
+> create OCI Ampere A1 Compute instances in any availability domain"`
+> qualifica a flexibilidade **dentro de uma única região** (a home region),
+> não cross-region. A regra geral `"must create in home region"` se aplica
+> a A1 e a AMD Micro. Story #366 (ajuste do Budget OCI) mantém USD 50/mês
+> em vez de reduzir para USD 10-25 — a frente do NAT GW elimination ganha
+> prioridade para recuperar economia.
+
+### Gate de validação operacional (Story #319/T1.1.3)
+
+Validação parcial executada em 2026-05-19 02:03-02:11 UTC via OCI CLI:
+
+| Etapa | Resultado |
+|---|---|
+| `oci iam region-subscription list` | IAD já READY (subscrita) |
+| `oci compute image list --shape VM.Standard.A1.Flex` em IAD | imagem Ubuntu 24.04 aarch64 encontrada |
+| `oci compute instance launch` 1 OCPU / 1 GB em `mixQ:US-ASHBURN-AD-1` | ✓ **API aceitou sem rejeitar por home region** |
+| Instance lifecycle até `RUNNING` | ✓ ~30s, normal |
+| `oci usage-api request-summarized-usages` | inconclusivo — Usage API tem delay ~1h, dados não disponíveis no momento do teste |
+
+**Achado parcial:** A doc Oracle diz literalmente `"must create in home region"` mas o API **não bloqueia** a criação em região não-home. Resta confirmar via billing se A1 em IAD é classificado como Always Free ou PAYG.
+
+**Próximo passo (Story #319/T1.1.3 ou follow-up):** repetir o teste deixando a instância rodar por ≥1h, depois consultar o billing report. Há duas formas equivalentes de identificar Always Free na billing OCI (mecanismo confirmado via inspeção do report de GRU 18-19/05):
+
+1. **Pelo `product/resource` SKU**: SKUs Always Free têm sufixo `_FREE`. Exemplos do report de GRU:
+   - `PIC_BLOCK_STORAGE_STANDARD_FREE` → Always Free
+   - `PIC_STANDARD_STORAGE` → PAYG
+
+2. **Pela tag `orcl-cloud.free-tier-retained`**: `true` indica linha contada como Always Free; vazio indica PAYG.
+
+Comando para consultar via CLI:
+
+```bash
+# Baixar report mais recente (CSV horário) via Console:
+# OCI Console → Billing → Cost Analysis → Reports → Generate Usage Report
+# ou usar oci usage-api request-summarized-usages (delay ~1h):
+oci usage-api usage-summary request-summarized-usages \
+  --tenant-id "$TENANCY" \
+  --time-usage-started "2026-05-19T02:00:00Z" \
+  --time-usage-ended   "2026-05-19T03:00:00Z" \
+  --granularity HOURLY --query-type COST \
+  --group-by '["service","skuName","region"]' \
+  | jq '.data.items[] | select(.region=="us-ashburn-1")'
+```
+
+Veredictos possíveis:
+
+- SKU `PIC_COMPUTE_A1_FREE` (ou tag `free-tier-retained=true`) para A1 em IAD → **Always Free cross-region funciona** → reverter README para ~$42/mês e atualizar Epic #317
+- SKU `PIC_COMPUTE_VM_STANDARD_A1_FLEX` (sem `_FREE`, sem tag) → **PAYG confirmado** → README ~$80/mês mantido
+
+PAYG já ativo na tenancy desde a Feature #43, então qualquer cobrança aparece no billing após o flush (~1-2h via usage-api, ~24h via Usage Report CSV diário).
+
+## Pré-requisitos
+
+- OpenTofu ≥ 1.6 (testado com 1.11.6)
+- Tenancy unifesspa-edu-br em modo **PAYG** (Always Free puro não permite
+  subscrição de região adicional — bloqueio confirmado em `TenantCapacityExceeded`)
+- Região `us-ashburn-1` assinada na tenancy
+  ([Task #320](https://github.com/unifesspa-edu-br/uniplus-infra/issues/320))
+- `oci` CLI configurado com permissão `manage` em `instance-family` +
+  `volume-family` no compartment alvo
+
+## Placeholders pendentes (REPLACE_AFTER_T1_1_2)
+
+Os defaults de `variables.tf` contêm 2 strings literais `REPLACE_AFTER_T1_1_2`
+em `availability_domain` e `image_ocid` que precisam ser substituídas após
+[Task #321](https://github.com/unifesspa-edu-br/uniplus-infra/issues/321):
+
+```bash
+# 1. Listar AD em IAD (após subscrição estar READY)
+oci iam availability-domain list --region us-ashburn-1 \
+  --compartment-id "$TENANCY" \
+  --query 'data[0].name' --raw-output
+
+# 2. Listar imagem Ubuntu 24.04 LTS aarch64 mais recente para A1.Flex
+oci compute image list --region us-ashburn-1 \
+  --compartment-id "$TENANCY" \
+  --operating-system "Canonical Ubuntu" \
+  --operating-system-version 24.04 \
+  --shape VM.Standard.A1.Flex \
+  --sort-by TIMECREATED --sort-order DESC \
+  --query 'data[0].id' --raw-output
+```
+
+Os 2 valores entram em `terraform.tfvars` (não em `variables.tf` — defaults
+ficam com placeholder no git para sinalizar pendência).
+
+## Setup inicial
+
+```bash
+cd provisioning/oci/iad-arm
+
+# 1. Copiar tfvars de exemplo e preencher OCIDs/SSH key/AD/image
+cp terraform.tfvars.example terraform.tfvars
+$EDITOR terraform.tfvars
+
+# 2. Inicializar provider + plugins
+tofu init
+
+# 3. Validar sintaxe (rodável SEM access OCI)
+tofu validate
+
+# 4. Plan (precisa de OCI access para resolver data sources como dns_zones)
+tofu plan -out=plan.bin
+
+# 5. Apply (Story #329)
+tofu apply plan.bin
+```
+
+> **Sem importação:** diferente do `standalone/`, este módulo é apply
+> "from zero" — não há recursos vivos em IAD para importar.
+
+## Operações típicas
+
+```bash
+# Ver estado atual + outputs
+tofu show
+tofu output
+
+# Aumentar tamanho dos blocks (in-place, online, sem reboot)
+$EDITOR terraform.tfvars   # volume_sizes_gbs.postgres = 120
+tofu apply
+# Pós-apply, estender o FS dentro da VM:
+ssh ubuntu@<k8s-host-ip> "ssh ubuntu@10.1.2.x 'sudo growpart /dev/sdb 1 && sudo resize2fs /dev/sdb1'"
+
+# IMPORTANTE: block volumes em IAD são PAYG (Always Free é home-region-only,
+# = GRU para esta tenancy). Custo VPU 0: ~$0.0255/GB-mês. Cada 50 GB extras
+# = ~$1.28/mês — verificar Budget OCI via Console antes de aumentar.
+# Reduzir abaixo do mínimo de 50 GB NÃO é possível (CreateVolume rejeita).
+
+# Mudar perfil de capacidade
+# poc_arm (default): 3 OCPU / 16 GB → ~$39/mês compute em IAD (PAYG, ver
+#                    cost table no topo do README)
+# hml_arm:           6 OCPU / 40 GB → ~$86/mês compute em IAD
+#                    (6 × $0.01/h + 40 × $0.0015/h ≈ $86.40/mês), total
+#                    com storage e NAT ~$127/mês — JÁ ULTRAPASSA o GRU
+#                    atual; só fazer sentido pós elimination do NAT GW.
+$EDITOR terraform.tfvars   # profile = "hml_arm"
+tofu apply
+
+# Recriar do zero — caminho INGÊNUO destrói o Reserved Public IP junto com
+# tudo, e o `tofu apply` subsequente aloca IP DIFERENTE (rotacionando DNS,
+# callbacks gov.br, certs Let's Encrypt e KC_HOSTNAME):
+tofu destroy   # ⚠️ destrói TUDO, IP incluso
+tofu apply     # IP novo, diferente do anterior
+```
+
+### Recriar do zero PRESERVANDO o Reserved IP
+
+Duas sequências corretas para preservar o IP entre rebuilds (a ingênua
+`tofu destroy && tofu apply` rotaciona). OpenTofu ≥ 1.9 obrigatório para
+`-exclude`.
+
+**Opção A (preferida) — `--exclude` no destroy** (OpenTofu ≥ 1.9):
+
+```bash
+# 1. Destrói TUDO menos o IP. Restante das resources e data sources que
+#    dependem do VNIC do k8s-host serão destruídas; o IP fica em state
+#    mas sem private_ip_id atrelado a um VNIC vivo (estado AVAILABLE no OCI).
+tofu destroy -exclude=oci_core_public_ip.k8s_host
+
+# 2. Apply normal recria as VMs; Tofu UPDATE o `private_ip_id` do IP
+#    para apontar para o VNIC primário da nova k8s-host — mesma OCID
+#    de IP, novo VNIC anexado.
+tofu apply
+```
+
+Combine com `lifecycle { prevent_destroy = true }` no resource do IP se
+quiser uma trava extra contra destroy acidental sem `-exclude`:
+
+```hcl
+resource "oci_core_public_ip" "k8s_host" {
+  # ...
+  lifecycle { prevent_destroy = true }
+}
+```
+
+> ⚠️ Com `prevent_destroy`, `tofu destroy` SEM `-exclude=...` falha com
+> `Instance cannot be destroyed`. Não é "exclusão automática" — apenas
+> aborta o destroy se você esquecer do `-exclude`.
+
+**Opção B — `state rm` + `import` (compatível com OpenTofu < 1.9)**:
+
+```bash
+# 1. Salvar OCID atual do IP antes de mexer
+OLD_IP_OCID=$(tofu output -raw public_ip_ocid 2>/dev/null || tofu state show oci_core_public_ip.k8s_host | awk '/^[[:space:]]*id[[:space:]]/{gsub(/"/,""); print $3}')
+echo "IP a preservar: $OLD_IP_OCID"
+
+# 2. Remover IP do state — fica órfão (vivo na OCI, fora do tracking Tofu)
+tofu state rm oci_core_public_ip.k8s_host
+
+# 3. Destroy normal (não toca no IP porque ele não está mais no state)
+tofu destroy
+
+# 4. CRÍTICO: importar o IP de volta ao state ANTES do próximo apply.
+#    Se rodar `apply` direto, Tofu aloca IP novo (recurso declarado no .tf).
+tofu import oci_core_public_ip.k8s_host "$OLD_IP_OCID"
+
+# 5. Apply — Tofu já reconhece o IP, atualiza private_ip_id para o novo VNIC
+tofu apply
+```
+
+## Bridge para os charts Helm
+
+Mesma estratégia documentada em `provisioning/oci/standalone/README.md` —
+ao chegar na Story
+[#350](https://github.com/unifesspa-edu-br/uniplus-infra/issues/350) (bootstrap
+completo IAD), criar `environments/iad-arm/values.yaml` espelhando o
+`environments/standalone/values.yaml` com IPs/FQDN do IAD, e estender
+`scripts/sync-tofu-outputs.sh` para reconhecer este módulo.
+
+## State
+
+State **local** por padrão (`terraform.tfstate` ignorado pelo `.gitignore`).
+Mesma decisão do `standalone/`. Backend remoto fica para refinamento futuro.
+
+## Próximos passos
+
+| Story | Conteúdo |
+|---|---|
+| [#319](https://github.com/unifesspa-edu-br/uniplus-infra/issues/319) | Assinar IAD + descobrir OCIDs (AD, imagem aarch64) |
+| [#329](https://github.com/unifesspa-edu-br/uniplus-infra/issues/329) | `tofu apply` em IAD + validação de smoke |
+| [#346](https://github.com/unifesspa-edu-br/uniplus-infra/issues/346) | Adaptar `bootstrap-standalone.sh` para arm64 |
+| [#350](https://github.com/unifesspa-edu-br/uniplus-infra/issues/350) | Bootstrap k3s+ArgoCD+Helm em IAD |
+| [#354](https://github.com/unifesspa-edu-br/uniplus-infra/issues/354) | Migração de dados GRU → IAD |
+| [#359](https://github.com/unifesspa-edu-br/uniplus-infra/issues/359) | Cutover DNS + `tofu destroy` em GRU |
