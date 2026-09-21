@@ -215,6 +215,10 @@ spec:
             - name: Cors__AllowedOrigins__{{ $i }}
               value: {{ $origin | quote }}
             {{- end }}
+            {{- range $i, $rede := .Values.uniplusApiIngresso.reverseProxy.trustedNetworks }}
+            - name: ReverseProxy__TrustedNetworks__{{ $i }}
+              value: {{ $rede | quote }}
+            {{- end }}
             {{- with .Values.uniplusApiIngresso.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
