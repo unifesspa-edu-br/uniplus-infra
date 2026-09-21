@@ -401,6 +401,19 @@ uniplusApiHost:
       # §21.2).
       - https://uniplus-hml.unifesspa.edu.br
 
+  # O tráfego chega à API a partir do pod do Traefik, dentro da rede de pods do
+  # cluster. Sem declará-la confiável, o middleware descarta X-Forwarded-Proto e
+  # as URLs absolutas saem com http atrás do ingress TLS — e, desde a v0.24.0, a
+  # aplicação nem sobe: a lista vazia falha a validação de startup.
+  #
+  # O valor é a pod CIDR, não a de services. Conferida no cluster, não presumida:
+  # o k3s roda sem --cluster-cidr, portanto vale o default 10.42.0.0/16; o nó
+  # uniplus-hml recebeu podCIDR 10.42.0.0/24 e o pod do Traefik está em
+  # 10.42.0.16. O /16 cobre o nó atual e qualquer nó acrescentado depois.
+  reverseProxy:
+    trustedNetworks:
+      - 10.42.0.0/16
+
   encryption:
     provider: local
 
@@ -471,6 +484,13 @@ unifesspaGeoApi:
   cors:
     allowedOrigins:
       - https://uniplus-hml.unifesspa.edu.br
+
+  # Mesma rede de pods do uniplusApiHost acima — ver o comentário de lá para a
+  # origem do valor. A imagem em uso ainda ignora a chave; declará-la agora evita
+  # que a próxima promoção desta API repita a parada do host na v0.24.0.
+  reverseProxy:
+    trustedNetworks:
+      - 10.42.0.0/16
 
   networkPolicy:
     dataHostCIDR: 192.168.21.134/32

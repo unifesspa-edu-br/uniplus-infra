@@ -237,6 +237,10 @@ indentação do include e produziria itens fora da lista.
 - name: Cors__AllowedOrigins__{{ $i }}
   value: {{ $origin | quote }}
 {{- end }}
+{{- range $i, $rede := .Values.uniplusApiHost.reverseProxy.trustedNetworks }}
+- name: ReverseProxy__TrustedNetworks__{{ $i }}
+  value: {{ $rede | quote }}
+{{- end }}
 {{- with .Values.uniplusApiHost.extraEnv }}
 {{- toYaml . | nindent 0 }}
 {{- end }}

@@ -174,6 +174,10 @@ spec:
             - name: Cors__AllowedOrigins__{{ $i }}
               value: {{ $origin | quote }}
             {{- end }}
+            {{- range $i, $rede := .Values.unifesspaGeoApi.reverseProxy.trustedNetworks }}
+            - name: ReverseProxy__TrustedNetworks__{{ $i }}
+              value: {{ $rede | quote }}
+            {{- end }}
             {{- with .Values.unifesspaGeoApi.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}

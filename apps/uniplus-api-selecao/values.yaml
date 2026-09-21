@@ -110,6 +110,15 @@ uniplusApiSelecao:
   cors:
     allowedOrigins: []          # ex.: ["https://portal.standalone.portaluni.com.br"]
 
+  # === Redes confiáveis do proxy reverso (obrigatório fora de Development) ===
+  # O middleware de forwarded headers só honra X-Forwarded-Proto e X-Forwarded-For
+  # vindos das redes declaradas aqui; o default do ASP.NET cobre só loopback, e o
+  # tráfego chega à API a partir do pod do Traefik. Sem pelo menos uma entrada, a
+  # aplicação falha no startup fora de Development — mesma régua do CORS acima.
+  # Aceita apenas notação CIDR; o valor é a pod CIDR do cluster, não a de services.
+  reverseProxy:
+    trustedNetworks: []         # ex.: ["10.42.0.0/16"] (default do k3s)
+
   # === ExternalSecrets (Vault → K8s Secret) ===
   externalSecrets:
     enabled: true
