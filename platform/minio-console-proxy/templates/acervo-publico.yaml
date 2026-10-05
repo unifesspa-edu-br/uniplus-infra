@@ -1,0 +1,136 @@
+{{- $a := .Values.acervoPublicoProxy -}}
+{{- if $a.enabled -}}
+{{- if not $a.backend.host -}}
+{{- fail "acervoPublicoProxy.backend.host é obrigatório quando enabled=true (EndpointSlice precisa do IP do host onde a porta de dados do MinIO escuta; sem isso o Service fica sem endpoint e o Traefik responde 502)." -}}
+{{- end -}}
+{{- if not (regexMatch "^([0-9]{1,3}\\.){3}[0-9]{1,3}$" $a.backend.host) -}}
+{{- fail (printf "acervoPublicoProxy.backend.host deve ser um IPv4 literal (ex.: 192.168.21.134) — recebido %q. O EndpointSlice declara addressType: IPv4; FQDN é rejeitado pelo apiserver." $a.backend.host) -}}
+{{- end -}}
+{{- if not $a.ingress.host -}}
+{{- fail "acervoPublicoProxy.ingress.host é obrigatório quando enabled=true (a IngressRoute precisa de Host(...) válido). Configurar em environments/<env>/values.yaml." -}}
+{{- end -}}
+{{- if not (regexMatch "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$" $a.bucket) -}}
+{{- fail (printf "acervoPublicoProxy.bucket deve ser um nome de bucket S3 válido — recebido %q." $a.bucket) -}}
+{{- end -}}
+{{- $prefixo := trimSuffix "/" $a.ingress.pathPrefix -}}
+{{- if not (regexMatch "^(/[a-z0-9-]+)+$" $prefixo) -}}
+{{- fail (printf "acervoPublicoProxy.ingress.pathPrefix deve ser um caminho não vazio, diferente da raiz, como /acervo — recebido %q. Na raiz, a rota capturaria o host inteiro." $a.ingress.pathPrefix) -}}
+{{- end -}}
+{{- $fullname := include "acervoPublicoProxy.fullname" . -}}
+# Rota provisória da borda para o acervo público (ADR-0132 do uniplus-api,
+# "O armazenamento público é servido pela borda"). O nome próprio do acervo,
+# com cache e limite de taxa, é trabalho à parte; esta rota serve o acervo sob
+# um caminho do host já publicado.
+#
+# Mesmo desenho do proxy do Console (service.yaml): Service ClusterIP sem
+# selector + EndpointSlice manual apontando para o IP do host — ExternalName
+# não aceita IP literal.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "acervoPublicoProxy.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ $a.backend.port }}
+      targetPort: {{ $a.backend.port }}
+      protocol: TCP
+---
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "acervoPublicoProxy.labels" . | nindent 4 }}
+    # OBRIGATÓRIO: kube-proxy associa o EndpointSlice ao Service por este label.
+    kubernetes.io/service-name: {{ $fullname }}
+addressType: IPv4
+ports:
+  - name: http
+    port: {{ $a.backend.port }}
+    protocol: TCP
+endpoints:
+  - addresses:
+      - {{ $a.backend.host | quote }}
+    conditions:
+      ready: true
+---
+# /acervo/<chave> → /<bucket>/<chave>. O bucket é fixado aqui: nenhum caminho
+# que passe por esta rota alcança outro bucket da porta de dados.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ $fullname }}-caminho
+  labels:
+    {{- include "acervoPublicoProxy.labels" . | nindent 4 }}
+spec:
+  replacePathRegex:
+    regex: {{ printf "^%s/(.*)" (regexQuoteMeta $prefixo) | quote }}
+    replacement: {{ printf "/%s/$1" $a.bucket | quote }}
+---
+# Toda leitura que passa pela borda chega ao MinIO como anônima e com a origem
+# da própria conexão.
+#
+# - Authorization é descartado: a borda serve só o que a política anônima
+#   concede, e não vira caminho para requisição assinada.
+# - X-Forwarded-For, X-Real-Ip e Forwarded são descartados porque o MinIO avalia
+#   `aws:SourceIp` a partir deles antes do endereço da conexão. Com eles, a
+#   condição de origem da política de HML enxergaria o IP do cliente e recusaria
+#   a própria borda. O valor vazio em X-Forwarded-For também impede o proxy do
+#   Traefik de acrescentar o IP do cliente depois dos middlewares.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ $fullname }}-cabecalhos
+  labels:
+    {{- include "acervoPublicoProxy.labels" . | nindent 4 }}
+spec:
+  headers:
+    customRequestHeaders:
+      Authorization: ""
+      X-Forwarded-For: ""
+      X-Real-Ip: ""
+      Forwarded: ""
+    customResponseHeaders:
+      Server: ""
+    contentTypeNosniff: true
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "acervoPublicoProxy.labels" . | nindent 4 }}
+spec:
+  entryPoints:
+    - {{ $a.ingress.entryPoint }}
+  routes:
+    # Só GET e HEAD. O Traefik não tem middleware de filtro de método; a
+    # restrição fica no próprio match, e outro método não casa com nenhuma
+    # rota deste caminho — o Traefik responde 404 sem tocar a porta de dados.
+    - match: Host(`{{ $a.ingress.host }}`) && PathPrefix(`{{ $prefixo }}/`) && (Method(`GET`) || Method(`HEAD`))
+      kind: Rule
+      middlewares:
+        - name: {{ $fullname }}-caminho
+        - name: {{ $fullname }}-cabecalhos
+        {{- with $a.ingress.middlewares }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      services:
+        - name: {{ $fullname }}
+          port: {{ $a.backend.port }}
+  {{- if $a.ingress.tls.enabled }}
+  {{- if $a.ingress.tls.secretName }}
+  tls:
+    secretName: {{ $a.ingress.tls.secretName }}
+  {{- else }}
+  # Sem secretName: o Traefik escolhe o certificado pelo SNI entre os que já
+  # carregou — o do host vem da rota que o publica no namespace dela. Evita
+  # copiar o Secret TLS para este namespace.
+  tls: {}
+  {{- end }}
+  {{- end }}
+{{- end }}

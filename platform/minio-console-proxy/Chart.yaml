@@ -9,10 +9,14 @@ description: |
   `secret/standalone/minio/root`); este chart só expõe o proxy HTTPS público.
   Para hml/prod considerar OIDC SSO via OpenID provider config no MinIO server
   ao invés deste login local.
+
+  Publica também, de forma independente (`acervoPublicoProxy`), a rota da
+  borda para o acervo público do MinIO (ADR-0132 do uniplus-api): só GET e
+  HEAD, reescrita para o bucket público, sem expor a API S3.
 type: application
 
 # Versão do chart wrapper Uni+. Bump em qualquer mudança de template/values.
-version: 0.1.0
+version: 0.2.0
 
 # appVersion fica vazio — não há binário versionado nesse chart (proxy puro).
 appVersion: "0.0.0"

@@ -33,3 +33,34 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" }}
 {{ toYaml . }}
 {{- end -}}
 {{- end -}}
+
+{{/*
+Acervo público (ADR-0132 do uniplus-api) — rota da borda para o bucket
+público, independente do Console. Nome próprio para que ligar um não
+dependa do outro.
+*/}}
+{{- define "acervoPublicoProxy.fullname" -}}
+{{- if .Values.acervoPublicoProxy.fullnameOverride -}}
+{{- .Values.acervoPublicoProxy.fullnameOverride | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- printf "%s-acervo-publico" .Release.Name | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "acervoPublicoProxy.selectorLabels" -}}
+app.kubernetes.io/name: acervo-publico-proxy
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end -}}
+
+{{/*
+Sem `commonLabels` do chart: ele traz `component: data-admin`, que descreve o
+Console e colidiria com o `component` declarado aqui.
+*/}}
+{{- define "acervoPublicoProxy.labels" -}}
+{{ include "acervoPublicoProxy.selectorLabels" . }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+app.kubernetes.io/part-of: uniplus
+app.kubernetes.io/component: acervo-publico
+helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" }}
+{{- end -}}
