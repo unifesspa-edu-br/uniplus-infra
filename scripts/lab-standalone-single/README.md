@@ -52,9 +52,16 @@ componente específico sem repetir o fluxo completo do `bootstrap.sh`.
 | Script | Função |
 |--------|--------|
 | `setup-redis.sh` | Redis 8.6.3 via Docker+systemd (ACL auth, persistência AOF+RDB) |
-| `setup-minio.sh` | MinIO via Docker+systemd (SNSD single-node, buckets baseline) |
+| `setup-minio.sh` | MinIO via Docker+systemd (SNSD single-node, buckets baseline e acervo público `uniplus-acervo-publico` com política versionada em `minio/`) |
 | `setup-kafka.sh` | Kafka 4.2.0 via Docker+systemd (KRaft combined, SASL_SSL + SCRAM-SHA-512, ADR-009) |
 | `seed-vault-secrets.sh` | Popula no Vault os paths que os charts de API/Keycloak esperam |
+
+O acervo público (ADR-0132 do `uniplus-api`) recebe leitura anônima **só de
+objeto**, por `mc anonymous set-json` com o arquivo `minio/acervo-publico.policy.json`
+— nunca `mc anonymous set download`, que também libera a listagem. O script recusa
+uma política que conceda listagem, escrita ou remoção. Em HML, o wrapper
+`scripts/hml-standalone-single/setup-minio.sh` troca o arquivo pela variante com
+condição de origem (`ACERVO_PUBLICO_POLICY_FILE`), ver `docs/RUNBOOKS.md` §21.8.
 
 Postgres não tem script próprio separado — o setup (systemd + LoadCredential,
 mesmo padrão do `bootstrap-standalone.sh`, imagem `postgis/postgis:18-3.6`
@@ -67,7 +74,7 @@ reutilização isolada como os demais.
 DATA_HOST_IP=x.x.x.x ./setup-redis.sh      # override explícito
 ./setup-redis.sh --dry-run                 # mostra o que seria feito
 
-./setup-minio.sh                          # idem, + cria buckets baseline
+./setup-minio.sh                          # idem, + cria buckets baseline e o acervo público
 ./setup-minio.sh --skip-buckets           # só sobe o serviço, sem tocar buckets
 
 ./setup-kafka.sh                          # gera certs TLS + format --add-scram na 1ª execução
