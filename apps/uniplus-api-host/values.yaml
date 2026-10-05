@@ -182,6 +182,21 @@ uniplusApiHost:
     endpoint: ""                # ex.: 10.0.2.87:9000
     bucketName: uniplus-storage
 
+  # === Acervo público (ADR-0132 do uniplus-api) ===
+  # Bucket dedicado ao documento de ato publicado, de leitura anônima só de
+  # objeto, e o endereço pelo qual a borda o serve. O link divulgado no
+  # contrato público é `enderecoBase` + chave do objeto, então `enderecoBase` é
+  # o caminho da borda — nunca a porta de dados do MinIO (`storage.endpoint`).
+  # A aplicação não cria o bucket nem lhe aplica política: os dois vêm do setup
+  # do MinIO (scripts/lab-standalone-single/setup-minio.sh).
+  #
+  # Viram AcervoPublico__Bucket e AcervoPublico__EnderecoBase. Fora de
+  # Development (`aspnet.environment`), a aplicação recusa a partida com
+  # `enderecoBase` vazio ou sem https, e o template falha antes, no render.
+  acervoPublico:
+    bucket: uniplus-acervo-publico
+    enderecoBase: ""            # ex.: https://uniplus-hml.unifesspa.edu.br/acervo
+
   # === OIDC (Auth bearer) — só valida tokens contra o issuer/audience do
   # realm; o Host não se autentica como client M2M contra nada (Schema
   # Registry OAuth desligado enquanto Kafka estiver desligado), então não

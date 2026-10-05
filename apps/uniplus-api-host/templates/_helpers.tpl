@@ -178,6 +178,26 @@ indentação do include e produziria itens fora da lista.
   value: "$(MINIO_SECRET_KEY)"
 - name: Storage__BucketName
   value: {{ .Values.uniplusApiHost.storage.bucketName | quote }}
+# === Acervo público (AcervoPublico:* binding, ADR-0132 do uniplus-api) ===
+# Fora de Development, a aplicação recusa a partida sem enderecoBase https
+# (ValidateOnStart); a mesma regra falha aqui, no render, em vez de virar
+# CrashLoopBackOff no pod — ou no Job de migration, que sobe a mesma imagem.
+{{- $acervo := .Values.uniplusApiHost.acervoPublico }}
+{{- if not $acervo.bucket }}
+{{- fail "uniplusApiHost.acervoPublico.bucket é obrigatório (nome do bucket do acervo público, ex.: uniplus-acervo-publico)." }}
+{{- end }}
+{{- if ne .Values.uniplusApiHost.aspnet.environment "Development" }}
+{{- if not $acervo.enderecoBase }}
+{{- fail "uniplusApiHost.acervoPublico.enderecoBase é obrigatório fora de Development: é o endereço da borda ao qual a chave do objeto é acrescentada no link público (ex.: https://uniplus-hml.unifesspa.edu.br/acervo). Sem ele a aplicação recusa a partida. Configurar em environments/<env>/values.yaml." }}
+{{- end }}
+{{- if not (regexMatch "^https://[^/?#]+(/[^?#]*)?$" $acervo.enderecoBase) }}
+{{- fail (printf "uniplusApiHost.acervoPublico.enderecoBase deve ser URL absoluta https, sem query nem fragmento, fora de Development — recebido %q." $acervo.enderecoBase) }}
+{{- end }}
+{{- end }}
+- name: AcervoPublico__Bucket
+  value: {{ $acervo.bucket | quote }}
+- name: AcervoPublico__EnderecoBase
+  value: {{ $acervo.enderecoBase | quote }}
 {{- if .Values.uniplusApiHost.oidc.enabled }}
 # === OIDC (Auth:* binding — bearer validation apenas; o host não
 # se autentica como client M2M contra nada — Schema Registry/Kafka
