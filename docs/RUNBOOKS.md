@@ -4139,6 +4139,7 @@ fechada, e confirmar via observação real do tráfego durante o primeiro bootst
 | `geo-api-hml...` | `/` | `apps/unifesspa-geo-api` | Não | **Habilitado** (uniplus-infra#492) — `unifesspaGeoApi.enabled: true`, database `uniplus_geo` (PostGIS) restaurado de dump real, secrets no Vault |
 | `grafana-hml...` | `/` | `platform/observability/grafana` | Não (`pathPrefix: ""`) | `values.yaml` — o template já suporta os dois modos (subpath e subdomínio); **falta provisionar o `Certificate`/`secretName`** que a IngressRoute referencia — o chart não cria o certificado sozinho |
 | `kafka-ui-hml...`, `apicurio-hml...`, `redis-ui-hml...`, `minio-hml...` | `/` | charts respectivos | Não | Só `values.yaml` |
+| `uniplus-hml...` | `/acervo/` | `platform/minio-console-proxy` (bloco `acervoPublicoProxy`) → MinIO `:9000`, bucket `uniplus-acervo-publico` | Sim (reescrito para `/uniplus-acervo-publico/`) | **Habilitado** (uniplus-infra#613) — rota provisória, só GET e HEAD; nome próprio com cache e limite de taxa na #591. Ver §21.8 |
 
 **Nota sobre o ApplicationSet:** `apps/uniplus-api-host` e `apps/unifesspa-geo-api` estão
 registrados em `argocd/applicationset.yaml` via o mecanismo de habilitação por-ambiente
@@ -4316,6 +4317,84 @@ passado explicitamente no registro original, não por comportamento implícito d
 isso `environments/hml-standalone-single/values.yaml` já aponta `clusterSecretStore.vaultServer`
 para `platform-vault-in-cluster...`, igual ao `standalone-compact` — mas isso só fica correto se a
 Story #445 passar `--name in-cluster` explicitamente no registro deste cluster.
+
+### 21.8 Acervo público do MinIO (uniplus-infra#613)
+
+O acervo público ([ADR-0132](https://github.com/unifesspa-edu-br/uniplus-api/blob/main/docs/adrs/0132-armazenamento-publico-separado-para-documento-publicado.md)
+do `uniplus-api`) é o bucket `uniplus-acervo-publico`, que recebe o documento de ato publicado e é
+lido anonimamente pela borda. A API copia o documento para lá no registro do ato, mas nunca cria o
+bucket nem lhe aplica política.
+
+| Peça | Onde | Como chega ao servidor |
+|---|---|---|
+| Bucket + política anônima (só `s3:GetObject`, com condição de origem) | `scripts/hml-standalone-single/setup-minio.sh` + `scripts/hml-standalone-single/minio/acervo-publico.policy.json` | **Manual**, no servidor |
+| Rota `https://uniplus-hml.unifesspa.edu.br/acervo/…` (só GET e HEAD) | `platform/minio-console-proxy/` (bloco `acervoPublicoProxy`) | ArgoCD |
+| Egress do Traefik para `192.168.21.134:9000` | `networkPolicy.externalBackends` deste ambiente | ArgoCD |
+| `AcervoPublico__Bucket` e `AcervoPublico__EnderecoBase` | `apps/uniplus-api-host/` + `uniplusApiHost.acervoPublico` | ArgoCD |
+
+**Ordem de deploy:** esta infraestrutura primeiro, depois a imagem da API que copia o documento para
+o acervo. Versões anteriores da API ignoram as duas variáveis. A rota pode ficar no ar antes do
+bucket: até lá, responde o erro `NoSuchBucket` do MinIO.
+
+**Aplicação manual (na VM, de dentro do clone do repositório):**
+
+```bash
+cd <clone do uniplus-infra na VM> && git pull   # main já com esta mudança
+./scripts/hml-standalone-single/setup-minio.sh --dry-run   # confere o arquivo de política
+./scripts/hml-standalone-single/setup-minio.sh             # cria o bucket e aplica a política
+```
+
+O script é idempotente: não reinicia o MinIO já ativo, não recria buckets existentes e reaplica a
+política inteira (`mc anonymous set-json`), devolvendo o bucket ao arquivo versionado. Ele recusa um
+arquivo que conceda listagem, escrita ou remoção. Ao final, imprime a política em vigor.
+
+**Condição de origem.** A política de HML só concede a leitura anônima quando `aws:SourceIp` está em
+`10.42.0.0/16`, a rede de pods do k3s (sem `--cluster-cidr`, conferida no cluster — ver
+`uniplusApiHost.reverseProxy` em `environments/hml-standalone-single/values.yaml`). O Traefik é pod
+e alcança `192.168.21.134:9000` na mesma máquina: o pacote é entregue localmente, sem passar pela
+regra de masquerade do flannel (que só atua na saída do host), então a conexão deve chegar ao MinIO
+com o IP do pod. É uma inferência da topologia, confirmada pelo primeiro item do smoke abaixo. Já o GET anônimo feito direto na porta de dados, pela VPN ou do próprio host, chega
+com outro IP e é recusado.
+
+Isso depende de um detalhe do MinIO: ele avalia `aws:SourceIp` pelos cabeçalhos `X-Forwarded-For`,
+`X-Real-Ip` e `Forwarded` **antes** do endereço da conexão. Por isso a rota descarta os três:
+sem esse descarte, o MinIO veria o IP do cliente e recusaria a própria borda.
+
+O mesmo detalhe é o **limite** da condição. Quem alcança a porta de dados e forja um desses
+cabeçalhos com um IP da rede de pods passa pela condição. Ela barra o GET direto comum, que é o
+cenário de confirmação da ADR-0132, mas não é um controle de segurança contra quem a contorna de
+propósito. O conteúdo do acervo é público por definição; o que a condição protege é o cache e o
+limite de taxa da borda. Separar de forma não forjável exige controle de rede na porta 9000, que
+precisa continuar alcançável para o envio direto de arquivo. Essa decisão pertence à borda própria
+(uniplus-infra#591).
+
+**Smoke** (de uma máquina na VPN; `<chave>` é a de um modelo publicado, tirada do contrato público):
+
+```bash
+B=https://uniplus-hml.unifesspa.edu.br/acervo
+
+# Leitura pela borda: 200 com Content-Disposition e Cache-Control imutável
+curl -sS -D - -o /dev/null "$B/<chave>" | grep -iE '^(HTTP|content-type|content-disposition|cache-control)'
+curl -sS -I "$B/<chave>" | head -1                                    # HEAD → 200
+
+# Listagem recusada: 403 AccessDenied
+curl -sS -o /dev/null -w '%{http_code}\n' "$B/"
+curl -sS -o /dev/null -w '%{http_code}\n' "$B/?list-type=2"
+
+# Outro método não é roteado: 404 do Traefik, sem chegar ao MinIO
+curl -sS -o /dev/null -w '%{http_code}\n' -X PUT --data x "$B/teste"
+curl -sS -o /dev/null -w '%{http_code}\n' -X DELETE "$B/<chave>"
+
+# O mesmo objeto, direto na porta de dados e sem assinatura: 403
+curl -sS -o /dev/null -w '%{http_code}\n' "http://192.168.21.134:9000/uniplus-acervo-publico/<chave>"
+
+# O armazenamento privado continua exigindo assinatura: 403
+curl -sS -o /dev/null -w '%{http_code}\n' "http://192.168.21.134:9000/uniplus-storage/"
+```
+
+Se a leitura pela borda devolver 403 enquanto o objeto existe, a conexão do Traefik não está chegando
+ao MinIO com IP da rede de pods. Conferir o IP de origem com `mc admin trace` (credenciais root
+de `/var/lib/uniplus/minio/.bootstrap-creds`) antes de alargar a condição.
 
 ---
 
