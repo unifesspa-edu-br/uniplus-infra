@@ -16,6 +16,11 @@
 # Variáveis de ambiente:
 #   DATA_HOST_IP   IPv4 privado a bindar (default: auto-detectado via `hostname -I`)
 #   DATA_BASE      Diretório base dos volumes de dados (default: /var/lib/uniplus)
+#   ACERVO_PUBLICO_POLICY_FILE
+#                  Política anônima do bucket do acervo público, versionada no
+#                  repositório (default: minio/acervo-publico.policy.json ao lado
+#                  deste script — leitura de objeto sem condição de origem). O
+#                  wrapper de HML aponta para a variante com condição de origem.
 #
 # Pré-requisitos: Docker instalado, usuário com sudo sem senha (ou rodar via sudo).
 set -euo pipefail
@@ -51,6 +56,13 @@ UNIT_FILE="/etc/systemd/system/uniplus-minio.service"
 MINIO_IMAGE="quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z"
 MC_IMAGE="quay.io/minio/mc:latest"
 
+# Acervo público (ADR-0132 do uniplus-api): bucket dedicado ao documento de ato
+# publicado, com leitura anônima de objeto e nada além. A aplicação nunca o cria
+# nem lhe aplica política — é este script que o provisiona.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ACERVO_PUBLICO_BUCKET="uniplus-acervo-publico"
+ACERVO_PUBLICO_POLICY_FILE="${ACERVO_PUBLICO_POLICY_FILE:-$SCRIPT_DIR/minio/acervo-publico.policy.json}"
+
 log_info()    { echo "[INFO] $*"; }
 log_success() { echo "[ OK ] $*"; }
 log_warn()    { echo "[WARN] $*" >&2; }
@@ -65,6 +77,28 @@ run() {
 }
 
 log_info "DATA_HOST_IP=$DATA_HOST_IP DATA_BASE=$DATA_BASE DRY_RUN=$DRY_RUN"
+
+# A política do acervo é conferida antes de qualquer mudança no host: um arquivo
+# ausente, ou que conceda mais que leitura de objeto, aborta aqui — e não depois
+# de o bucket já existir sem política ou com uma política larga demais.
+if ! $SKIP_BUCKETS; then
+    if [[ ! -f "$ACERVO_PUBLICO_POLICY_FILE" ]]; then
+        log_error "Política do acervo público não encontrada: $ACERVO_PUBLICO_POLICY_FILE"
+        exit 1
+    fi
+    # Só s3:GetObject é admitido. Listagem exporia as chaves do acervo, e escrita
+    # ou remoção abririam uma entrada que não seja a publicação do ato. Por isso a
+    # política vem sempre de arquivo versionado, aplicada com `set-json` — nunca
+    # `mc anonymous set download`, que também libera a listagem do bucket.
+    if grep -Eq '"s3:(\*|List[A-Za-z]*|Put[A-Za-z]*|Delete[A-Za-z]*|Abort[A-Za-z]*)"' "$ACERVO_PUBLICO_POLICY_FILE" \
+        || ! grep -q '"s3:GetObject"' "$ACERVO_PUBLICO_POLICY_FILE" \
+        || ! grep -qF "\"arn:aws:s3:::$ACERVO_PUBLICO_BUCKET/*\"" "$ACERVO_PUBLICO_POLICY_FILE"; then
+        log_error "Política do acervo público recusada: $ACERVO_PUBLICO_POLICY_FILE"
+        log_error "Ela deve conceder apenas s3:GetObject em arn:aws:s3:::$ACERVO_PUBLICO_BUCKET/*."
+        exit 1
+    fi
+    log_info "Política do acervo público: $ACERVO_PUBLICO_POLICY_FILE"
+fi
 
 # Data dir 1000:1000 (uid/gid do usuário dinâmico criado pelo entrypoint da
 # imagem — MINIO_UID/MINIO_GID abaixo). Pré-chown evita "Permission denied"
@@ -185,24 +219,29 @@ else
     log_success "uniplus-minio ativo + /minio/health/live OK."
 fi
 
-# ---- Buckets baseline (idempotente) ----
+# ---- Buckets baseline + acervo público (idempotente) ----
 if $SKIP_BUCKETS; then
     log_warn "Pulando criação de buckets (--skip-buckets)."
 elif $DRY_RUN; then
-    log_warn "Dry-run: buckets baseline seriam criados via mc mb --ignore-existing"
+    log_warn "Dry-run: buckets baseline e $ACERVO_PUBLICO_BUCKET seriam criados via mc mb --ignore-existing"
+    log_warn "Dry-run: política anônima de $ACERVO_PUBLICO_BUCKET seria aplicada via mc anonymous set-json $ACERVO_PUBLICO_POLICY_FILE"
 else
     root_user=$(sudo grep '^root_user=' "$CREDS_FILE" | cut -d= -f2)
     root_pw=$(sudo grep '^root_pw=' "$CREDS_FILE" | cut -d= -f2)
-    log_info "Criando buckets baseline..."
+    log_info "Criando buckets baseline e o acervo público..."
     # Credenciais nunca em argv (visível via `ps`/`/proc/<pid>/cmdline` para
     # qualquer usuário do host) — passadas via --env-file num arquivo
     # temporário root:root 0600, removido logo após o uso.
     mc_env_file=$(sudo mktemp /tmp/uniplus-mc-env.XXXXXX)
+    # Remove o arquivo de credenciais também quando um dos comandos mc falha:
+    # com `set -e`, a falha encerraria o script com a credencial root em /tmp.
+    trap 'sudo shred -u "$mc_env_file" 2>/dev/null || sudo rm -f "$mc_env_file"' EXIT
     sudo bash -c "cat > '$mc_env_file'" <<EOF
 MC_HOST_uniplus=http://${root_user}:${root_pw}@${DATA_HOST_IP}:9000
 EOF
     sudo chown root:root "$mc_env_file"
     sudo chmod 600 "$mc_env_file"
+    unset root_user root_pw
     sudo docker run --rm --network host \
         --env-file "$mc_env_file" \
         "$MC_IMAGE" \
@@ -211,8 +250,22 @@ EOF
         uniplus/loki-chunks \
         uniplus/tempo-traces \
         uniplus/app-uploads \
-        uniplus/uniplus-storage
+        uniplus/uniplus-storage \
+        "uniplus/$ACERVO_PUBLICO_BUCKET"
+    # set-json substitui a política anônima inteira a cada execução: reaplicar é
+    # o que faz o arquivo versionado voltar a valer depois de um ajuste manual.
+    sudo docker run --rm --network host \
+        --env-file "$mc_env_file" \
+        -v "$ACERVO_PUBLICO_POLICY_FILE:/politicas/acervo-publico.policy.json:ro" \
+        "$MC_IMAGE" \
+        anonymous set-json /politicas/acervo-publico.policy.json "uniplus/$ACERVO_PUBLICO_BUCKET"
+    log_info "Política anônima em vigor em $ACERVO_PUBLICO_BUCKET:"
+    sudo docker run --rm --network host \
+        --env-file "$mc_env_file" \
+        "$MC_IMAGE" \
+        anonymous get-json "uniplus/$ACERVO_PUBLICO_BUCKET"
     sudo shred -u "$mc_env_file" 2>/dev/null || sudo rm -f "$mc_env_file"
-    unset root_user root_pw
+    trap - EXIT
     log_success "Buckets baseline prontos (keycloak-backups, loki-chunks, tempo-traces, app-uploads, uniplus-storage)."
+    log_success "Acervo público pronto ($ACERVO_PUBLICO_BUCKET, leitura anônima só de objeto)."
 fi
