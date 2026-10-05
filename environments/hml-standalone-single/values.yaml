@@ -371,13 +371,18 @@ uniplusApiHost:
   # + subida do Wolverine) estoura a margem restante e causa OOMKill. Fica aqui,
   # e não no default do chart, para não arrastar standalone-compact nem
   # lab-standalone-single, que não têm a mesma medição. Ver issue #512.
+  #
+  # Limite PROVISÓRIO de 6Gi: cada handler do Wolverine retém ~100Mi no
+  # primeiro uso, e uma passada pelo assistente do processo seletivo leva o pod
+  # a ~3,3Gi — com 2Gi ele caía por OOMKill a cada poucos minutos de uso. Voltar
+  # ao valor medido quando uniplus-api#1807 for corrigida. Ver issue #621.
   resources:
     requests:
       cpu: 250m
       memory: 1Gi
     limits:
       cpu: 2000m
-      memory: 2Gi
+      memory: 6Gi
 
   database:
     host: 192.168.21.134
