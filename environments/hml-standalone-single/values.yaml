@@ -151,6 +151,15 @@ networkPolicy:
     - vault
     - keycloak
     - geo
+  # externalBackends (consumida só pelo platform/traefik/): a rota do acervo
+  # público (acervoPublicoProxy, abaixo) aponta para a porta de dados do MinIO
+  # no host, fora do cluster. Pelo mesmo motivo do kubeApiCidrs, o egress é
+  # avaliado contra o destino pós-DNAT — o IP do host —, não contra o Service.
+  # Sem esta regra o Traefik responde 502 na rota.
+  externalBackends:
+    - cidr: 192.168.21.134/32
+      ports:
+        - 9000  # MinIO, porta de dados — só a rota do acervo público
 
 ingress:
   enabled: false # acesso administrativo via kubectl port-forward / túnel VPN
@@ -673,6 +682,36 @@ uniplusWeb:
     rootRedirect:
       enabled: true
       to: /portal/
+
+# ============================================================================
+# Acervo público (chart platform/minio-console-proxy/, bloco
+# acervoPublicoProxy) — rota PROVISÓRIA da borda para o bucket público do
+# MinIO (ADR-0132 do uniplus-api), sob o host já publicado:
+# https://uniplus-hml.unifesspa.edu.br/acervo/<chave>. O nome próprio do acervo,
+# com cache e limite de taxa, fica para a uniplus-infra#591.
+#
+# A rota aceita só GET e HEAD e reescreve /acervo/X para
+# /uniplus-acervo-publico/X; a porta de dados (9000) continua fora da borda.
+# O Console do MinIO segue desligado neste ambiente (minioConsoleProxy não é
+# sobrescrito, default false) — os dois blocos são independentes.
+#
+# O bucket e a política anônima não são criados por esta rota: vêm de
+# scripts/hml-standalone-single/setup-minio.sh, e a política de HML só aceita
+# a leitura anônima vinda da rede de pods (10.42.0.0/16), de onde o Traefik
+# alcança o MinIO. Roteiro em docs/RUNBOOKS.md §21.8.
+#
+# TLS sem secretName: o Secret uniplus-hml-unifesspa-tls só existe nos
+# namespaces uniplus e geo; o Traefik escolhe pelo SNI o certificado do host,
+# já carregado pela rota do uniplus-web.
+# ============================================================================
+acervoPublicoProxy:
+  enabled: true
+
+  backend:
+    host: 192.168.21.134
+
+  ingress:
+    host: uniplus-hml.unifesspa.edu.br
 
 kubePrometheusStack:
   enabled: false

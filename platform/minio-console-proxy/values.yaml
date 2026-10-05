@@ -45,3 +45,49 @@ minioConsoleProxy:
     # MinIO Console aceita acesso por hostname diferente sem rewrite porque
     # ele lê o Host header e gera URLs relativas. Mantemos vazio por padrão.
     middlewares: []
+
+# === Acervo público (ADR-0132 do uniplus-api) ===
+# Rota da borda para o bucket público do MinIO, independente do Console:
+# `minioConsoleProxy.enabled` não a liga nem a desliga. Vive neste chart porque
+# é o mesmo desenho (porta do MinIO no host, fora do cluster, publicada pelo
+# Traefik) e porque a Application deste chart já existe em todo cluster
+# gerenciado — um chart novo exigiria reaplicar o ApplicationSet à mão.
+#
+# A rota reescreve `<pathPrefix>/<chave>` para `/<bucket>/<chave>`, aceita só
+# GET e HEAD e entrega ao MinIO uma requisição anônima, sem os cabeçalhos de
+# origem encaminhada (ver templates/acervo-publico.yaml). Não expõe a API S3:
+# nenhum outro bucket nem operação de escrita passa por ela.
+#
+# A porta de dados precisa estar liberada no egress do Traefik
+# (`networkPolicy.externalBackends` do platform/traefik/), como a do Console.
+acervoPublicoProxy:
+  # Liga/desliga a rota do acervo. Default false.
+  enabled: false
+  fullnameOverride: ""
+
+  backend:
+    # IPv4 literal do host onde a porta de dados do MinIO escuta (EndpointSlice
+    # addressType: IPv4 — FQDN não é aceito).
+    host: ""                    # ex.: 192.168.21.134
+    # Porta de dados S3 do MinIO.
+    port: 9000
+
+  # Bucket público. Precisa ser o mesmo criado pelo setup do MinIO e o mesmo de
+  # `uniplusApiHost.acervoPublico.bucket`.
+  bucket: uniplus-acervo-publico
+
+  ingress:
+    entryPoint: websecure
+    host: ""                    # ex.: uniplus-hml.unifesspa.edu.br
+    # Caminho público do acervo no host. É o que fecha o endereço divulgado:
+    # `uniplusApiHost.acervoPublico.enderecoBase` = https://<host><pathPrefix>.
+    pathPrefix: /acervo
+    tls:
+      enabled: true
+      # Vazio: o Traefik escolhe o certificado pelo SNI entre os já carregados
+      # (o do host vem da rota que o publica). Preencher só quando o Secret
+      # existir no namespace deste chart.
+      secretName: ""
+    # Middlewares adicionais, aplicados depois da reescrita e da limpeza de
+    # cabeçalhos (ex.: cache e limite de taxa, quando a borda própria chegar).
+    middlewares: []

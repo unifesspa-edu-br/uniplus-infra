@@ -51,6 +51,43 @@
         }
       },
       "required": ["enabled", "backend", "ingress"]
+    },
+    "acervoPublicoProxy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "fullnameOverride": { "type": "string" },
+        "backend": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "host": { "type": "string" },
+            "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+          },
+          "required": ["port"]
+        },
+        "bucket": { "type": "string", "minLength": 3, "maxLength": 63 },
+        "ingress": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "entryPoint": { "type": "string" },
+            "host": { "type": "string" },
+            "pathPrefix": { "type": "string" },
+            "tls": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "secretName": { "type": "string" }
+              }
+            },
+            "middlewares": { "type": "array" }
+          }
+        }
+      },
+      "required": ["enabled", "backend", "bucket", "ingress"]
     }
   }
 }
