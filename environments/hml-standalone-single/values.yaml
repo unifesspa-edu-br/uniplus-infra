@@ -388,6 +388,13 @@ uniplusApiHost:
   storage:
     endpoint: 192.168.21.134:9000
 
+  # Endereço da borda para o acervo público (ADR-0132 do uniplus-api): a rota
+  # provisória /acervo do acervoPublicoProxy, mais abaixo. A API passa a exigi-lo
+  # na partida a partir da versão que copia o documento para o acervo; as
+  # anteriores ignoram as duas variáveis. O bucket fica no default do chart.
+  acervoPublico:
+    enderecoBase: https://uniplus-hml.unifesspa.edu.br/acervo
+
   oidc:
     issuerUri: https://uniplus-oidc-hml.unifesspa.edu.br/auth/realms/unifesspa
 
