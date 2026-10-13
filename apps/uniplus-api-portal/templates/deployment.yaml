@@ -36,6 +36,9 @@
 {{- if not .Values.uniplusApiPortal.externalSecrets.enabled -}}
 {{- fail "uniplusApiPortal.enabled=true requer externalSecrets.enabled=true. Deployment depende dos Secrets sintetizados pelo ESO (Postgres password, Redis, MinIO, Kafka, OIDC)." -}}
 {{- end -}}
+{{- if and .Values.uniplusApiPortal.schemaRegistry.url (eq .Values.uniplusApiPortal.schemaRegistry.authType "OAuthBearer") (not .Values.uniplusApiPortal.externalSecrets.oidcClient.enabled) -}}
+{{- fail "uniplusApiPortal.externalSecrets.oidcClient.enabled=false é incompatível com schemaRegistry.authType=OAuthBearer: o client_secret do Schema Registry vem do Secret -oidc-client." -}}
+{{- end -}}
 {{- $cs := .Values.uniplusApiPortal.database.connectionStringName -}}
 apiVersion: apps/v1
 kind: Deployment
@@ -57,7 +60,7 @@ spec:
     metadata:
       labels:
         {{- include "uniplusApiPortal.labels" . | nindent 8 }}
-      {{- if .Values.uniplusApiPortal.customCA.enabled }}
+      {{- if and .Values.uniplusApiPortal.customCA.enabled (not .Values.uniplusApiPortal.customCA.existingSecretName) }}
       annotations:
         # Ver comentário completo em apps/uniplus-api-host/templates/
         # deployment.yaml — sem isso, rotacionar customCA.certPEM não
@@ -304,6 +307,48 @@ spec:
             periodSeconds: {{ .Values.uniplusApiPortal.readinessProbe.periodSeconds }}
           resources:
             {{- toYaml .Values.uniplusApiPortal.resources | nindent 12 }}
+      {{- if and .Values.uniplusApiPortal.customCA.enabled .Values.uniplusApiPortal.customCA.existingSecretName }}
+        # Só com existingSecretName: o Secret é rotacionado fora do chart e não
+        # há checksum que dispare rollout, então este sidecar acompanha a
+        # rotação. Com certPEM o ConfigMap muda junto com o checksum do pod.
+        # Volumes projected de Secret são atualizados pelo kubelet sem mudar o
+        # PodTemplate. O initContainer acima só executa na criação do Pod,
+        # portanto um Secret TLS rotacionado deixaria o bundle em emptyDir
+        # obsoleto. Este sidecar observa o PEM e recompõe o bundle do sistema;
+        # a substituição de ca-certificates.crt é atômica para que novas
+        # conexões TLS da Portal usem a CA atual sem rollout manual.
+        - name: refresh-custom-ca
+          image: "{{ .Values.uniplusApiPortal.image.registry }}/{{ .Values.uniplusApiPortal.image.repository }}:{{ .Values.uniplusApiPortal.image.tag }}"
+          imagePullPolicy: {{ .Values.uniplusApiPortal.image.pullPolicy }}
+          securityContext:
+            runAsNonRoot: false
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              previous_hash=""
+              while true; do
+                current_hash=$(sha256sum /custom-ca/ca.crt | awk '{print $1}')
+                if [ "$current_hash" != "$previous_hash" ]; then
+                  install -D -m 0644 /custom-ca/ca.crt /usr/local/share/ca-certificates/lab-custom-ca.crt
+                  update-ca-certificates
+                  temp_bundle=$(mktemp /merged-ca-certs/.ca-certificates.crt.XXXXXX)
+                  cp /etc/ssl/certs/ca-certificates.crt "$temp_bundle"
+                  chmod 0644 "$temp_bundle"
+                  mv "$temp_bundle" /merged-ca-certs/ca-certificates.crt
+                  previous_hash="$current_hash"
+                fi
+                sleep 15
+              done
+          volumeMounts:
+            - name: custom-ca-source
+              mountPath: /custom-ca
+              readOnly: true
+            - name: merged-ca-certs
+              mountPath: /merged-ca-certs
+      {{- end }}
       {{- if or .Values.uniplusApiPortal.kafka.enabled .Values.uniplusApiPortal.customCA.enabled }}
       volumes:
         {{- if .Values.uniplusApiPortal.kafka.enabled }}
@@ -316,8 +361,16 @@ spec:
         {{- end }}
         {{- if .Values.uniplusApiPortal.customCA.enabled }}
         - name: custom-ca-source
+          {{- if .Values.uniplusApiPortal.customCA.existingSecretName }}
+          secret:
+            secretName: {{ .Values.uniplusApiPortal.customCA.existingSecretName }}
+            items:
+              - key: {{ .Values.uniplusApiPortal.customCA.existingSecretKey }}
+                path: ca.crt
+          {{- else }}
           configMap:
             name: {{ include "uniplusApiPortal.fullname" . }}-custom-ca
+          {{- end }}
         - name: merged-ca-certs
           emptyDir: {}
         {{- end }}

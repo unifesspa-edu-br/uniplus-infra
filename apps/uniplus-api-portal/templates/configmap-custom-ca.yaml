@@ -1,4 +1,4 @@
-{{- if and .Values.uniplusApiPortal.enabled .Values.uniplusApiPortal.customCA.enabled -}}
+{{- if and .Values.uniplusApiPortal.enabled .Values.uniplusApiPortal.customCA.enabled (not .Values.uniplusApiPortal.customCA.existingSecretName) -}}
 {{- if not .Values.uniplusApiPortal.customCA.certPEM -}}
 {{- fail "uniplusApiPortal.customCA.certPEM é obrigatório quando customCA.enabled=true." -}}
 {{- end -}}
