@@ -162,4 +162,14 @@ spec:
         - protocol: TCP
           port: {{ .Values.uniplusApiPortal.networkPolicy.vaultPort }}
     {{- end }}
+    {{- range .Values.uniplusApiPortal.networkPolicy.origens }}
+    # Origem in-cluster consumida pela Portal: {{ .appName }}.
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ .appName }}
+      ports:
+        - protocol: TCP
+          port: {{ .port }}
+    {{- end }}
 {{- end }}

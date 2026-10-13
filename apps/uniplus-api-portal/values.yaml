@@ -106,7 +106,13 @@ uniplusApiPortal:
   # apps/uniplus-api-host/values.yaml customCA. ===
   customCA:
     enabled: false
-    certPEM: ""
+    certPEM: ""                 # PEM completo do certificado (não a chave privada)
+    # Alternativa ao PEM versionado: Secret TLS existente no namespace da
+    # aplicação (mesmo desenho do apps/uniplus-api-host). O sidecar
+    # refresh-custom-ca recompõe o bundle quando o Secret é rotacionado, sem
+    # rollout manual do Deployment.
+    existingSecretName: ""
+    existingSecretKey: tls.crt
 
   # === CORS (obrigatório fora de Development) ===
   # APIs validam no startup que Cors:AllowedOrigins esteja preenchido em
@@ -152,7 +158,13 @@ uniplusApiPortal:
       usernameKey: username
       passwordKey: password
 
+    # O client_secret só é lido pelo Schema Registry com OAuthBearer; a
+    # validação do bearer usa apenas o issuer. Onde a Portal não tem client
+    # próprio no Keycloak, enabled=false não materializa um Secret sem
+    # consumidor. Desligar com schemaRegistry.authType=OAuthBearer falha no
+    # render.
     oidcClient:
+      enabled: true
       vaultPath: secret/standalone/keycloak/clients/uniplus-api-portal
       clientSecretKey: client_secret
 
@@ -219,6 +231,10 @@ uniplusApiPortal:
     # ou expor o Vault via Service/Ingress in-cluster proxy.
     vaultNamespace: vault
     vaultPort: 8200
+    # Origens in-cluster que a Portal consome direto pelo Service, sem passar
+    # pelo Traefik (egress para pods do mesmo namespace).
+    # Ex.: [{ appName: uniplus-api-host, port: 8080 }]
+    origens: []
 
   metrics:
     enabled: false
