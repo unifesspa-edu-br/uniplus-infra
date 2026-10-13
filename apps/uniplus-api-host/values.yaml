@@ -324,7 +324,13 @@ uniplusApiHost:
     oauth:
       tokenEndpoint: ""         # token client_credentials do client M2M
       clientId: ""
-      existingSecret: ""        # Secret com o client_secret (não versionado)
+      # Origem do client_secret: vaultPath (ExternalSecret, preferido) ou um
+      # Secret existente. Com os dois, o ESO é criado e o processo lê o
+      # existingSecret, o que permite migrar de origem sem quebrar o Job de
+      # migrate (ver uniplusApiHost.geoOAuthSecretName).
+      vaultPath: ""             # ex.: secret/standalone/keycloak/clients/uniplus-api-selecao
+      vaultProperty: client_secret
+      existingSecret: ""
       clientSecretKey: client_secret
 
   # === NetworkPolicy ===
