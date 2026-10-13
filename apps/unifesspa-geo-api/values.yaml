@@ -170,6 +170,9 @@ unifesspaGeoApi:
     enabled: true
     traefikNamespace: traefik
     monitoringNamespace: observability-prometheus
+    # Aplicações in-cluster que chamam o Geo direto pelo Service, sem passar
+    # pelo Traefik. Ex.: [{ namespace: uniplus, appName: uniplus-api-host }]
+    clientesInternos: []
     dataHostCIDR: ""             # ex.: 10.0.2.0/24
     keycloakService: keycloak-replica
     keycloakNamespace: uniplus
