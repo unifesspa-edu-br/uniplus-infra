@@ -486,7 +486,9 @@ uniplusApiHost:
 # ============================================================================
 # uniplusApiPortal (chart apps/uniplus-api-portal/) — API da página pública do
 # certame (uniplus-infra#635). Banco próprio `uniplus_portal` com o role
-# `portal`; Redis e MinIO usam os caminhos default do Vault. Consome a API host
+# `portal`, provisionados com secret/standalone/postgres/portal pela rotina
+# scripts/hml-standalone-single/provision-api-portal-prerequisites.sh; Redis e
+# MinIO usam os caminhos default do Vault. Consome a API host
 # in-cluster (Origens__*) e, por isso, não precisa do client M2M no Keycloak.
 # ============================================================================
 uniplusApiPortal:
