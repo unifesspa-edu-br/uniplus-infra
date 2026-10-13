@@ -125,6 +125,11 @@ curl -fsS "$VAULT_ADDR/v1/sys/health" >/dev/null
 printf 'header = "X-Vault-Token: %s"\n' "$ROOT_TOKEN" > "$vault_curl_config"
 chmod 600 "$vault_curl_config"
 
+# O ClusterSecretStore usa o mount `secret` (KV v2) e o ESO descarta o nome do
+# mount no início do remoteRef.key: `secret/standalone/postgres/uniplus` é lido
+# em /v1/secret/data/standalone/postgres/uniplus. Os helpers recebem o caminho
+# já sem o mount.
+
 vault_put_password() {
     local path="$1"
     local password="$2"
@@ -146,7 +151,7 @@ vault_put_local_key() {
     local key="$1"
     printf '{"data":{"local_key":"%s"}}' "$key" | \
         curl -fsS --config "$vault_curl_config" -X POST --data-binary @- \
-            "$VAULT_ADDR/v1/secret/data/secret/standalone/uniplus-api-host/encryption" -o /dev/null
+            "$VAULT_ADDR/v1/secret/data/standalone/uniplus-api-host/encryption" -o /dev/null
 }
 
 # O arquivo local é a cópia operacional; o Vault é a custódia de recuperação.
@@ -156,35 +161,26 @@ vault_put_local_key() {
 vault_get_local_key() {
     local response="$tmpdir/vault-encryption.json"
     local status
-    local path
 
-    # O ClusterSecretStore tem mount `secret` (KV v2), e os ExternalSecrets
-    # referenciam remoteRef.key `secret/standalone/...`; a API correspondente
-    # é /v1/secret/data/secret/standalone/.... O segundo caminho é só
-    # compatibilidade com a primeira execução deste helper, antes da correção
-    # da convenção, e é migrado pelo vault_put_local_key no mesmo re-run.
-    for path in \
-        'secret/data/secret/standalone/uniplus-api-host/encryption' \
-        'secret/data/standalone/uniplus-api-host/encryption'; do
-        status=$(curl -sS --config "$vault_curl_config" -o "$response" -w '%{http_code}' \
-            "$VAULT_ADDR/v1/$path") || {
-            echo "Falha ao consultar a custódia da chave local no Vault." >&2
+    status=$(curl -sS --config "$vault_curl_config" -o "$response" -w '%{http_code}' \
+        "$VAULT_ADDR/v1/secret/data/standalone/uniplus-api-host/encryption") || {
+        echo "Falha ao consultar a custódia da chave local no Vault." >&2
+        return 2
+    }
+    case "$status" in
+        200)
+            python3 -c 'import json, sys; print(json.load(sys.stdin)["data"]["data"]["local_key"])' < "$response" \
+                || return 3
+            return 0
+            ;;
+        404)
+            return 1
+            ;;
+        *)
+            echo "Vault retornou HTTP $status ao consultar a chave local." >&2
             return 2
-        }
-        case "$status" in
-            200)
-                python3 -c 'import json, sys; print(json.load(sys.stdin)["data"]["data"]["local_key"])' < "$response" \
-                    || return 3
-                return 0
-                ;;
-            404) ;;
-            *)
-                echo "Vault retornou HTTP $status ao consultar a chave local." >&2
-                return 2
-                ;;
-        esac
-    done
-    return 1
+            ;;
+    esac
 }
 
 persist_local_key() {
@@ -213,7 +209,24 @@ else
             echo "Não foi possível recuperar a chave local existente do Vault; abortando." >&2
             exit 1
         fi
-        local_key=$(openssl rand -base64 32)
+        # Sem arquivo e sem custódia, a cópia runtime é a única que ainda cifra
+        # os dados existentes: adotá-la preserva a chave em vez de gerar outra
+        # que não decifra nada. Só sem nenhuma das três a chave nasce aqui.
+        runtime_secret_key=$(sudo KUBECONFIG="$KUBECONFIG_PATH" kubectl -n uniplus \
+            get secret uniplus-api-host-encryption-local --ignore-not-found \
+            -o jsonpath='{.data.LOCAL_KEY}') || {
+            echo "Não foi possível consultar o Secret runtime da chave local; abortando." >&2
+            exit 1
+        }
+        if [[ -n "$runtime_secret_key" ]]; then
+            local_key=$(printf '%s' "$runtime_secret_key" | base64 --decode) || {
+                echo "LOCAL_KEY do Secret Kubernetes não é Base64 válido." >&2
+                exit 1
+            }
+        else
+            local_key=$(openssl rand -base64 32)
+        fi
+        unset runtime_secret_key
         persist_local_key
     fi
 fi
@@ -238,8 +251,13 @@ fi
 # Kubernetes e a chave preservada indica recuperação incompleta ou custódia
 # inconsistente. Parar aqui protege dados já cifrados e exige reconciliação
 # explícita do operador.
-if existing_secret_key=$(sudo KUBECONFIG="$KUBECONFIG_PATH" kubectl -n uniplus \
-    get secret uniplus-api-host-encryption-local -o jsonpath='{.data.LOCAL_KEY}' 2>/dev/null); then
+existing_secret_key=$(sudo KUBECONFIG="$KUBECONFIG_PATH" kubectl -n uniplus \
+    get secret uniplus-api-host-encryption-local --ignore-not-found \
+    -o jsonpath='{.data.LOCAL_KEY}') || {
+    echo "Não foi possível consultar o Secret runtime da chave local; abortando." >&2
+    exit 1
+}
+if [[ -n "$existing_secret_key" ]]; then
     existing_local_key=$(printf '%s' "$existing_secret_key" | base64 --decode) || {
         echo "LOCAL_KEY do Secret Kubernetes não é Base64 válido." >&2
         exit 1
@@ -270,9 +288,9 @@ minio_pw=$(sudo grep '^root_pw=' "$DATA_BASE/minio/.bootstrap-creds" | cut -d= -
     exit 1
 }
 
-vault_put_password 'secret/standalone/postgres/uniplus' "$host_pw"
-vault_put_password 'secret/standalone/redis/default' "$redis_pw"
-vault_put_credentials 'secret/standalone/minio/root' "$minio_user" "$minio_pw"
+vault_put_password 'standalone/postgres/uniplus' "$host_pw"
+vault_put_password 'standalone/redis/default' "$redis_pw"
+vault_put_credentials 'standalone/minio/root' "$minio_user" "$minio_pw"
 vault_put_local_key "$local_key"
 
 unset super_pw host_pw local_key redis_pw minio_user minio_pw
