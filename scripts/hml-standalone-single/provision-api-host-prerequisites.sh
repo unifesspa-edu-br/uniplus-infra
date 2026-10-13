@@ -12,6 +12,10 @@ KUBECONFIG_PATH="${KUBECONFIG_PATH:-/etc/rancher/k3s/k3s.yaml}"
 VAULT_NAMESPACE="vault"
 VAULT_POD="${VAULT_POD:-platform-vault-in-cluster-0}"
 VAULT_ADDR="http://127.0.0.1:18200"
+KEYCLOAK_SERVICE="${KEYCLOAK_SERVICE:-keycloak-replica-in-cluster}"
+KEYCLOAK_ADDR="http://127.0.0.1:18080/auth"
+GEO_REALM="unifesspa"
+GEO_CLIENT_ID="uniplus-api-selecao"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ -z "${ROOT_TOKEN:-}" ]]; then
@@ -43,10 +47,12 @@ pg_env="$tmpdir/postgres.env"
 vault_curl_config="$tmpdir/vault.curl"
 pf_log="$tmpdir/vault-port-forward.log"
 pf_pid=""
+kc_pf_pid=""
 
 cleanup() {
     [[ -n "$pf_pid" ]] && kill "$pf_pid" 2>/dev/null || true
-    shred -u "$pg_env" "$vault_curl_config" 2>/dev/null || true
+    [[ -n "$kc_pf_pid" ]] && kill "$kc_pf_pid" 2>/dev/null || true
+    shred -u "$pg_env" "$vault_curl_config" "$tmpdir"/kc-* 2>/dev/null || true
     rm -rf "$tmpdir"
     unset ROOT_TOKEN
 }
@@ -293,5 +299,62 @@ vault_put_password 'standalone/redis/default' "$redis_pw"
 vault_put_credentials 'standalone/minio/root' "$minio_user" "$minio_pw"
 vault_put_local_key "$local_key"
 
+# O client_secret do client M2M com que a API pede o token do Geo nasce no
+# Keycloak; o Vault guarda a cópia que o ExternalSecret do chart lê. Ler do
+# Keycloak a cada execução mantém as duas alinhadas se o secret for
+# regenerado lá. As credenciais e os tokens passam só por arquivos do tmpdir.
+(
+    sudo sh -c 'KUBECONFIG="$1" exec kubectl -n uniplus port-forward "svc/$2" 18080:8080' \
+        sh "$KUBECONFIG_PATH" "$KEYCLOAK_SERVICE"
+) >"$tmpdir/kc-port-forward.log" 2>&1 &
+kc_pf_pid=$!
+for _ in $(seq 1 30); do
+    if curl -fsS "$KEYCLOAK_ADDR/realms/master" >/dev/null 2>&1; then
+        break
+    fi
+    sleep 1
+done
+curl -fsS "$KEYCLOAK_ADDR/realms/master" >/dev/null
+
+curl -fsS --config "$vault_curl_config" -o "$tmpdir/kc-admin.json" \
+    "$VAULT_ADDR/v1/secret/data/standalone/keycloak/admin"
+python3 - "$tmpdir/kc-admin.json" > "$tmpdir/kc-login.form" <<'PY'
+import json, sys, urllib.parse
+admin = json.load(open(sys.argv[1]))["data"]["data"]
+print(urllib.parse.urlencode({
+    "grant_type": "password",
+    "client_id": "admin-cli",
+    "username": admin["username"],
+    "password": admin["password"],
+}), end="")
+PY
+curl -fsS -H 'Content-Type: application/x-www-form-urlencoded' \
+    --data-binary @"$tmpdir/kc-login.form" -o "$tmpdir/kc-token.json" \
+    "$KEYCLOAK_ADDR/realms/master/protocol/openid-connect/token"
+python3 -c 'import json, sys; print("header = \"Authorization: Bearer %s\"" % json.load(open(sys.argv[1]))["access_token"])' \
+    "$tmpdir/kc-token.json" > "$tmpdir/kc-admin.curl"
+chmod 600 "$tmpdir"/kc-*
+
+curl -fsS --config "$tmpdir/kc-admin.curl" -o "$tmpdir/kc-clients.json" \
+    "$KEYCLOAK_ADDR/admin/realms/$GEO_REALM/clients?clientId=$GEO_CLIENT_ID"
+geo_client_uuid=$(python3 -c 'import json, sys; c = json.load(open(sys.argv[1])); print(c[0]["id"] if len(c) == 1 else "")' \
+    "$tmpdir/kc-clients.json")
+[[ -n "$geo_client_uuid" ]] || {
+    echo "Client $GEO_CLIENT_ID não encontrado no realm $GEO_REALM." >&2
+    exit 1
+}
+curl -fsS --config "$tmpdir/kc-admin.curl" -o "$tmpdir/kc-client-secret.json" \
+    "$KEYCLOAK_ADDR/admin/realms/$GEO_REALM/clients/$geo_client_uuid/client-secret"
+python3 - "$tmpdir/kc-client-secret.json" > "$tmpdir/kc-vault-payload.json" <<'PY'
+import json, sys
+value = json.load(open(sys.argv[1])).get("value") or ""
+if not value:
+    sys.exit("client_secret vazio no Keycloak.")
+print(json.dumps({"data": {"client_secret": value}}), end="")
+PY
+curl -fsS --config "$vault_curl_config" -X POST --data-binary @"$tmpdir/kc-vault-payload.json" \
+    "$VAULT_ADDR/v1/secret/data/standalone/keycloak/clients/$GEO_CLIENT_ID" -o /dev/null
+unset geo_client_uuid
+
 unset super_pw host_pw local_key redis_pw minio_user minio_pw
-echo "Pré-requisitos do uniplus-api-host provisionados: Postgres, Vault e chave local de cifragem."
+echo "Pré-requisitos do uniplus-api-host provisionados: Postgres, Vault, chave local de cifragem e client do Geo."
