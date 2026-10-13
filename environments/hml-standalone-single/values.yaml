@@ -438,6 +438,16 @@ uniplusApiHost:
   encryption:
     provider: local
 
+  # Conferência do endereço do candidato no Geo in-cluster (uniplus-api#1865). O token vem do
+  # client M2M uniplus-api-selecao no mesmo issuer que o Geo valida. O Secret
+  # uniplus-api-host-geo-oauth (chave client_secret) é criado à mão, como o da LocalKey.
+  geo:
+    baseUrl: http://unifesspa-geo-api-in-cluster-unifesspa-geo-api.geo.svc.cluster.local:8080
+    oauth:
+      tokenEndpoint: https://uniplus-oidc-hml.unifesspa.edu.br/auth/realms/unifesspa/protocol/openid-connect/token
+      clientId: uniplus-api-selecao
+      existingSecret: uniplus-api-host-geo-oauth
+
   extraEnv:
     - name: UniPlus__Encryption__LocalKey
       valueFrom:
@@ -467,6 +477,8 @@ uniplusApiHost:
     dataHostCIDR: 192.168.21.134/32
     oidcIssuerCIDR: 10.42.0.0/16
     oidcIssuerPort: 8443
+    geo:
+      namespace: geo
 
   otel:
     enabled: false
@@ -517,6 +529,10 @@ unifesspaGeoApi:
     dataHostCIDR: 192.168.21.134/32
     oidcIssuerCIDR: 10.42.0.0/16
     oidcIssuerPort: 8443
+    # A API host confere o endereço do candidato chamando o Geo pelo Service.
+    clientesInternos:
+      - namespace: uniplus
+        appName: uniplus-api-host
 
   ingress:
     enabled: true

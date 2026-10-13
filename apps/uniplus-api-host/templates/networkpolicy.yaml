@@ -130,6 +130,21 @@ spec:
         - protocol: TCP
           port: {{ .Values.uniplusApiHost.networkPolicy.schemaRegistryPort }}
     {{- end }}
+    {{- with .Values.uniplusApiHost.networkPolicy.geo }}
+    {{- if .namespace }}
+    # Geo in-cluster — conferência do endereço do candidato (uniplus-api#1865).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .namespace }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: unifesspa-geo-api
+      ports:
+        - protocol: TCP
+          port: {{ .port }}
+    {{- end }}
+    {{- end }}
     {{- if .Values.uniplusApiHost.otel.enabled }}
     # OTel Collector DaemonSet (ADR-013) — egress OTLP gRPC (4317) e HTTP (4318)
     # cross-namespace. O collector já tem o namespace `uniplus` na whitelist

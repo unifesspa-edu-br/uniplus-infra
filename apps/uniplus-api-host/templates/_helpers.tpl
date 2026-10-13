@@ -239,6 +239,26 @@ indentação do include e produziria itens fora da lista.
       key: OIDC_CLIENT_SECRET
 {{- end }}
 {{- end }}
+{{- with .Values.uniplusApiHost.geo }}
+{{- if .baseUrl }}
+# === Geo — conferência do endereço do candidato (uniplus-api#1865) ===
+# A API não sobe sem Geo__BaseUrl. O token client_credentials é pedido ao
+# Keycloak com o client M2M; o client_secret vem de um Secret existente.
+- name: Geo__BaseUrl
+  value: {{ .baseUrl | quote }}
+{{- if .oauth.tokenEndpoint }}
+- name: Geo__OAuth__TokenEndpoint
+  value: {{ .oauth.tokenEndpoint | quote }}
+- name: Geo__OAuth__ClientId
+  value: {{ .oauth.clientId | quote }}
+- name: Geo__OAuth__ClientSecret
+  valueFrom:
+    secretKeyRef:
+      name: {{ required "uniplusApiHost.geo.oauth.existingSecret é obrigatório quando geo.oauth.tokenEndpoint está definido." .oauth.existingSecret | quote }}
+      key: {{ .oauth.clientSecretKey | quote }}
+{{- end }}
+{{- end }}
+{{- end }}
 {{- if .Values.uniplusApiHost.otel.enabled }}
 # === OpenTelemetry (ADR-0018) ===
 - name: OTEL_EXPORTER_OTLP_ENDPOINT

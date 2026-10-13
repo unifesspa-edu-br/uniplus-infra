@@ -316,6 +316,17 @@ uniplusApiHost:
     resource:
       serviceName: ""
 
+  # === Geo (uniplus-api#1865) ===
+  # A API confere no servidor o endereço do candidato contra o Geo e não sobe
+  # sem Geo__BaseUrl. baseUrl vazio = nenhuma variável Geo__* emitida.
+  geo:
+    baseUrl: ""                 # ex.: http://<svc-do-geo>.geo.svc.cluster.local:8080
+    oauth:
+      tokenEndpoint: ""         # token client_credentials do client M2M
+      clientId: ""
+      existingSecret: ""        # Secret com o client_secret (não versionado)
+      clientSecretKey: client_secret
+
   # === NetworkPolicy ===
   networkPolicy:
     enabled: true
@@ -332,6 +343,10 @@ uniplusApiHost:
     otelCollectorNamespace: observability-otelcol
     vaultNamespace: vault
     vaultPort: 8200
+    # Egress até o Geo in-cluster. namespace vazio = sem regra.
+    geo:
+      namespace: ""             # ex.: geo
+      port: 8080
 
   metrics:
     enabled: false

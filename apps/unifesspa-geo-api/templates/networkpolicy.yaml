@@ -32,6 +32,19 @@ spec:
       ports:
         - protocol: TCP
           port: 8080
+    {{- range .Values.unifesspaGeoApi.networkPolicy.clientesInternos }}
+    # Cliente in-cluster do Geo: {{ .namespace }}/{{ .appName }}.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .namespace }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ .appName }}
+      ports:
+        - protocol: TCP
+          port: 8080
+    {{- end }}
     {{- if and .Values.unifesspaGeoApi.metrics.enabled .Values.unifesspaGeoApi.serviceMonitor.enabled }}
     - from:
         - namespaceSelector:
