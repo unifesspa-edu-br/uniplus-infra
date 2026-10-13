@@ -41,6 +41,7 @@ ORG = "unifesspa-edu-br"
 # e parte ainda na versão anterior. Ver `_agrupar_por_origem`.
 IMAGENS = {
     "uniplus-api-host": ("uniplus-api", "uniplusApiHost.image.tag"),
+    "uniplus-api-portal": ("uniplus-api", "uniplusApiPortal.image.tag"),
     "uniplus-portal": ("uniplus-web", "uniplusWeb.apps.portal.tag"),
     "uniplus-web-selecao": ("uniplus-web", "uniplusWeb.apps.selecao.tag"),
     "uniplus-web-ingresso": ("uniplus-web", "uniplusWeb.apps.ingresso.tag"),
