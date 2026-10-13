@@ -51,6 +51,15 @@ IMAGENS = {
 # promover alias tiraria do values a capacidade de dizer exatamente o que está no ar.
 SEMVER = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
 
+# O que o values pode fixar: uma versão completa ou um candidato de release
+# (vX.Y.Z-rc.N), usado para validar em homologação antes do release estável.
+PIN = re.compile(r"^v(\d+)\.(\d+)\.(\d+)(?:-rc\.(\d+))?$")
+
+
+def _ordem(maior: int, menor: int, patch: int, rc: int | None) -> tuple[int, int, int, int, int]:
+    """Chave de ordenação: o candidato vX.Y.Z-rc.N vem antes da estável vX.Y.Z."""
+    return (maior, menor, patch, 0, rc) if rc is not None else (maior, menor, patch, 1, 0)
+
 
 def _obter(url: str, cabecalhos: dict[str, str], timeout: int) -> dict:
     requisicao = urllib.request.Request(url, headers=cabecalhos)
@@ -137,22 +146,26 @@ def comparar(values: str, timeout: int = 20) -> dict:
         # respondendo listagem parcial — e o texto ainda chamaria o retrocesso de
         # versão nova. Rebaixar homologação sem ninguém ter pedido é pior que não
         # promover nada.
-        casa = SEMVER.match(fixada)
+        casa = PIN.match(fixada)
         if casa is None:
             erros.append({
                 "imagem": imagem,
-                "motivo": f"o values fixa '{fixada}', que não é uma versão completa vX.Y.Z",
+                "motivo": f"o values fixa '{fixada}', que não é uma versão completa vX.Y.Z nem um candidato vX.Y.Z-rc.N",
             })
             continue
 
-        atual = tuple(int(parte) for parte in casa.groups())
+        x, y, z, rc = casa.groups()
+        atual = _ordem(int(x), int(y), int(z), int(rc) if rc is not None else None)
         maior_publicada = publicadas[-1]
         maior = "v" + ".".join(str(parte) for parte in maior_publicada)
+        maior_ordem = _ordem(*maior_publicada, None)
         item = {"imagem": imagem, "origem": origem, "chave": chave, "de": fixada, "para": maior}
 
-        if maior_publicada > atual:
+        if maior_ordem > atual:
             desatualizadas.append(item)
-        elif maior_publicada == atual:
+        elif maior_ordem == atual or rc is not None:
+            # O candidato fica à frente da maior estável enquanto é validado: não há o
+            # que promover até sair a estável dele.
             em_dia.append(item)
         else:
             # Nada a promover, e nada que o ciclo deva decidir sozinho: ou a tag saiu
