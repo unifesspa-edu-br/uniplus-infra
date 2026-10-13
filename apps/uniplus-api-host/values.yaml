@@ -332,6 +332,9 @@ uniplusApiHost:
     enabled: true
     traefikNamespace: traefik
     monitoringNamespace: observability-prometheus
+    # Aplicações do mesmo namespace que chamam a API host direto pelo Service,
+    # sem passar pelo Traefik. Ex.: [{ appName: uniplus-api-portal }]
+    clientesInternos: []
     dataHostCIDR: ""            # ex.: 10.0.2.0/24
     keycloakService: keycloak-replica-uniplus-standalone
     keycloakNamespace: uniplus

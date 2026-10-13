@@ -55,6 +55,16 @@ spec:
       ports:
         - protocol: TCP
           port: 8080
+    {{- range .Values.uniplusApiHost.networkPolicy.clientesInternos }}
+    # Cliente in-cluster da API host (mesmo namespace): {{ .appName }}.
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ .appName }}
+      ports:
+        - protocol: TCP
+          port: 8080
+    {{- end }}
     {{- if and .Values.uniplusApiHost.metrics.enabled .Values.uniplusApiHost.serviceMonitor.enabled }}
     - from:
         - namespaceSelector:
