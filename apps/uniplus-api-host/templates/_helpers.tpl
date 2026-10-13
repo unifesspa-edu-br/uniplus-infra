@@ -80,6 +80,28 @@ houve e onde.
 {{ include "uniplusApiHost.fullname" . }}-oidc-client
 {{- end -}}
 
+{{/* Nome do Secret que o ESO sintetiza a partir de geo.oauth.vaultPath. */}}
+{{- define "uniplusApiHost.geoOAuthEsoSecretName" -}}
+{{ include "uniplusApiHost.fullname" . }}-geo-oauth
+{{- end -}}
+
+{{/* Secret do client M2M do Geo que o processo lê: o existingSecret, quando
+     declarado, senão o sintetizado pelo ESO. A precedência do existingSecret
+     permite trocar a origem em dois syncs: no primeiro o ESO cria o Secret
+     enquanto o pod e o Job de migrate (PreSync, que roda antes de o ESO ser
+     aplicado) seguem no existente; no segundo o existingSecret sai. */}}
+{{- define "uniplusApiHost.geoOAuthSecretName" -}}
+{{- with .Values.uniplusApiHost.geo.oauth -}}
+{{- if .existingSecret -}}
+{{ .existingSecret }}
+{{- else if .vaultPath -}}
+{{ include "uniplusApiHost.geoOAuthEsoSecretName" $ }}
+{{- else -}}
+{{ fail "uniplusApiHost.geo.oauth.vaultPath ou geo.oauth.existingSecret é obrigatório quando geo.oauth.tokenEndpoint está definido." }}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
 {{/*
 Variáveis de ambiente do processo da api.
 
@@ -243,7 +265,8 @@ indentação do include e produziria itens fora da lista.
 {{- if .baseUrl }}
 # === Geo — conferência do endereço do candidato (uniplus-api#1865) ===
 # A API não sobe sem Geo__BaseUrl. O token client_credentials é pedido ao
-# Keycloak com o client M2M; o client_secret vem de um Secret existente.
+# Keycloak com o client M2M; o client_secret vem do Vault (ExternalSecret) ou
+# de um Secret existente.
 - name: Geo__BaseUrl
   value: {{ .baseUrl | quote }}
 {{- if .oauth.tokenEndpoint }}
@@ -254,7 +277,7 @@ indentação do include e produziria itens fora da lista.
 - name: Geo__OAuth__ClientSecret
   valueFrom:
     secretKeyRef:
-      name: {{ required "uniplusApiHost.geo.oauth.existingSecret é obrigatório quando geo.oauth.tokenEndpoint está definido." .oauth.existingSecret | quote }}
+      name: {{ include "uniplusApiHost.geoOAuthSecretName" $ | quote }}
       key: {{ .oauth.clientSecretKey | quote }}
 {{- end }}
 {{- end }}
