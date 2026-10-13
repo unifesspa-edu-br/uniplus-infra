@@ -29,7 +29,8 @@
 #
 # Habilitados: Vault, External Secrets Operator, Traefik+TLS (autoassinado,
 # provisório — ADR/RUNBOOKS §21.2 item 2), Keycloak, Apicurio Registry,
-# StorageClass, uniplusApiHost, uniplusWeb (portal + selecao + ingresso +
+# StorageClass, uniplusApiHost, uniplusApiPortal (página pública do certame sob
+# `/api/portal`, issue #635), uniplusWeb (portal + selecao + ingresso +
 # configuracao, issues #488/#491) — os 4 sob PathPrefix real (`/portal`,
 # `/selecao`, `/ingresso`, `/configuracao`) no mesmo host — e unifesspaGeoApi
 # (issue #492: hostname `geo-api-hml.unifesspa.edu.br` já registrado pela
@@ -39,10 +40,6 @@
 # desativado no Host nesta primeira publicação.
 #
 # Deliberadamente FORA de escopo:
-#   - uniplusApiPortal — já registrado, imagem publicada, mas TLS real desta
-#     VM depende do certificado autoassinado gerado no bootstrap
-#     (#442/#445) — os apps .NET precisariam de `customCA.certPEM`,
-#     acompanhar quando o app for de fato ligado neste ambiente.
 #   - (removido — uniplusWeb saiu do "fora de escopo"; os 4 apps estão
 #     habilitados, ver bloco `uniplusWeb` abaixo e issues #488/#491)
 #   - cert-manager, Vault Transit (auto-unseal), Vault Transit Bootstrap
@@ -477,8 +474,99 @@ uniplusApiHost:
     dataHostCIDR: 192.168.21.134/32
     oidcIssuerCIDR: 10.42.0.0/16
     oidcIssuerPort: 8443
+    # A Portal consulta a API host direto pelo Service.
+    clientesInternos:
+      - appName: uniplus-api-portal
     geo:
       namespace: geo
+
+  otel:
+    enabled: false
+
+# ============================================================================
+# uniplusApiPortal (chart apps/uniplus-api-portal/) — API da página pública do
+# certame (uniplus-infra#635). Banco próprio `uniplus_portal` com o role
+# `portal`; Redis e MinIO usam os caminhos default do Vault. Consome a API host
+# in-cluster (Origens__*) e, por isso, não precisa do client M2M no Keycloak.
+# ============================================================================
+uniplusApiPortal:
+  enabled: true
+
+  image:
+    tag: v0.32.0-rc.1
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 768Mi
+
+  database:
+    host: 192.168.21.134
+    name: uniplus_portal
+    username: portal
+
+  redis:
+    host: 192.168.21.134
+
+  storage:
+    endpoint: 192.168.21.134:9000
+
+  # Sem Kafka em HML, como na API host.
+  kafka:
+    enabled: false
+
+  # A Portal só valida bearer; não há client M2M dela no Keycloak/Vault, então o
+  # ExternalSecret do client OIDC fica desligado.
+  externalSecrets:
+    oidcClient:
+      enabled: false
+
+  oidc:
+    issuerUri: https://uniplus-oidc-hml.unifesspa.edu.br/auth/realms/unifesspa
+
+  # Mesmo Secret TLS da API host — ver o comentário de lá.
+  customCA:
+    enabled: true
+    existingSecretName: uniplus-hml-unifesspa-tls
+    existingSecretKey: tls.crt
+
+  cors:
+    allowedOrigins:
+      - https://uniplus-hml.unifesspa.edu.br
+
+  # Mesma rede de pods do uniplusApiHost acima — ver o comentário de lá.
+  reverseProxy:
+    trustedNetworks:
+      - 10.42.0.0/16
+
+  # A Portal lê os dados do certame da API host pelo Service in-cluster
+  # (release uniplus-api-host-in-cluster, namespace uniplus, porta 8080).
+  extraEnv:
+    - name: Origens__SelecaoBaseUrl
+      value: http://uniplus-api-host-in-cluster-uniplus-api-host.uniplus.svc.cluster.local:8080
+    - name: Origens__PublicacoesBaseUrl
+      value: http://uniplus-api-host-in-cluster-uniplus-api-host.uniplus.svc.cluster.local:8080
+
+  ingress:
+    enabled: true
+    entryPoint: websecure
+    host: uniplus-api-hml.unifesspa.edu.br
+    pathPrefix: /api/portal
+    tls:
+      enabled: true
+      secretName: uniplus-hml-unifesspa-tls
+
+  networkPolicy:
+    enabled: true
+    dataHostCIDR: 192.168.21.134/32
+    oidcIssuerCIDR: 10.42.0.0/16
+    oidcIssuerPort: 8443
+    origens:
+      - appName: uniplus-api-host
+        port: 8080
 
   otel:
     enabled: false
