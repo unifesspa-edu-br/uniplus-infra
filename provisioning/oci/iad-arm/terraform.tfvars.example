@@ -1,0 +1,96 @@
+# Copiar para terraform.tfvars (ignorado pelo .gitignore) e ajustar.
+#
+# Este módulo provisiona o lab Uni+ em us-ashburn-1 sobre VM.Standard.A1.Flex
+# (ARM Ampere) — alvo da migração descrita no Epic uniplus-infra#317.
+
+# Compartment raiz da tenancy unifesspa-edu-br (no iad-arm POC, recursos vivem
+# direto no compartment raiz, mesma topologia do standalone).
+compartment_ocid = "ocid1.tenancy.oc1..REPLACE_WITH_TENANCY_OCID"
+
+# OCID da tenancy (compartment raiz). Necessário separadamente de
+# `compartment_ocid` porque IAM Dynamic Groups e Policies tenancy-scoped
+# DEVEM residir no compartment raiz, independente do compartment escolhido
+# para compute/network. No iad-arm POC ambos apontam para o mesmo OCID
+# (tenancy raiz). Em ambiente futuro com isolamento por compartment, manter
+# `tenancy_ocid` apontando para o root e `compartment_ocid` para o child.
+tenancy_ocid = "ocid1.tenancy.oc1..REPLACE_WITH_TENANCY_OCID"
+
+# Região destino fixada — não alterar sem revisar Epic #317. A escolha de IAD
+# foi binding (latência ~140ms BR + melhor capacidade A1 histórica).
+region = "us-ashburn-1"
+
+# Availability Domain de IAD — descobrir após assinar a região via Task #320:
+#   oci iam availability-domain list --region us-ashburn-1
+# IAD tem 3 ADs; pegar a primeira retornada (geralmente "<prefix>:US-ASHBURN-AD-1").
+availability_domain = "REPLACE_AFTER_T1_1_2"
+
+fault_domain = "FAULT-DOMAIN-1"
+
+# Topologia da VCN. Defaults (10.1.0.0/16, subnets 10.1.{1,2}.0/24) evitam
+# conflito com o lab GRU (10.0.0.0/16) durante a janela paralela de migração.
+# vcn_cidr = "10.1.0.0/16"
+# subnet_cidrs = {
+#   public  = "10.1.1.0/24"
+#   private = "10.1.2.0/24"
+# }
+
+# Imagem Ubuntu 24.04 LTS aarch64 em us-ashburn-1 — descobrir via Task #321:
+#   oci compute image list --region us-ashburn-1 \
+#     --compartment-id <tenancy> \
+#     --operating-system "Canonical Ubuntu" \
+#     --operating-system-version 24.04 \
+#     --shape VM.Standard.A1.Flex \
+#     --sort-by TIMECREATED --sort-order DESC \
+#     --query 'data[0].id' --raw-output
+# IMPORTANTE: imagem aarch64 ≠ amd64; verificar `display-name` contém "aarch64".
+image_ocid = "REPLACE_AFTER_T1_1_2"
+
+# Chave SSH pública (uma por linha) que será injetada via metadata.
+# Ubuntu cria ~/.ssh/authorized_keys automaticamente no usuário `ubuntu`.
+ssh_authorized_keys = <<-EOT
+  ssh-ed25519 AAAA... operador@host
+EOT
+
+# Perfil de capacidade A1.Flex:
+#   - "poc_arm" (default): 3 OCPU / 16 GB. ATENÇÃO: doc Oracle diz que Always
+#     Free Compute é home-region-only — para esta tenancy (home=GRU), A1 em
+#     IAD provavelmente vai PAYG (~$39/mês para 3 OCPU/16 GB). Ver gate de
+#     validação no README.md → seção "Gate de validação operacional".
+#   - "hml_arm": 6 OCPU / 40 GB → ~$86/mês compute em IAD (6 × $0.01/h +
+#     40 × $0.0015/h × 730h). Total com storage + NAT ~$127/mês — já
+#     ULTRAPASSA o GRU atual. Só faz sentido pós elimination do NAT GW.
+# Mudar e aplicar `tofu apply` REBOOTA as VMs.
+profile = "poc_arm"
+
+# Tamanho dos 4 block volumes do data-host. OCI exige mínimo de 50 GB por
+# volume — defaults usam exato 4×50 = 200 GB. Limites e custo:
+#
+#   1. Always Free Block Volume (200 GB total) é amarrado à HOME REGION da
+#      tenancy. A unifesspa-edu-br tem home = sa-saopaulo-1 (GRU), então
+#      em IAD os volumes saem em PAYG normal: $0.0255/GB-mês (VPU 0).
+#      Custo estimado dos defaults: 200 GB × $0.0255 = ~$5.10/mês.
+#   2. Reduzir abaixo de 50 GB NÃO é possível — `CreateVolume` rejeita.
+#   3. Aumentar é in-place online (`tofu apply` chama UpdateVolume); pós-apply,
+#      rodar `growpart` + `resize2fs` no data-host para o FS reconhecer.
+#
+# Distribuição (todos no mínimo de 50 GB; serviços com menos demanda real
+# desperdiçam capacidade mas não há como compactar abaixo do floor da OCI):
+#   postgres = 50 GB  → base do app fica em ~2 GB durante testes; 50 GB é
+#                       muito mais do que necessário, mas é o mínimo OCI.
+#   kafka    = 50 GB  → event topics curtos (commands/events de domínio).
+#   minio    = 50 GB  → logs + artefatos; em POC sem volume real de uso.
+#                       Para HML/PROD, considerar aumentar para 100+ GB e
+#                       configurar lifecycle policy no bucket de logs.
+#   vault    = 50 GB  → secrets do app + KV store; nunca grande em POC.
+volume_sizes_gbs = {
+  postgres = 50
+  kafka    = 50
+  minio    = 50
+  vault    = 50
+}
+
+# 0 = Lower Cost (sem IOPS dedicado, $0.0255/GB-mês PAYG); 10 = Balanced
+# ($0.0425/GB-mês PAYG). Manter 0 no lab — IAD não tem Always Free Block
+# Volume (home = GRU), então o tier afeta custo direto. Em POC os volumes
+# não precisam de IOPS dedicado.
+volume_vpus_per_gb = 0
