@@ -721,6 +721,7 @@ uniplusWeb:
         # arquivo) — chamadas à API vão falhar em runtime até lá. apiUrl
         # vazio não é aceito pelo chart (ADR-0021 assertNaoEhPlaceholder).
         apiUrl: https://uniplus-api-hml.unifesspa.edu.br
+        geoApiUrl: https://geo-api-hml.unifesspa.edu.br
         oidc:
           issuerUrl: https://uniplus-oidc-hml.unifesspa.edu.br/auth/realms/unifesspa
           clientId: uniplus-portal
