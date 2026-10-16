@@ -339,7 +339,7 @@ uniplusApiHost:
   enabled: true
 
   image:
-    tag: v0.32.1
+    tag: v0.33.0
 
   # A migration passa a ser aplicada pelo Job `pre-upgrade` (ADR-0127 do
   # uniplus-api) antes do rollout, e não mais no boot do pod.
@@ -500,7 +500,7 @@ uniplusApiPortal:
   enabled: true
 
   image:
-    tag: v0.32.1
+    tag: v0.33.0
 
   resources:
     requests:
