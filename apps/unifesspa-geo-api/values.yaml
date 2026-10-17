@@ -24,7 +24,7 @@ unifesspaGeoApi:
     registry: ghcr.io
     repository: unifesspa-edu-br/unifesspa-geo-api
     # Sincronizar com tag publicada em GHCR.
-    tag: "v1.0.1"
+    tag: "v1.1.0"
     pullPolicy: IfNotPresent
 
   imagePullSecrets: []

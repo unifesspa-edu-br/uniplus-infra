@@ -1,6 +1,6 @@
 # unifesspa-geo-api
 
-![Version: 0.1.0](https://img.shields.io/badge/Version-0.1.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.0.1](https://img.shields.io/badge/AppVersion-1.0.1-informational?style=flat-square)
+![Version: 0.1.0](https://img.shields.io/badge/Version-0.1.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: 1.0.1](https://img.shields.io/badge/AppVersion-1.1.0-informational?style=flat-square)
 
 API .NET 10 de localidades/CEP/georreferenciamento institucional da UNIFESSPA
 (módulo Geo, extraído para repo próprio unifesspa-geo-api). PostGIS via
@@ -63,7 +63,7 @@ Transit). Health: /health (readiness agregado), /health/live (liveness),
 | unifesspaGeoApi.image.pullPolicy | string | `"IfNotPresent"` |  |
 | unifesspaGeoApi.image.registry | string | `"ghcr.io"` |  |
 | unifesspaGeoApi.image.repository | string | `"unifesspa-edu-br/unifesspa-geo-api"` |  |
-| unifesspaGeoApi.image.tag | string | `"v1.0.1"` |  |
+| unifesspaGeoApi.image.tag | string | `"v1.1.0"` |  |
 | unifesspaGeoApi.imagePullSecrets | list | `[]` |  |
 | unifesspaGeoApi.ingress.enabled | bool | `false` |  |
 | unifesspaGeoApi.ingress.entryPoint | string | `"websecure"` |  |
