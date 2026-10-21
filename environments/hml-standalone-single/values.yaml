@@ -484,9 +484,31 @@ uniplusApiHost:
       - appName: uniplus-api-portal
     geo:
       namespace: geo
+    clamd:
+      namespace: uniplus
 
   otel:
     enabled: false
+
+# ============================================================================
+# clamavScanner (chart apps/clamav-scanner/) — clamd na porta 3310 para a
+# verificação de antivírus dos arquivos enviados na inscrição. Só os pods da
+# API host conectam; a primeira subida baixa as assinaturas (~600MB), por
+# isso o PVC e o startupProbe generoso do chart.
+# ============================================================================
+clamavScanner:
+  enabled: true
+  resources:
+    requests:
+      cpu: 200m
+      memory: 1Gi
+    limits:
+      cpu: 1500m
+      memory: 2Gi
+  networkPolicy:
+    clientNamespace: uniplus
+    clientPodSelector:
+      app.kubernetes.io/name: uniplus-api-host
 
 # ============================================================================
 # uniplusApiPortal (chart apps/uniplus-api-portal/) — API da página pública do

@@ -356,6 +356,10 @@ uniplusApiHost:
     geo:
       namespace: ""             # ex.: geo
       port: 8080
+    # Egress até o clamd. namespace vazio = sem regra.
+    clamd:
+      namespace: ""             # ex.: uniplus
+      port: 3310
 
   metrics:
     enabled: false

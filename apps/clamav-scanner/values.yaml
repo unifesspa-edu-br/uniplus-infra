@@ -123,6 +123,9 @@ clamavScanner:
     freshclamEgressPort: 443
     # Namespace dos clientes (apps Uni+).
     clientNamespace: uniplus
+    # Labels dos pods autorizados a conectar no clamd, dentro do clientNamespace.
+    # Vazio = todos os pods do namespace.
+    clientPodSelector: {}
 
   serviceAccount:
     create: true

@@ -14,10 +14,17 @@ spec:
     - Egress
   ingress:
     # Apps Uni+ no clientNamespace conectam clamd via TCP {{ .Values.clamavScanner.service.port }}.
+    # Com clientPodSelector preenchido, só os pods com esses labels conectam;
+    # sem ele, qualquer pod do namespace.
     - from:
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: {{ .Values.clamavScanner.networkPolicy.clientNamespace | default "uniplus" }}
+          {{- with .Values.clamavScanner.networkPolicy.clientPodSelector }}
+          podSelector:
+            matchLabels:
+              {{- toYaml . | nindent 14 }}
+          {{- end }}
       ports:
         - port: {{ .Values.clamavScanner.service.port | default 3310 }}
           protocol: TCP
