@@ -27,7 +27,7 @@
 # Escopo desta fase (Feature 1 do Epic #434 — "Bootstrap da fundação real")
 # ============================================================================
 #
-# Habilitados: Vault, External Secrets Operator, Traefik+TLS (autoassinado,
+# Habilitados: ClamAV (clamd, só para a API host), Vault, External Secrets Operator, Traefik+TLS (autoassinado,
 # provisório — ADR/RUNBOOKS §21.2 item 2), Keycloak, Apicurio Registry,
 # StorageClass, uniplusApiHost, uniplusApiPortal (página pública do certame sob
 # `/api/portal`, issue #635), uniplusWeb (portal + selecao + ingresso +
@@ -493,8 +493,9 @@ uniplusApiHost:
 # ============================================================================
 # clamavScanner (chart apps/clamav-scanner/) — clamd na porta 3310 para a
 # verificação de antivírus dos arquivos enviados na inscrição. Só os pods da
-# API host conectam; a primeira subida baixa as assinaturas (~600MB), por
-# isso o PVC e o startupProbe generoso do chart.
+# API host conectam. A primeira subida baixa as assinaturas (~600MB) com o PVC
+# vazio, por isso o startupProbe tolera 10 min (120 x 5s) antes de reiniciar o
+# container.
 # ============================================================================
 clamavScanner:
   enabled: true
@@ -505,6 +506,11 @@ clamavScanner:
     limits:
       cpu: 1500m
       memory: 2Gi
+  startupProbe:
+    failureThreshold: 120
+    periodSeconds: 5
+  persistence:
+    storageClassName: hml-local-nvme
   networkPolicy:
     clientNamespace: uniplus
     clientPodSelector:
