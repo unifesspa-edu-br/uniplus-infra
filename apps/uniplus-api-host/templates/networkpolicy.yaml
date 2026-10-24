@@ -170,6 +170,22 @@ spec:
           port: {{ .port }}
     {{- end }}
     {{- end }}
+    {{- with .Values.uniplusApiHost.networkPolicy.rabbitmq }}
+    {{- if .namespace }}
+    # RabbitMQ — a API publica os pedidos de verificação e consome os
+    # resultados (ADR-0146 do uniplus-api).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .namespace }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: rabbitmq
+      ports:
+        - protocol: TCP
+          port: {{ .port }}
+    {{- end }}
+    {{- end }}
     {{- if .Values.uniplusApiHost.otel.enabled }}
     # OTel Collector DaemonSet (ADR-013) — egress OTLP gRPC (4317) e HTTP (4318)
     # cross-namespace. O collector já tem o namespace `uniplus` na whitelist

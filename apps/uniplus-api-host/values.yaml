@@ -360,6 +360,10 @@ uniplusApiHost:
     clamd:
       namespace: ""             # ex.: uniplus
       port: 3310
+    # Egress até o RabbitMQ (fila de verificação dos arquivos). namespace vazio = sem regra.
+    rabbitmq:
+      namespace: ""             # ex.: rabbitmq
+      port: 5672
 
   metrics:
     enabled: false
