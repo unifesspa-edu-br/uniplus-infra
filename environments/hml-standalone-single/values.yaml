@@ -522,6 +522,18 @@ clamavScanner:
       app.kubernetes.io/name: uniplus-api-host
 
 # ============================================================================
+# clamavEspelho (chart apps/clamav-espelho/) — espelho interno da base de
+# assinaturas do ClamAV (ADR-0147 do uniplus-api, issue #679). O freshclam dos
+# sidecars do verificador baixa daqui:
+#   http://clamav-espelho.uniplus.svc.cluster.local
+# É o único componente da verificação com saída para a internet (HTTPS 443).
+# ============================================================================
+clamavEspelho:
+  enabled: true
+  persistence:
+    storageClassName: hml-local-nvme
+
+# ============================================================================
 # uniplusApiPortal (chart apps/uniplus-api-portal/) — API da página pública do
 # certame (uniplus-infra#635). Banco próprio `uniplus_portal` com o role
 # `portal`, provisionados com secret/standalone/postgres/portal pela rotina
