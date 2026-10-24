@@ -101,6 +101,12 @@ spec:
                   namespace: geo
                   aplicaMigration: false
                   targetEnvironment: hml-standalone-single
+                # Espelho interno da base do ClamAV (ADR-0147 do uniplus-api):
+                # abastece o freshclam dos sidecars do verificador.
+                - app: clamav-espelho
+                  namespace: uniplus
+                  aplicaMigration: false
+                  targetEnvironment: hml-standalone-single
           - clusters:
               selector:
                 matchLabels:
