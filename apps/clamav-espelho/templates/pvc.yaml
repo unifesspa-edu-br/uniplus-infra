@@ -1,0 +1,17 @@
+{{- if .Values.clamavEspelho.enabled -}}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "clamavEspelho.fullname" . }}-base
+  labels:
+    {{- include "clamavEspelho.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.clamavEspelho.persistence.size | default "2Gi" }}
+  {{- with .Values.clamavEspelho.persistence.storageClassName }}
+  storageClassName: {{ . | quote }}
+  {{- end }}
+{{- end }}

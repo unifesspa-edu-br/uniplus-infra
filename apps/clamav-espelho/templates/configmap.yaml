@@ -1,0 +1,58 @@
+{{- if .Values.clamavEspelho.enabled -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "clamavEspelho.fullname" . }}
+  labels:
+    {{- include "clamavEspelho.labels" . | nindent 4 }}
+data:
+  # Instala o cvdupdate num venv do PVC. Só reinstala quando a versão muda.
+  instalar.sh: |
+    #!/bin/sh
+    set -eu
+    versao="{{ .Values.clamavEspelho.atualizador.cvdupdateVersion }}-py$(python -c 'import sys; print("%d.%d.%d" % sys.version_info[:3])')"
+    if [ "$(cat /dados/venv/versao 2>/dev/null || true)" = "$versao" ]; then
+      echo "cvdupdate $versao já instalado"
+      exit 0
+    fi
+    rm -rf /dados/venv
+    python -m venv /dados/venv
+    /dados/venv/bin/pip install --no-cache-dir --disable-pip-version-check "cvdupdate=={{ .Values.clamavEspelho.atualizador.cvdupdateVersion }}"
+    echo "$versao" > /dados/venv/versao
+  # Laço de atualização. `ultima-atualizacao` (epoch UTC) só é gravado quando
+  # o cvd update termina com sucesso; é o que o readiness e o runbook leem.
+  atualizar.sh: |
+    #!/bin/sh
+    set -u
+    export HOME=/dados/home
+    mkdir -p "$HOME" /dados/base /dados/log
+    CVD=/dados/venv/bin/cvd
+    intervalo=$(( {{ .Values.clamavEspelho.atualizador.intervaloHoras }} * 3600 ))
+    retentativa=$(( {{ .Values.clamavEspelho.atualizador.novaTentativaMinutos }} * 60 ))
+    while true; do
+      if "$CVD" config set --dbdir /dados/base --logdir /dados/log \
+          && timeout {{ .Values.clamavEspelho.atualizador.timeoutMinutos }}m "$CVD" update; then
+        date -u +%s > /dados/base/ultima-atualizacao.tmp
+        mv /dados/base/ultima-atualizacao.tmp /dados/base/ultima-atualizacao
+        echo "atualização concluída; próxima em ${intervalo}s"
+        sleep "$intervalo"
+      else
+        echo "cvd update falhou; nova tentativa em ${retentativa}s"
+        sleep "$retentativa"
+      fi
+    done
+  nginx.conf: |
+    server {
+      listen 8080;
+      server_name _;
+      root /dados/base;
+      autoindex off;
+      location = /ultima-atualizacao {
+        default_type text/plain;
+        add_header Cache-Control "no-store";
+      }
+      location / {
+        try_files $uri =404;
+      }
+    }
+{{- end }}

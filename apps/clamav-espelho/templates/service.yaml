@@ -1,0 +1,17 @@
+{{- if .Values.clamavEspelho.enabled -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.clamavEspelho.service.name | default "clamav-espelho" }}
+  labels:
+    {{- include "clamavEspelho.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "clamavEspelho.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.clamavEspelho.service.port | default 80 }}
+      targetPort: http
+      protocol: TCP
+{{- end }}
