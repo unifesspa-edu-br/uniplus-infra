@@ -198,11 +198,14 @@ uniplusApiHost:
     enderecoBase: ""            # ex.: https://uniplus-hml.unifesspa.edu.br/acervo
 
   # === Verificação dos arquivos do candidato (ADR-0146 do uniplus-api) ===
-  # Ligada, renderiza a credencial própria dos buckets do candidato (Vault),
-  # os nomes dos buckets e a conexão do RabbitMQ, todos obrigatórios na partida
-  # da API a partir da versão que tira a verificação da API.
+  # `enabled` entrega à API (e ao Job de migration, hook de PreSync) a
+  # credencial própria dos buckets do candidato, os nomes dos buckets e a
+  # conexão do RabbitMQ. O Secret da credencial nasce de um ExternalSecret
+  # comum, que só existe depois do PreSync: ligar `criarCredencial` num sync
+  # anterior, para o Secret já existir quando `enabled` ligar.
   verificacao:
     enabled: false
+    criarCredencial: false
     bucketDeEnvio: uniplus-candidato-envio
     bucketDefinitivo: uniplus-candidato-definitivo
     rabbitMqSecretName: rabbitmq-api
