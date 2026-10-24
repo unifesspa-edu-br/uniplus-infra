@@ -51,14 +51,14 @@ vault_api GET sys/mounts
 if ! grep -q '"transit/"' "$VAULT_BODY_FILE"; then
     log "Habilitando o mount transit/"
     vault_api POST sys/mounts/transit '{"type":"transit"}'
-    [[ "$VAULT_HTTP_STATUS" == 204 ]] || { echo "Falha ao habilitar transit (HTTP $VAULT_HTTP_STATUS)." >&2; exit 1; }
+    [[ "$VAULT_HTTP_STATUS" =~ ^20[04]$ ]] || { echo "Falha ao habilitar transit (HTTP $VAULT_HTTP_STATUS)." >&2; exit 1; }
 fi
 vault_api GET "transit/keys/$TRANSIT_KEY"
 if [[ "$VAULT_HTTP_STATUS" == 404 ]]; then
     log "Criando a chave Transit $TRANSIT_KEY (não exportável, sem backup em claro)"
     vault_api POST "transit/keys/$TRANSIT_KEY" \
         '{"type":"aes256-gcm96","exportable":false,"allow_plaintext_backup":false}'
-    [[ "$VAULT_HTTP_STATUS" == 204 ]] || { echo "Falha ao criar a chave Transit (HTTP $VAULT_HTTP_STATUS)." >&2; exit 1; }
+    [[ "$VAULT_HTTP_STATUS" =~ ^20[04]$ ]] || { echo "Falha ao criar a chave Transit (HTTP $VAULT_HTTP_STATUS)." >&2; exit 1; }
 elif [[ "$VAULT_HTTP_STATUS" != 200 ]]; then
     echo "Falha ao consultar a chave Transit (HTTP $VAULT_HTTP_STATUS)." >&2
     exit 1
@@ -78,7 +78,7 @@ print(json.dumps({"policy": "\n".join([
 ]) + "\n"}), end="")' "$TRANSIT_KEY")
 log "Escrevendo a política kes"
 vault_api PUT sys/policies/acl/kes "$politica"
-[[ "$VAULT_HTTP_STATUS" == 204 ]] || { echo "Falha ao escrever a política kes (HTTP $VAULT_HTTP_STATUS)." >&2; exit 1; }
+[[ "$VAULT_HTTP_STATUS" =~ ^20[04]$ ]] || { echo "Falha ao escrever a política kes (HTTP $VAULT_HTTP_STATUS)." >&2; exit 1; }
 
 log "Escrevendo a role Kubernetes auth kes"
 vault_api POST auth/kubernetes/role/kes "$(python3 -c '
@@ -90,7 +90,7 @@ print(json.dumps({
     "audience": "https://kubernetes.default.svc.cluster.local",
     "ttl": "1h",
 }), end="")' "$KES_SERVICE_ACCOUNT" "$KES_NAMESPACE")"
-[[ "$VAULT_HTTP_STATUS" == 204 ]] || {
+[[ "$VAULT_HTTP_STATUS" =~ ^20[04]$ ]] || {
     echo "Falha ao escrever a role kes (HTTP $VAULT_HTTP_STATUS). O auth kubernetes está habilitado?" >&2
     exit 1
 }
