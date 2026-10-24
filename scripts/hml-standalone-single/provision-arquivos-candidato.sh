@@ -183,9 +183,10 @@ done
 
 # --- Expiração do bucket de envio (obrigatória) --------------------------------
 verificar_expiracao() {
-    mc ilm rule export "uniplus/$BUCKET_ENVIO" | python3 -c '
+    mc ilm rule export "uniplus/$BUCKET_ENVIO" 2>/dev/null | python3 -c '
 import json, sys
-regras = json.load(sys.stdin).get("Rules", [])
+texto = sys.stdin.read().strip()
+regras = json.loads(texto).get("Rules", []) if texto else []
 def cobre_tudo(r):
     filtro = r.get("Filter") or {}
     return not r.get("Prefix") and not filtro.get("Prefix") and "Tag" not in filtro and "And" not in filtro
@@ -205,18 +206,15 @@ mc admin policy create uniplus arquivos-candidato-api /politicas/arquivos-candid
 mc admin policy create uniplus arquivos-candidato-verificador /politicas/arquivos-candidato-verificador.policy.json
 # `user add` é idempotente (reaplica a senha do Vault); o attach só quando falta.
 mc_sh 'mc admin user add uniplus "$API_ACCESS" "$API_SECRET" && mc admin user add uniplus "$VER_ACCESS" "$VER_SECRET"'
-mc_sh '
-set -e
-anexar() {
-    if ! mc admin user info uniplus "$1" --json | grep -q "\"policyName\":\"[^\"]*$2"; then
-        mc admin policy attach uniplus "$2" --user "$1"
-    fi
-    mc admin user info uniplus "$1" --json | grep -q "\"policyName\":\"$2\"" \
-        || { echo "usuário $1 deveria ter só a política $2" >&2; exit 1; }
+tem_politica() {
+    mc admin user info uniplus "$1" --json | grep -q "\"policyName\":\"[^\"]*$2"
 }
-anexar "$API_ACCESS" arquivos-candidato-api
-anexar "$VER_ACCESS" arquivos-candidato-verificador
-'
+anexar() {
+    tem_politica "$1" "$2" || mc admin policy attach uniplus "$2" --user "$1"
+    tem_politica "$1" "$2" || falha "usuário $1 deveria ter a política $2"
+}
+anexar "$api_access" arquivos-candidato-api
+anexar "$ver_access" arquivos-candidato-verificador
 log "Usuários do MinIO (conferir: ninguém além dos serviços e do root):"
 mc admin user list uniplus
 
