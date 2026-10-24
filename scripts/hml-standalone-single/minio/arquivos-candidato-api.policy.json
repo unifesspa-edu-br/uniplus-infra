@@ -12,10 +12,11 @@
       ]
     },
     {
-      "Sid": "AssinaALeituraDoArquivoVerificado",
+      "Sid": "LeEExcluiOArquivoVerificado",
       "Effect": "Allow",
       "Action": [
-        "s3:GetObject"
+        "s3:GetObject",
+        "s3:DeleteObject"
       ],
       "Resource": [
         "arn:aws:s3:::uniplus-candidato-definitivo/*"
