@@ -186,7 +186,10 @@ verificar_expiracao() {
     mc ilm rule export "uniplus/$BUCKET_ENVIO" | python3 -c '
 import json, sys
 regras = json.load(sys.stdin).get("Rules", [])
-ok = [r for r in regras if r.get("Status") == "Enabled" and r.get("Expiration", {}).get("Days") == 1]
+def cobre_tudo(r):
+    filtro = r.get("Filter") or {}
+    return not r.get("Prefix") and not filtro.get("Prefix") and "Tag" not in filtro and "And" not in filtro
+ok = [r for r in regras if r.get("Status") == "Enabled" and r.get("Expiration", {}).get("Days") == 1 and cobre_tudo(r)]
 sys.exit(0 if ok else 1)'
 }
 if verificar_expiracao; then
