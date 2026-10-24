@@ -1,0 +1,25 @@
+apiVersion: v2
+name: rabbitmq
+description: |
+  RabbitMQ de um nó com quorum queues para o transporte entre a API e o
+  verificador de arquivos do candidato (ADR-0146 do uniplus-api). Cria o vhost
+  e os usuários separados da API e do verificador. O cluster de três nós de
+  produção é uma issue à parte.
+type: application
+version: 0.1.0
+appVersion: "4.1.4"
+
+home: https://github.com/unifesspa-edu-br/uniplus-infra
+sources:
+  - https://github.com/unifesspa-edu-br/uniplus-infra
+  - https://github.com/rabbitmq/rabbitmq-server
+
+maintainers:
+  - name: CTIC Unifesspa
+    url: https://github.com/unifesspa-edu-br
+
+keywords:
+  - rabbitmq
+  - quorum-queues
+  - messaging
+  - uniplus

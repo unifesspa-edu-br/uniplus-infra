@@ -245,10 +245,11 @@ spec:
                 - component: vault
                 - component: vault-transit
                 - component: vault-transit-bootstrap
-                # KES: infraestrutura da cifra dos
-                # arquivos do candidato (ADR-0146 do uniplus-api). Desligado por
-                # default no chart; só HML o liga.
+                # KES e RabbitMQ: cifra e verificação dos arquivos do candidato
+                # (ADR-0146 do uniplus-api). Desligados por default nos charts;
+                # só HML os liga.
                 - component: kes
+                - component: rabbitmq
                 - component: observability/prometheus
                 - component: observability/grafana
                 - component: observability/loki

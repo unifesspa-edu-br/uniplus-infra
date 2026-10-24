@@ -1,0 +1,87 @@
+# RabbitMQ de um nó — fila de trabalho entre a API e o verificador (ADR-0146).
+#
+# Não há RabbitMQ Cluster Operator no cluster, e os charts Bitnami deixaram de
+# publicar imagens gratuitas; por isso o chart é próprio, sobre a imagem oficial
+# (a mesma exercitada na POC do uniplus-api#2045). Quorum queues funcionam com
+# um nó. O desenho de três nós de produção fica para outra issue.
+
+rabbitmq:
+  enabled: false
+
+  image:
+    repository: rabbitmq
+    tag: 4.1.4-management-alpine
+    pullPolicy: IfNotPresent
+
+  # Imagem do Job que cria vhost, usuários e permissões pela API de gerência.
+  provisionerImage:
+    repository: curlimages/curl
+    tag: "8.11.1"
+    pullPolicy: IfNotPresent
+
+  persistence:
+    size: 5Gi
+    storageClassName: ""
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+  # Limite de memória do container em bytes (1 GiB): alimenta
+  # total_memory_available_override_value, para o watermark valer sobre o
+  # container. Manter igual a resources.limits.memory.
+  memoryLimitBytes: 1073741824
+
+  # vhost exclusivo da verificação: a API e o verificador não enxergam mais nada
+  # no broker, e as filas nascem como quorum (default_queue_type do vhost).
+  vhost: verificacao
+
+  # Nomes dos usuários. As senhas vêm do Vault.
+  #
+  # As permissões são `.*` dentro do vhost: a API e o verificador declaram a
+  # topologia (inclusive a fila de erro) pelo Wolverine, e restringir por
+  # expressão antes de a topologia estar fechada em uniplus-api#2054 faz o
+  # AutoProvision falhar. O isolamento vem do vhost e das credenciais separadas.
+  users:
+    api: uniplus-api
+    verificador: uniplus-verificador
+
+  externalSecret:
+    secretStoreName: vault-default
+    secretStoreKind: ClusterSecretStore
+    refreshInterval: 1h
+    # Cada caminho guarda `username` e `password`.
+    adminVaultPath: standalone/rabbitmq/admin
+    apiVaultPath: standalone/rabbitmq/api
+    verificadorVaultPath: standalone/rabbitmq/verificador
+
+  # Secrets que os consumidores leem, criados no namespace deles. Chaves:
+  # RABBITMQ_URI, RABBITMQ_USERNAME, RABBITMQ_PASSWORD.
+  consumers:
+    enabled: true
+    namespace: uniplus
+    apiSecretName: rabbitmq-api
+    verificadorSecretName: rabbitmq-verificador
+
+  # Monitoramento: o plugin rabbitmq_prometheus sempre expõe :15692/metrics.
+  # O ServiceMonitor só existe onde há Prometheus Operator.
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+
+  job:
+    backoffLimit: 3
+    activeDeadlineSeconds: 600
+
+  networkPolicy:
+    enabled: true
+    # Quem alcança o AMQP (5672). Vazio = ninguém.
+    clients: []
+    #  - namespace: uniplus
+    #    podSelector: {app.kubernetes.io/name: uniplus-api-host}
+    # Quem raspa as métricas (15692). Vazio = ninguém.
+    metricsFrom: []
