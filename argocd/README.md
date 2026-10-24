@@ -14,7 +14,9 @@ A instalação inicial do ArgoCD é feita pelo `scripts/bootstrap-standalone.sh`
 argocd/
 ├── README.md              # este arquivo
 ├── project.yaml           # AppProject 'uniplus'
-└── applicationset.yaml    # ApplicationSets para apps + platform
+├── applicationset.yaml    # ApplicationSets para apps + platform
+└── applications/          # Applications avulsas (chart em outro repositório)
+    └── verificador-hml.yaml   # verificador de arquivos do candidato (chart do uniplus-api)
 ```
 
 ## Como funciona
@@ -35,11 +37,11 @@ argocd/
 
 1. **uniplus-apps** — gera Applications para os charts em `apps/`. Dois grupos:
    - **Sempre ligados** (todo cluster registrado): uniplus-web, uniplus-api-portal, uniplus-api-selecao, uniplus-api-ingresso, clamav-scanner, keycloak-replica, kafka-ui, apicurio-registry, redis-ui
-   - **Habilitados só em ambientes específicos** (mecanismo por-ambiente, ver seção abaixo): uniplus-api-host, unifesspa-geo-api, clamav-espelho — hoje só em `hml-standalone-single`
+   - **Habilitados só em ambientes específicos** (mecanismo por-ambiente, ver seção abaixo): uniplus-api-host, unifesspa-geo-api, clamav-espelho, verificador-rede (NetworkPolicy do verificador de arquivos) — hoje só em `hml-standalone-single`
    - `clamav-scanner` permanece até o verificador da uniplus-api#2054 assumir a verificação; depois é removido (uniplus-infra#684). O novo `clamav-espelho` só abastece a base de assinaturas dos sidecars.
 
 2. **uniplus-platform** — gera Applications para componentes de plataforma:
-   - storage, minio-console-proxy, traefik, cert-manager, external-secrets, vault, vault-transit, vault-transit-bootstrap
+   - storage, minio-console-proxy, traefik, cert-manager, external-secrets, vault, vault-transit, vault-transit-bootstrap, kes, rabbitmq
    - observability (prometheus, grafana, loki, tempo, otel-collector)
 
 Cada ApplicationSet usa um ou mais **matrix generators** combinando:
