@@ -1,0 +1,44 @@
+# Isolamento de rede do verificador de arquivos do candidato (ADR-0146). Esta é a
+# ÚNICA NetworkPolicy do verificador: o chart do uniplus-api não traz nenhuma.
+#
+# O verificador manipula o conteúdo sensível dos arquivos; por isso não tem
+# credencial nem rota até o banco da API, e não sai para a internet. A política
+# é de lista permitida: tudo que não está abaixo é negado, em particular o
+# Postgres (5432 no host) e qualquer destino externo.
+
+commonLabels:
+  app.kubernetes.io/part-of: uniplus
+  app.kubernetes.io/component: verificador
+
+verificadorRede:
+  enabled: false
+
+  # Pods do verificador. Tem de casar com os labels do chart
+  # uniplus-api/infra/helm/verificador.
+  podSelector:
+    app.kubernetes.io/name: uniplus-verificador
+
+  # MinIO no host (porta de dados). Só esta porta: o Postgres, o Redis e o Kafka
+  # moram no mesmo IP e ficam de fora. Como nos demais charts, o egress é
+  # avaliado depois do DNAT, contra o IP do host.
+  minio:
+    cidr: ""
+    port: 9000
+
+  rabbitmq:
+    namespace: rabbitmq
+    podSelector:
+      app.kubernetes.io/name: rabbitmq
+    port: 5672
+
+  # Espelho interno da base de assinaturas do antivírus (ADR-0147, #679): o
+  # freshclam do clamd sidecar baixa a base dele, em vez de ir à internet. A
+  # porta é a do pod (8080), não a do Service (80): o egress é avaliado depois
+  # do DNAT. A entrada do espelho exige o label uniplus-verificador.
+  espelho:
+    enabled: true
+    namespace: uniplus
+    podSelector:
+      app.kubernetes.io/name: clamav-espelho
+    port: 8080
+
