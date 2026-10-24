@@ -1,0 +1,111 @@
+# Defaults do chart apps/clamav-espelho.
+#
+# Espelho interno da base de assinaturas do ClamAV (ADR-0147 do uniplus-api).
+# O `cvdupdate` baixa a base do CDN oficial (database.clamav.net) e um nginx a
+# serve por HTTP dentro do cluster. O freshclam do clamd sidecar de cada pod do
+# verificador aponta para este Service (`PrivateMirror`), de modo que só este
+# componente tem saída para a internet.
+#
+# Por padrão DESABILITADO — o ambiente liga via `clamavEspelho.enabled: true`
+# em environments/<env>/values.yaml.
+
+commonLabels:
+  app.kubernetes.io/part-of: uniplus
+  app.kubernetes.io/component: antivirus-mirror
+
+clamavEspelho:
+  enabled: false
+
+  # Atualizador: roda o cvdupdate num laço. A instalação do cvdupdate (pip)
+  # acontece uma vez, num venv dentro do PVC, por um initContainer; uma imagem
+  # própria do cvdupdate substitui esse passo (uniplus-infra#685).
+  atualizador:
+    image:
+      registry: docker.io
+      repository: python
+      tag: "3.12-slim"
+      pullPolicy: IfNotPresent
+    # Versão fixa do cvdupdate (PyPI). O venv é reinstalado quando muda esta
+    # versão ou a versão do Python da imagem (trocar a imagem do atualizador).
+    cvdupdateVersion: "1.2.0"
+    # Intervalo entre atualizações. A ADR-0147 exige no mínimo uma por dia;
+    # 6 h mantém a base fresca sem martelar o CDN (cvdupdate baixa só o diff).
+    intervaloHoras: 6
+    # Limite de uma execução do cvd update; passou disso, conta como falha.
+    timeoutMinutos: 30
+    # Espera antes de repetir uma atualização que falhou.
+    novaTentativaMinutos: 30
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+  # Servidor HTTP somente leitura da base (nginx sem privilégio, porta 8080).
+  servidor:
+    image:
+      registry: docker.io
+      repository: nginxinc/nginx-unprivileged
+      tag: "1.27-alpine"
+      pullPolicy: IfNotPresent
+    resources:
+      requests:
+        cpu: 20m
+        memory: 32Mi
+      limits:
+        cpu: 500m
+        memory: 128Mi
+
+  imagePullSecrets: []
+
+  # Base completa: main + daily + bytecode (~300 MB hoje) mais os diffs. 2Gi
+  # deixa folga para a rotação dos arquivos.
+  persistence:
+    size: 2Gi
+    storageClassName: ""
+
+  # Service HTTP interno. O nome é FIXO (não herda o nome do release) porque o
+  # chart do verificador o configura como PrivateMirror:
+  # http://<service.name>.<namespace>.svc.cluster.local
+  service:
+    name: clamav-espelho
+    port: 80
+
+  # Probes — a primeira subida baixa a base inteira; o startupProbe espera.
+  startupProbe:
+    failureThreshold: 120
+    periodSeconds: 10
+
+  podSecurityContext:
+    fsGroup: 1000
+    fsGroupChangePolicy: OnRootMismatch
+  containerSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+
+  # NetworkPolicy. Entrada: só os pods do verificador. Saída: DNS + HTTPS 443
+  # (database.clamav.net e, na instalação, o PyPI — sem CIDR fixo, o CDN muda).
+  networkPolicy:
+    enabled: true
+    egressPort: 443
+    # Faixas privadas excluídas da saída 443 (cobrem pods e serviços do k3s).
+    egressExcept:
+      - 10.0.0.0/8
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+    clientNamespace: uniplus
+    # Labels dos pods do verificador no clientNamespace. Precisa casar com o
+    # chart do verificador (uniplus-api#2054).
+    clientPodSelector:
+      app.kubernetes.io/name: uniplus-verificador
+
+  serviceAccount:
+    create: true
+    name: ""

@@ -1,0 +1,147 @@
+{{- if .Values.clamavEspelho.enabled -}}
+{{- $a := .Values.clamavEspelho.atualizador -}}
+{{- $s := .Values.clamavEspelho.servidor -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "clamavEspelho.fullname" . }}
+  labels:
+    {{- include "clamavEspelho.labels" . | nindent 4 }}
+spec:
+  # Uma réplica: o PVC é RWO e há um só escritor da base.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "clamavEspelho.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "clamavEspelho.labels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "clamavEspelho.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      {{- with .Values.clamavEspelho.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.clamavEspelho.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        # O kubelet ignora fsGroup em volumes do rancher.io/local-path (a
+        # StorageClass hml-local-nvme), então o PVC nasce como root. Mesmo
+        # arranjo do chart clamav-scanner (issues #188/#200).
+        - name: ajusta-permissao
+          image: "{{ $a.image.registry }}/{{ $a.image.repository }}:{{ $a.image.tag }}"
+          imagePullPolicy: {{ $a.image.pullPolicy }}
+          command: ["chown", "-R", "1000:1000", "/dados"]
+          securityContext:
+            runAsUser: 0
+            runAsNonRoot: false
+            allowPrivilegeEscalation: false
+            capabilities:
+              add: ["CHOWN"]
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: dados
+              mountPath: /dados
+        - name: instala-cvdupdate
+          image: "{{ $a.image.registry }}/{{ $a.image.repository }}:{{ $a.image.tag }}"
+          imagePullPolicy: {{ $a.image.pullPolicy }}
+          command: ["/bin/sh", "/scripts/instalar.sh"]
+          env:
+            - name: HOME
+              value: /tmp
+          {{- with .Values.clamavEspelho.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: dados
+              mountPath: /dados
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      containers:
+        - name: atualizador
+          image: "{{ $a.image.registry }}/{{ $a.image.repository }}:{{ $a.image.tag }}"
+          imagePullPolicy: {{ $a.image.pullPolicy }}
+          command: ["/bin/sh", "/scripts/atualizar.sh"]
+          {{- with .Values.clamavEspelho.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $a.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: dados
+              mountPath: /dados
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+        - name: servidor
+          image: "{{ $s.image.registry }}/{{ $s.image.repository }}:{{ $s.image.tag }}"
+          imagePullPolicy: {{ $s.image.pullPolicy }}
+          {{- with .Values.clamavEspelho.containerSecurityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          # Pronto só depois da primeira atualização concluída: antes disso o
+          # Service não encaminha tráfego e o freshclam do sidecar usa a base
+          # da imagem.
+          startupProbe:
+            httpGet:
+              path: /ultima-atualizacao
+              port: http
+            failureThreshold: {{ .Values.clamavEspelho.startupProbe.failureThreshold | default 120 }}
+            periodSeconds: {{ .Values.clamavEspelho.startupProbe.periodSeconds | default 10 }}
+          readinessProbe:
+            httpGet:
+              path: /ultima-atualizacao
+              port: http
+            periodSeconds: 30
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 60
+          {{- with $s.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            - name: dados
+              mountPath: /dados
+              readOnly: true
+            - name: scripts
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: nginx.conf
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: dados
+          persistentVolumeClaim:
+            claimName: {{ include "clamavEspelho.fullname" . }}-base
+        - name: scripts
+          configMap:
+            name: {{ include "clamavEspelho.fullname" . }}
+            defaultMode: 0555
+        - name: tmp
+          emptyDir: {}
+{{- end }}
