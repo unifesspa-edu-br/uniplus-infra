@@ -453,6 +453,9 @@ uniplusApiHost:
       # o Secret que lê.
       existingSecret: uniplus-api-host-geo-oauth
 
+  verificacao:
+    enabled: true
+
   extraEnv:
     - name: UniPlus__Encryption__LocalKey
       valueFrom:
