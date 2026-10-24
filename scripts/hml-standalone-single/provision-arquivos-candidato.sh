@@ -76,7 +76,7 @@ printf '%s\n' "$kes_cert" >"$tmpdir/kes.crt"
 # --- KES no ar ----------------------------------------------------------------
 log "Aguardando o KES em https://$HOST_IP:$KES_PORT"
 tentativa=0
-until curl -fsS --max-time 5 --cacert "$tmpdir/kes.crt" "https://$HOST_IP:$KES_PORT/version" >/dev/null 2>&1; do
+until curl -fsS --max-time 5 --cacert "$tmpdir/kes.crt" "https://$HOST_IP:$KES_PORT/v1/ready" >/dev/null 2>&1; do
     tentativa=$((tentativa + 1))
     [[ "$tentativa" -lt 60 ]] || falha "KES não respondeu em 5 min (Application platform-kes-in-cluster sincronizada? NetworkPolicy do hostPort?)"
     sleep 5

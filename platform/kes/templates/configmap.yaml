@@ -23,6 +23,16 @@ data:
       key: /tls/tls.key
       cert: /tls/tls.crt
 
+    # O KES exige certificado de cliente em toda chamada (RequireAnyClientCert),
+    # e a sonda HTTPS do kubelet não apresenta um. Só /v1/ready dispensa a
+    # autenticação (resposta de prontidão, sem dado); o resto continua exigindo
+    # identidade. Conferido com a imagem fixada: sem este bloco o handshake sem
+    # certificado falha, inclusive em /version.
+    api:
+      /v1/ready:
+        skip_auth: true
+        timeout: 15s
+
     cache:
       expiry:
         any: {{ $k.cache.any }}
