@@ -1,0 +1,25 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AssinaOEnvio",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::uniplus-candidato-envio/*"
+      ]
+    },
+    {
+      "Sid": "AssinaALeituraDoArquivoVerificado",
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject"
+      ],
+      "Resource": [
+        "arn:aws:s3:::uniplus-candidato-definitivo/*"
+      ]
+    }
+  ]
+}

@@ -10,8 +10,16 @@
 # encaminhada para que o MinIO avalie o endereço da conexão, não o do cliente.
 # O GET anônimo feito direto em <host>:9000, de fora da rede de pods, é recusado.
 # Ver docs/RUNBOOKS.md §21.8 para o alcance e o limite dessa condição.
+#
+# Cifra SSE-KMS dos arquivos do candidato (ADR-0146): quando provision-arquivos-candidato.sh
+# já gravou o ambiente do KES, a unit passa a entregá-lo ao container (KES, CORS e
+# audit webhook) e a montar o certificado do KES. Sem esse arquivo, nada muda.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 export ACERVO_PUBLICO_POLICY_FILE="${ACERVO_PUBLICO_POLICY_FILE:-$SCRIPT_DIR/minio/acervo-publico.policy.json}"
+if sudo test -f /etc/uniplus-minio-kes.env; then
+    export MINIO_EXTRA_ENV_FILE=/etc/uniplus-minio-kes.env
+    export MINIO_EXTRA_MOUNT_DIR=/etc/uniplus-minio-kes
+fi
 exec "$SCRIPT_DIR/../lab-standalone-single/setup-minio.sh" "$@"

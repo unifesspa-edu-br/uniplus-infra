@@ -22,6 +22,14 @@
 #                  deste script — leitura de objeto sem condição de origem). O
 #                  wrapper de HML aponta para a variante com condição de origem.
 #
+#   MINIO_EXTRA_ENV_FILE
+#                  Arquivo de ambiente adicional entregue ao container (docker
+#                  --env-file; root:root 0600). Usado em HML para o KES (SSE-KMS),
+#                  o CORS e o audit webhook. Vazio no lab: nada muda.
+#   MINIO_EXTRA_MOUNT_DIR
+#                  Diretório do host montado somente leitura em /etc/minio/extra
+#                  (certificado do KES). Vazio no lab.
+#
 # Pré-requisitos: Docker instalado, usuário com sudo sem senha (ou rodar via sudo).
 set -euo pipefail
 
@@ -55,6 +63,19 @@ ENV_FILE="/etc/uniplus-minio.env"
 UNIT_FILE="/etc/systemd/system/uniplus-minio.service"
 MINIO_IMAGE="quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z"
 MC_IMAGE="quay.io/minio/mc:latest"
+MINIO_EXTRA_ENV_FILE="${MINIO_EXTRA_ENV_FILE:-}"
+MINIO_EXTRA_MOUNT_DIR="${MINIO_EXTRA_MOUNT_DIR:-}"
+
+# Trechos opcionais do `docker run` da unit. Ficam vazios sem as variáveis acima.
+extra_run_args=""
+if [[ -n "$MINIO_EXTRA_ENV_FILE" ]]; then
+    extra_run_args+="  --env-file $MINIO_EXTRA_ENV_FILE \\
+"
+fi
+if [[ -n "$MINIO_EXTRA_MOUNT_DIR" ]]; then
+    extra_run_args+="  -v $MINIO_EXTRA_MOUNT_DIR:/etc/minio/extra:ro \\
+"
+fi
 
 # Acervo público (ADR-0132 do uniplus-api): bucket dedicado ao documento de ato
 # publicado, com leitura anônima de objeto e nada além. A aplicação nunca o cria
@@ -186,7 +207,7 @@ ExecStart=/usr/bin/docker run --rm --name uniplus-minio \\
   --network host \\
   -e MINIO_ROOT_USER -e MINIO_ROOT_PASSWORD \\
   -e MINIO_USERNAME -e MINIO_GROUPNAME -e MINIO_UID -e MINIO_GID \\
-  -v $DATA_BASE/minio/data:/data \\
+${extra_run_args}  -v $DATA_BASE/minio/data:/data \\
   $MINIO_IMAGE \\
   server --address $DATA_HOST_IP:9000 --console-address $DATA_HOST_IP:9001 /data
 
