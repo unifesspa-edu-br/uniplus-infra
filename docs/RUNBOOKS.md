@@ -4499,7 +4499,7 @@ inacessíveis enquanto o MinIO não subir.
 
 1. Aguardar o k3s e os pods do Vault; fazer o **unseal** do Vault (Shamir manual, ADR-014).
 2. Conferir o KES pronto: `kubectl -n kes rollout status deployment/kes` e
-   `curl --cacert <kes.crt> https://192.168.21.134:7373/version`. Ele só fica pronto com o Vault aberto.
+   `curl --cacert <kes.crt> https://192.168.21.134:7373/v1/ready`. Ele só fica pronto com o Vault aberto.
 3. **Só então** o MinIO: `sudo systemctl restart uniplus-minio` (a unit sobe sozinha no boot e fica em
    reinício até o KES responder; reiniciar de novo após o passo 2 evita esperar o ciclo).
 4. Conferir o acervo público e `mc admin kms key status`.

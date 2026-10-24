@@ -44,16 +44,16 @@ spec:
               containerPort: 7373
               hostPort: {{ $k.hostPort }}
               protocol: TCP
-          # /version responde sem autenticação, mas por TLS.
+          # /v1/ready é a única API sem autenticação (api.skip_auth na configuração).
           readinessProbe:
             httpGet:
-              path: /version
+              path: /v1/ready
               port: https
               scheme: HTTPS
             periodSeconds: 10
           livenessProbe:
             httpGet:
-              path: /version
+              path: /v1/ready
               port: https
               scheme: HTTPS
             initialDelaySeconds: 10
