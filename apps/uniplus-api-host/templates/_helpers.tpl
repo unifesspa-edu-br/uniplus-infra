@@ -76,6 +76,10 @@ houve e onde.
 {{ include "uniplusApiHost.fullname" . }}-minio
 {{- end -}}
 
+{{- define "uniplusApiHost.arquivosDoCandidatoSecretName" -}}
+{{ include "uniplusApiHost.fullname" . }}-arquivos-candidato
+{{- end -}}
+
 {{- define "uniplusApiHost.oidcSecretName" -}}
 {{ include "uniplusApiHost.fullname" . }}-oidc-client
 {{- end -}}
@@ -200,6 +204,30 @@ indentação do include e produziria itens fora da lista.
   value: "$(MINIO_SECRET_KEY)"
 - name: Storage__BucketName
   value: {{ .Values.uniplusApiHost.storage.bucketName | quote }}
+{{- with .Values.uniplusApiHost.verificacao }}
+{{- if .enabled }}
+# === Verificação dos arquivos do candidato (ADR-0146 do uniplus-api) ===
+- name: ArquivosDoCandidato__AccessKey
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "uniplusApiHost.arquivosDoCandidatoSecretName" $ }}
+      key: ACCESS_KEY
+- name: ArquivosDoCandidato__SecretKey
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "uniplusApiHost.arquivosDoCandidatoSecretName" $ }}
+      key: SECRET_KEY
+- name: ArquivosDoCandidato__BucketDeEnvio
+  value: {{ .bucketDeEnvio | quote }}
+- name: ArquivosDoCandidato__BucketDefinitivo
+  value: {{ .bucketDefinitivo | quote }}
+- name: RabbitMq__Uri
+  valueFrom:
+    secretKeyRef:
+      name: {{ .rabbitMqSecretName }}
+      key: {{ .rabbitMqUriKey }}
+{{- end }}
+{{- end }}
 # === Acervo público (AcervoPublico:* binding, ADR-0132 do uniplus-api) ===
 # Fora de Development, a aplicação recusa a partida sem enderecoBase https
 # (ValidateOnStart); a mesma regra falha aqui, no render, em vez de virar

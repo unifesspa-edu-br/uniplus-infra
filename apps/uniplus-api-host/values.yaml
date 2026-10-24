@@ -197,6 +197,17 @@ uniplusApiHost:
     bucket: uniplus-acervo-publico
     enderecoBase: ""            # ex.: https://uniplus-hml.unifesspa.edu.br/acervo
 
+  # === Verificação dos arquivos do candidato (ADR-0146 do uniplus-api) ===
+  # Ligada, renderiza a credencial própria dos buckets do candidato (Vault),
+  # os nomes dos buckets e a conexão do RabbitMQ, todos obrigatórios na partida
+  # da API a partir da versão que tira a verificação da API.
+  verificacao:
+    enabled: false
+    bucketDeEnvio: uniplus-candidato-envio
+    bucketDefinitivo: uniplus-candidato-definitivo
+    rabbitMqSecretName: rabbitmq-api
+    rabbitMqUriKey: RABBITMQ_URI
+
   # === OIDC (Auth bearer) — só valida tokens contra o issuer/audience do
   # realm; o Host não se autentica como client M2M contra nada (Schema
   # Registry OAuth desligado enquanto Kafka estiver desligado), então não
@@ -272,6 +283,11 @@ uniplusApiHost:
       vaultPath: secret/standalone/minio/root
       usernameKey: username
       passwordKey: password
+
+    minioArquivosDoCandidato:
+      vaultPath: secret/standalone/minio/arquivos-candidato-api
+      accessKeyKey: access_key
+      secretKeyKey: secret_key
 
     # Só relevante quando schemaRegistry.url + authType=OAuthBearer
     # estiverem ativos (issue #423). O Host não tem client M2M próprio
