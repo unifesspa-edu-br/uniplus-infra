@@ -1,0 +1,25 @@
+apiVersion: v2
+name: kes
+description: |
+  KES (Key Encryption Service) do MinIO para o SSE-KMS dos arquivos do
+  candidato (ADR-0146 do uniplus-api). Guarda a chave mestra no KV do Vault,
+  cifrada por uma chave Transit, e autentica no Vault por Kubernetes auth.
+type: application
+version: 0.1.0
+appVersion: "2025-03-12T09-35-18Z"
+
+home: https://github.com/unifesspa-edu-br/uniplus-infra
+sources:
+  - https://github.com/unifesspa-edu-br/uniplus-infra
+  - https://github.com/minio/kes
+
+maintainers:
+  - name: CTIC Unifesspa
+    url: https://github.com/unifesspa-edu-br
+
+keywords:
+  - kes
+  - minio
+  - sse-kms
+  - vault
+  - uniplus

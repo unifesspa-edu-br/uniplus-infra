@@ -1,0 +1,88 @@
+# KES do MinIO — SSE-KMS dos arquivos do candidato (ADR-0146 do uniplus-api).
+#
+# O MinIO roda FORA do cluster (systemd no host, ver docs/RUNBOOKS.md §21.8) e
+# fala com o KES por mTLS no hostPort abaixo. Cada ambiente liga o chart em
+# environments/<env>/values.yaml; o default é desligado.
+#
+# O que este chart NÃO faz, por ser escrita no Vault: criar a chave Transit, a
+# política, a role Kubernetes auth, o certificado do servidor e as identidades.
+# Isso é feito por scripts/hml-standalone-single/provision-verificacao-prerequisites.sh.
+
+kes:
+  enabled: false
+
+  image:
+    repository: quay.io/minio/kes
+    # Mesma versão exercitada na POC do uniplus-api#2045.
+    tag: "2025-03-12T09-35-18Z"
+    pullPolicy: IfNotPresent
+
+  # Uma réplica: o hostPort só admite um pod por nó, e HML tem um nó. A
+  # estratégia é Recreate pelo mesmo motivo (o pod novo não sobe com a porta
+  # ainda presa pelo antigo).
+  replicas: 1
+
+  # Porta em que o MinIO (no host) alcança o KES. O certificado do servidor tem
+  # o IP do host na SAN (ver o script de provisionamento).
+  hostPort: 7373
+
+  # Nome da chave mestra. Criada pela identidade `provisioner` (única com
+  # permissão de criar); a identidade do MinIO só gera e decifra com ela.
+  keyName: uniplus-arquivos-candidato
+
+  vault:
+    # Sem default utilizável: cada ambiente informa o Service do Vault.
+    address: ""
+    # Mount KV v2 e prefixo onde o KES guarda as chaves mestras (cifradas).
+    kvEngine: secret
+    kvPrefix: kes
+    # Chave Transit que cifra cada chave mestra antes de ir ao KV.
+    transitEngine: transit
+    transitKey: uniplus-kes-kek
+    # Autenticação por Kubernetes: mount e role (SA `kes` no namespace `kes`).
+    authEngine: kubernetes
+    authRole: kes
+
+  # Cache do KES. Curto de propósito: a revogação da chave e a falha fechada com
+  # o Vault selado não podem esperar minutos. `offline: 0s` não serve chave
+  # quando o Vault está inalcançável. Escolha de disponibilidade x revogação
+  # (ADR-0146): quem quiser mais disponibilidade aumenta `any`/`unused`.
+  cache:
+    any: 30s
+    unused: 10s
+    offline: 0s
+
+  # Segredos materializados do Vault pelo External Secrets Operator.
+  externalSecret:
+    secretStoreName: vault-default
+    secretStoreKind: ClusterSecretStore
+    refreshInterval: 1h
+    # Certificado e chave TLS do servidor KES.
+    tls:
+      vaultPath: standalone/kes/server
+      certProperty: cert
+      keyProperty: key
+    # Hash das identidades (não é segredo; a chave de API é que é).
+    identities:
+      vaultPath: standalone/kes/identities
+      minioProperty: minio
+      provisionerProperty: provisioner
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+  # NetworkPolicy: ingress só do host (MinIO e o script de provisionamento);
+  # egress só ao Vault e ao DNS.
+  networkPolicy:
+    enabled: true
+    # O MinIO usa rede do host. Conforme a rota até o hostPort, a origem chega
+    # como o IP do host ou como o gateway da bridge de pods (cni0, .1 do podCIDR
+    # do nó); os dois são do próprio host.
+    hostCidrs: []
+    vaultNamespace: vault
+    vaultPort: 8200
