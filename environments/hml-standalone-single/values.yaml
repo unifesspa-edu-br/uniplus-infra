@@ -453,8 +453,9 @@ uniplusApiHost:
       # o Secret que lê.
       existingSecret: uniplus-api-host-geo-oauth
 
+  # A credencial nasce antes; `enabled` liga junto do bump da API que a exige.
   verificacao:
-    enabled: true
+    criarCredencial: true
 
   extraEnv:
     - name: UniPlus__Encryption__LocalKey
