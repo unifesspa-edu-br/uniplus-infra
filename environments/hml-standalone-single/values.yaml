@@ -494,6 +494,8 @@ uniplusApiHost:
       namespace: geo
     clamd:
       namespace: uniplus
+    rabbitmq:
+      namespace: rabbitmq
 
   otel:
     enabled: false
