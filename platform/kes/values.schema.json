@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "kes chart values",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "kes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "image": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "repository": { "type": "string", "minLength": 1 },
+            "tag": { "type": "string", "minLength": 1 },
+            "pullPolicy": { "type": "string", "enum": ["Always", "IfNotPresent", "Never"] }
+          }
+        },
+        "replicas": { "type": "integer", "minimum": 1, "maximum": 1 },
+        "hostPort": { "type": "integer", "minimum": 1024, "maximum": 65535 },
+        "keyName": { "type": "string", "minLength": 1 },
+        "vault": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "address": { "type": "string" },
+            "kvEngine": { "type": "string", "minLength": 1 },
+            "kvPrefix": { "type": "string", "minLength": 1 },
+            "transitEngine": { "type": "string", "minLength": 1 },
+            "transitKey": { "type": "string", "minLength": 1 },
+            "authEngine": { "type": "string", "minLength": 1 },
+            "authRole": { "type": "string", "minLength": 1 }
+          }
+        },
+        "cache": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "any": { "type": "string", "minLength": 1 },
+            "unused": { "type": "string", "minLength": 1 },
+            "offline": { "type": "string", "minLength": 1 }
+          }
+        },
+        "externalSecret": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "secretStoreName": { "type": "string", "minLength": 1 },
+            "secretStoreKind": { "type": "string", "enum": ["ClusterSecretStore", "SecretStore"] },
+            "refreshInterval": { "type": "string", "minLength": 1 },
+            "tls": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "vaultPath": { "type": "string", "minLength": 1 },
+                "certProperty": { "type": "string", "minLength": 1 },
+                "keyProperty": { "type": "string", "minLength": 1 }
+              }
+            },
+            "identities": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "vaultPath": { "type": "string", "minLength": 1 },
+                "minioProperty": { "type": "string", "minLength": 1 },
+                "provisionerProperty": { "type": "string", "minLength": 1 }
+              }
+            }
+          }
+        },
+        "resources": { "type": "object" },
+        "networkPolicy": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "hostCidrs": { "type": "array", "items": { "type": "string" } },
+            "vaultNamespace": { "type": "string", "minLength": 1 },
+            "vaultPort": { "type": "integer" }
+          }
+        }
+      }
+    }
+  }
+}

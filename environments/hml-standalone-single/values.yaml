@@ -140,6 +140,9 @@ vaultTransitBootstrap:
 # o pod Healthy — 502/503 silencioso.
 networkPolicy:
   enabled: true
+  # Namespaces que alcançam o Vault (8200): o KES autentica por Kubernetes auth.
+  appConsumerNamespaces:
+    - kes
   kubeApiCidrs:
     - 10.43.0.0/16
     - 192.168.21.134/32
@@ -881,6 +884,26 @@ acervoPublicoProxy:
 
   ingress:
     host: uniplus-hml.unifesspa.edu.br
+
+# ============================================================================
+# KES (chart platform/kes/) — serviço de chaves do SSE-KMS dos arquivos do
+# candidato (ADR-0146 do uniplus-api, uniplus-infra#682). O MinIO, fora do
+# cluster, fala com ele por mTLS no hostPort 7373 do host. Pré-requisitos no
+# Vault (chave Transit, política, role Kubernetes auth, certificado e
+# identidades): scripts/hml-standalone-single/provision-verificacao-prerequisites.sh.
+# ============================================================================
+kes:
+  enabled: true
+
+  vault:
+    address: http://platform-vault-in-cluster.vault.svc.cluster.local:8200
+
+  networkPolicy:
+    # O MinIO usa a rede do host. A origem chega como o IP do host ou como o
+    # gateway da bridge de pods (cni0), conforme a rota até o hostPort.
+    hostCidrs:
+      - 192.168.21.134/32
+      - 10.42.0.1/32
 
 kubePrometheusStack:
   enabled: false

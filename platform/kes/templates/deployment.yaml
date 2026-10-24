@@ -1,0 +1,84 @@
+{{- if .Values.kes.enabled }}
+{{- $k := .Values.kes -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "kes.name" . }}
+  labels:
+    {{- include "kes.labels" . | nindent 4 }}
+spec:
+  replicas: {{ $k.replicas }}
+  # hostPort: o pod novo só sobe depois de o antigo soltar a porta.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "kes.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "kes.labels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "kes.name" . }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: kes
+          image: "{{ $k.image.repository }}:{{ $k.image.tag }}"
+          imagePullPolicy: {{ $k.image.pullPolicy }}
+          args:
+            - server
+            - --config=/config/config.yml
+          envFrom:
+            - secretRef:
+                name: {{ include "kes.identitiesSecretName" . }}
+          ports:
+            - name: https
+              containerPort: 7373
+              hostPort: {{ $k.hostPort }}
+              protocol: TCP
+          # /version responde sem autenticação, mas por TLS.
+          readinessProbe:
+            httpGet:
+              path: /version
+              port: https
+              scheme: HTTPS
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /version
+              port: https
+              scheme: HTTPS
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            {{- toYaml $k.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: tls
+              mountPath: /tls
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "kes.name" . }}
+        - name: tls
+          secret:
+            secretName: {{ include "kes.tlsSecretName" . }}
+            defaultMode: 0440
+{{- end }}

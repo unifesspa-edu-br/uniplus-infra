@@ -1,0 +1,76 @@
+{{- if .Values.kes.enabled }}
+{{- $k := .Values.kes -}}
+{{- if not $k.vault.address }}
+{{- fail "kes.vault.address é obrigatório quando kes.enabled=true (ex.: http://platform-vault-in-cluster.vault.svc.cluster.local:8200)." -}}
+{{- end }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "kes.name" . }}
+  labels:
+    {{- include "kes.labels" . | nindent 4 }}
+data:
+  # ${KES_*_IDENTITY} são expandidos pelo KES a partir do ambiente do pod
+  # (Secret kes-identities); a configuração em si não carrega segredo.
+  config.yml: |
+    version: v1
+    address: 0.0.0.0:7373
+
+    admin:
+      identity: disabled
+
+    tls:
+      key: /tls/tls.key
+      cert: /tls/tls.crt
+
+    cache:
+      expiry:
+        any: {{ $k.cache.any }}
+        unused: {{ $k.cache.unused }}
+        offline: {{ $k.cache.offline }}
+
+    log:
+      error: on
+      audit: on
+
+    policy:
+      # Identidade do MinIO: só gera chaves de dados e decifra com a chave dos
+      # arquivos do candidato (o bulk/decrypt é o decrypt em lote). A documentação
+      # do KES para o MinIO lista create/generate/decrypt; o create fica de fora
+      # porque a chave nasce no provisionamento. /v1/status (saúde do KES, lida
+      # pelo MinIO) e a listagem restrita a esta chave evitam que a partida do
+      # MinIO trave por falta de permissão. Nada de apagar nem outra chave.
+      minio:
+        allow:
+          - /v1/status
+          - /v1/key/list/{{ $k.keyName }}
+          - /v1/key/generate/{{ $k.keyName }}
+          - /v1/key/decrypt/{{ $k.keyName }}
+          - /v1/key/bulk/decrypt/{{ $k.keyName }}
+        identities:
+          - ${KES_MINIO_IDENTITY}
+      # Identidade do provisionamento: cria a chave uma vez e a descreve. Não
+      # gera nem decifra, e a chave de API dela nunca vai ao MinIO.
+      provisioner:
+        allow:
+          - /v1/key/create/{{ $k.keyName }}
+          - /v1/key/describe/{{ $k.keyName }}
+        identities:
+          - ${KES_PROVISIONER_IDENTITY}
+
+    keystore:
+      vault:
+        endpoint: {{ $k.vault.address }}
+        engine: {{ $k.vault.kvEngine }}
+        version: v2
+        prefix: {{ $k.vault.kvPrefix }}
+        kubernetes:
+          engine: {{ $k.vault.authEngine }}
+          role: {{ $k.vault.authRole }}
+          jwt: /var/run/secrets/kubernetes.io/serviceaccount/token
+        transit:
+          engine: {{ $k.vault.transitEngine }}
+          key: {{ $k.vault.transitKey }}
+        status:
+          ping: 10s
+{{- end }}

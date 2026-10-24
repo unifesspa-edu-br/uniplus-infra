@@ -245,6 +245,10 @@ spec:
                 - component: vault
                 - component: vault-transit
                 - component: vault-transit-bootstrap
+                # KES: infraestrutura da cifra dos
+                # arquivos do candidato (ADR-0146 do uniplus-api). Desligado por
+                # default no chart; só HML o liga.
+                - component: kes
                 - component: observability/prometheus
                 - component: observability/grafana
                 - component: observability/loki
