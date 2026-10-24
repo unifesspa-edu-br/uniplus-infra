@@ -4400,6 +4400,56 @@ de `/var/lib/uniplus/minio/.bootstrap-creds`) antes de alargar a condição.
 
 *Documento mantido pelo CTIC/UNIFESSPA. Atualizações via Pull Request.*
 
+### 21.9 Espelho da base do ClamAV (uniplus-infra#679)
+
+O chart `apps/clamav-espelho` mantém, em HML, o espelho interno da base de
+assinaturas do ClamAV (ADR-0147 do uniplus-api). O `cvdupdate` baixa a base de
+`database.clamav.net` a cada 6 horas e um nginx a serve em
+`http://clamav-espelho.uniplus.svc.cluster.local`. O freshclam dos sidecars do
+verificador usa esse endereço como `PrivateMirror`. O espelho é o único
+componente da verificação com saída para a internet (HTTPS 443); só os pods do
+verificador o acessam.
+
+**Conferir a idade da base servida.** Dentro do cluster (por exemplo, de um pod
+do verificador ou de um `kubectl run` temporário no namespace `uniplus` com o
+label do verificador):
+
+```bash
+# epoch UTC da última atualização concluída com sucesso
+curl -s http://clamav-espelho.uniplus.svc.cluster.local/ultima-atualizacao
+# idade em horas
+echo $(( ( $(date -u +%s) - $(curl -s http://clamav-espelho.uniplus.svc.cluster.local/ultima-atualizacao) ) / 3600 ))
+# data do arquivo diário
+curl -sI http://clamav-espelho.uniplus.svc.cluster.local/daily.cvd | grep -i last-modified
+```
+
+O normal é menos de 6 horas (mais o tempo da execução). Acima de 24 horas, o
+espelho parou de atualizar; acima de 3 dias, o alerta da ADR-0147 dispara nos
+verificadores.
+
+**Quando o espelho para de atualizar:**
+
+1. Ler o log do atualizador:
+   `kubectl -n uniplus logs deploy/clamav-espelho-hml-standalone-single-clamav-espelho -c atualizador --tail=100`
+   (o nome do Deployment é `<Application>-clamav-espelho`; confirmar com
+   `kubectl -n uniplus get deploy -l app.kubernetes.io/name=clamav-espelho`).
+2. `cvd update falhou` repetido com erro de rede: conferir a saída HTTPS 443 e o
+   DNS do cluster. Erro 429 ou bloqueio do CDN: o servidor público limita quem
+   baixa demais; manter o intervalo e aguardar. Não reduzir `intervaloHoras`.
+3. Disco cheio no PVC (`df -h /dados` no container `atualizador`): ampliar
+   `clamavEspelho.persistence.size` em `environments/hml-standalone-single/values.yaml`.
+4. Base corrompida: apagar o conteúdo de `/dados/base` **e** o estado do cvdupdate
+   (`/dados/home/.cvdupdate`) no container `atualizador` e reiniciar o pod (`kubectl -n uniplus rollout restart deploy/<nome>`);
+   o `cvd update` baixa tudo de novo (cerca de 300 MB).
+
+Com o espelho fora do ar, os clamd existentes continuam verificando com a base
+que já carregaram, e um pod novo do verificador sobe com a base de partida da
+imagem; o problema é a base envelhecer, não a verificação parar.
+
+Após reiniciar o espelho (Deployment `Recreate`), o pod fica `Ready` só depois da
+primeira atualização concluída com a base presente no PVC: com PVC preservado é
+imediato; com PVC novo leva alguns minutos de download.
+
 ## 22. Promoção de versão em homologação
 
 ### Como o deploy acontece hoje
