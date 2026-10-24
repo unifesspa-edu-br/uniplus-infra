@@ -1,0 +1,126 @@
+{{- if .Values.rabbitmq.enabled }}
+{{- $r := .Values.rabbitmq -}}
+# Cria (ou reconcilia) o vhost, os dois usuários e as permissões pela API de
+# gerência. Idempotente: PUT substitui. Falha o hook se qualquer chamada falhar.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "rabbitmq.name" . }}-provisionamento
+  labels:
+    {{- include "rabbitmq.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade,post-rollback
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation
+data:
+  provisionar.sh: |
+    #!/bin/sh
+    set -eu
+    BASE="http://{{ include "rabbitmq.name" . }}:15672/api"
+    AUTH="${ADMIN_USERNAME}:${ADMIN_PASSWORD}"
+    log() { printf '%s [rabbitmq-provisionamento] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1"; }
+
+    # --fail: qualquer resposta de erro derruba o Job; nada é ignorado.
+    chamar() {
+      curl --fail --silent --show-error --max-time 20 -u "$AUTH" \
+        -H 'content-type: application/json' "$@"
+    }
+
+    log "Aguardando a API de gerência"
+    tentativa=0
+    until chamar "$BASE/overview" >/dev/null 2>&1; do
+      tentativa=$((tentativa + 1))
+      if [ "$tentativa" -ge 60 ]; then
+        log "API de gerência indisponível após 60 tentativas"
+        exit 1
+      fi
+      sleep 5
+    done
+
+    VHOST='{{ $r.vhost }}'
+    log "vhost ${VHOST} (quorum como tipo padrão de fila)"
+    chamar -X PUT "$BASE/vhosts/${VHOST}" \
+      -d '{"default_queue_type":"quorum","description":"Verificação dos arquivos do candidato"}'
+
+    usuario() {
+      nome="$1"; senha="$2"
+      log "usuário ${nome}"
+      chamar -X PUT "$BASE/users/${nome}" -d "{\"password\":\"${senha}\",\"tags\":\"\"}"
+      chamar -X PUT "$BASE/permissions/${VHOST}/${nome}" \
+        -d '{"configure":".*","write":".*","read":".*"}'
+    }
+    usuario '{{ $r.users.api }}' "$API_PASSWORD"
+    usuario '{{ $r.users.verificador }}' "$VERIFICADOR_PASSWORD"
+
+    log "Conferindo o resultado"
+    chamar "$BASE/vhosts/${VHOST}" | grep -q '"default_queue_type":"quorum"'
+    chamar "$BASE/permissions/${VHOST}/{{ $r.users.api }}" >/dev/null
+    chamar "$BASE/permissions/${VHOST}/{{ $r.users.verificador }}" >/dev/null
+    log "Concluído"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "rabbitmq.name" . }}-provisionamento
+  labels:
+    {{- include "rabbitmq.labels" . | nindent 4 }}
+    uniplus.io/job-role: rabbitmq-provisionamento
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade,post-rollback
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": hook-succeeded,before-hook-creation
+spec:
+  backoffLimit: {{ $r.job.backoffLimit }}
+  activeDeadlineSeconds: {{ $r.job.activeDeadlineSeconds }}
+  template:
+    metadata:
+      # Sem os labels do broker: o pod do Job não pode casar com o seletor do
+      # StatefulSet nem da NetworkPolicy dele.
+      labels:
+        app.kubernetes.io/name: rabbitmq-provisionamento
+        app.kubernetes.io/instance: {{ .Release.Name }}
+        app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+        app.kubernetes.io/managed-by: {{ .Release.Service }}
+        app.kubernetes.io/component: provisionamento
+        app.kubernetes.io/part-of: uniplus
+        uniplus.io/job-role: rabbitmq-provisionamento
+    spec:
+      restartPolicy: OnFailure
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: provisionar
+          image: "{{ $r.provisionerImage.repository }}:{{ $r.provisionerImage.tag }}"
+          imagePullPolicy: {{ $r.provisionerImage.pullPolicy }}
+          command: ["/bin/sh", "/scripts/provisionar.sh"]
+          envFrom:
+            - secretRef:
+                name: {{ include "rabbitmq.credentialsSecretName" . }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 64Mi
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+              readOnly: true
+      volumes:
+        - name: scripts
+          configMap:
+            name: {{ include "rabbitmq.name" . }}-provisionamento
+            defaultMode: 0555
+{{- end }}

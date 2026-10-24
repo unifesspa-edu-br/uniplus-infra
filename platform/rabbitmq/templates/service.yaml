@@ -1,0 +1,40 @@
+{{- if .Values.rabbitmq.enabled }}
+# Headless: identidade estável do StatefulSet.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "rabbitmq.name" . }}-headless
+  labels:
+    {{- include "rabbitmq.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    {{- include "rabbitmq.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: amqp
+      port: 5672
+      targetPort: amqp
+---
+# Endereço dos clientes: rabbitmq.<namespace>.svc.cluster.local:5672.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "rabbitmq.name" . }}
+  labels:
+    {{- include "rabbitmq.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "rabbitmq.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: amqp
+      port: 5672
+      targetPort: amqp
+    - name: management
+      port: 15672
+      targetPort: management
+    - name: prometheus
+      port: 15692
+      targetPort: prometheus
+{{- end }}

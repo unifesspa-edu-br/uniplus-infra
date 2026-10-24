@@ -1,0 +1,21 @@
+{{- if .Values.rabbitmq.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "rabbitmq.name" . }}
+  labels:
+    {{- include "rabbitmq.labels" . | nindent 4 }}
+data:
+  enabled_plugins: |
+    [rabbitmq_management,rabbitmq_prometheus].
+  10-uniplus.conf: |
+    # Quorum queues como padrão: o Wolverine também as declara explicitamente.
+    default_queue_type = quorum
+    # Um nó: o disco livre mínimo protege o broker de parar a escrita sem aviso.
+    disk_free_limit.absolute = 1GB
+    # O broker não lê o limite do cgroup de forma confiável: sem isto o watermark
+    # relativo valeria sobre a memória do nó. Tem de ser igual a resources.limits.memory.
+    total_memory_available_override_value = {{ .Values.rabbitmq.memoryLimitBytes }}
+    vm_memory_high_watermark.relative = 0.6
+    prometheus.return_per_object_metrics = false
+{{- end }}

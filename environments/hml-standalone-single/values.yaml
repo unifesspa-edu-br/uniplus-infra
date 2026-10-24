@@ -905,6 +905,28 @@ kes:
       - 192.168.21.134/32
       - 10.42.0.1/32
 
+# ============================================================================
+# RabbitMQ (chart platform/rabbitmq/) — fila de trabalho entre a API e o
+# verificador (ADR-0146). UM nó em HML; o cluster de três nós é outra issue.
+# Os consumidores leem os Secrets rabbitmq-api e rabbitmq-verificador, criados
+# no namespace uniplus.
+# ============================================================================
+rabbitmq:
+  enabled: true
+
+  persistence:
+    size: 5Gi
+    storageClassName: hml-local-nvme
+
+  networkPolicy:
+    clients:
+      - namespace: uniplus
+        podSelector:
+          app.kubernetes.io/name: uniplus-api-host
+      - namespace: uniplus
+        podSelector:
+          app.kubernetes.io/name: uniplus-verificador
+
 kubePrometheusStack:
   enabled: false
 

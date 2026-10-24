@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "rabbitmq chart values",
+  "type": "object",
+  "additionalProperties": true,
+  "properties": {
+    "rabbitmq": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "image": { "type": "object" },
+        "provisionerImage": { "type": "object" },
+        "persistence": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "size": { "type": "string", "minLength": 1 },
+            "storageClassName": { "type": "string" }
+          }
+        },
+        "resources": { "type": "object" },
+        "memoryLimitBytes": { "type": "integer", "minimum": 1 },
+        "vhost": { "type": "string", "minLength": 1 },
+        "users": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "api": { "type": "string", "minLength": 1 },
+            "verificador": { "type": "string", "minLength": 1 }
+          }
+        },
+        "externalSecret": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "secretStoreName": { "type": "string", "minLength": 1 },
+            "secretStoreKind": { "type": "string", "enum": ["ClusterSecretStore", "SecretStore"] },
+            "refreshInterval": { "type": "string", "minLength": 1 },
+            "adminVaultPath": { "type": "string", "minLength": 1 },
+            "apiVaultPath": { "type": "string", "minLength": 1 },
+            "verificadorVaultPath": { "type": "string", "minLength": 1 }
+          }
+        },
+        "consumers": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "namespace": { "type": "string", "minLength": 1 },
+            "apiSecretName": { "type": "string", "minLength": 1 },
+            "verificadorSecretName": { "type": "string", "minLength": 1 }
+          }
+        },
+        "serviceMonitor": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "interval": { "type": "string" }
+          }
+        },
+        "job": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "backoffLimit": { "type": "integer", "minimum": 0 },
+            "activeDeadlineSeconds": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "networkPolicy": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "clients": { "type": "array" },
+            "metricsFrom": { "type": "array" }
+          }
+        }
+      }
+    }
+  }
+}
