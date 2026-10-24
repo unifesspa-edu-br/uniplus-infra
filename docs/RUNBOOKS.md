@@ -4396,10 +4396,6 @@ Se a leitura pela borda devolver 403 enquanto o objeto existe, a conexão do Tra
 ao MinIO com IP da rede de pods. Conferir o IP de origem com `mc admin trace` (credenciais root
 de `/var/lib/uniplus/minio/.bootstrap-creds`) antes de alargar a condição.
 
----
-
-*Documento mantido pelo CTIC/UNIFESSPA. Atualizações via Pull Request.*
-
 ### 21.9 Espelho da base do ClamAV (uniplus-infra#679)
 
 O chart `apps/clamav-espelho` mantém, em HML, o espelho interno da base de
@@ -4449,6 +4445,106 @@ imagem; o problema é a base envelhecer, não a verificação parar.
 Após reiniciar o espelho (Deployment `Recreate`), o pod fica `Ready` só depois da
 primeira atualização concluída com a base presente no PVC: com PVC preservado é
 imediato; com PVC novo leva alguns minutos de download.
+
+### 21.10 Cifra e verificação dos arquivos do candidato (uniplus-infra#682)
+
+A [ADR-0146](https://github.com/unifesspa-edu-br/uniplus-api/blob/main/docs/adrs/0146-cifra-e-verificacao-dos-arquivos-do-candidato-no-armazenamento.md)
+do `uniplus-api` move a cifra do arquivo do candidato para o armazenamento (SSE-KMS, uma chave de
+dados por objeto) e a verificação para um processo próprio, acionado por fila.
+
+```text
+candidato ──PUT──▶ MinIO (host) ◀──mTLS :7373──▶ KES (pod) ──Kubernetes auth──▶ Vault (KV + Transit)
+API ──pedido──▶ RabbitMQ ──▶ verificador ──lê/remove──▶ uniplus-candidato-envio
+                              verificador ──promove──▶ uniplus-candidato-definitivo
+```
+
+| Peça | Onde | Como chega ao servidor |
+|---|---|---|
+| Chave Transit `uniplus-kes-kek`, política e role `kes`, certificado e identidades do KES, senhas do RabbitMQ, credenciais do MinIO | `scripts/hml-standalone-single/provision-verificacao-prerequisites.sh` | **Manual**, na VM |
+| KES (pod, hostPort 7373) | `platform/kes/` + bloco `kes` do ambiente | ArgoCD |
+| RabbitMQ de um nó, vhost `verificacao`, usuários da API e do verificador | `platform/rabbitmq/` + bloco `rabbitmq` do ambiente | ArgoCD |
+| Chave mestra no KES, ligação do MinIO, buckets, SSE-KMS, expiração, políticas, usuários, CORS | `scripts/hml-standalone-single/provision-arquivos-candidato.sh` + `minio/arquivos-candidato-*.policy.json` | **Manual**, na VM |
+| NetworkPolicy do verificador (a única; o chart do `uniplus-api` não traz nenhuma). Pods com `app.kubernetes.io/name: uniplus-verificador`; saída só para DNS, MinIO `:9000`, RabbitMQ `:5672` e o Service `clamav-espelho` (pod `:8080`) | `apps/verificador-rede/` | ArgoCD |
+| Application do verificador (chart do `uniplus-api`) | `argocd/applications/verificador-hml.yaml` | `kubectl apply` uma vez, com o chart já na main do `uniplus-api` |
+
+**Ordem de deploy** (cada passo depende do anterior):
+
+1. Vault inicializado e aberto (unseal Shamir manual, ADR-014), com o auth `kubernetes` habilitado (§8.4).
+2. Na VM: `./scripts/hml-standalone-single/provision-verificacao-prerequisites.sh`.
+3. Merge na `main`; o ArgoCD sincroniza `platform-kes-in-cluster` e `platform-rabbitmq-in-cluster`.
+   O Job de provisionamento do RabbitMQ cria o vhost e os usuários.
+4. Na VM: `./scripts/hml-standalone-single/provision-arquivos-candidato.sh`. Ele reinicia o MinIO
+   quando a configuração do KES, do CORS ou do audit muda. Para o audit, informar
+   `AUDIT_WEBHOOK_ENDPOINT` (e `AUDIT_WEBHOOK_TOKEN`); sem ele o script termina avisando a lacuna.
+5. Os arquivos selados que já existem em HML são apagados e reenviados (ADR-0146): não há conversão.
+
+**Nomes para os consumidores:**
+
+| Item | Valor |
+|---|---|
+| Buckets | `uniplus-candidato-envio` (quarentena, expira em 1 dia) e `uniplus-candidato-definitivo` |
+| Chave do KES | `uniplus-arquivos-candidato` |
+| Secrets no namespace `uniplus` | `rabbitmq-api` e `rabbitmq-verificador`, com `RABBITMQ_URI`, `RABBITMQ_USERNAME`, `RABBITMQ_PASSWORD` |
+| RabbitMQ | `rabbitmq.rabbitmq.svc.cluster.local:5672`, vhost `verificacao`, filas `verificacao-de-arquivos.pedidos` e `.resultados` |
+| Credenciais do MinIO (Vault) | `secret/standalone/minio/arquivos-candidato-api` e `.../arquivos-candidato-verificador` (`access_key`, `secret_key`) |
+
+**Dependência do MinIO inteiro do KES e do Vault (consequência aceita).** O KMS é global no MinIO: com
+`MINIO_KMS_KES_*` ligado, o MinIO só sobe com o KES alcançável, e o KES só serve com o Vault aberto
+(falha fechada, ADR-0146). Isso vale para **todo** o MinIO, inclusive o acervo público
+(`uniplus-acervo-publico`, §21.8): Vault selado ou KES fora do ar deixa o MinIO sem subir e a rota
+`/acervo` responde erro. Os dados dos outros buckets (sem SSE) não dependem da chave, mas ficam
+inacessíveis enquanto o MinIO não subir.
+
+**Ordem depois de reiniciar a VM:**
+
+1. Aguardar o k3s e os pods do Vault; fazer o **unseal** do Vault (Shamir manual, ADR-014).
+2. Conferir o KES pronto: `kubectl -n kes rollout status deployment/kes` e
+   `curl --cacert <kes.crt> https://192.168.21.134:7373/version`. Ele só fica pronto com o Vault aberto.
+3. **Só então** o MinIO: `sudo systemctl restart uniplus-minio` (a unit sobe sozinha no boot e fica em
+   reinício até o KES responder; reiniciar de novo após o passo 2 evita esperar o ciclo).
+4. Conferir o acervo público e `mc admin kms key status`.
+
+**Permissões do RabbitMQ.** A API e o verificador têm `configure/write/read` igual a `.*` dentro do vhost
+`verificacao` (é HML). Limitar cada um às filas (API escreve em pedidos e lê de resultados; verificador o
+inverso) ficou de fora de propósito: o Wolverine declara as filas na subida (precisa de `configure`) e
+também a fila de erro e o exchange padrão, cujos nomes só se fecham em uniplus-api#2054. Uma expressão
+errada derruba o `AutoProvision` na partida. O isolamento hoje vem do vhost exclusivo e das credenciais
+separadas; apertar as expressões é ajuste em `platform/rabbitmq/templates/job-provisionamento.yaml`
+depois de a topologia estar fechada.
+
+**Política do KES para o MinIO.** `generate`, `decrypt` e `bulk/decrypt` da chave, mais `/v1/status` e
+`/v1/key/list` restrito a ela. A documentação do KES para o MinIO lista `create`/`generate`/`decrypt`; o
+`create` fica de fora porque a chave é criada no provisionamento. Se a partida do MinIO acusar 403 do
+KES, o primeiro ajuste é em `platform/kes/templates/configmap.yaml`.
+
+**Rotação do certificado do KES** (vale 1 ano): apagar `secret/standalone/kes/server` no Vault e rodar os
+dois scripts de novo. O pod do KES não percebe a troca sozinha: o checksum do Deployment cobre só o
+ConfigMap, e o Secret montado vem do ESO. Depois de o ESO sincronizar, reiniciar explicitamente:
+
+```bash
+kubectl -n kes annotate externalsecret kes-tls force-sync="$(date +%s)" --overwrite   # ou esperar o refresh (1h)
+kubectl -n kes get secret kes-tls -o jsonpath='{.metadata.resourceVersion}'            # mudou? então sincronizou
+kubectl -n kes rollout restart deployment/kes
+kubectl -n kes rollout status deployment/kes
+```
+
+**Cache do KES.** 30 s, sem cache offline: a revogação da chave e o Vault selado derrubam a leitura e a
+gravação em segundos (falha fechada). Aumentar `kes.cache.*` troca revogação por disponibilidade.
+
+**Lacuna: volume cifrado.** O MinIO guarda os dados num diretório do host (`/var/lib/uniplus/minio/data`),
+fora de PVC, e a StorageClass `hml-local-nvme` usa o provisionador `local-path`, que não oferece cifra.
+A cifra em repouso exigida pela ADR-0146 depende de o disco da VM estar cifrado (LUKS ou pelo
+hipervisor), o que este repositório não controla nem consegue verificar. A confirmação é com a CTIC.
+O SSE-KMS protege o conteúdo dos objetos de qualquer forma; o volume cifrado cobre o resto do disco.
+
+**Lacuna: audit do MinIO.** Em HML o Loki e o OTel Collector estão desligados, então não há coletor que
+receba o audit webhook. O script o configura assim que houver um endpoint.
+
+---
+
+*Documento mantido pelo CTIC/UNIFESSPA. Atualizações via Pull Request.*
+
+---
 
 ## 22. Promoção de versão em homologação
 

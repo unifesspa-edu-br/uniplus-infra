@@ -42,4 +42,4 @@ do chart lê o resultado em `secret/standalone/kes/server` e
 | `kes.cache.*` | Expiração do cache (disponibilidade x revogação). |
 | `kes.networkPolicy.hostCidrs` | Origens do host autorizadas no hostPort. |
 
-Operação e provisionamento: `docs/RUNBOOKS.md` §21.9.
+Operação e provisionamento: `docs/RUNBOOKS.md` §21.10.
