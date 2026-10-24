@@ -941,3 +941,17 @@ tempo:
 
 otelCollector:
   enabled: false
+
+# ============================================================================
+# Isolamento do verificador de arquivos do candidato (chart
+# apps/verificador-rede/, uniplus-infra#682). O chart do verificador vem do
+# uniplus-api (argocd/applications/verificador-hml.yaml); esta política o deixa
+# alcançar só o MinIO (porta de dados), o RabbitMQ e o DNS — sem Postgres e sem
+# internet — além do espelho da base do antivírus (clamav-espelho, #679).
+# ============================================================================
+verificadorRede:
+  enabled: true
+
+  minio:
+    cidr: 192.168.21.134/32
+    port: 9000

@@ -1,0 +1,27 @@
+# Valores de HML do chart infra/helm/verificador (repositório uniplus-api),
+# consumidos pela Application argocd/applications/verificador-hml.yaml.
+#
+# O chart está sendo escrito em uniplus-api#2054; as chaves abaixo são as que a
+# infraestrutura já fixou e precisam ser alinhadas ao values.yaml dele quando
+# entrar na main. Esta é a ÚNICA fonte dos valores de HML do verificador: o
+# values.yaml compartilhado do ambiente (environments/hml-standalone-single/
+# values.yaml) é lido pelos charts deste repositório.
+#
+# Contrato de integração (já provisionado por uniplus-infra#682):
+#
+#   RabbitMQ   Secret `rabbitmq-verificador` (namespace uniplus), chaves
+#              RABBITMQ_URI, RABBITMQ_USERNAME e RABBITMQ_PASSWORD. Serviço
+#              rabbitmq.rabbitmq.svc.cluster.local:5672, vhost `verificacao`,
+#              filas verificacao-de-arquivos.pedidos e .resultados.
+#   MinIO      endpoint 192.168.21.134:9000; buckets uniplus-candidato-envio e
+#              uniplus-candidato-definitivo; credencial no Vault em
+#              secret/standalone/minio/arquivos-candidato-verificador
+#              (access_key, secret_key), política arquivos-candidato-verificador.
+#   Rede       pods com o label app.kubernetes.io/name=uniplus-verificador
+#              (a NetworkPolicy apps/verificador-rede e a de entrada do espelho
+#              selecionam por ele; o chart não deve ter NetworkPolicy própria).
+#   Espelho    PrivateMirror: http://clamav-espelho.uniplus.svc.cluster.local
+#              (Service porta 80, pod 8080; uniplus-infra#679).
+#   Réplicas   duas, no mínimo (ADR-0146): uma basta para a vazão, a segunda
+#              mantém a verificação no ar se um pod cair.
+replicaCount: 2

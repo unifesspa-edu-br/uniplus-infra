@@ -1,0 +1,68 @@
+# Application do verificador de arquivos do candidato em HML (ADR-0146 do
+# uniplus-api, uniplus-infra#682).
+#
+# Diferente dos charts de apps/, o chart do verificador vive no repositório da
+# aplicação (uniplus-api, infra/helm/verificador). Por isso não sai do
+# ApplicationSet uniplus-apps, cujo template aponta sempre para este repositório:
+# é uma Application própria, com duas fontes — o chart do uniplus-api e os
+# valores de HML daqui (environments/hml-standalone-single/verificador.values.yaml).
+#
+# Aplicar uma vez, depois que o chart existir na main do uniplus-api:
+#   kubectl apply -n argocd -f argocd/applications/verificador-hml.yaml
+# O isolamento de rede do pod vem do chart apps/verificador-rede (ApplicationSet).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: verificador-in-cluster
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: uniplus-verificador
+    app.kubernetes.io/instance: verificador-in-cluster
+    app.kubernetes.io/version: main
+    app.kubernetes.io/managed-by: argocd
+    app.kubernetes.io/part-of: uniplus
+    environment: hml-standalone-single
+spec:
+  project: uniplus
+  sources:
+    - repoURL: https://github.com/unifesspa-edu-br/uniplus-api
+      targetRevision: main
+      path: infra/helm/verificador
+      helm:
+        releaseName: verificador
+        valueFiles:
+          - values.yaml
+          - $values/environments/hml-standalone-single/verificador.values.yaml
+    - repoURL: https://github.com/unifesspa-edu-br/uniplus-infra
+      targetRevision: main
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: uniplus
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true
+      - ApplyOutOfSyncOnly=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  # Mesmos defaults do webhook do External Secrets Operator ignorados nos
+  # ApplicationSets (OutOfSync benigno).
+  ignoreDifferences:
+    - group: external-secrets.io
+      kind: ExternalSecret
+      jqPathExpressions:
+        - '.spec.data[].remoteRef.conversionStrategy'
+        - '.spec.data[].remoteRef.decodingStrategy'
+        - '.spec.data[].remoteRef.metadataPolicy'
+        - '.spec.data[].remoteRef.nullBytePolicy'
+        - '.spec.target.deletionPolicy'
+        - '.spec.target.template.engineVersion'
+        - '.spec.target.template.mergePolicy'

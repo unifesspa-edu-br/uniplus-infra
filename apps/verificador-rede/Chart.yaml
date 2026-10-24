@@ -1,0 +1,23 @@
+apiVersion: v2
+name: verificador-rede
+description: |
+  NetworkPolicy que isola o verificador de arquivos do candidato (ADR-0146 do
+  uniplus-api): ele alcança só o MinIO, o RabbitMQ, o espelho da base de
+  assinaturas do antivírus e o DNS, sem Postgres e sem internet. O chart do
+  verificador em si vive no uniplus-api (infra/helm/verificador).
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+
+home: https://github.com/unifesspa-edu-br/uniplus-infra
+sources:
+  - https://github.com/unifesspa-edu-br/uniplus-infra
+
+maintainers:
+  - name: CTIC Unifesspa
+    url: https://github.com/unifesspa-edu-br/uniplus-api
+
+keywords:
+  - networkpolicy
+  - verificador
+  - uniplus

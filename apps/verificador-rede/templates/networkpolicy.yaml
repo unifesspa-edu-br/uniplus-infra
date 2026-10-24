@@ -1,0 +1,71 @@
+{{- if .Values.verificadorRede.enabled -}}
+{{- $v := .Values.verificadorRede -}}
+{{- if not $v.minio.cidr }}
+{{- fail "verificadorRede.minio.cidr é obrigatório quando verificadorRede.enabled=true (IP do host do MinIO, /32)." -}}
+{{- end }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: verificador-isolamento
+  labels:
+    app.kubernetes.io/name: verificador-isolamento
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    {{- toYaml .Values.commonLabels | nindent 4 }}
+    helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- toYaml $v.podSelector | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  # Sem regra de ingress: nada inicia conexão com o verificador. Ele consome a
+  # fila (conexão de saída) e as sondas do kubelet não passam pela política.
+  ingress: []
+  egress:
+    # DNS (CoreDNS em kube-system; o ipBlock do ClusterIP não casa depois do DNAT).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # MinIO: só a porta de dados.
+    - to:
+        - ipBlock:
+            cidr: {{ $v.minio.cidr | quote }}
+      ports:
+        - protocol: TCP
+          port: {{ $v.minio.port }}
+    # RabbitMQ.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $v.rabbitmq.namespace | quote }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $v.rabbitmq.podSelector | nindent 14 }}
+      ports:
+        - protocol: TCP
+          port: {{ $v.rabbitmq.port }}
+    {{- if $v.espelho.enabled }}
+    # Espelho da base de assinaturas do antivírus.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $v.espelho.namespace | quote }}
+          {{- with $v.espelho.podSelector }}
+          podSelector:
+            matchLabels:
+              {{- toYaml . | nindent 14 }}
+          {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ $v.espelho.port }}
+    {{- end }}
+{{- end }}

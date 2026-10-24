@@ -107,6 +107,14 @@ spec:
                   namespace: uniplus
                   aplicaMigration: false
                   targetEnvironment: hml-standalone-single
+                # Isolamento de rede do verificador de arquivos do candidato
+                # (ADR-0146). O verificador em si é a Application
+                # argocd/applications/verificador-hml.yaml, com chart do
+                # uniplus-api.
+                - app: verificador-rede
+                  namespace: uniplus
+                  aplicaMigration: false
+                  targetEnvironment: hml-standalone-single
           - clusters:
               selector:
                 matchLabels:
