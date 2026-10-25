@@ -32,3 +32,12 @@ image:
 clamd:
   image:
     tag: v0.43.0
+  # O nó de HML tem 6 CPUs: o request de 1 CPU deixa as duas réplicas caberem, e o
+  # limite segue nas 4 CPUs da ADR-0147 para o pico de varredura.
+  resources:
+    requests:
+      cpu: "1"
+      memory: 2Gi
+    limits:
+      cpu: "4"
+      memory: 3584Mi
