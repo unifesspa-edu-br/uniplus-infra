@@ -17,7 +17,6 @@ metadata:
   namespace: argocd
   labels:
     app.kubernetes.io/name: uniplus-verificador
-    app.kubernetes.io/instance: verificador-in-cluster
     app.kubernetes.io/version: main
     app.kubernetes.io/managed-by: argocd
     app.kubernetes.io/part-of: uniplus
