@@ -36,9 +36,9 @@ argocd/
 `applicationset.yaml` contém **2 ApplicationSets**:
 
 1. **uniplus-apps** — gera Applications para os charts em `apps/`. Dois grupos:
-   - **Sempre ligados** (todo cluster registrado): uniplus-web, uniplus-api-portal, uniplus-api-selecao, uniplus-api-ingresso, clamav-scanner, keycloak-replica, kafka-ui, apicurio-registry, redis-ui
+   - **Sempre ligados** (todo cluster registrado): uniplus-web, uniplus-api-portal, uniplus-api-selecao, uniplus-api-ingresso, keycloak-replica, kafka-ui, apicurio-registry, redis-ui
    - **Habilitados só em ambientes específicos** (mecanismo por-ambiente, ver seção abaixo): uniplus-api-host, unifesspa-geo-api, clamav-espelho, verificador-rede (NetworkPolicy do verificador de arquivos) — hoje só em `hml-standalone-single`
-   - `clamav-scanner` permanece até o verificador da uniplus-api#2054 assumir a verificação; depois é removido (uniplus-infra#684). O novo `clamav-espelho` só abastece a base de assinaturas dos sidecars.
+   - A verificação de antivírus dos arquivos do candidato é do verificador (uniplus-api#2054), com clamd sidecar. O `clamav-espelho` abastece a base de assinaturas desses sidecars.
 
 2. **uniplus-platform** — gera Applications para componentes de plataforma:
    - storage, minio-console-proxy, traefik, cert-manager, external-secrets, vault, vault-transit, vault-transit-bootstrap, kes, rabbitmq

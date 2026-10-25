@@ -464,11 +464,6 @@ uniplusApiHost:
         secretKeyRef:
           name: uniplus-api-host-encryption-local
           key: LOCAL_KEY
-    # Antivírus dos arquivos enviados na inscrição: o serviço do chart clamav-scanner.
-    - name: Clamd__Host
-      value: clamav-scanner-in-cluster-clamav-scanner
-    - name: Clamd__Port
-      value: "3310"
 
   ingress:
     enabled: true
@@ -497,39 +492,11 @@ uniplusApiHost:
       - appName: uniplus-api-portal
     geo:
       namespace: geo
-    clamd:
-      namespace: uniplus
     rabbitmq:
       namespace: rabbitmq
 
   otel:
     enabled: false
-
-# ============================================================================
-# clamavScanner (chart apps/clamav-scanner/) — clamd na porta 3310 para a
-# verificação de antivírus dos arquivos enviados na inscrição. Só os pods da
-# API host conectam. A primeira subida baixa as assinaturas (~600MB) com o PVC
-# vazio, por isso o startupProbe tolera 10 min (120 x 5s) antes de reiniciar o
-# container.
-# ============================================================================
-clamavScanner:
-  enabled: true
-  resources:
-    requests:
-      cpu: 200m
-      memory: 1Gi
-    limits:
-      cpu: 1500m
-      memory: 2Gi
-  startupProbe:
-    failureThreshold: 120
-    periodSeconds: 5
-  persistence:
-    storageClassName: hml-local-nvme
-  networkPolicy:
-    clientNamespace: uniplus
-    clientPodSelector:
-      app.kubernetes.io/name: uniplus-api-host
 
 # ============================================================================
 # clamavEspelho (chart apps/clamav-espelho/) — espelho interno da base de

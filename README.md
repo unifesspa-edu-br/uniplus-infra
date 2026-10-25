@@ -32,7 +32,7 @@ uniplus-infra/
 │   ├── uniplus-api-portal/     # API .NET 10 — módulo Portal
 │   ├── uniplus-api-selecao/    # API .NET 10 — módulo Seleção
 │   ├── uniplus-api-ingresso/   # API .NET 10 — módulo Ingresso
-│   ├── clamav-scanner/         # Worker antimalware (consumer Kafka)
+│   ├── clamav-espelho/         # Espelho interno das assinaturas do ClamAV
 │   └── keycloak-replica/       # Serviço OIDC local (Keycloak na implementação atual)
 ├── platform/                   # Componentes de plataforma (infra do K8s)
 │   ├── traefik/                # API Gateway + Ingress Controller
