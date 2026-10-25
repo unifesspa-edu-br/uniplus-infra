@@ -25,7 +25,7 @@ spec:
   project: uniplus
   sources:
     - repoURL: https://github.com/unifesspa-edu-br/uniplus-api
-      targetRevision: v0.43.2
+      targetRevision: v0.44.0
       path: infra/helm/verificador
       helm:
         releaseName: verificador
