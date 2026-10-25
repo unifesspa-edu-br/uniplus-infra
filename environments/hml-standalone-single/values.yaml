@@ -342,7 +342,7 @@ uniplusApiHost:
   enabled: true
 
   image:
-    tag: v0.42.0
+    tag: v0.43.0
 
   # A migration passa a ser aplicada pelo Job `pre-upgrade` (ADR-0127 do
   # uniplus-api) antes do rollout, e não mais no boot do pod.
@@ -456,6 +456,7 @@ uniplusApiHost:
   # A credencial nasce antes; `enabled` liga junto do bump da API que a exige.
   verificacao:
     criarCredencial: true
+    enabled: true
 
   extraEnv:
     - name: UniPlus__Encryption__LocalKey
@@ -554,7 +555,7 @@ uniplusApiPortal:
   enabled: true
 
   image:
-    tag: v0.42.0
+    tag: v0.43.0
 
   resources:
     requests:

@@ -25,3 +25,10 @@
 #   Réplicas   duas, no mínimo (ADR-0146): uma basta para a vazão, a segunda
 #              mantém a verificação no ar se um pod cair.
 replicaCount: 2
+
+image:
+  tag: v0.43.0
+
+clamd:
+  image:
+    tag: v0.43.0
