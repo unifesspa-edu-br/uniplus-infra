@@ -84,6 +84,58 @@ vault:
       enabled: true
       size: 5Gi
 
+    # O Vault não rotaciona o audit.log. O sidecar compacta e esvazia o arquivo uma
+    # vez por dia ou ao passar de AUDIT_MAX_BYTES, sem reiniciar o Vault: o
+    # dispositivo grava em modo append. As linhas gravadas entre a compactação e o
+    # esvaziamento também saem no dispositivo stdout/. Sem `set -e`: uma falha
+    # do sidecar tiraria o pod do Vault de Ready.
+    extraContainers:
+      - name: audit-rotate
+        image: hashicorp/vault:1.21.2
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            set -u
+            d=/vault/audit
+            f=$d/audit.log
+            ultimo=$(date +%F)
+            while :; do
+              sleep 300
+              tamanho=$(stat -c %s "$f" 2>/dev/null || echo 0)
+              if [ "$(date +%F)" != "$ultimo" ] || [ "$tamanho" -ge "$AUDIT_MAX_BYTES" ]; then
+                if [ "$tamanho" -gt 0 ]; then
+                  destino=$d/audit.log.$(date +%Y%m%dT%H%M%S).gz
+                  if gzip -c "$f" > "$destino"; then
+                    : > "$f"
+                  else
+                    rm -f "$destino"
+                  fi
+                fi
+                ultimo=$(date +%F)
+              fi
+              find "$d" -name 'audit.log.*.gz' -mtime +"$AUDIT_RETENCAO_DIAS" -delete
+            done
+        env:
+          - name: AUDIT_MAX_BYTES
+            value: "104857600"
+          - name: AUDIT_RETENCAO_DIAS
+            value: "30"
+        volumeMounts:
+          - name: audit
+            mountPath: /vault/audit
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: ["ALL"]
+        resources:
+          requests:
+            cpu: 5m
+            memory: 16Mi
+          limits:
+            cpu: 50m
+            memory: 32Mi
+
     # Recursos lab — alinhados a "1 (HA: 3) | 200m → 500m | 256 MB → 512 MB"
     # da Tabela 10.1. Em prod elevar conforme tabela.
     resources:
