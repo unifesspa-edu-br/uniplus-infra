@@ -150,7 +150,6 @@ otelCollector:
         logs:
           log_record:
             - 'resource.attributes["service.name"] == "apicurio-registry-uniplus-standalone" and IsMatch(body, "system/info")'
-            - 'resource.attributes["service.name"] == "clamav-scanner-uniplus-standalone"'
       # k8sattributes é injetado pelo preset kubernetesAttributes.
 
     exporters:

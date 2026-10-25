@@ -34,8 +34,7 @@ spec:
       {{- end }}
       initContainers:
         # O kubelet ignora fsGroup em volumes do rancher.io/local-path (a
-        # StorageClass hml-local-nvme), então o PVC nasce como root. Mesmo
-        # arranjo do chart clamav-scanner (issues #188/#200).
+        # StorageClass hml-local-nvme), então o PVC nasce como root.
         - name: ajusta-permissao
           image: "{{ $a.image.registry }}/{{ $a.image.repository }}:{{ $a.image.tag }}"
           imagePullPolicy: {{ $a.image.pullPolicy }}

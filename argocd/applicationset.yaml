@@ -49,9 +49,6 @@ spec:
                 - app: uniplus-api-ingresso
                   namespace: uniplus
                   aplicaMigration: false
-                - app: clamav-scanner
-                  namespace: uniplus
-                  aplicaMigration: false
                 - app: keycloak-replica
                   namespace: uniplus
                   aplicaMigration: false

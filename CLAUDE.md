@@ -70,7 +70,7 @@ Sempre rodar `--dry-run` antes em mudanças no `bootstrap-standalone.sh`.
 
 | Diretório | Conteúdo | Característica determinante |
 |---|---|---|
-| `apps/` | Helm charts das aplicações Uni+ (`uniplus-web`, `uniplus-api-{portal,selecao,ingresso}`, `clamav-scanner`, `keycloak-replica`, `apicurio-registry`, `kafka-ui`, `redis-ui`) | Workloads K8s puros, namespace `uniplus` |
+| `apps/` | Helm charts das aplicações Uni+ (`uniplus-web`, `uniplus-api-{portal,selecao,ingresso}`, `clamav-espelho`, `keycloak-replica`, `apicurio-registry`, `kafka-ui`, `redis-ui`) | Workloads K8s puros, namespace `uniplus` |
 | `platform/` | Componentes de plataforma K8s (Traefik, ArgoCD, Vault, External Secrets, cert-manager, observability/{prometheus,grafana,loki,tempo,otelcol}, storage, minio-console-proxy) | Rodam **dentro** do K8s, suportam `apps/` |
 | `data/` | PostgreSQL, Kafka KRaft, MinIO, Redis | **Rodam fora do K8s** — containers gerenciados por systemd no data-host, em LVs dedicadas. Decisão deliberada: backup/restore/troubleshooting independem da saúde do K8s |
 | `environments/standalone-compact/` | `values.yaml` com overrides de Helm | Defaults ficam em `apps/*/values.yaml` e `platform/*/values.yaml`; environment só sobrescreve o necessário |
