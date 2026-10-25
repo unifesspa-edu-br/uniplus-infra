@@ -1,9 +1,7 @@
 # Valores de HML do chart infra/helm/verificador (repositório uniplus-api),
 # consumidos pela Application argocd/applications/verificador-hml.yaml.
 #
-# O chart está sendo escrito em uniplus-api#2054; as chaves abaixo são as que a
-# infraestrutura já fixou e precisam ser alinhadas ao values.yaml dele quando
-# entrar na main. Esta é a ÚNICA fonte dos valores de HML do verificador: o
+# Esta é a ÚNICA fonte dos valores de HML do verificador: o
 # values.yaml compartilhado do ambiente (environments/hml-standalone-single/
 # values.yaml) é lido pelos charts deste repositório.
 #
@@ -25,6 +23,9 @@
 #   Réplicas   duas, no mínimo (ADR-0146): uma basta para a vazão, a segunda
 #              mantém a verificação no ar se um pod cair.
 replicaCount: 2
+
+minio:
+  endpoint: 192.168.21.134:9000
 
 image:
   tag: v0.43.2
