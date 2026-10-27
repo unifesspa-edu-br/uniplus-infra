@@ -10,7 +10,7 @@ description: |
   /health (readiness agregado), /health/live (liveness).
 type: application
 
-version: 0.1.0
+version: 0.1.1
 
 # Sincronizar com tag publicada em ghcr.io/unifesspa-edu-br/uniplus-api-host
 # quando o pipeline publish-images.yml do uniplus-api publicar a primeira

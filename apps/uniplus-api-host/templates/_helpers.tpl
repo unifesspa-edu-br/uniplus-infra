@@ -204,6 +204,10 @@ indentação do include e produziria itens fora da lista.
   value: "$(MINIO_SECRET_KEY)"
 - name: Storage__BucketName
   value: {{ .Values.uniplusApiHost.storage.bucketName | quote }}
+{{- with .Values.uniplusApiHost.storage.region }}
+- name: Storage__Region
+  value: {{ . | quote }}
+{{- end }}
 {{- with .Values.uniplusApiHost.storage.publicEndpoint }}
 {{- if contains "://" . }}
 {{- fail (printf "uniplusApiHost.storage.publicEndpoint deve ser host[:porta], sem esquema — recebido %q. O HTTPS vem de storage.publicUseSsl; com esquema a API recusa a partida." .) }}
