@@ -4729,7 +4729,7 @@ portal.
 | Peça | Onde |
 |---|---|
 | Nome DNS | CNAME para `uniplus-hml.unifesspa.edu.br`, registrado pela CTIC; o wildcard `*.unifesspa.edu.br` cobre |
-| Rota | `portaDeDadosProxy` do `platform/minio-console-proxy/`: Host e caminho intactos, sem middleware de cabeçalho (a assinatura SigV4 cobre os dois), só os buckets listados. Objeto (`/<bucket>/<chave>`, chave não vazia): GET, HEAD e OPTIONS, e PUT só nos buckets de envio (`uniplus-storage` e `uniplus-candidato-envio`), sem `X-Amz-Copy-Source`; raiz do bucket: só GET e HEAD. O bucket do acervo é recusado na renderização |
+| Rota | `portaDeDadosProxy` do `platform/minio-console-proxy/`: Host e caminho intactos, sem middleware de cabeçalho (a assinatura SigV4 cobre os dois), só os buckets listados. Objeto (`/<bucket>/<chave>`, chave não vazia): GET, HEAD e OPTIONS, e PUT só nos buckets de envio (`uniplus-storage` e `uniplus-candidato-envio`), sem `X-Amz-Copy-Source`. A raiz do bucket não tem rota: a API declara a região (`Storage__Region=us-east-1`, de `uniplusApiHost.storage.region`) e não consulta `?location`. O bucket do acervo é recusado na renderização |
 | Assinatura | `uniplusApiHost.storage.publicEndpoint` + `publicUseSsl` → `Storage__PublicEndpoint` e `Storage__PublicUseSSL` |
 | Egress do Traefik | porta 9000 do host, já liberada em `networkPolicy.externalBackends` para o acervo |
 | CORS | o do MinIO, global, para a origem do portal (§21.10); a origem não muda |
@@ -4744,6 +4744,7 @@ curl -s -o /dev/null -w '%{http_code}\n' "$H/uniplus-acervo-publico/x"          
 curl -s -o /dev/null -w '%{http_code}\n' -X DELETE "$H/uniplus-candidato-envio/x" # 404 (método fora da rota)
 curl -s -o /dev/null -w '%{http_code}\n' -X PUT "$H/uniplus-candidato-definitivo/x" # 404 (bucket só de leitura)
 curl -s -o /dev/null -w '%{http_code}\n' -X PUT "$H/uniplus-storage/?policy"         # 404 (escrita na raiz do bucket)
+curl -s -o /dev/null -w '%{http_code}\n' "$H/uniplus-storage?location"           # 404 (raiz do bucket sem rota)
 curl -s -o /dev/null -w '%{http_code}\n' "$H/uniplus-candidato-envio/x"          # 403 (sem assinatura)
 ```
 

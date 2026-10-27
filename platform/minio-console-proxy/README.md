@@ -40,10 +40,10 @@ Nome próprio para a porta de dados (9000), pelo qual o navegador usa as URLs as
 | Comportamento | Como |
 |---|---|
 | Host e caminho preservados | Nenhum middleware de reescrita nem de cabeçalho; os de `ingress.middlewares` também não podem reescrever |
-| Só os buckets listados | `Path(`/<bucket>`)` para a raiz do bucket e `PathRegexp(`^/<bucket>/.+`)` para objeto, por item de `buckets`; a raiz do host, `/<bucket>/` sem chave e qualquer outro bucket recebem 404 do Traefik |
+| Só os buckets listados | `PathRegexp(`^/<bucket>/.+`)` (objeto, chave não vazia), por item de `buckets`; a raiz do host, a raiz do bucket (`/<bucket>` e `/<bucket>/`) e qualquer outro bucket recebem 404 do Traefik |
 | Sem cópia no servidor | A rota de PUT descarta `X-Amz-Copy-Source`: o envio grava o corpo enviado, nunca copia de outro bucket. O cabeçalho não entra na assinatura da URL |
 | Acervo fora | Listar o bucket do acervo falha na renderização: a leitura pública do acervo só chega pela rota do acervo |
-| Métodos de URL assinada | Objeto: GET, HEAD e OPTIONS; PUT só nos buckets com `envio: true`. Raiz do bucket: só GET e HEAD (a consulta de região da biblioteca do MinIO). DELETE, POST e escrita na raiz do bucket recebem 404 do Traefik |
+| Métodos de URL assinada | Objeto: GET, HEAD e OPTIONS; PUT só nos buckets com `envio: true`. DELETE e POST recebem 404 do Traefik. A API declara a região (`uniplusApiHost.storage.region`, `us-east-1`, a do MinIO do projeto) e por isso não consulta `?location`; a raiz do bucket não tem rota |
 
 Pré-requisitos: a porta 9000 do host em `networkPolicy.externalBackends` do `platform/traefik/` e o CORS do MinIO liberado para a origem do portal. Roteiro e smoke em `docs/RUNBOOKS.md` §21.11.
 

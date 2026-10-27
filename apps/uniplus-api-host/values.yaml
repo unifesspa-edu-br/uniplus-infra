@@ -187,6 +187,11 @@ uniplusApiHost:
     # HTTPS por fora). Viram Storage__PublicEndpoint e Storage__PublicUseSSL.
     publicEndpoint: ""          # ex.: uniplus-arquivos-hml.unifesspa.edu.br
     publicUseSsl: false
+    # Região que a API declara ao MinIO: a dele, `us-east-1` (default, sem
+    # MINIO_REGION). Declarada, o SDK não consulta a região do bucket
+    # (GET /<bucket>?location) ao assinar, e a porta de dados pública não
+    # precisa de rota na raiz do bucket. Vira Storage__Region.
+    region: us-east-1
 
   # === Acervo público (ADR-0132 do uniplus-api) ===
   # Bucket dedicado ao documento de ato publicado, de leitura anônima só de

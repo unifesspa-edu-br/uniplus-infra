@@ -20,7 +20,7 @@ description: |
 type: application
 
 # Versão do chart wrapper Uni+. Bump em qualquer mudança de template/values.
-version: 0.3.0
+version: 0.3.1
 
 # appVersion fica vazio — não há binário versionado nesse chart (proxy puro).
 appVersion: "0.0.0"

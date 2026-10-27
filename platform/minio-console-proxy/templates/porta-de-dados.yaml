@@ -6,7 +6,6 @@
 {{- if not $p.buckets -}}
 {{- fail "portaDeDadosProxy.buckets precisa listar ao menos um bucket: a rota só alcança os buckets listados." -}}
 {{- end -}}
-{{- $raizes := list -}}
 {{- $objetos := list -}}
 {{- $envios := list -}}
 {{- range $p.buckets -}}
@@ -16,7 +15,6 @@
 {{- if eq .nome $.Values.acervoPublicoProxy.bucket -}}
 {{- fail (printf "portaDeDadosProxy.buckets não pode incluir o bucket do acervo público (%q): a leitura pública do acervo só chega pela rota do acervo, nunca pela porta de dados (ADR-0132 do uniplus-api)." .nome) -}}
 {{- end -}}
-{{- $raizes = append $raizes (printf "Path(`/%s`)" .nome) -}}
 {{- $objeto := printf "PathRegexp(`^/%s/.+`)" (regexQuoteMeta .nome) -}}
 {{- $objetos = append $objetos $objeto -}}
 {{- if .envio -}}
@@ -36,7 +34,6 @@
       "host" $p.backend.host
       "porta" $p.backend.port) }}
 {{- $rotas := list
-      (dict "caminhos" $raizes "metodos" "Method(`GET`) || Method(`HEAD`)" "copia" false)
       (dict "caminhos" $objetos "metodos" "Method(`GET`) || Method(`HEAD`) || Method(`OPTIONS`)" "copia" false) -}}
 {{- if $envios -}}
 {{- $rotas = append $rotas (dict "caminhos" $envios "metodos" "Method(`PUT`)" "copia" true) -}}
@@ -67,15 +64,13 @@ metadata:
 spec:
   entryPoints:
     - {{ $p.ingress.entryPoint }}
-  # Só os buckets listados e só o que uma URL assinada faz, em três regras:
-  #   - raiz do bucket, só leitura: a biblioteca do MinIO da API consulta a
-  #     região do bucket (GET /<bucket>?location) ao assinar;
+  # Só os buckets listados e só o que uma URL assinada faz, em duas regras:
   #   - objeto (chave não vazia): download (GET, HEAD) e a pré-verificação de
   #     CORS do envio (OPTIONS);
   #   - envio direto (PUT de objeto), só nos buckets marcados com `envio`.
   # Fora delas nenhuma rota casa e o Traefik responde 404 sem tocar a porta de
-  # dados: a raiz do host, DELETE, POST e escrita na raiz do bucket (?policy,
-  # ?cors, ?lifecycle, inclusive com barra final).
+  # dados: a raiz do host, a raiz do bucket (a API declara a região em
+  # Storage__Region e não consulta ?location), DELETE e POST.
   routes:
     {{- range $rotas }}
     - match: {{ $host }} && ({{ join " || " .caminhos }}) && ({{ .metodos }})
