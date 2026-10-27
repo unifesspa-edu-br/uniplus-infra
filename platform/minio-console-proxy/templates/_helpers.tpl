@@ -64,3 +64,81 @@ app.kubernetes.io/part-of: uniplus
 app.kubernetes.io/component: acervo-publico
 helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" }}
 {{- end -}}
+
+{{/*
+Porta de dados do MinIO sob nome próprio, para as URLs assinadas devolvidas ao
+navegador. Nome e labels próprios, pelo mesmo motivo do acervo.
+*/}}
+{{- define "portaDeDadosProxy.fullname" -}}
+{{- if .Values.portaDeDadosProxy.fullnameOverride -}}
+{{- .Values.portaDeDadosProxy.fullnameOverride | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- printf "%s-porta-de-dados" .Release.Name | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "portaDeDadosProxy.selectorLabels" -}}
+app.kubernetes.io/name: porta-de-dados-proxy
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end -}}
+
+{{- define "portaDeDadosProxy.labels" -}}
+{{ include "portaDeDadosProxy.selectorLabels" . }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+app.kubernetes.io/part-of: uniplus
+app.kubernetes.io/component: porta-de-dados
+helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" }}
+{{- end -}}
+
+{{/*
+Service ClusterIP sem selector + EndpointSlice manual para uma porta do MinIO no
+host, fora do cluster. Comum às rotas deste chart.
+
+Por que não ExternalName: o campo exige FQDN; com IP literal o CoreDNS responde
+NXDOMAIN e o Traefik fica sem backend (502). Por que EndpointSlice e não
+Endpoints v1: Endpoints está deprecated desde o K8s 1.33. O label
+`kubernetes.io/service-name` é o que associa o EndpointSlice ao Service.
+
+Parâmetros (dict): bloco (chave do values, para as mensagens), nome, labels
+(já renderizados), host (IPv4 literal) e porta.
+*/}}
+{{- define "minioProxy.backend" -}}
+{{- if not .host -}}
+{{- fail (printf "%s.backend.host é obrigatório quando enabled=true (o EndpointSlice precisa do IP do host onde o MinIO escuta; sem ele o Service fica sem endpoint e o Traefik responde 502)." .bloco) -}}
+{{- end -}}
+{{- if not (regexMatch "^([0-9]{1,3}\\.){3}[0-9]{1,3}$" .host) -}}
+{{- fail (printf "%s.backend.host deve ser um IPv4 literal (ex.: 192.168.21.134) — recebido %q. O EndpointSlice declara addressType: IPv4; FQDN é rejeitado pelo apiserver." .bloco .host) -}}
+{{- end -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .nome }}
+  labels:
+    {{- .labels | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: {{ .porta }}
+      targetPort: {{ .porta }}
+      protocol: TCP
+---
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: {{ .nome }}
+  labels:
+    {{- .labels | nindent 4 }}
+    kubernetes.io/service-name: {{ .nome }}
+addressType: IPv4
+ports:
+  - name: http
+    port: {{ .porta }}
+    protocol: TCP
+endpoints:
+  - addresses:
+      - {{ .host | quote }}
+    conditions:
+      ready: true
+{{- end -}}

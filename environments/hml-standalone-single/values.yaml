@@ -159,7 +159,7 @@ networkPolicy:
   externalBackends:
     - cidr: 192.168.21.134/32
       ports:
-        - 9000  # MinIO, porta de dados — só a rota do acervo público
+        - 9000  # MinIO, porta de dados — rotas do acervo público e da URL assinada
 
 ingress:
   enabled: false # acesso administrativo via kubectl port-forward / túnel VPN
@@ -248,6 +248,14 @@ traefik:
         redirections: null
     websecure:
       hostPort: 443
+      # O default do Traefik corta em 60s a leitura da requisição inteira, corpo
+      # incluído. O envio direto do arquivo do candidato passa por aqui
+      # (portaDeDadosProxy, mais abaixo), e um documento grande numa conexão
+      # lenta passa de um minuto. Vale para toda a entrada websecure: o Traefik
+      # não tem esse limite por rota.
+      transport:
+        respondingTimeouts:
+          readTimeout: 300s
 
 # ============================================================================
 # Keycloak (chart apps/keycloak-replica/, default enabled=false).
@@ -392,6 +400,11 @@ uniplusApiHost:
 
   storage:
     endpoint: 192.168.21.134:9000
+    # As URLs de download e de envio direto saem em HTTPS por este nome, servido
+    # pelo portaDeDadosProxy, mais abaixo. Sem ele saíam em http://<ip>:9000, e
+    # o navegador bloqueia download HTTP a partir da página HTTPS do portal.
+    publicEndpoint: uniplus-arquivos-hml.unifesspa.edu.br
+    publicUseSsl: true
 
   # Endereço da borda para o acervo público (ADR-0132 do uniplus-api): a rota
   # provisória /acervo do acervoPublicoProxy, mais abaixo. A API passa a exigi-lo
@@ -858,6 +871,41 @@ acervoPublicoProxy:
 
   ingress:
     host: uniplus-hml.unifesspa.edu.br
+
+# ============================================================================
+# Porta de dados para URL assinada (chart platform/minio-console-proxy/, bloco
+# portaDeDadosProxy) — o nome uniplus-arquivos-hml, pelo qual o navegador baixa
+# e envia arquivo com a URL assinada que a API devolve
+# (uniplusApiHost.storage.publicEndpoint). Só os buckets de onde a API gera URL
+# assinada: o dos arquivos que o administrador envia ao processo
+# (uniplusApiHost.storage.bucketName) e os dois do candidato
+# (uniplusApiHost.verificacao). O acervo público não passa por aqui.
+#
+# O CORS é o do MinIO, global, já liberado para a origem do portal por
+# scripts/hml-standalone-single/provision-arquivos-candidato.sh: o nome novo
+# muda o destino da requisição, não a origem.
+# ============================================================================
+portaDeDadosProxy:
+  enabled: true
+
+  backend:
+    host: 192.168.21.134
+
+  # Os mesmos nomes de uniplusApiHost.storage.bucketName e
+  # uniplusApiHost.verificacao.bucketDeEnvio/bucketDefinitivo (defaults do chart
+  # da API): mudar um bucket lá exige mudar aqui. Âncora YAML não serve — o Helm
+  # deixa de renderizar o Deployment da API sem erro. O definitivo só recebe
+  # leitura: o envio do candidato vai ao bucket de envio, e só a verificação
+  # copia para o definitivo.
+  buckets:
+    - nome: uniplus-storage
+      envio: true
+    - nome: uniplus-candidato-envio
+      envio: true
+    - nome: uniplus-candidato-definitivo
+
+  ingress:
+    host: uniplus-arquivos-hml.unifesspa.edu.br
 
 # ============================================================================
 # KES (chart platform/kes/) — serviço de chaves do SSE-KMS dos arquivos do

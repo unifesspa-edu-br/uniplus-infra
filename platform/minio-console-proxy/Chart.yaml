@@ -12,11 +12,15 @@ description: |
 
   Publica também, de forma independente (`acervoPublicoProxy`), a rota da
   borda para o acervo público do MinIO (ADR-0132 do uniplus-api): só GET e
-  HEAD, reescrita para o bucket público, sem expor a API S3.
+  HEAD, reescrita para o bucket público.
+
+  E, também de forma independente (`portaDeDadosProxy`), a porta de dados S3
+  (9000) sob nome próprio, só para as URLs assinadas que a API devolve ao
+  navegador: buckets listados, leitura de objeto e PUT só nos buckets de envio.
 type: application
 
 # Versão do chart wrapper Uni+. Bump em qualquer mudança de template/values.
-version: 0.2.0
+version: 0.3.0
 
 # appVersion fica vazio — não há binário versionado nesse chart (proxy puro).
 appVersion: "0.0.0"

@@ -1,0 +1,106 @@
+{{- $p := .Values.portaDeDadosProxy -}}
+{{- if $p.enabled -}}
+{{- if not $p.ingress.host -}}
+{{- fail "portaDeDadosProxy.ingress.host é obrigatório quando enabled=true (a IngressRoute precisa de Host(...) válido). Configurar em environments/<env>/values.yaml." -}}
+{{- end -}}
+{{- if not $p.buckets -}}
+{{- fail "portaDeDadosProxy.buckets precisa listar ao menos um bucket: a rota só alcança os buckets listados." -}}
+{{- end -}}
+{{- $raizes := list -}}
+{{- $objetos := list -}}
+{{- $envios := list -}}
+{{- range $p.buckets -}}
+{{- if not (regexMatch "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$" .nome) -}}
+{{- fail (printf "portaDeDadosProxy.buckets deve conter só nomes de bucket S3 válidos — recebido %q." .nome) -}}
+{{- end -}}
+{{- if eq .nome $.Values.acervoPublicoProxy.bucket -}}
+{{- fail (printf "portaDeDadosProxy.buckets não pode incluir o bucket do acervo público (%q): a leitura pública do acervo só chega pela rota do acervo, nunca pela porta de dados (ADR-0132 do uniplus-api)." .nome) -}}
+{{- end -}}
+{{- $raizes = append $raizes (printf "Path(`/%s`)" .nome) -}}
+{{- $objeto := printf "PathRegexp(`^/%s/.+`)" (regexQuoteMeta .nome) -}}
+{{- $objetos = append $objetos $objeto -}}
+{{- if .envio -}}
+{{- $envios = append $envios $objeto -}}
+{{- end -}}
+{{- end -}}
+{{- $fullname := include "portaDeDadosProxy.fullname" . -}}
+{{- $host := printf "Host(`%s`)" $p.ingress.host -}}
+# Porta de dados do MinIO sob nome próprio, para as URLs assinadas que a API
+# devolve ao navegador (download e envio direto de arquivo). A assinatura SigV4
+# cobre o Host e o caminho: esta rota não reescreve nenhum dos dois. O único
+# cabeçalho que ela toca é o de cópia no servidor, descartado no envio.
+{{ include "minioProxy.backend" (dict
+      "bloco" "portaDeDadosProxy"
+      "nome" $fullname
+      "labels" (include "portaDeDadosProxy.labels" .)
+      "host" $p.backend.host
+      "porta" $p.backend.port) }}
+{{- $rotas := list
+      (dict "caminhos" $raizes "metodos" "Method(`GET`) || Method(`HEAD`)" "copia" false)
+      (dict "caminhos" $objetos "metodos" "Method(`GET`) || Method(`HEAD`) || Method(`OPTIONS`)" "copia" false) -}}
+{{- if $envios -}}
+{{- $rotas = append $rotas (dict "caminhos" $envios "metodos" "Method(`PUT`)" "copia" true) -}}
+{{- end }}
+{{- if $envios }}
+---
+# O envio grava o corpo enviado; nunca copia de outro bucket no servidor. Sem
+# este cabeçalho, um PUT com credencial copiaria pela borda qualquer objeto que
+# a credencial lê. Ele não entra na assinatura da URL (só o Host entra).
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ $fullname }}-sem-copia
+  labels:
+    {{- include "portaDeDadosProxy.labels" . | nindent 4 }}
+spec:
+  headers:
+    customRequestHeaders:
+      X-Amz-Copy-Source: ""
+{{- end }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "portaDeDadosProxy.labels" . | nindent 4 }}
+spec:
+  entryPoints:
+    - {{ $p.ingress.entryPoint }}
+  # Só os buckets listados e só o que uma URL assinada faz, em três regras:
+  #   - raiz do bucket, só leitura: a biblioteca do MinIO da API consulta a
+  #     região do bucket (GET /<bucket>?location) ao assinar;
+  #   - objeto (chave não vazia): download (GET, HEAD) e a pré-verificação de
+  #     CORS do envio (OPTIONS);
+  #   - envio direto (PUT de objeto), só nos buckets marcados com `envio`.
+  # Fora delas nenhuma rota casa e o Traefik responde 404 sem tocar a porta de
+  # dados: a raiz do host, DELETE, POST e escrita na raiz do bucket (?policy,
+  # ?cors, ?lifecycle, inclusive com barra final).
+  routes:
+    {{- range $rotas }}
+    - match: {{ $host }} && ({{ join " || " .caminhos }}) && ({{ .metodos }})
+      kind: Rule
+      {{- if or .copia $p.ingress.middlewares }}
+      middlewares:
+        {{- if .copia }}
+        - name: {{ $fullname }}-sem-copia
+        {{- end }}
+        {{- with $p.ingress.middlewares }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- end }}
+      services:
+        - name: {{ $fullname }}
+          port: {{ $p.backend.port }}
+    {{- end }}
+  {{- if $p.ingress.tls.enabled }}
+  {{- if $p.ingress.tls.secretName }}
+  tls:
+    secretName: {{ $p.ingress.tls.secretName }}
+  {{- else }}
+  # Sem secretName: o Traefik escolhe o certificado pelo SNI entre os que já
+  # carregou (o wildcard do domínio, vindo das rotas do namespace uniplus).
+  tls: {}
+  {{- end }}
+  {{- end }}
+{{- end }}
