@@ -91,3 +91,41 @@ acervoPublicoProxy:
     # Middlewares adicionais, aplicados depois da reescrita e da limpeza de
     # cabeçalhos (ex.: cache e limite de taxa, quando a borda própria chegar).
     middlewares: []
+
+# === Porta de dados para URL assinada ===
+# Nome próprio para a porta de dados S3 do MinIO, pelo qual o navegador usa as
+# URLs assinadas que a API devolve: download (GET/HEAD) e envio direto (PUT,
+# com a pré-verificação OPTIONS do CORS). A API assina com esse nome
+# (`Storage__PublicEndpoint` + `Storage__PublicUseSSL`), então a rota preserva
+# Host e caminho e não toca em cabeçalho — qualquer reescrita invalida a
+# assinatura.
+#
+# Só os buckets listados passam. O do acervo público é recusado na renderização:
+# a leitura pública do acervo só chega pela rota do acervo (ADR-0132 do
+# uniplus-api). A porta precisa estar liberada no egress do Traefik
+# (`networkPolicy.externalBackends` do platform/traefik/).
+portaDeDadosProxy:
+  # Liga/desliga a rota. Default false.
+  enabled: false
+  fullnameOverride: ""
+
+  backend:
+    # IPv4 literal do host onde a porta de dados do MinIO escuta.
+    host: ""                    # ex.: 192.168.21.134
+    port: 9000
+
+  # Buckets alcançáveis pela rota — os de onde a API gera URL assinada. Cada
+  # item: `nome` e `envio` (true quando a API assina PUT para ele; sem isso o
+  # bucket só aceita leitura).
+  buckets: []
+
+  ingress:
+    entryPoint: websecure
+    host: ""                    # ex.: uniplus-arquivos-hml.unifesspa.edu.br
+    tls:
+      enabled: true
+      # Vazio: o Traefik escolhe o certificado pelo SNI entre os já carregados.
+      secretName: ""
+    # Middlewares adicionais. Nenhum pode reescrever caminho nem cabeçalho de
+    # requisição, ou a assinatura deixa de bater.
+    middlewares: []

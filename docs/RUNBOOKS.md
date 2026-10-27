@@ -4015,9 +4015,10 @@ inválido). Wildcard `*.unifesspa.edu.br`, `notBefore=2026-05-11`, **`notAfter=2
 | 7 | `apicurio-hml.unifesspa.edu.br` | CNAME → `uniplus-hml...` | — | Apicurio Registry (Schema Registry) |
 | 8 | `redis-ui-hml.unifesspa.edu.br` | CNAME → `uniplus-hml...` | — | Admin UI do Redis (RedisInsight, atrás de BasicAuth) |
 | 9 | `minio-hml.unifesspa.edu.br` | CNAME → `uniplus-hml...` | — | MinIO Console |
+| 10 | `uniplus-arquivos-hml.unifesspa.edu.br` | CNAME → `uniplus-hml...` | — | Porta de dados do MinIO para URL assinada (download e envio direto, uniplus-infra#717) |
 
 **Recomendação, não requisito técnico rígido:** só `uniplus-hml.unifesspa.edu.br` precisa ser
-registro `A` (apontando pro IP da VM); os outros 8 podem ser `CNAME` para ele — reduz a uma única
+registro `A` (apontando pro IP da VM); os outros 9 podem ser `CNAME` para ele — reduz a uma única
 mudança uma eventual troca de IP futura (mesmo padrão já usado no `standalone-compact`, que mistura
 `A` canônico e `CNAME`s — ver a tabela de hosts em §8.3.1). Tecnicamente `A` individuais em todos
 também funcionam sem diferença de comportamento (Traefik distingue por SNI/`Host` header de
@@ -4140,6 +4141,7 @@ fechada, e confirmar via observação real do tráfego durante o primeiro bootst
 | `grafana-hml...` | `/` | `platform/observability/grafana` | Não (`pathPrefix: ""`) | `values.yaml` — o template já suporta os dois modos (subpath e subdomínio); **falta provisionar o `Certificate`/`secretName`** que a IngressRoute referencia — o chart não cria o certificado sozinho |
 | `kafka-ui-hml...`, `apicurio-hml...`, `redis-ui-hml...`, `minio-hml...` | `/` | charts respectivos | Não | Só `values.yaml` |
 | `uniplus-hml...` | `/acervo/` | `platform/minio-console-proxy` (bloco `acervoPublicoProxy`) → MinIO `:9000`, bucket `uniplus-acervo-publico` | Sim (reescrito para `/uniplus-acervo-publico/`) | **Habilitado** (uniplus-infra#613) — rota provisória, só GET e HEAD; nome próprio com cache e limite de taxa na #591. Ver §21.8 |
+| `uniplus-arquivos-hml...` | `/<bucket>/…` (só `uniplus-storage`, `uniplus-candidato-envio`, `uniplus-candidato-definitivo`) | `platform/minio-console-proxy` (bloco `portaDeDadosProxy`) → MinIO `:9000` | Não (Host e caminho preservados) | **Habilitado** (uniplus-infra#717) — leitura nos três, PUT só nos de envio; URL assinada pela API com `uniplusApiHost.storage.publicEndpoint`. Ver §21.11 |
 
 **Nota sobre o ApplicationSet:** `apps/uniplus-api-host` e `apps/unifesspa-geo-api` estão
 registrados em `argocd/applicationset.yaml` via o mecanismo de habilitação por-ambiente
@@ -4715,3 +4717,35 @@ descoberta com o pod já removido. O que o Job **não** cobre é a compatibilida
 versão anterior da aplicação — durante o rollout, quem ainda responde é ela. Para migration
 destrutiva promovida sem indisponibilidade, a resposta continua sendo expandir e contrair em duas
 releases.
+
+### 21.11 Porta de dados do MinIO por nome próprio (uniplus-infra#717)
+
+As URLs assinadas que a API devolve ao navegador (download do comprovante e dos documentos, envio
+direto do arquivo do candidato e dos arquivos do processo) saem em
+`https://uniplus-arquivos-hml.unifesspa.edu.br/<bucket>/<chave>?X-Amz-…`. Antes saíam em
+`http://192.168.21.134:9000`, e o navegador bloqueia download HTTP a partir da página HTTPS do
+portal.
+
+| Peça | Onde |
+|---|---|
+| Nome DNS | CNAME para `uniplus-hml.unifesspa.edu.br`, registrado pela CTIC; o wildcard `*.unifesspa.edu.br` cobre |
+| Rota | `portaDeDadosProxy` do `platform/minio-console-proxy/`: Host e caminho intactos, sem middleware de cabeçalho (a assinatura SigV4 cobre os dois), só os buckets listados. Objeto (`/<bucket>/<chave>`, chave não vazia): GET, HEAD e OPTIONS, e PUT só nos buckets de envio (`uniplus-storage` e `uniplus-candidato-envio`), sem `X-Amz-Copy-Source`; raiz do bucket: só GET e HEAD. O bucket do acervo é recusado na renderização |
+| Assinatura | `uniplusApiHost.storage.publicEndpoint` + `publicUseSsl` → `Storage__PublicEndpoint` e `Storage__PublicUseSSL` |
+| Egress do Traefik | porta 9000 do host, já liberada em `networkPolicy.externalBackends` para o acervo |
+| CORS | o do MinIO, global, para a origem do portal (§21.10); a origem não muda |
+| Tempo de leitura | `readTimeout: 300s` na entrada `websecure` do Traefik: o default de 60s, que inclui o corpo, cortaria o envio de um arquivo grande numa conexão lenta |
+
+Smoke, de uma estação pela VPN:
+
+```bash
+H=https://uniplus-arquivos-hml.unifesspa.edu.br
+curl -s -o /dev/null -w '%{http_code}\n' "$H/"                                   # 404 (raiz não casa)
+curl -s -o /dev/null -w '%{http_code}\n' "$H/uniplus-acervo-publico/x"           # 404 (bucket fora da rota)
+curl -s -o /dev/null -w '%{http_code}\n' -X DELETE "$H/uniplus-candidato-envio/x" # 404 (método fora da rota)
+curl -s -o /dev/null -w '%{http_code}\n' -X PUT "$H/uniplus-candidato-definitivo/x" # 404 (bucket só de leitura)
+curl -s -o /dev/null -w '%{http_code}\n' -X PUT "$H/uniplus-storage/?policy"         # 404 (escrita na raiz do bucket)
+curl -s -o /dev/null -w '%{http_code}\n' "$H/uniplus-candidato-envio/x"          # 403 (sem assinatura)
+```
+
+Com uma URL assinada emitida pela API (botão Baixar ou envio de documento na inscrição), o download
+e o envio respondem 200 no Chrome e no Firefox.

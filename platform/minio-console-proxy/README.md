@@ -4,7 +4,7 @@ Proxy K8s para o MinIO Console externo (rodando como systemd no data-host). Apen
 
 ## Quando usar
 
-Ative em ambientes que precisam expor o MinIO Console publicamente (UI admin do MinIO acessível por browser sem SSH tunnel). Em standalone, MinIO API S3 (port 9000) NÃO é exposto pelo proxy: clients S3 falam direto com o IP privado do data-host via subnet privada VCN.
+Ative em ambientes que precisam expor o MinIO Console publicamente (UI admin do MinIO acessível por browser sem SSH tunnel). O Console não expõe a API S3 (porta 9000). A porta de dados só passa pelo Traefik nas rotas próprias deste chart, cada uma ligada à parte: o acervo público (`acervoPublicoProxy`) e a URL assinada (`portaDeDadosProxy`), descritos abaixo.
 
 ## Pré-requisitos
 
@@ -32,6 +32,20 @@ Rota da borda para o bucket público do MinIO ([ADR-0132](https://github.com/uni
 | Listagem recusada | `GET /acervo/` vira `ListObjects` anônimo, negado pela política (só `s3:GetObject`) |
 
 Pré-requisitos: o bucket e a política criados por `scripts/lab-standalone-single/setup-minio.sh` (em HML, pelo wrapper `scripts/hml-standalone-single/setup-minio.sh`), e a porta 9000 do host em `networkPolicy.externalBackends` do `platform/traefik/`. Esta é a rota provisória; o nome próprio da borda, com cache e limite de taxa, é trabalho à parte. Roteiro de aplicação e smoke em `docs/RUNBOOKS.md` §21.8.
+
+## Porta de dados para URL assinada (`portaDeDadosProxy`)
+
+Nome próprio para a porta de dados (9000), pelo qual o navegador usa as URLs assinadas que a API devolve: download e envio direto de arquivo. A API assina com esse nome (`Storage__PublicEndpoint` + `Storage__PublicUseSSL`), e a assinatura SigV4 cobre Host e caminho.
+
+| Comportamento | Como |
+|---|---|
+| Host e caminho preservados | Nenhum middleware de reescrita nem de cabeçalho; os de `ingress.middlewares` também não podem reescrever |
+| Só os buckets listados | `Path(`/<bucket>`)` para a raiz do bucket e `PathRegexp(`^/<bucket>/.+`)` para objeto, por item de `buckets`; a raiz do host, `/<bucket>/` sem chave e qualquer outro bucket recebem 404 do Traefik |
+| Sem cópia no servidor | A rota de PUT descarta `X-Amz-Copy-Source`: o envio grava o corpo enviado, nunca copia de outro bucket. O cabeçalho não entra na assinatura da URL |
+| Acervo fora | Listar o bucket do acervo falha na renderização: a leitura pública do acervo só chega pela rota do acervo |
+| Métodos de URL assinada | Objeto: GET, HEAD e OPTIONS; PUT só nos buckets com `envio: true`. Raiz do bucket: só GET e HEAD (a consulta de região da biblioteca do MinIO). DELETE, POST e escrita na raiz do bucket recebem 404 do Traefik |
+
+Pré-requisitos: a porta 9000 do host em `networkPolicy.externalBackends` do `platform/traefik/` e o CORS do MinIO liberado para a origem do portal. Roteiro e smoke em `docs/RUNBOOKS.md` §21.11.
 
 ## Operação
 

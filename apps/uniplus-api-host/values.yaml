@@ -181,6 +181,12 @@ uniplusApiHost:
   storage:
     endpoint: ""                # ex.: 10.0.2.87:9000
     bucketName: uniplus-storage
+    # Nome pelo qual o navegador alcança a porta de dados — a API assina com ele
+    # as URLs de download e de envio direto (a assinatura cobre o Host). Vazio:
+    # assina com `endpoint`. `publicUseSsl` vale sozinho também (mesmo host,
+    # HTTPS por fora). Viram Storage__PublicEndpoint e Storage__PublicUseSSL.
+    publicEndpoint: ""          # ex.: uniplus-arquivos-hml.unifesspa.edu.br
+    publicUseSsl: false
 
   # === Acervo público (ADR-0132 do uniplus-api) ===
   # Bucket dedicado ao documento de ato publicado, de leitura anônima só de
