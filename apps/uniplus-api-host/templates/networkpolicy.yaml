@@ -186,6 +186,18 @@ spec:
         - protocol: TCP
           port: 4318
     {{- end }}
+    {{- if .Values.uniplusApiHost.email.enabled }}
+    {{- if not .Values.uniplusApiHost.networkPolicy.smtpCIDR }}
+    {{- fail "uniplusApiHost.networkPolicy.smtpCIDR é obrigatório quando email.enabled=true (egress até o relay SMTP)." }}
+    {{- end }}
+    # Relay SMTP do envio de e-mail.
+    - to:
+        - ipBlock:
+            cidr: {{ .Values.uniplusApiHost.networkPolicy.smtpCIDR }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.uniplusApiHost.email.porta }}
+    {{- end }}
     {{- if eq .Values.uniplusApiHost.encryption.provider "vault" }}
     # Vault Transit (ADR-0027) — egress TCP 8200 para o pod do Vault quando
     # encryption.provider=vault. Sem esta regra todo path que toca cifragem
