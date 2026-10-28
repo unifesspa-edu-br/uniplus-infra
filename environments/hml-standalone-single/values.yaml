@@ -471,6 +471,16 @@ uniplusApiHost:
     criarCredencial: true
     enabled: true
 
+  # Relay SMTP institucional; host, usuário e senha no Vault em
+  # secret/standalone/smtp/uniplus. A porta 25 sobe para TLS (STARTTLS).
+  # A credencial nasce antes; `enabled` liga num sync seguinte, junto do bump
+  # da API que envia e-mail.
+  email:
+    criarCredencial: true
+    enabled: false
+    remetente: nao-responda@unifesspa.edu.br
+    nomeRemetente: UNI+ UNIFESSPA
+
   extraEnv:
     - name: UniPlus__Encryption__LocalKey
       valueFrom:
@@ -507,6 +517,9 @@ uniplusApiHost:
       namespace: geo
     rabbitmq:
       namespace: rabbitmq
+    # IP do relay SMTP: a NetworkPolicy não aceita nome. Se o envio de e-mail
+    # parar, conferir primeiro se o IP do relay mudou.
+    smtpCIDR: 200.139.48.39/32
 
   otel:
     enabled: false

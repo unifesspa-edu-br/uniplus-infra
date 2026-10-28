@@ -299,6 +299,22 @@ vault_put_password 'standalone/redis/default' "$redis_pw"
 vault_put_credentials 'standalone/minio/root' "$minio_user" "$minio_pw"
 vault_put_local_key "$local_key"
 
+# O relay SMTP é institucional: host, usuário e senha vêm de fora (CTIC), não
+# são gerados aqui. Com SMTP_HOST, SMTP_USUARIO e SMTP_SENHA no ambiente, o
+# script grava no Vault; sem eles, só confere que a custódia já existe, porque
+# o chart com email.enabled=true referencia o Secret que o ESO cria a partir dela.
+if [[ -n "${SMTP_HOST:-}" && -n "${SMTP_USUARIO:-}" && -n "${SMTP_SENHA:-}" ]]; then
+    SMTP_HOST="$SMTP_HOST" SMTP_USUARIO="$SMTP_USUARIO" SMTP_SENHA="$SMTP_SENHA" python3 -c '
+import json, os
+print(json.dumps({"data": {"host": os.environ["SMTP_HOST"], "username": os.environ["SMTP_USUARIO"], "password": os.environ["SMTP_SENHA"]}}))' | \
+        curl -fsS --config "$vault_curl_config" -X POST --data-binary @- \
+            "$VAULT_ADDR/v1/secret/data/standalone/smtp/uniplus" -o /dev/null
+elif ! curl -fsS --config "$vault_curl_config" \
+        "$VAULT_ADDR/v1/secret/data/standalone/smtp/uniplus" -o /dev/null; then
+    echo "Aviso: secret/standalone/smtp/uniplus ausente no Vault. Rode de novo com" \
+        "SMTP_HOST, SMTP_USUARIO e SMTP_SENHA antes de ligar email.enabled." >&2
+fi
+
 # O client_secret do client M2M com que a API pede o token do Geo nasce no
 # Keycloak; o Vault guarda a cópia que o ExternalSecret do chart lê. Ler do
 # Keycloak a cada execução mantém as duas alinhadas se o secret for

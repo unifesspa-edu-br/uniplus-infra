@@ -222,6 +222,23 @@ uniplusApiHost:
     rabbitMqSecretName: rabbitmq-api
     rabbitMqUriKey: RABBITMQ_URI
 
+  # === Envio de e-mail (seção Email:Smtp do uniplus-api) ===
+  # `enabled` entrega à API (e ao Job de migration, hook de PreSync) a seção
+  # Email:Smtp: host, usuário e senha do relay vêm do Secret que o ESO cria a
+  # partir do Vault (externalSecrets.smtp); porta, segurança e remetente vêm
+  # daqui. Esse Secret nasce de um ExternalSecret comum, que só existe depois
+  # do PreSync: ligar `criarCredencial` num sync anterior, para o Secret já
+  # existir quando `enabled` ligar. A API recusa a partida sem Email:Smtp nas
+  # versões que enviam e-mail. `seguranca` aceita Nenhuma, StartTls ou
+  # TlsImplicito; com usuário, a API exige TLS.
+  email:
+    enabled: false
+    criarCredencial: false
+    porta: 25
+    seguranca: StartTls
+    remetente: ""               # ex.: nao-responda@unifesspa.edu.br
+    nomeRemetente: ""
+
   # === OIDC (Auth bearer) — só valida tokens contra o issuer/audience do
   # realm; o Host não se autentica como client M2M contra nada (Schema
   # Registry OAuth desligado enquanto Kafka estiver desligado), então não
@@ -306,6 +323,12 @@ uniplusApiHost:
     # Só relevante quando schemaRegistry.url + authType=OAuthBearer
     # estiverem ativos (issue #423). O Host não tem client M2M próprio
     # dedicado no realm ainda — definir aqui quando a issue #423 avançar.
+    smtp:
+      vaultPath: secret/standalone/smtp/uniplus
+      hostKey: host
+      usernameKey: username
+      passwordKey: password
+
     oidcClient:
       vaultPath: secret/standalone/keycloak/clients/uniplus-api-host
       clientSecretKey: client_secret
@@ -390,6 +413,8 @@ uniplusApiHost:
     rabbitmq:
       namespace: ""             # ex.: rabbitmq
       port: 5672
+    # Egress até o relay SMTP, na porta de email.porta. Obrigatório com email.enabled.
+    smtpCIDR: ""                # ex.: 203.0.113.10/32
 
   metrics:
     enabled: false

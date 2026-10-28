@@ -80,6 +80,10 @@ houve e onde.
 {{ include "uniplusApiHost.fullname" . }}-arquivos-candidato
 {{- end -}}
 
+{{- define "uniplusApiHost.smtpSecretName" -}}
+{{ include "uniplusApiHost.fullname" . }}-smtp
+{{- end -}}
+
 {{- define "uniplusApiHost.oidcSecretName" -}}
 {{ include "uniplusApiHost.fullname" . }}-oidc-client
 {{- end -}}
@@ -241,6 +245,39 @@ indentação do include e produziria itens fora da lista.
     secretKeyRef:
       name: {{ .rabbitMqSecretName }}
       key: {{ .rabbitMqUriKey }}
+{{- end }}
+{{- end }}
+{{- with .Values.uniplusApiHost.email }}
+{{- if .enabled }}
+{{- if not .remetente }}
+{{- fail "uniplusApiHost.email.remetente é obrigatório quando email.enabled=true (a API recusa a partida sem remetente)." }}
+{{- end }}
+# === Envio de e-mail (Email:Smtp do uniplus-api) ===
+- name: Email__Smtp__Host
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "uniplusApiHost.smtpSecretName" $ }}
+      key: SMTP_HOST
+- name: Email__Smtp__Usuario
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "uniplusApiHost.smtpSecretName" $ }}
+      key: SMTP_USERNAME
+- name: Email__Smtp__Senha
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "uniplusApiHost.smtpSecretName" $ }}
+      key: SMTP_PASSWORD
+- name: Email__Smtp__Porta
+  value: {{ .porta | quote }}
+- name: Email__Smtp__Seguranca
+  value: {{ .seguranca | quote }}
+- name: Email__Smtp__Remetente
+  value: {{ .remetente | quote }}
+{{- with .nomeRemetente }}
+- name: Email__Smtp__NomeRemetente
+  value: {{ . | quote }}
+{{- end }}
 {{- end }}
 {{- end }}
 # === Acervo público (AcervoPublico:* binding, ADR-0132 do uniplus-api) ===
