@@ -133,8 +133,8 @@ indentação do include e produziria itens fora da lista.
 - name: ASPNETCORE_URLS
   value: {{ .Values.uniplusApiHost.aspnet.urls | quote }}
 # === Postgres — banco único `uniplus`, schema-por-módulo (ADR-0097).
-# As 7 connection strings (UniPlusDb/ConfiguracaoDb/OrganizacaoDb/
-# SelecaoDb/IngressoDb/PublicacoesDb/DiscentesDb) apontam para o
+# As 8 connection strings (UniPlusDb/ConfiguracaoDb/OrganizacaoDb/
+# SelecaoDb/IngressoDb/PublicacoesDb/DiscentesDb/AutorizacaoDb) apontam para o
 # MESMO host/database/role — cada DbContext usa seu próprio schema
 # via HasDefaultSchema. UniPlusDb é consumida pelo outbox Wolverine
 # (schema `wolverine`) e pelos health checks
@@ -145,7 +145,7 @@ indentação do include e produziria itens fora da lista.
       name: {{ include "uniplusApiHost.postgresSecretName" . }}
       key: POSTGRES_PASSWORD
 {{- $db := .Values.uniplusApiHost.database }}
-{{- range list "UniPlusDb" "ConfiguracaoDb" "OrganizacaoDb" "SelecaoDb" "IngressoDb" "PublicacoesDb" "DiscentesDb" }}
+{{- range list "UniPlusDb" "ConfiguracaoDb" "OrganizacaoDb" "SelecaoDb" "IngressoDb" "PublicacoesDb" "DiscentesDb" "AutorizacaoDb" }}
 - name: ConnectionStrings__{{ . }}
   value: "Host={{ $db.host }};Port={{ $db.port }};Database={{ $db.name }};Username={{ $db.username }};Password=$(POSTGRES_PASSWORD)"
 {{- end }}
