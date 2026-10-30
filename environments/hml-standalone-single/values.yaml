@@ -297,6 +297,20 @@ keycloak:
   networkPolicy:
     enabled: true
     dataHostCIDR: 192.168.21.134/32
+    # IP do relay SMTP: a NetworkPolicy não aceita nome. Se o envio de e-mail
+    # do Keycloak parar, conferir primeiro se o IP do relay mudou.
+    smtpCIDR: 200.139.48.39/32
+    smtpPort: 25
+
+  # Envio de e-mail do realm pelo relay SMTP institucional; host, usuário e
+  # senha no Vault em secret/standalone/smtp/uniplus (os mesmos da API).
+  smtp:
+    enabled: true
+    port: 25
+    starttls: true
+    ssl: false
+    from: nao-responda@unifesspa.edu.br
+    fromDisplayName: UNI+ UNIFESSPA
 
   # Precisa estar ligado: o realm-reconcile-job aplica mudanças de config
   # (ex. portalClient, quando Feature 2/4 ligar) num Keycloak cujo realm já

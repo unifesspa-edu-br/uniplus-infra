@@ -156,14 +156,22 @@ spec:
               value: "{{ .Values.keycloak.realmReconcile.logLevel | default "INFO" }}"
             - name: LOGGING_LEVEL_DE_ADORSYS_KEYCLOAK_CONFIG
               value: "{{ .Values.keycloak.realmReconcile.logLevel | default "INFO" }}"
-          {{- if .Values.keycloak.oidcClientSecrets.enabled }}
+          {{- if or .Values.keycloak.oidcClientSecrets.enabled .Values.keycloak.smtp.enabled }}
           envFrom:
+            {{- if .Values.keycloak.oidcClientSecrets.enabled }}
             # Client secrets OIDC consumidos pelas substituições ${envName}
             # no realm.json (IMPORT_VARSUBSTITUTION_ENABLED=true). Sem isso,
             # clients confidential ficam com secret literal "${GRAFANA_CLIENT_SECRET}",
             # quebrando o handshake OIDC do consumidor.
             - secretRef:
                 name: {{ include "keycloak-replica.oidcClientSecretsName" . }}
+            {{- end }}
+            {{- if .Values.keycloak.smtp.enabled }}
+            # Host, usuário e senha do relay SMTP (UNIPLUS_SMTP_*) consumidos
+            # pelo ${...} do smtpServer no realm.json.
+            - secretRef:
+                name: {{ include "keycloak-replica.smtpSecretName" . }}
+            {{- end }}
           {{- end }}
           volumeMounts:
             - name: realm-config

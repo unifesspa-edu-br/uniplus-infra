@@ -10,6 +10,19 @@
   "editUsernameAllowed": false,
   "rememberMe": true,
   "verifyEmail": false,
+  {{- if .Values.keycloak.smtp.enabled }}
+  "smtpServer": {
+    "host": "${UNIPLUS_SMTP_HOST}",
+    "port": {{ .Values.keycloak.smtp.port | quote }},
+    "from": {{ .Values.keycloak.smtp.from | quote }},
+    "fromDisplayName": {{ .Values.keycloak.smtp.fromDisplayName | quote }},
+    "starttls": {{ .Values.keycloak.smtp.starttls | quote }},
+    "ssl": {{ .Values.keycloak.smtp.ssl | quote }},
+    "auth": "true",
+    "user": "${UNIPLUS_SMTP_USERNAME}",
+    "password": "${UNIPLUS_SMTP_PASSWORD}"
+  },
+  {{- end }}
   "internationalizationEnabled": true,
   "supportedLocales": ["pt-BR", "en"],
   "defaultLocale": "pt-BR",

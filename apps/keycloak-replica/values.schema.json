@@ -175,6 +175,31 @@
             }
           }
         },
+        "smtp": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "refreshInterval": { "type": "string" },
+            "secretStoreRef": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "kind": { "type": "string" },
+                "name": { "type": "string" }
+              }
+            },
+            "vaultPath": { "type": "string" },
+            "hostKey": { "type": "string" },
+            "usernameKey": { "type": "string" },
+            "passwordKey": { "type": "string" },
+            "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+            "starttls": { "type": "boolean" },
+            "ssl": { "type": "boolean" },
+            "from": { "type": "string" },
+            "fromDisplayName": { "type": "string" }
+          }
+        },
         "networkPolicy": {
           "type": "object",
           "additionalProperties": false,
@@ -183,7 +208,9 @@
             "traefikNamespace": { "type": "string" },
             "monitoringNamespace": { "type": "string" },
             "dataHostCIDR": { "type": "string" },
-            "dataHostPort": { "type": "integer", "minimum": 1, "maximum": 65535 }
+            "dataHostPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+            "smtpCIDR": { "type": "string" },
+            "smtpPort": { "type": "integer", "minimum": 1, "maximum": 65535 }
           }
         },
         "serviceMonitor": {

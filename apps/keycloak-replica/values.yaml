@@ -223,6 +223,10 @@ keycloak:
     monitoringNamespace: observability-prometheus
     dataHostCIDR: ""
     dataHostPort: 5432
+    # Egress até o relay SMTP institucional. Vazio = sem regra (padrão).
+    # Em geral acompanha keycloak.smtp.enabled.
+    smtpCIDR: ""                # ex.: 203.0.113.10/32
+    smtpPort: 25
 
   # ServiceMonitor — desligado até platform/observability/prometheus/
   # aterrissar (issue #26).
@@ -257,6 +261,29 @@ keycloak:
 
   # Env vars adicionais (lista de `{name, value}` ou `{name, valueFrom}`).
   extraEnv: []
+
+  # Envio de e-mail do realm (smtpServer) pelo relay SMTP institucional.
+  # Opt-in por ambiente. Host, usuário e senha vêm do Vault via ExternalSecret
+  # e chegam ao realm.json como ${UNIPLUS_SMTP_HOST}, ${UNIPLUS_SMTP_USERNAME}
+  # e ${UNIPLUS_SMTP_PASSWORD} (envFrom no pod e no Job realm-reconcile).
+  # Exige também networkPolicy.smtpCIDR para o pod alcançar o relay. O Secret
+  # nasce de um ExternalSecret comum: com enabled=true, o pod só sobe depois
+  # do ESO materializá-lo.
+  smtp:
+    enabled: false
+    refreshInterval: "1h"
+    secretStoreRef:
+      kind: ClusterSecretStore
+      name: vault-default
+    vaultPath: secret/standalone/smtp/uniplus
+    hostKey: host
+    usernameKey: username
+    passwordKey: password
+    port: 25
+    starttls: true
+    ssl: false
+    from: ""                    # ex.: nao-responda@unifesspa.edu.br
+    fromDisplayName: ""
 
   # ExternalSecret consolidado de client_secrets de aplicações OIDC do realm.
   # Cada entrada de `clients` vira uma key remota → key local consumida via

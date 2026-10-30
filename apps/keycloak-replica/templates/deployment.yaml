@@ -118,6 +118,12 @@ spec:
             - secretRef:
                 name: {{ include "keycloak-replica.oidcClientSecretsName" . }}
             {{- end }}
+            {{- if .Values.keycloak.smtp.enabled }}
+            # Host, usuário e senha do relay SMTP (UNIPLUS_SMTP_*), referenciados
+            # via ${...} no smtpServer do realm.json.
+            - secretRef:
+                name: {{ include "keycloak-replica.smtpSecretName" . }}
+            {{- end }}
           ports:
             - name: http
               containerPort: {{ $kc.http.httpPort }}
