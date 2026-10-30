@@ -35,7 +35,8 @@ Por padrão o chart fica **desabilitado** (`keycloak.enabled: false`). Apenas en
 - `templates/externalsecret.yaml` — 2 ExternalSecrets (DB credentials + bootstrap admin) consumindo `ClusterSecretStore vault-default`
 - `templates/configmap-realm.yaml` — ConfigMap com `uniplus-realm.json` montado em `/opt/keycloak/data/import/`
 - `templates/ingressroute.yaml` — Traefik IngressRoute path `/auth/*` com TLS via cert-manager
-- `templates/networkpolicy.yaml` — egress: data-host:5432, vault, DNS; ingress: Traefik (8080), Prometheus (9000)
+- `templates/externalsecret-smtp.yaml` — ExternalSecret do relay SMTP (host, usuário, senha), gateado por `keycloak.smtp.enabled`
+- `templates/networkpolicy.yaml` — egress: data-host:5432, vault, DNS, relay SMTP (opt-in por `networkPolicy.smtpCIDR`); ingress: Traefik (8080), Prometheus (9000)
 - `templates/servicemonitor.yaml` — scrape do `/metrics` na management port (gateado por `serviceMonitor.enabled`)
 
 ## Variáveis Keycloak relevantes

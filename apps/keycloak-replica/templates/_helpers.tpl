@@ -77,6 +77,10 @@ Mesmo nome serve para os outros (admin, client) com sufixo distinto.
 {{- printf "%s-realm-uniplus" (include "keycloak-replica.fullname" .) }}
 {{- end }}
 
+{{- define "keycloak-replica.smtpSecretName" -}}
+{{- printf "%s-smtp" (include "keycloak-replica.fullname" .) }}
+{{- end }}
+
 {{- define "keycloak-replica.oidcClientSecretsName" -}}
 {{- printf "%s-oidc-client-secrets" (include "keycloak-replica.fullname" .) }}
 {{- end }}

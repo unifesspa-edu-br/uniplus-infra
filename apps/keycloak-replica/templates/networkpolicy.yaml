@@ -73,6 +73,17 @@ spec:
       ports:
         - protocol: TCP
           port: {{ $np.dataHostPort }}
+    {{- if $np.smtpCIDR }}
+    # Relay SMTP institucional (envio de e-mail do realm). Opt-in: sem
+    # smtpCIDR o pod não tem saída para o relay. A NetworkPolicy não aceita
+    # nome, então o IP do relay vem dos values do environment.
+    - to:
+        - ipBlock:
+            cidr: {{ $np.smtpCIDR | quote }}
+      ports:
+        - protocol: TCP
+          port: {{ $np.smtpPort }}
+    {{- end }}
     # DNS (kube-dns) — resolução de nomes de Service, externos.
     - to:
         - namespaceSelector:
