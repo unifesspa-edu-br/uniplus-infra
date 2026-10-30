@@ -264,8 +264,8 @@ keycloak:
 
   # Envio de e-mail do realm (smtpServer) pelo relay SMTP institucional.
   # Opt-in por ambiente. Host, usuário e senha vêm do Vault via ExternalSecret
-  # e chegam ao realm.json como ${UNIPLUS_SMTP_HOST}, ${UNIPLUS_SMTP_USERNAME}
-  # e ${UNIPLUS_SMTP_PASSWORD} (envFrom no pod e no Job realm-reconcile).
+  # e chegam ao realm.json como $(env:UNIPLUS_SMTP_HOST), $(env:UNIPLUS_SMTP_USERNAME)
+  # e $(env:UNIPLUS_SMTP_PASSWORD) (envFrom no pod e no Job realm-reconcile).
   # Exige também networkPolicy.smtpCIDR para o pod alcançar o relay. O Secret
   # nasce de um ExternalSecret comum: com enabled=true, o pod só sobe depois
   # do ESO materializá-lo.

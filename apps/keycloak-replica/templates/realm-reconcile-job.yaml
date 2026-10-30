@@ -168,7 +168,7 @@ spec:
             {{- end }}
             {{- if .Values.keycloak.smtp.enabled }}
             # Host, usuário e senha do relay SMTP (UNIPLUS_SMTP_*) consumidos
-            # pelo ${...} do smtpServer no realm.json.
+            # pelo $(env:...) do smtpServer no realm.json.
             - secretRef:
                 name: {{ include "keycloak-replica.smtpSecretName" . }}
             {{- end }}
