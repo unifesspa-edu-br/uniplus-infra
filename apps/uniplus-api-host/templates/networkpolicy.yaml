@@ -197,6 +197,18 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.uniplusApiHost.email.porta }}
+    # Revogação do certificado do relay (OCSP/CRL da autoridade, em HTTP): o
+    # cliente SMTP confere a revogação no STARTTLS e recusa o handshake sem ela.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 10.0.0.0/8
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+      ports:
+        - protocol: TCP
+          port: 80
     {{- end }}
     {{- if eq .Values.uniplusApiHost.encryption.provider "vault" }}
     # Vault Transit (ADR-0027) — egress TCP 8200 para o pod do Vault quando
