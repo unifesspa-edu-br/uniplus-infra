@@ -28,11 +28,11 @@ minio:
   endpoint: 192.168.21.134:9000
 
 image:
-  tag: v0.44.0
+  tag: v0.47.0
 
 clamd:
   image:
-    tag: v0.44.0
+    tag: v0.47.0
   # O nó de HML tem 6 CPUs: o request de 1 CPU deixa as duas réplicas caberem, e o
   # limite segue nas 4 CPUs da ADR-0147 para o pico de varredura.
   resources:
