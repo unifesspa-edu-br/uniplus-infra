@@ -487,11 +487,12 @@ uniplusApiHost:
 
   # Relay SMTP institucional; host, usuário e senha no Vault em
   # secret/standalone/smtp/uniplus. A porta 25 sobe para TLS (STARTTLS).
-  # A credencial nasce antes; `enabled` liga num sync seguinte, junto do bump
-  # da API que envia e-mail.
+  # A API que traz o módulo Autorização envia e-mail (instalação e pedidos de
+  # concessão) e recusa a partida sem Email:Smtp; a credencial já existe desde
+  # o sync que ligou `criarCredencial`.
   email:
     criarCredencial: true
-    enabled: false
+    enabled: true
     remetente: nao-responda@unifesspa.edu.br
     nomeRemetente: UNI+ UNIFESSPA
 
