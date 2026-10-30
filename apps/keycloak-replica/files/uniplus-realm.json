@@ -11,16 +11,17 @@
   "rememberMe": true,
   "verifyEmail": false,
   {{- if .Values.keycloak.smtp.enabled }}
+  {{- /* $(env:VAR) é a sintaxe do keycloak-config-cli; ${VAR} ficaria literal. */}}
   "smtpServer": {
-    "host": "${UNIPLUS_SMTP_HOST}",
+    "host": "$(env:UNIPLUS_SMTP_HOST)",
     "port": {{ .Values.keycloak.smtp.port | quote }},
     "from": {{ .Values.keycloak.smtp.from | quote }},
     "fromDisplayName": {{ .Values.keycloak.smtp.fromDisplayName | quote }},
     "starttls": {{ .Values.keycloak.smtp.starttls | quote }},
     "ssl": {{ .Values.keycloak.smtp.ssl | quote }},
     "auth": "true",
-    "user": "${UNIPLUS_SMTP_USERNAME}",
-    "password": "${UNIPLUS_SMTP_PASSWORD}"
+    "user": "$(env:UNIPLUS_SMTP_USERNAME)",
+    "password": "$(env:UNIPLUS_SMTP_PASSWORD)"
   },
   {{- end }}
   "internationalizationEnabled": true,
