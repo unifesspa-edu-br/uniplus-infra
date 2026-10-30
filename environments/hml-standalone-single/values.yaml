@@ -502,6 +502,13 @@ uniplusApiHost:
         secretKeyRef:
           name: uniplus-api-host-encryption-local
           key: LOCAL_KEY
+    # PROVISÓRIO (30/10/2026, ponto facultativo): gmail.com aceito como domínio
+    # institucional para instalar os gestores com contas provisórias. Remover
+    # na terça-feira, 03/11, junto com as contas provisórias.
+    - name: Autorizacao__Instalacao__DominiosInstitucionais__0
+      value: unifesspa.edu.br
+    - name: Autorizacao__Instalacao__DominiosInstitucionais__1
+      value: gmail.com
 
   ingress:
     enabled: true
