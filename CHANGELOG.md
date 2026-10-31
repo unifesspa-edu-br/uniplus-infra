@@ -15,7 +15,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 ### Removido
 
 - Rota `/api/auth` dos prefixos do Host em `hml-standalone-single`: a `uniplus-api#2161` removeu o `GET /api/auth/me`, único endpoint do grupo. `/api/profile` continua com o Host. Issue #745.
-
+- Chart `keycloak-replica` (0.3.5) retira o papel `candidato` da composição de `default-roles-<realm>` e da lista de papéis do realm. O login só identifica a pessoa (ADR-0152 da `uniplus-api`); a política `Candidato` da API identifica o titular pelo CPF desde a v0.47.0. O `realm-reconcile-job` não apaga papel (`IMPORT_MANAGED_ROLE=no-delete`): o RUNBOOKS §10.8 traz a exclusão pelo `kcadm.sh`. Issue #745.
 - Chart `apps/uniplus-api-selecao/` e o wiring correspondente em `environments/lab-standalone-single/` (Task #412, PR#424) — revertidos. A topologia real do backend não é "uma API por módulo de negócio": ADR-0097 do `uniplus-api` (accepted 2026-06-26) define 3 executáveis — Host (`Unifesspa.UniPlus.Host`, absorve Selecao+Ingresso+Configuracao+OrganizacaoInstitucional como class libraries co-hospedadas), Geo e Portal. O módulo Selecao não é mais um deployable separado; não há mais chart Helm dedicado a ele. Refs #395.
 - Limpeza do repositório para focar no `standalone-compact` como único ambiente operacional (2026-05-19): removidos `environments/lab-{sp1,sp2,pa1}`, `environments/prod-{sp1,sp2,pa1}` e `environments/standalone/` (nunca provisionados ou já destruídos); `provisioning/oci/standalone/` (VMs destruídas) e `provisioning/oci/iad-arm/` (exploração ARM Phoenix abandonada); `docs/SETUP.md`, `docs/VALIDATION-PLAN.md`, `docs/network-matrix.md` (laboratório multi-DC nunca executado); `scripts/bootstrap-lab.sh` e `scripts/teardown-lab.sh`.
 

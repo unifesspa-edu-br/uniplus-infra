@@ -487,7 +487,6 @@
       { "name": "gestor", "description": "Gestor de processo seletivo em Seleção/Ingresso (roleGuard uniplus-web)" },
       { "name": "avaliador", "description": "Avaliador de recursos/homologação em Seleção (roleGuard uniplus-web)" },
       { "name": "plataforma-admin", "description": "Administrador da Configuração (cadastros base institucionais — roleGuard uniplus-web)" },
-      { "name": "candidato", "description": "Candidato a processo seletivo — papel padrão de todo usuário do Uni+" },
       { "name": "offline_access", "description": "${role_offline-access}" },
       { "name": "uma_authorization", "description": "${role_uma_authorization}" },
       {
@@ -495,7 +494,7 @@
         "description": "${role_default-roles}",
         "composite": true,
         "composites": {
-          "realm": ["offline_access", "uma_authorization", "candidato"],
+          "realm": ["offline_access", "uma_authorization"],
           "client": { "account": ["view-profile", "manage-account"] }
         }
       }

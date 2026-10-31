@@ -44,7 +44,7 @@ Rel(oidc_local, oidc_local, "Cria/atualiza usuário\nno realm Uni+\n(mapeamento 
 
 == 6. Emissão de tokens locais ==
 
-Rel(oidc_local, oidc_local, "Aplica roles locais\n(candidato, etc.)")
+Rel(oidc_local, oidc_local, "Aplica roles locais")
 Rel(oidc_local, user, "Redirect para frontend\ncom authorization code", "HTTPS")
 Rel(user, fe, "GET /callback?code=...", "HTTPS")
 Rel(fe, oidc_local, "POST /token\n(code + PKCE verifier)", "HTTPS")

@@ -1788,6 +1788,41 @@ Standalone usa `letsencrypt-staging` durante a Fase 4–6 (90d, browser warning 
 | Realm import falha com `Could not parse JSON` | Erro de sintaxe no `uniplus-realm.json` ou `${VAR}` referenciando env var não setada | Validar JSON localmente (`jq . files/uniplus-realm.json`); conferir se todos os `UNIPLUS_PORTAL_*` env vars existem no Pod |
 | Pod startupProbe falha após 10min | Postgres lento na 1ª conexão (cold start) ou DB inacessível | `kc logs ... --previous`; conferir `nc -zv 10.2.2.11 5432` do Pod (sem hostNetwork) |
 
+### 10.8 Retirar um papel do realm
+
+O `realm-reconcile-job` roda com `IMPORT_MANAGED_ROLE=no-delete`: tirar um papel do `uniplus-realm.json` não o apaga do Keycloak, e a retirada da composição dos papéis padrão depende de o `keycloak-config-cli` reconciliar os compostos. Depois do sync do ArgoCD, o procedimento abaixo apaga o papel do realm, o que também o tira da composição dos papéis padrão. Pode ser repetido sem efeito. Foi o caso do papel `candidato`, que deixou de ser papel padrão quando a API e a web pararam de ler papel do token ([uniplus-infra#745](https://github.com/unifesspa-edu-br/uniplus-infra/issues/745)).
+
+```bash
+kc() { sudo kubectl --kubeconfig /etc/rancher/k3s/k3s.yaml "$@"; }
+REALM=unifesspa   # keycloak.realmImport.realmName do ambiente (HML: unifesspa; standalone-compact e lab: uniplus)
+PAPEL=candidato
+DEPLOY=$(kc get deploy -n uniplus -l app.kubernetes.io/name=keycloak-replica -o name | head -1)
+
+if [ -z "$DEPLOY" ]; then
+  echo "Deployment do keycloak-replica não encontrado em uniplus"
+else
+  kc exec -n uniplus -i "$DEPLOY" -- bash -s "$REALM" "$PAPEL" <<'EOS'
+set -euo pipefail
+REALM=$1; PAPEL=$2
+KCADM=/opt/keycloak/bin/kcadm.sh
+$KCADM config credentials --server http://localhost:8080/auth --realm master \
+  --user "$KC_BOOTSTRAP_ADMIN_USERNAME" --password "$KC_BOOTSTRAP_ADMIN_PASSWORD"
+
+# Apagar o papel também o retira da composição de default-roles-$REALM e de quem
+# o recebeu por atribuição direta. A listagem fica fora de `if` para que uma
+# falha do kcadm (credencial, rede) interrompa o script em vez de passar por
+# "papel ausente".
+PAPEIS=$($KCADM get roles -r "$REALM" --fields name --format csv --noquotes)
+if grep -qxF "$PAPEL" <<<"$PAPEIS"; then
+  $KCADM delete "roles/$PAPEL" -r "$REALM"
+fi
+echo "papel $PAPEL ausente do realm $REALM e de default-roles-$REALM"
+EOS
+fi
+```
+
+Para conferir, emitir um token novo e verificar que `realm_access.roles` não traz o papel. Tokens emitidos antes continuam com o papel até expirar, mas a API e a web não leem papel do token.
+
 ## 11. Redis (standalone)
 
 Cache local — `redis:8.6.3-alpine` em container Docker gerenciado por systemd no data-host (`10.2.2.11:6379`). Pré-requisito: §9 Postgres systemd ativo (mesmo data-host) + Vault unsealed para custódia da senha.
@@ -4189,9 +4224,9 @@ código.** Investigação em `uniplus-api` (SHA `778e380`) confirmou que todas a
 dos módulos hospedados no Host (Selecao, Configuracao, OrganizacaoInstitucional, Publicacoes) já
 nascem 100% prefixadas (`api/{modulo}/...`, disciplina manual por controller, sem convenção
 central que force isso — ver nota abaixo). Ingresso não tem endpoint algum ainda (só esqueleto de
-domínio/infra). Só 10 rotas (depois de remover `/api/_smoke/*`, ver adiante) não têm prefixo
-algum, porque são registradas uma vez no Host e replicadas identicamente no Portal (mesmo pacote
-compartilhado `Unifesspa.UniPlus.Infrastructure.Core`):
+domínio/infra). Só 9 rotas (depois de remover `/api/_smoke/*`, ver adiante) não têm prefixo
+algum. O `/api/profile/me` é registrado só no Host; as demais vêm do `Program.cs` de cada
+processo:
 
 | Rota | Origem | Decisão de roteamento |
 |---|---|---|
@@ -4200,10 +4235,10 @@ compartilhado `Unifesspa.UniPlus.Infrastructure.Core`):
 | `GET/POST /api/_smoke/*` × 3 | `SmokeEndpointsExtensions` | **Removidas do código** — [uniplus-api#829](https://github.com/unifesspa-edu-br/uniplus-api/issues/829), não precisam mais de decisão de roteamento |
 | `GET /health`, `/health/live`, `/health/ready` | `Program.cs` (`MapHealthChecks`) | **Sem rota no Traefik** — liveness/readiness do Kubernetes batem direto no IP do pod, nunca através do Ingress; não há necessidade de exposição externa |
 
-Autenticação/perfil são preocupação transversal por natureza (não pertencem a nenhum módulo de
+O perfil é preocupação transversal por natureza (não pertence a nenhum módulo de
 negócio específico) — faz sentido o Host, como composition root, ser o dono canônico. Só
 reconsiderar se um módulo/deployable diferente (Portal, Ingresso) precisar de semântica de
-auth/perfil genuinamente independente da do Host — não é o caso hoje.
+perfil genuinamente independente da do Host — não é o caso hoje.
 
 **Nota**: o prefixo `api/{modulo}` dos controllers de negócio é 100% manual (`[Route("api/{modulo}")]`
 por classe) — não há `IControllerModelConvention` nem classe base que force isso. O teste
