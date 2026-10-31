@@ -349,7 +349,6 @@ uniplusApiHost:
     #     - /api/selecao
     #     - /api/ingresso
     #     - /api/publicacoes
-    #     - /api/auth        # transversal — Host é o dono
     #     - /api/profile     # transversal — Host é o dono
     #     - /openapi         # transversal — Host é o dono
     pathPrefixes: []
