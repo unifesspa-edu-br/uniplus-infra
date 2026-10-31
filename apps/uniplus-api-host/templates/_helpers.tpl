@@ -300,6 +300,19 @@ indentação do include e produziria itens fora da lista.
   value: {{ $acervo.bucket | quote }}
 - name: AcervoPublico__EnderecoBase
   value: {{ $acervo.enderecoBase | quote }}
+# === Avisos do pedido de concessão (Autorizacao:EnderecoDaConfiguracao do uniplus-api) ===
+# A aplicação recusa a partida sem o endereço absoluto da Configuração, de onde o
+# link do e-mail abre o pedido; a mesma regra falha aqui, no render.
+{{- $enderecoDaConfiguracao := .Values.uniplusApiHost.autorizacao.enderecoDaConfiguracao }}
+{{- if ne .Values.uniplusApiHost.aspnet.environment "Development" }}
+{{- if not (regexMatch "^https://[^/?#]+(/[^?#]*)?$" (default "" $enderecoDaConfiguracao)) }}
+{{- fail (printf "uniplusApiHost.autorizacao.enderecoDaConfiguracao é obrigatório fora de Development e deve ser URL absoluta https da Configuração, sem query nem fragmento (ex.: https://uniplus-hml.unifesspa.edu.br/configuracao) — recebido %q. Configurar em environments/<env>/values.yaml." (default "" $enderecoDaConfiguracao)) }}
+{{- end }}
+{{- end }}
+{{- with $enderecoDaConfiguracao }}
+- name: Autorizacao__EnderecoDaConfiguracao
+  value: {{ . | quote }}
+{{- end }}
 {{- if .Values.uniplusApiHost.oidc.enabled }}
 # === OIDC (Auth:* binding — bearer validation apenas; o host não
 # se autentica como client M2M contra nada — Schema Registry/Kafka

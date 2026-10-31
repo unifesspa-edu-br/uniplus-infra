@@ -427,6 +427,12 @@ uniplusApiHost:
   acervoPublico:
     enderecoBase: https://uniplus-hml.unifesspa.edu.br/acervo
 
+  # Link dos avisos por e-mail do pedido de concessão de acesso: a API monta
+  # {endereço}/acessos/pedidos/{id} e recusa a partida sem o valor, a partir da
+  # versão que envia os avisos; as anteriores ignoram a variável.
+  autorizacao:
+    enderecoDaConfiguracao: https://uniplus-hml.unifesspa.edu.br/configuracao
+
   oidc:
     issuerUri: https://uniplus-oidc-hml.unifesspa.edu.br/auth/realms/unifesspa
 
