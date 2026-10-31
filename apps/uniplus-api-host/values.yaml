@@ -208,6 +208,14 @@ uniplusApiHost:
     bucket: uniplus-acervo-publico
     enderecoBase: ""            # ex.: https://uniplus-hml.unifesspa.edu.br/acervo
 
+  # === Avisos por e-mail do pedido de concessão de acesso ===
+  # Endereço absoluto da aplicação Configuração; o e-mail leva o link
+  # {endereço}/acessos/pedidos/{id}. Vira Autorizacao__EnderecoDaConfiguracao.
+  # Fora de Development a aplicação recusa a partida sem ele, e o template
+  # falha antes, no render.
+  autorizacao:
+    enderecoDaConfiguracao: ""  # ex.: https://uniplus-hml.unifesspa.edu.br/configuracao
+
   # === Verificação dos arquivos do candidato (ADR-0146 do uniplus-api) ===
   # `enabled` entrega à API (e ao Job de migration, hook de PreSync) a
   # credencial própria dos buckets do candidato, os nomes dos buckets e a
