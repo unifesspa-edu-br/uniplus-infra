@@ -521,7 +521,6 @@ uniplusApiHost:
       - /api/organizacao
       - /api/publicacoes
       - /api/autorizacao
-      - /api/auth
       - /api/profile
       - /openapi
     tls:

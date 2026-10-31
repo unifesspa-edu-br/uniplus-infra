@@ -4195,8 +4195,7 @@ compartilhado `Unifesspa.UniPlus.Infrastructure.Core`):
 
 | Rota | Origem | Decisão de roteamento |
 |---|---|---|
-| `GET /api/auth/me` | `AuthEndpointsExtensions` | **Host é o dono** — única `IngressRoute` (`PathPrefix(/api/auth)`) aponta pro Service do Host. A cópia do Portal não fica alcançável externamente sob o host compartilhado (Portal hoje só tem o `ping` dummy, não há necessidade real de identidade própria) |
-| `GET /api/profile/me` | `ProfileEndpointsExtensions` | Idem — Host é o dono (`PathPrefix(/api/profile)`) |
+| `GET /api/profile/me` | `ProfileEndpointsExtensions` | **Host é o dono** — única `IngressRoute` (`PathPrefix(/api/profile)`) aponta pro Service do Host |
 | `GET /openapi/{modulo}.json` × 5 | `Program.cs` + `ModuleApiGroupingConvention` | Idem — Host é o dono (`PathPrefix(/openapi)`); doc do Portal (se um dia existir) só via port-forward/uso interno |
 | `GET/POST /api/_smoke/*` × 3 | `SmokeEndpointsExtensions` | **Removidas do código** — [uniplus-api#829](https://github.com/unifesspa-edu-br/uniplus-api/issues/829), não precisam mais de decisão de roteamento |
 | `GET /health`, `/health/live`, `/health/ready` | `Program.cs` (`MapHealthChecks`) | **Sem rota no Traefik** — liveness/readiness do Kubernetes batem direto no IP do pod, nunca através do Ingress; não há necessidade de exposição externa |

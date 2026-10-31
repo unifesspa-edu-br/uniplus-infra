@@ -95,15 +95,14 @@ uniplusApiHost:
       - /api/selecao
       - /api/ingresso
       - /api/publicacoes
-      - /api/auth
       - /api/profile
       - /openapi
 ```
 
 `pathPrefixes` é opcional. Quando a lista está vazia ou ausente, o chart
 mantém a rota `Host()` pura usada pelos ambientes existentes. Os prefixos
-`/api/auth`, `/api/profile` e `/openapi` também pertencem ao Host e devem ser
-incluídos quando forem expostos no mesmo domínio.
+`/api/profile` e `/openapi` também pertencem ao Host e devem ser incluídos
+quando forem expostos no mesmo domínio.
 
 ## Variáveis principais
 
