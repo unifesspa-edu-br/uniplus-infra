@@ -412,6 +412,18 @@ uniplusApiHost:
   redis:
     host: 192.168.21.134
 
+  # Registro de acesso a dado protegido (LGPD art. 37): a API publica cada acesso
+  # no tópico abaixo e só entrega o dado depois de o broker confirmar. Independe de
+  # `kafka.enabled`, que segue desligado (o transporte do Wolverine continua sem
+  # uso em HML). Usuário SCRAM próprio, só com Write e Describe no tópico, criado
+  # por scripts/hml-standalone-single/provision-registro-de-acesso-kafka.sh. O
+  # tópico e o usuário precisam existir antes do deploy da API que lê estas chaves
+  # (RUNBOOKS §13.11); as versões anteriores ignoram as variáveis.
+  registroDeAcesso:
+    enabled: true
+    kafka:
+      bootstrapServers: 192.168.21.134:9092
+
   storage:
     endpoint: 192.168.21.134:9000
     # As URLs de download e de envio direto saem em HTTPS por este nome, servido
