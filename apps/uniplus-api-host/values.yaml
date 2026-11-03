@@ -177,6 +177,30 @@ uniplusApiHost:
     saslMechanism: SCRAM-SHA-512
     caCertPath: /etc/uniplus-kafka/ca.crt
 
+  # === Registro de acesso a dado protegido (seção RegistroDeAcesso:Kafka) ===
+  # A API publica cada acesso a dado protegido num tópico Kafka próprio e só
+  # entrega o dado depois de o broker confirmar a escrita (ADR-0153 do
+  # uniplus-api). Independe de `kafka.enabled`: ligar o registro não liga o
+  # transporte do Wolverine nem exige o Schema Registry.
+  #
+  # A credencial é um usuário SCRAM próprio, com ACL só de Write e Describe no
+  # tópico — nunca o `admin`. O produtor não cria o tópico: ele precisa existir
+  # antes da subida (docs/RUNBOOKS.md, §13.11). Com `enabled: true` a API
+  # recusa a partida se qualquer variável obrigatória faltar.
+  registroDeAcesso:
+    enabled: false
+    kafka:
+      bootstrapServers: ""      # ex.: 10.0.2.87:9092 — obrigatório quando enabled=true
+      topico: autorizacao_registros_de_acesso
+      securityProtocol: SASL_SSL
+      saslMechanism: SCRAM-SHA-512
+      # Onde o CA do broker é montado no pod; diferente do caminho do transporte
+      # do Wolverine para os dois blocos poderem ficar ligados juntos.
+      caCertPath: /etc/uniplus-kafka-registro-de-acesso/ca.crt
+      # Prazo para o broker confirmar cada registro (TimeSpan). Vazio: a API usa
+      # o padrão dela (00:00:10).
+      prazoDeConfirmacao: ""
+
   # === Backend MinIO S3 — bucket compartilhado com as demais APIs Uni+ ===
   storage:
     endpoint: ""                # ex.: 10.0.2.87:9000
@@ -316,6 +340,16 @@ uniplusApiHost:
       vaultPath: secret/standalone/kafka/admin
       usernameKey: username
       passwordKey: password
+      caCertKey: ca_cert
+
+    # Só relevante com registroDeAcesso.enabled. Usuário e senha são do usuário
+    # SCRAM do registro de acesso (sem o `admin`); o CA é o mesmo do broker,
+    # lido de onde já está custodiado.
+    kafkaRegistroDeAcesso:
+      vaultPath: secret/standalone/kafka/uniplus-api-registro-acesso-svc
+      usernameKey: username
+      passwordKey: password
+      caCertVaultPath: secret/standalone/kafka/admin
       caCertKey: ca_cert
 
     minioRoot:
