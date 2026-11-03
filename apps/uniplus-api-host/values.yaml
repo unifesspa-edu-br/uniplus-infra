@@ -343,13 +343,13 @@ uniplusApiHost:
       caCertKey: ca_cert
 
     # Só relevante com registroDeAcesso.enabled. Usuário e senha são do usuário
-    # SCRAM do registro de acesso (sem o `admin`); o CA é o mesmo do broker,
-    # lido de onde já está custodiado.
+    # SCRAM do registro de acesso (sem o `admin`); o CA é o do broker, gravado em
+    # secret/standalone/kafka/ca pelo provision-registro-de-acesso-kafka.sh.
     kafkaRegistroDeAcesso:
       vaultPath: secret/standalone/kafka/uniplus-api-registro-acesso-svc
       usernameKey: username
       passwordKey: password
-      caCertVaultPath: secret/standalone/kafka/admin
+      caCertVaultPath: secret/standalone/kafka/ca
       caCertKey: ca_cert
 
     minioRoot:
