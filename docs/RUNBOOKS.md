@@ -2704,6 +2704,45 @@ ADR-009 documenta os deltas previstos:
 | `KRaft metadata controller is not yet ready` | Cold start ou storage corrupto | Aguardar até 180s; se persiste, conferir `__cluster_metadata-0/` |
 | Disk full em `vg-kafka` | Logs cresceram além do volume | `df -h /var/lib/uniplus/kafka`; aplicar `retention.ms`/`retention.bytes` por topic; expandir LVM |
 
+### 13.11 Registro de acesso a dado protegido: tópico, usuário e ACL (HML)
+
+A API publica cada acesso a dado protegido da inscrição no tópico `autorizacao_registros_de_acesso` e só entrega o dado depois de o broker confirmar a escrita (ADR-0153 do uniplus-api; LGPD, art. 37). A credencial da API é um **usuário SCRAM próprio**, `uniplus-api-registro-acesso-svc`, com ACL literal de **`Write` e `Describe`** no tópico — nunca o `admin`. Sem `Create`, `Delete`, `Alter` nem `Read`: quem tem a credencial da API não apaga nem lê a trilha. O atalho `--producer` do `kafka-acls.sh` não serve, porque concede `Create`; o produtor idempotente do Kafka 4.2 precisa só de `Write`.
+
+| Item | Valor |
+|---|---|
+| Tópico | `autorizacao_registros_de_acesso`, 3 partições, `retention.ms=-1`, `cleanup.policy=delete` |
+| Fator de replicação | 1 no standalone (nó único). Em produção: 3 com `min.insync.replicas=2`, para o `acks=all` da API significar escrita replicada |
+| Usuário SCRAM | `uniplus-api-registro-acesso-svc` |
+| Vault | `secret/standalone/kafka/uniplus-api-registro-acesso-svc` (`username`, `password`) |
+| ExternalSecret (chart `uniplus-api-host`) | `<release>-uniplus-api-host-registro-acesso-kafka` (`KAFKA_USERNAME`, `KAFKA_PASSWORD`, `ca.crt`; o CA vem de `secret/standalone/kafka/admin`, chave `ca_cert`) |
+
+O produtor **não cria** o tópico: ele precisa existir antes do deploy da API que lê as variáveis `RegistroDeAcesso__Kafka__*`. As versões anteriores da API ignoram essas variáveis, então o procedimento e o PR do chart podem entrar antes.
+
+**Provisionar** (na VM de HML; o `ROOT_TOKEN` do Vault vem do ambiente ou do `~/.bashrc`, como nos demais `provision-*.sh`):
+
+```bash
+# copiar para a VM scripts/hml-standalone-single/{lib-vault.sh,provision-registro-de-acesso-kafka.sh}
+bash provision-registro-de-acesso-kafka.sh provisionar
+```
+
+O script é idempotente. Ele gera a senha uma vez e a grava no Vault **antes** de aplicá-la no broker; reaproveita a senha se o segredo já existe; cria o usuário (`kafka-configs.sh --alter --add-config SCRAM-SHA-512`), o tópico e a ACL; e falha se as ACLs do usuário forem diferentes de `Write` e `Describe`, ou não forem literais. A senha passa por stdin nos contêineres descartáveis, sem aparecer em argv do `docker run` nem na saída. (O `kafka-configs.sh` do Kafka 4.x exige a senha no argumento, então ela fica no argv do processo dentro do contêiner por instantes, mesmo trade-off da §13.6.)
+
+**Verificar** (critério de aceite da issue uniplus-infra#752):
+
+```bash
+bash provision-registro-de-acesso-kafka.sh verificar
+```
+
+Um contêiner descartável (`--rm`) com a credencial do registro de acesso: publica uma mensagem (idempotente, `acks=all`) e tenta ler (com e sem grupo), apagar o tópico, alterar a configuração e criar outro tópico. Esperado: a publicação funciona (o admin lê a mensagem de volta, e o script a remove em seguida: o tópico está vazio antes do teste, então só o registro de teste sai) e as quatro operações são **recusadas pelo broker** (`TopicAuthorizationException`/`GroupAuthorizationException`). O script falha se qualquer recusa não ocorrer. Com o tópico já em uso, a publicação de teste não é feita (só as recusas), para nunca apagar registro real.
+
+> O `kafka-topics.sh --describe` com essa credencial falha: ele pede também `DescribeConfigs`, que a ACL não concede. O produtor da API precisa só de metadados (`Describe`), e o teste usa `kafka-get-offsets.sh`.
+
+**Rotacionar a senha:** apagar `secret/standalone/kafka/uniplus-api-registro-acesso-svc` no Vault, rodar `provisionar` (gera outra e reaplica o usuário), forçar o refresh do ExternalSecret e reiniciar o `uniplus-api-host`.
+
+**Retenção:** `retention.ms=-1` (sem expiração) até o serviço que consome o tópico e guarda os registros existir; a retenção é revista quando ele entrar.
+
+**Sync do ArgoCD:** o Deployment recebe as variáveis `RegistroDeAcesso__Kafka__*`; o Job de migration (`PreSync`) não, porque roda antes de o Sync criar o ExternalSecret e não inicia o servidor (comentário em `_helpers.tpl`).
+
 ## 14. AKHQ — Web UI do Kafka (standalone)
 
 Web UI de gerenciamento do cluster Kafka SASL_SSL — chart `apps/kafka-ui/` (issue #139). AKHQ 0.27.x, Micronaut OIDC integrado ao realm `uniplus` do Keycloak. Pré-requisitos: §13 Kafka SASL_SSL ativo (admin SCRAM em `secret/standalone/kafka/admin`) + §10 Keycloak ativo (realm `uniplus` importado).
