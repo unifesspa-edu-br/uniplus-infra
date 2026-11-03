@@ -16,8 +16,10 @@
 #
 # `provisionar` é idempotente: a senha existente no Vault é reaproveitada, o
 # usuário e as configurações do tópico são reaplicados. `verificar` usa um
-# contêiner descartável (`--rm`) com a credencial do registro de acesso: publica,
-# e tenta ler, apagar o tópico, alterar a configuração e criar outro tópico. A
+# contêiner descartável (`--rm`) com a credencial do registro de acesso: confere as
+# ACLs (só Write e Describe literais, nada por curinga ou prefixo), publica uma
+# mensagem de teste (só com o tópico vazio e a API ainda sem usá-lo) e tenta ler e
+# criar um tópico descartável. Não tenta apagar nem alterar o tópico real. A
 # senha entra nos contêineres por stdin: não aparece em argv do `docker run`,
 # em arquivo nem na saída.
 #
@@ -149,20 +151,81 @@ registros_no_topico() {
     echo $((fim - inicio))
 }
 
+# Falha se alguma ACL que alcança o usuário (dele ou do curinga `User:*`), em qualquer
+# recurso, padrão ou permissão, fugir de Write e Describe LITERAIS neste tópico. É esta
+# conferência, e não uma tentativa de apagar ou alterar o tópico, que prova a ausência
+# de Delete, Alter, Read, Create e de ACL prefixada ou com curinga: se a conta tivesse
+# permissão demais, a tentativa executaria de verdade na trilha.
+conferir_acls() {
+    local acls alcancadas esperadas
+    acls=$(kafka_admin kafka-acls.sh --bootstrap-server "$BOOTSTRAP" --command-config /tmp/admin.properties --list)
+    alcancadas=$(awk -v u="User:$USUARIO" '
+        /^Current ACLs for resource/ {
+            r = $0
+            sub(/^[^(]*\(/, "", r); sub(/\)`?:? *$/, "", r)
+            gsub(/resourceType=|name=|patternType=/, "", r); gsub(/, /, "|", r)
+            next
+        }
+        /principal=/ {
+            p = $0; sub(/.*principal=/, "", p); sub(/,.*/, "", p)
+            o = $0; sub(/.*operation=/, "", o); sub(/,.*/, "", o)
+            t = $0; sub(/.*permissionType=/, "", t); sub(/\).*/, "", t)
+            if (p == u || p == "User:*") print r "|" p "|" o "|" t
+        }' <<<"$acls" | sort)
+    esperadas=$(printf '%s\n' \
+        "TOPIC|$TOPICO|LITERAL|User:$USUARIO|DESCRIBE|ALLOW" \
+        "TOPIC|$TOPICO|LITERAL|User:$USUARIO|WRITE|ALLOW" | sort)
+    if [[ "$alcancadas" != "$esperadas" ]]; then
+        echo "ACLs que alcançam $USUARIO:" >&2
+        echo "$alcancadas" >&2
+        falha "as ACLs de $USUARIO (ou do curinga User:*) diferem de Write e Describe literais em $TOPICO"
+    fi
+    log "ACLs conferidas: só Write e Describe literais em $TOPICO, nada por curinga ou prefixo."
+}
+
+# A API já usa o tópico se o Deployment do host tem a variável do registro de acesso.
+# Na dúvida (kubectl sem resposta, nenhum Deployment), conta como em uso.
+api_usa_o_topico() {
+    local envs
+    envs=$(sudo kubectl --kubeconfig "$KUBECONFIG_PATH" -n "${NAMESPACE_API:-uniplus}" get deploy \
+        -l app.kubernetes.io/name=uniplus-api-host \
+        -o jsonpath='{range .items[*].spec.template.spec.containers[*].env[*]}{.name}{"\n"}{end}' 2>/dev/null) || return 0
+    [[ -n "$envs" ]] || return 0
+    grep -qx 'RegistroDeAcesso__Kafka__BootstrapServers' <<<"$envs"
+}
+
+# Fim (offset do próximo registro) de uma partição do tópico.
+fim_da_particao() {
+    kafka_admin kafka-get-offsets.sh --bootstrap-server "$BOOTSTRAP" --command-config /tmp/admin.properties \
+        --topic "$TOPICO" --time -1 | awk -F: -v p="$1" '$2 == p {print $3}'
+}
+
 verificar() {
     vault_conectar "$tmpdir"
     local senha
     senha=$(senha_do_vault)
 
+    conferir_acls
+
+    # A mensagem de teste só é escrita com o tópico vazio e a API ainda sem usá-lo: assim
+    # ninguém além deste script escreve nele, e o registro de teste é o único a remover.
     local publicar=1
     if [[ "$(registros_no_topico)" -ne 0 ]]; then
         publicar=0
-        log "O tópico já tem registros: a publicação de teste NÃO será feita (só as recusas)."
+        log "AVISO: o tópico já tem registros; a publicação de teste NÃO será feita."
+    elif api_usa_o_topico; then
+        publicar=0
+        log "AVISO: a API já usa o tópico (ou não foi possível conferir); a publicação de teste NÃO será feita."
+    fi
+    local fim_antes=("" "" "")
+    if [[ "$publicar" == 1 ]]; then
+        local p
+        for p in 0 1 2; do fim_antes[p]=$(fim_da_particao "$p"); done
     fi
 
-    # Roteiro executado DENTRO do contêiner descartável com a credencial do
-    # registro de acesso. A senha vem por stdin e só é escrita no /tmp do próprio
-    # contêiner, que some com ele (--rm).
+    # Roteiro executado DENTRO do contêiner descartável com a credencial do registro de
+    # acesso. A senha vem por stdin e só é escrita no /tmp do próprio contêiner, que some
+    # com ele (--rm). Nada aqui apaga ou altera o tópico real.
     # shellcheck disable=SC2016  # expansões deliberadas dentro do contêiner
     local roteiro='
 read -r SENHA
@@ -174,13 +237,14 @@ sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule require
 ssl.truststore.type=PEM
 ssl.truststore.location=/etc/uniplus-kafka/certs/ca.crt
 ssl.endpoint.identification.algorithm=
+enable.idempotence=true
 PROP
 B=/opt/kafka/bin
 N=verificacao_752_negativa
 
 recusado() { # $1 = nome, $2 = arquivo de saída. Os clientes de console saem com 0 mesmo
   # quando o broker recusa, então a recusa se reconhece pela exceção de autorização.
-  if grep -qi "authorization\|not authorized" "$2" && ! grep -qx "verificacao-752" "$2"; then
+  if grep -qi "authorization\|not authorized" "$2" && ! grep -q "752\\.0" "$2"; then
     echo "$1: RECUSADO pelo broker (autorização)"
   else
     echo "$1: NAO RECUSADO <<<<<< FALHA"; sed "s/$SENHA/***/g" "$2" | tail -5
@@ -188,9 +252,11 @@ recusado() { # $1 = nome, $2 = arquivo de saída. Os clientes de console saem co
 }
 
 if [ "$PUBLICAR" = 1 ]; then
-  printf "verificacao-752\n" | $B/kafka-console-producer.sh --bootstrap-server "$BOOTSTRAP" --producer.config "$C" \
-    --topic "$TOPICO" --producer-property enable.idempotence=true --producer-property acks=all >/tmp/o_pub 2>&1
+  # O produtor verificável devolve partição e offset gravados no broker.
+  $B/kafka-verifiable-producer.sh --bootstrap-server "$BOOTSTRAP" --producer.config "$C" --topic "$TOPICO" \
+    --max-messages 1 --acks -1 --value-prefix 752 >/tmp/o_pub 2>&1
   echo "publicar: rc=$?"
+  grep "producer_send_success" /tmp/o_pub | sed "s/^/produce: /"
   grep -qi "authorization" /tmp/o_pub && echo "publicar: BROKER RECUSOU <<<<<< FALHA"
 fi
 
@@ -209,13 +275,7 @@ $B/kafka-console-consumer.sh --bootstrap-server "$BOOTSTRAP" --consumer.config "
   --partition 0 --offset earliest --max-messages 1 --timeout-ms 15000 >/tmp/o_ler2 2>&1
 recusado "ler o tópico sem grupo (Read)" /tmp/o_ler2
 
-$B/kafka-topics.sh --bootstrap-server "$BOOTSTRAP" --command-config "$C" --delete --topic "$TOPICO" >/tmp/o_del 2>&1
-recusado "apagar o tópico (Delete)" /tmp/o_del
-
-$B/kafka-configs.sh --bootstrap-server "$BOOTSTRAP" --command-config "$C" --alter --entity-type topics \
-  --entity-name "$TOPICO" --add-config retention.ms=1000 >/tmp/o_alt 2>&1
-recusado "alterar a configuração (Alter/AlterConfigs)" /tmp/o_alt
-
+# Tópico descartável: se a criação passar, o roteiro do host o apaga e a verificação falha.
 $B/kafka-topics.sh --bootstrap-server "$BOOTSTRAP" --command-config "$C" --create --topic "$N" \
   --partitions 1 --replication-factor 1 >/tmp/o_cri 2>&1
 recusado "criar outro tópico (Create)" /tmp/o_cri
@@ -228,42 +288,51 @@ recusado "criar outro tópico (Create)" /tmp/o_cri
         --entrypoint sh "$KAFKA_IMAGE" -c "$roteiro")
     unset senha
     echo "$resultado"
+
+    # O tópico descartável não pode sobrar, passe ou não a verificação.
+    local descartavel=verificacao_752_negativa
+    if kafka_admin kafka-topics.sh --bootstrap-server "$BOOTSTRAP" --command-config /tmp/admin.properties --list \
+        | grep -qx "$descartavel"; then
+        kafka_admin kafka-topics.sh --bootstrap-server "$BOOTSTRAP" --command-config /tmp/admin.properties \
+            --delete --topic "$descartavel"
+        falha "a credencial criou o tópico $descartavel (apagado): tem mais permissão do que deveria"
+    fi
     if grep -q 'FALHA' <<<"$resultado"; then
         falha "a credencial do registro de acesso tem mais (ou menos) permissão do que deveria"
     fi
 
-    # Conferência com o admin: o registro publicado chegou e as recusas não
-    # alteraram nada.
     log "Conferindo o estado do tópico como admin"
     kafka_admin kafka-topics.sh --bootstrap-server "$BOOTSTRAP" --command-config /tmp/admin.properties \
         --describe --topic "$TOPICO"
     kafka_admin kafka-configs.sh --bootstrap-server "$BOOTSTRAP" --command-config /tmp/admin.properties \
         --describe --entity-type topics --entity-name "$TOPICO"
-    if kafka_admin kafka-topics.sh --bootstrap-server "$BOOTSTRAP" --command-config /tmp/admin.properties --list \
-        | grep -qx 'verificacao_752_negativa'; then
-        falha "o tópico verificacao_752_negativa foi criado"
-    fi
 
     if [[ "$publicar" == 1 ]]; then
-        [[ "$(registros_no_topico)" -eq 1 ]] || falha "esperado 1 registro (o de teste) no tópico"
+        # Partição e offset devolvidos pelo broker à própria mensagem de teste.
+        local enviado particao offset
+        enviado=$(grep 'producer_send_success' <<<"$resultado" | head -n1)
+        particao=$(sed -n 's/.*"partition":\([0-9]*\).*/\1/p' <<<"$enviado")
+        offset=$(sed -n 's/.*"offset":\([0-9]*\).*/\1/p' <<<"$enviado")
+        [[ -n "$particao" && -n "$offset" ]] || falha "o produtor não devolveu partição e offset; nada foi removido"
+        # Tópico vazio antes do teste: o offset devolvido tem de ser o fim anterior da partição.
+        if [[ "$offset" != "${fim_antes[particao]}" ]]; then
+            log "AVISO: offset devolvido ($offset) difere do esperado (${fim_antes[particao]}) na partição $particao; NADA foi removido. Conferir o tópico à mão."
+            falha "offset inesperado para o registro de teste"
+        fi
         local lido
         lido=$(kafka_admin kafka-console-consumer.sh --bootstrap-server "$BOOTSTRAP" \
-            --consumer.config /tmp/admin.properties --topic "$TOPICO" --from-beginning --max-messages 1 \
-            --timeout-ms 15000 2>/dev/null)
-        grep -qx "verificacao-752" <<<"$lido" || falha "o registro de teste não foi lido de volta pelo admin"
-        log "Publicação confirmada (lida de volta pelo admin). Removendo o registro de teste."
-        # O tópico estava vazio antes do teste: avançar o início até o fim só tira o registro de teste.
-        local offsets="$tmpdir/offsets.json"
-        kafka_admin kafka-get-offsets.sh --bootstrap-server "$BOOTSTRAP" --command-config /tmp/admin.properties \
-            --topic "$TOPICO" --time -1 \
-            | awk -F: 'BEGIN{printf "{\"version\":1,\"partitions\":["} {printf "%s{\"topic\":\"%s\",\"partition\":%s,\"offset\":%s}", (NR>1?",":""), $1, $2, $3} END{print "]}"}' \
-            >"$offsets"
-        sudo docker run --rm -v "$offsets:/tmp/offsets.json:ro" -v "$ADMIN_PROPERTIES:/tmp/admin.properties:ro" \
+            --consumer.config /tmp/admin.properties --topic "$TOPICO" --partition "$particao" --offset "$offset" \
+            --max-messages 1 --timeout-ms 15000 2>/dev/null)
+        grep -qx '752\.0' <<<"$lido" || falha "o registro de teste não foi lido de volta pelo admin"
+        log "Publicação confirmada (partição $particao, offset $offset). Removendo só esse registro."
+        local alvo="$tmpdir/offsets.json"
+        printf '{"version":1,"partitions":[{"topic":"%s","partition":%s,"offset":%s}]}\n' \
+            "$TOPICO" "$particao" "$((offset + 1))" >"$alvo"
+        sudo docker run --rm -v "$alvo:/tmp/offsets.json:ro" -v "$ADMIN_PROPERTIES:/tmp/admin.properties:ro" \
             -v "$CA_CRT:/etc/uniplus-kafka/certs/ca.crt:ro" --network host \
             --entrypoint /opt/kafka/bin/kafka-delete-records.sh "$KAFKA_IMAGE" \
             --bootstrap-server "$BOOTSTRAP" --command-config /tmp/admin.properties \
             --offset-json-file /tmp/offsets.json >/dev/null
-        [[ "$(registros_no_topico)" -eq 0 ]] || falha "o registro de teste não foi removido"
     fi
     log "Verificação concluída: a credencial só escreve (e descreve) no tópico."
 }

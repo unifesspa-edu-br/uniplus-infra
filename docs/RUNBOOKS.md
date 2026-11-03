@@ -2733,7 +2733,11 @@ O script é idempotente. Ele gera a senha uma vez e a grava no Vault **antes** d
 bash provision-registro-de-acesso-kafka.sh verificar
 ```
 
-Um contêiner descartável (`--rm`) com a credencial do registro de acesso: publica uma mensagem (idempotente, `acks=all`) e tenta ler (com e sem grupo), apagar o tópico, alterar a configuração e criar outro tópico. Esperado: a publicação funciona (o admin lê a mensagem de volta, e o script a remove em seguida: o tópico está vazio antes do teste, então só o registro de teste sai) e as quatro operações são **recusadas pelo broker** (`TopicAuthorizationException`/`GroupAuthorizationException`). O script falha se qualquer recusa não ocorrer. Com o tópico já em uso, a publicação de teste não é feita (só as recusas), para nunca apagar registro real.
+A verificação faz três coisas, sem nunca tentar apagar nem alterar o tópico real (se a conta tivesse permissão demais, a tentativa executaria de verdade na trilha):
+
+1. **Confere as ACLs** (`kafka-acls.sh --list`, todas as ACLs do cluster): as que alcançam o usuário, ou o curinga `User:*`, têm de ser exatamente `Write` e `Describe`, `ALLOW`, `LITERAL`, neste tópico. Qualquer outra operação, ACL prefixada, com curinga ou em outro recurso faz a verificação falhar. É isso que prova a ausência de `Delete`, `Alter`, `Read` e `Create`.
+2. **Publica uma mensagem de teste** com um contêiner descartável (`--rm`) e a credencial do registro de acesso (produtor idempotente, `acks=all`), e confere que ela chegou. A escrita só acontece com o tópico **vazio** e a API **ainda sem usá-lo** (Deployment do host sem `RegistroDeAcesso__Kafka__BootstrapServers`; na dúvida, conta como em uso). Senão, o script avisa e pula a publicação. O produtor devolve partição e offset da própria mensagem; se o offset não for o fim anterior da partição, nada é removido e a verificação falha com aviso. Quando confere, o admin lê a mensagem de volta e remove **só aquele registro** (do offset devolvido até ele mais 1). O fim do tópico nunca é usado como limite.
+3. **Tenta, sem destruir nada:** ler o tópico (com e sem grupo), que o broker tem de recusar, e criar um tópico descartável (`verificacao_752_negativa`), que também tem de ser recusado. Se a criação passar, o script apaga o tópico descartável e falha.
 
 > O `kafka-topics.sh --describe` com essa credencial falha: ele pede também `DescribeConfigs`, que a ACL não concede. O produtor da API precisa só de metadados (`Describe`), e o teste usa `kafka-get-offsets.sh`.
 
