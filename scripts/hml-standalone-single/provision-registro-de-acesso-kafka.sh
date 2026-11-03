@@ -6,12 +6,16 @@
 #     (nó único), `retention.ms=-1` e `cleanup.policy=delete`;
 #   - usuário SCRAM `uniplus-api-registro-acesso-svc`, com senha gerada aqui e
 #     guardada só no Vault (`secret/standalone/kafka/<usuário>`);
+#   - CA do broker em `secret/standalone/kafka/ca` (chave `ca_cert`), de onde o
+#     ExternalSecret do chart `uniplus-api-host` o lê. É certificado público,
+#     lido de /etc/uniplus-kafka/certs/ca.crt, mas é gravado sem passar por argv;
 #   - ACL literal no tópico: só `Write` e `Describe`. Sem `Create`, `Delete`,
 #     `Alter` nem `Read`; o atalho `--producer` concede `Create` e por isso não
 #     é usado.
 #
 # Uso (na VM de HML, com o ROOT_TOKEN do Vault no ambiente ou no ~/.bashrc):
 #   provision-registro-de-acesso-kafka.sh [provisionar]   cria o que falta
+#   provision-registro-de-acesso-kafka.sh ca             grava só o CA do broker no Vault
 #   provision-registro-de-acesso-kafka.sh verificar       prova o que a ACL permite e recusa
 #
 # `provisionar` é idempotente: a senha existente no Vault é reaproveitada, o
@@ -37,6 +41,7 @@ USUARIO="uniplus-api-registro-acesso-svc"
 TOPICO="autorizacao_registros_de_acesso"
 PARTICOES=3
 VAULT_CAMINHO="standalone/kafka/$USUARIO"
+VAULT_CAMINHO_CA="standalone/kafka/ca"
 ADMIN_PROPERTIES="$DATA_BASE/kafka/admin.properties"
 CA_CRT="/etc/uniplus-kafka/certs/ca.crt"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -82,6 +87,32 @@ kafka_sh_com_senha() {
 
 senha_do_vault() {
     vault_get "$VAULT_CAMINHO" password || falha "senha de $USUARIO ausente no Vault ($VAULT_CAMINHO); rodar 'provisionar'"
+}
+
+# Grava o CA do broker no Vault (chave ca_cert), se ainda não está igual. O PEM não passa
+# por argv: vai de arquivo 0600 do tmpdir para o corpo da requisição (`@arquivo`) e é
+# apagado em seguida. Sem esta etapa o ExternalSecret do chart não resolve o CA.
+gravar_ca() {
+    local pem="$tmpdir/ca.crt" corpo="$tmpdir/ca-corpo.json" atual
+    sudo cat "$CA_CRT" | ( umask 077; cat >"$pem" )
+    openssl x509 -in "$pem" -noout >/dev/null 2>&1 || { rm -f "$pem"; falha "$CA_CRT não é um certificado PEM válido"; }
+    if atual=$(vault_get "$VAULT_CAMINHO_CA" ca_cert) && [[ "$atual" == "$(cat "$pem")" ]]; then
+        log "CA do broker já está no Vault ($VAULT_CAMINHO_CA); nada a fazer."
+        rm -f "$pem"
+        return 0
+    fi
+    log "Gravando o CA do broker no Vault ($VAULT_CAMINHO_CA, chave ca_cert)"
+    ( umask 077; python3 -c '
+import json, sys
+print(json.dumps({"data": {"ca_cert": open(sys.argv[1]).read().rstrip("\n")}}))' "$pem" >"$corpo" )
+    VAULT_BODY_FILE="$tmpdir/vault-resposta.json"
+    VAULT_HTTP_STATUS=$(curl -sS --config "$VAULT_CURL_CONFIG" -X POST -H 'Content-Type: application/json' \
+        --data-binary "@$corpo" -o "$VAULT_BODY_FILE" -w '%{http_code}' "$VAULT_ADDR/v1/secret/data/$VAULT_CAMINHO_CA")
+    rm -f "$corpo"
+    [[ "$VAULT_HTTP_STATUS" == 200 ]] || { rm -f "$pem"; falha "Vault respondeu HTTP $VAULT_HTTP_STATUS ao gravar $VAULT_CAMINHO_CA"; }
+    [[ "$(vault_get "$VAULT_CAMINHO_CA" ca_cert)" == "$(cat "$pem")" ]] \
+        || { rm -f "$pem"; falha "o CA lido do Vault difere do gravado"; }
+    rm -f "$pem"
 }
 
 provisionar() {
@@ -137,6 +168,8 @@ provisionar() {
     [[ "$operacoes" == "operation=DESCRIBE operation=WRITE " ]] \
         || falha "ACLs de $USUARIO diferentes de Write e Describe: $operacoes"
     grep -q 'patternType=LITERAL' <<<"$acls" || falha "a ACL de $USUARIO não é literal"
+
+    gravar_ca
 
     log "Provisionamento concluído. Rodar 'verificar' em seguida."
 }
@@ -339,6 +372,7 @@ recusado "criar outro tópico (Create)" /tmp/o_cri
 
 case "${1:-provisionar}" in
     provisionar) provisionar ;;
+    ca) vault_conectar "$tmpdir"; gravar_ca ;;
     verificar) verificar ;;
-    *) falha "uso: $0 [provisionar|verificar]" ;;
+    *) falha "uso: $0 [provisionar|ca|verificar]" ;;
 esac

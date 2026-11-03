@@ -2713,8 +2713,8 @@ A API publica cada acesso a dado protegido da inscrição no tópico `autorizaca
 | Tópico | `autorizacao_registros_de_acesso`, 3 partições, `retention.ms=-1`, `cleanup.policy=delete` |
 | Fator de replicação | 1 no standalone (nó único). Em produção: 3 com `min.insync.replicas=2`, para o `acks=all` da API significar escrita replicada |
 | Usuário SCRAM | `uniplus-api-registro-acesso-svc` |
-| Vault | `secret/standalone/kafka/uniplus-api-registro-acesso-svc` (`username`, `password`) |
-| ExternalSecret (chart `uniplus-api-host`) | `<release>-uniplus-api-host-registro-acesso-kafka` (`KAFKA_USERNAME`, `KAFKA_PASSWORD`, `ca.crt`; o CA vem de `secret/standalone/kafka/admin`, chave `ca_cert`) |
+| Vault | `secret/standalone/kafka/uniplus-api-registro-acesso-svc` (`username`, `password`) e `secret/standalone/kafka/ca` (`ca_cert`, o PEM público do broker, lido de `/etc/uniplus-kafka/certs/ca.crt`) |
+| ExternalSecret (chart `uniplus-api-host`) | `<release>-uniplus-api-host-registro-acesso-kafka` (`KAFKA_USERNAME`, `KAFKA_PASSWORD`, `ca.crt`; o CA vem de `secret/standalone/kafka/ca`, chave `ca_cert`) |
 
 O produtor **não cria** o tópico: ele precisa existir antes do deploy da API que lê as variáveis `RegistroDeAcesso__Kafka__*`. As versões anteriores da API ignoram essas variáveis, então o procedimento e o PR do chart podem entrar antes.
 
@@ -2725,7 +2725,7 @@ O produtor **não cria** o tópico: ele precisa existir antes do deploy da API q
 bash provision-registro-de-acesso-kafka.sh provisionar
 ```
 
-O script é idempotente. Ele gera a senha uma vez e a grava no Vault **antes** de aplicá-la no broker; reaproveita a senha se o segredo já existe; cria o usuário (`kafka-configs.sh --alter --add-config SCRAM-SHA-512`), o tópico e a ACL; e falha se as ACLs do usuário forem diferentes de `Write` e `Describe`, ou não forem literais. A senha passa por stdin nos contêineres descartáveis, sem aparecer em argv do `docker run` nem na saída. (O `kafka-configs.sh` do Kafka 4.x exige a senha no argumento, então ela fica no argv do processo dentro do contêiner por instantes, mesmo trade-off da §13.6.)
+O script é idempotente. Ele gera a senha uma vez e a grava no Vault **antes** de aplicá-la no broker; reaproveita a senha se o segredo já existe; cria o usuário (`kafka-configs.sh --alter --add-config SCRAM-SHA-512`), o tópico e a ACL; grava o CA do broker em `secret/standalone/kafka/ca` (sem passar por argv; `bash provision-registro-de-acesso-kafka.sh ca` faz só isso, e é o que se roda após rotacionar o certificado, §13.7); e falha se as ACLs do usuário forem diferentes de `Write` e `Describe`, ou não forem literais. A senha passa por stdin nos contêineres descartáveis, sem aparecer em argv do `docker run` nem na saída. (O `kafka-configs.sh` do Kafka 4.x exige a senha no argumento, então ela fica no argv do processo dentro do contêiner por instantes, mesmo trade-off da §13.6.)
 
 **Verificar** (critério de aceite da issue uniplus-infra#752):
 
