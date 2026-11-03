@@ -97,9 +97,9 @@ spec:
           port: 6379  # Redis
         - protocol: TCP
           port: 9000  # MinIO API S3
-        {{- if .Values.uniplusApiHost.kafka.enabled }}
+        {{- if or .Values.uniplusApiHost.kafka.enabled .Values.uniplusApiHost.registroDeAcesso.enabled }}
         - protocol: TCP
-          port: 9092  # Kafka SASL_SSL
+          port: 9092  # Kafka SASL_SSL (transporte do Wolverine e/ou registro de acesso)
         {{- end }}
     # Keycloak in-cluster (fallback se issuerUri usar Service DNS).
     - to:

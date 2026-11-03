@@ -110,6 +110,7 @@ quando forem expostos no mesmo domínio.
 |---|---|---|
 | `uniplusApiHost.database.name`/`username` | `uniplus`/`uniplus` | Banco único — 6 connection strings (`UniPlusDb`, `ConfiguracaoDb`, `OrganizacaoDb`, `SelecaoDb`, `IngressoDb`, `PublicacoesDb`) apontam todas para cá |
 | `uniplusApiHost.kafka.enabled` | `false` | Desligado até o Apicurio Registry entrar no lab (issue #423) |
+| `uniplusApiHost.registroDeAcesso.enabled` | `false` | Liga o Kafka do registro de acesso (`RegistroDeAcesso__Kafka__*`), independente de `kafka.enabled`. Exige `kafka.bootstrapServers` do bloco próprio e o usuário SCRAM no Vault (RUNBOOKS §13.11) |
 | `uniplusApiHost.schemaRegistry.url` | `""` | Feature off; ver bloco Kafka acima |
 | `uniplusApiHost.oidc.enabled` | `true` | Bearer validation apenas — o Host não se autentica como client M2M contra nada |
 | `uniplusApiHost.ingress.pathPrefixes` | `[]` | Lista opcional de subpaths do Host. Cada item gera `Host() && PathPrefix()` sem `StripPrefix`; vazia mantém `Host()` puro |

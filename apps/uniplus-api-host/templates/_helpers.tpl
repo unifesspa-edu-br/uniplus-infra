@@ -72,6 +72,10 @@ houve e onde.
 {{ include "uniplusApiHost.fullname" . }}-kafka
 {{- end -}}
 
+{{- define "uniplusApiHost.registroDeAcessoKafkaSecretName" -}}
+{{ include "uniplusApiHost.fullname" . }}-registro-acesso-kafka
+{{- end -}}
+
 {{- define "uniplusApiHost.minioSecretName" -}}
 {{ include "uniplusApiHost.fullname" . }}-minio
 {{- end -}}
@@ -401,3 +405,41 @@ indentação do include e produziria itens fora da lista.
 {{- toYaml . | nindent 0 }}
 {{- end }}
 {{- end }}
+
+{{/*
+  Variáveis do registro de acesso (RegistroDeAcesso:Kafka). Entram SÓ no
+  Deployment, e não em `uniplusApiHost.env`, de propósito: o Job de migration
+  sobe em `PreSync`, antes de o Sync criar o ExternalSecret da credencial, então
+  um `secretKeyRef` dele para o Secret novo nunca resolveria e o sync abortaria
+  sem criar o próprio Secret. O Job também não precisa delas: em `ApplyAndExit`
+  o host é construído mas não iniciado, e a validação das opções e o produtor
+  do registro só rodam na partida do servidor.
+*/}}
+{{- define "uniplusApiHost.envRegistroDeAcesso" -}}
+{{- $ra := .Values.uniplusApiHost.registroDeAcesso.kafka }}
+# === Registro de acesso (RegistroDeAcesso:Kafka) — independe de kafka.enabled.
+- name: RegistroDeAcesso__Kafka__BootstrapServers
+  value: {{ $ra.bootstrapServers | quote }}
+- name: RegistroDeAcesso__Kafka__Topico
+  value: {{ $ra.topico | quote }}
+- name: RegistroDeAcesso__Kafka__SecurityProtocol
+  value: {{ $ra.securityProtocol | quote }}
+- name: RegistroDeAcesso__Kafka__SaslMechanism
+  value: {{ $ra.saslMechanism | quote }}
+- name: RegistroDeAcesso__Kafka__Usuario
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "uniplusApiHost.registroDeAcessoKafkaSecretName" . }}
+      key: KAFKA_USERNAME
+- name: RegistroDeAcesso__Kafka__Senha
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "uniplusApiHost.registroDeAcessoKafkaSecretName" . }}
+      key: KAFKA_PASSWORD
+- name: RegistroDeAcesso__Kafka__CaminhoDoCertificadoCa
+  value: {{ $ra.caCertPath | quote }}
+{{- if $ra.prazoDeConfirmacao }}
+- name: RegistroDeAcesso__Kafka__PrazoDeConfirmacao
+  value: {{ $ra.prazoDeConfirmacao | quote }}
+{{- end }}
+{{- end -}}
