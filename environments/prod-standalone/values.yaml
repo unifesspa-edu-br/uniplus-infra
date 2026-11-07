@@ -123,6 +123,7 @@ middlewares:
     enabled: true
     sourceRange:
       - 200.139.48.0/25
+      - 192.168.90.0/24
 
 traefik:
   service:
@@ -157,8 +158,14 @@ uniplusApiHost:
   image:
     tag: v0.50.0
 
+  # O Job de migration (PreSync) consome a ServiceAccount e os Secrets que o sync
+  # comum cria: o primeiro sync é em dois tempos (scripts/prod-standalone/primeiro-sync.sh).
   migrationJob:
     enabled: true
+
+  externalSecrets:
+    encryptionLocal:
+      enabled: true
 
   resources:
     requests:
@@ -556,6 +563,7 @@ apicurioRegistry:
   storage:
     host: uniplus-prod-infra.unifesspa.edu.br
     sslMode: verify-full
+    sslFactory: org.postgresql.ssl.DefaultJavaSSLFactory
 
   oidc:
     issuerUri: https://keycloak.unifesspa.edu.br/realms/unifesspa
@@ -585,6 +593,7 @@ kafkaUi:
 
   kafka:
     bootstrapServers: uniplus-prod-infra.unifesspa.edu.br:9092
+    sslEndpointIdentification: https
 
   oidc:
     issuerUri: https://keycloak.unifesspa.edu.br/realms/unifesspa
@@ -611,6 +620,9 @@ redisUi:
   backend:
     host: uniplus-prod-infra.unifesspa.edu.br
     tls: true
+    tlsCaSecret:
+      secretName: uniplus-unifesspa-tls
+      key: tls.crt
 
   ingress:
     enabled: true

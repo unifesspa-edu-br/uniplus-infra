@@ -141,11 +141,29 @@ schema-validate:  ## Valida values.yaml dos environments contra os schemas dos c
 	    exit 1; \
 	fi
 
+.PHONY: prod-render-check
+prod-render-check:  ## Falha se o render de produção citar hml, 192.168.21.134, localhost ou nip.io (fora de comentários)
+	@printf "$(BLUE)→ render de produção sem termos de homologação$(RESET)\n"
+	@FAILS=0; \
+	for chart_dir in $(CHART_DIRS); do \
+	    [ -f "$$chart_dir/Chart.yaml" ] || continue; \
+	    chart_name=$$(basename "$$chart_dir"); \
+	    HITS=$$(helm template "$$chart_name" "$$chart_dir" -f environments/prod-standalone/values.yaml 2>/dev/null \
+	        | grep -v '^[[:space:]]*#' | grep -inE 'hml|192\.168\.21\.134|localhost|nip\.io' || true); \
+	    if [ -n "$$HITS" ]; then \
+	        echo "  ✗ $$chart_name"; echo "$$HITS" | head -5; FAILS=$$((FAILS+1)); \
+	    fi; \
+	done; \
+	if [ "$$FAILS" -gt 0 ]; then \
+	    printf "$(RED)✗ $$FAILS chart(s) com termos de homologação no render de produção$(RESET)\n"; \
+	    exit 1; \
+	fi
+
 .PHONY: lint
 lint: yaml-lint helm-lint markdown-lint shellcheck  ## Roda todos os linters
 
 .PHONY: validate
-validate: helm-deps lint schema-validate routing-validate  ## Lint + render de templates contra schemas
+validate: helm-deps lint schema-validate routing-validate prod-render-check  ## Lint + render de templates contra schemas
 # Ordem importa: helm-deps PRIMEIRO popula charts/ — sem isso, helm-lint e
 # schema-validate podem falhar em fresh checkout com "missing in charts/ directory".
 
