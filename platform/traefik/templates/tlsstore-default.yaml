@@ -1,0 +1,22 @@
+{{- if and .Values.tlsStore.enabled .Values.traefik.enabled }}
+{{- if not .Values.tlsStore.defaultSecretName }}
+{{- fail "tlsStore.defaultSecretName é obrigatório quando tlsStore.enabled=true (Secret TLS, neste namespace, com o certificado servido quando a rota não indica secretName)." }}
+{{- end }}
+# TLSStore `default`: certificado servido às rotas que declaram `tls: {}` ou não
+# trazem secretName, em vez do certificado de fábrica do Traefik. O Secret vive
+# no namespace deste chart.
+apiVersion: traefik.io/v1alpha1
+kind: TLSStore
+metadata:
+  name: default
+  labels:
+    app.kubernetes.io/name: traefik
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: uniplus
+    app.kubernetes.io/component: traefik
+spec:
+  defaultCertificate:
+    secretName: {{ .Values.tlsStore.defaultSecretName | quote }}
+{{- end }}

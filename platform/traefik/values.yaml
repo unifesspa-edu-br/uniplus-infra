@@ -152,6 +152,12 @@ traefik:
 # Traefik. Apps consomem via `traefik.ingress.kubernetes.io/router.middlewares:
 # traefik-headers-security@kubernetescrd`.
 # ============================================================================
+# Certificado padrão das rotas sem secretName (TLSStore default). Desligado por
+# default.
+tlsStore:
+  enabled: false
+  defaultSecretName: ""
+
 middlewares:
   enabled: true
 
