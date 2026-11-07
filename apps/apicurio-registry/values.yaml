@@ -54,6 +54,9 @@ apicurioRegistry:
     # Valor do parâmetro sslmode do JDBC (ex.: verify-full). Vazio: a URL não
     # traz o parâmetro.
     sslMode: ""
+    # Classe sslfactory do JDBC, usada junto com sslMode. DefaultJavaSSLFactory
+    # valida o certificado pelo repositório de CAs da JVM, em vez de root.crt.
+    sslFactory: ""
 
   # === OIDC (Keycloak realm uniplus) ===
   # Apicurio usa Quarkus OIDC. Confidential client `apicurio-registry` no
