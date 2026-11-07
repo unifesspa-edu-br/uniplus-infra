@@ -21,9 +21,16 @@
 # Variáveis:
 #   HOST_IP     IP do host (entra na SAN do certificado do KES). Default 192.168.21.134.
 #   KES_IMAGE   Imagem do KES usada para gerar as identidades.
+#   KES_CERT_FILE, KES_KEY_FILE
+#               Certificado (com cadeia) e chave do domínio, em PEM. Preenchidos,
+#               viram o certificado do servidor KES em vez de um autoassinado.
+#   VAULT_URL   Endereço HTTPS do Vault, para rodar fora do host do cluster
+#               (ver lib-vault.sh).
 set -euo pipefail
 
 HOST_IP="${HOST_IP:-192.168.21.134}"
+KES_CERT_FILE="${KES_CERT_FILE:-}"
+KES_KEY_FILE="${KES_KEY_FILE:-}"
 KES_IMAGE="${KES_IMAGE:-quay.io/minio/kes:2025-03-12T09-35-18Z}"
 KES_NAMESPACE="kes"
 KES_SERVICE_ACCOUNT="kes"
@@ -101,6 +108,10 @@ print(json.dumps({
 # secret/standalone/kes/server no Vault e rodar este script e o seguinte de novo.
 if vault_existe standalone/kes/server; then
     log "Certificado do KES já existe no Vault — preservado."
+elif [[ -n "$KES_CERT_FILE" ]]; then
+    [[ -r "$KES_CERT_FILE" && -r "$KES_KEY_FILE" ]] || { echo "KES_CERT_FILE e KES_KEY_FILE devem ser legíveis." >&2; exit 1; }
+    log "Gravando o certificado do domínio como certificado do servidor KES"
+    vault_put standalone/kes/server "cert=$(cat "$KES_CERT_FILE")" "key=$(cat "$KES_KEY_FILE")"
 else
     log "Gerando o certificado do servidor KES"
     openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes \

@@ -20,6 +20,13 @@
 # Variáveis:
 #   HOST_IP                 IP do host (default 192.168.21.134)
 #   DATA_BASE               default /var/lib/uniplus
+#   KES_HOST                nome ou IP do KES (default HOST_IP)
+#   MINIO_HOST              nome ou IP do MinIO nas chamadas (default HOST_IP)
+#   MINIO_SCHEME            http (default) ou https; https valida o certificado
+#   KES_CA_FILE             bundle de CAs confiáveis que valida o certificado do
+#                           KES. Vazio (default): o certificado do KES guardado
+#                           no Vault, autoassinado.
+#   VAULT_URL               ver lib-vault.sh
 #   ORIGEM_WEB              origem do web para o CORS (default https://uniplus-hml.unifesspa.edu.br)
 #   AUDIT_WEBHOOK_ENDPOINT  URL do coletor de logs que recebe o audit do MinIO.
 #                           Vazio = audit NÃO configurado (o script avisa no fim).
@@ -29,6 +36,10 @@ set -euo pipefail
 HOST_IP="${HOST_IP:-192.168.21.134}"
 DATA_BASE="${DATA_BASE:-/var/lib/uniplus}"
 ORIGEM_WEB="${ORIGEM_WEB:-https://uniplus-hml.unifesspa.edu.br}"
+KES_HOST="${KES_HOST:-$HOST_IP}"
+MINIO_HOST="${MINIO_HOST:-$HOST_IP}"
+MINIO_SCHEME="${MINIO_SCHEME:-http}"
+KES_CA_FILE="${KES_CA_FILE:-}"
 AUDIT_WEBHOOK_ENDPOINT="${AUDIT_WEBHOOK_ENDPOINT:-}"
 AUDIT_WEBHOOK_TOKEN="${AUDIT_WEBHOOK_TOKEN:-}"
 
@@ -64,7 +75,11 @@ done
 vault_conectar "$tmpdir"
 
 # --- Segredos do Vault (só em memória/tmpdir 0700) ----------------------------
-kes_cert=$(vault_get standalone/kes/server cert) || falha "certificado do KES ausente no Vault (rodar provision-verificacao-prerequisites.sh)"
+if [[ -n "$KES_CA_FILE" ]]; then
+    kes_cert=$(cat "$KES_CA_FILE")
+else
+    kes_cert=$(vault_get standalone/kes/server cert) || falha "certificado do KES ausente no Vault (rodar provision-verificacao-prerequisites.sh)"
+fi
 kes_key_minio=$(vault_get standalone/kes/api-keys minio) || falha "chave de API do MinIO no KES ausente no Vault"
 kes_key_provisioner=$(vault_get standalone/kes/api-keys provisioner) || falha "chave de API do provisioner no KES ausente no Vault"
 api_access=$(vault_get standalone/minio/arquivos-candidato-api access_key) || falha "credencial da API ausente no Vault"
@@ -74,9 +89,9 @@ ver_secret=$(vault_get standalone/minio/arquivos-candidato-verificador secret_ke
 printf '%s\n' "$kes_cert" >"$tmpdir/kes.crt"
 
 # --- KES no ar ----------------------------------------------------------------
-log "Aguardando o KES em https://$HOST_IP:$KES_PORT"
+log "Aguardando o KES em https://$KES_HOST:$KES_PORT"
 tentativa=0
-until curl -fsS --max-time 5 --cacert "$tmpdir/kes.crt" "https://$HOST_IP:$KES_PORT/v1/ready" >/dev/null 2>&1; do
+until curl -fsS --max-time 5 --cacert "$tmpdir/kes.crt" "https://$KES_HOST:$KES_PORT/v1/ready" >/dev/null 2>&1; do
     tentativa=$((tentativa + 1))
     [[ "$tentativa" -lt 60 ]] || falha "KES não respondeu em 5 min (Application platform-kes-in-cluster sincronizada? NetworkPolicy do hostPort?)"
     sleep 5
@@ -89,7 +104,7 @@ log "Criando a chave $KEY_NAME no KES (se ainda não existir)"
 kes_cli_env="$tmpdir/kes-cli.env"
 {
     echo "KES_API_KEY=$kes_key_provisioner"
-    echo "KES_SERVER=https://$HOST_IP:$KES_PORT"
+    echo "KES_SERVER=https://$KES_HOST:$KES_PORT"
     echo "SSL_CERT_FILE=/ca/kes.crt"
 } >"$kes_cli_env"
 chmod 600 "$kes_cli_env"
@@ -108,7 +123,7 @@ unset kes_key_provisioner
 sudo install -d -m 755 "$KES_DIR"
 sudo install -m 644 "$tmpdir/kes.crt" "$KES_DIR/kes.crt"
 {
-    echo "MINIO_KMS_KES_ENDPOINT=https://$HOST_IP:$KES_PORT"
+    echo "MINIO_KMS_KES_ENDPOINT=https://$KES_HOST:$KES_PORT"
     echo "MINIO_KMS_KES_API_KEY=$kes_key_minio"
     echo "MINIO_KMS_KES_KEY_NAME=$KEY_NAME"
     echo "MINIO_KMS_KES_CAPATH=/etc/minio/extra/kes.crt"
@@ -131,7 +146,7 @@ if [[ "$(sudo cat "$APPLIED_MARKER" 2>/dev/null || true)" != "$estado" ]]; then
     log "Configuração do KES/CORS/audit mudou — reiniciando o MinIO"
     sudo systemctl restart uniplus-minio
     tentativa=0
-    until curl -sf "http://$HOST_IP:9000/minio/health/live" >/dev/null 2>&1; do
+    until curl -sf "$MINIO_SCHEME://$MINIO_HOST:9000/minio/health/live" >/dev/null 2>&1; do
         tentativa=$((tentativa + 1))
         [[ "$tentativa" -lt 18 ]] || falha "MinIO não voltou em 90 s (journalctl -u uniplus-minio)"
         sleep 5
@@ -148,7 +163,7 @@ root_pw=$(sudo grep '^root_pw=' "$DATA_BASE/minio/.bootstrap-creds" | cut -d= -f
 [[ -n "$root_user" && -n "$root_pw" ]] || falha "credenciais root do MinIO ausentes em $DATA_BASE/minio/.bootstrap-creds"
 mc_env="$tmpdir/mc.env"
 {
-    echo "MC_HOST_uniplus=http://${root_user}:${root_pw}@${HOST_IP}:9000"
+    echo "MC_HOST_uniplus=${MINIO_SCHEME}://${root_user}:${root_pw}@${MINIO_HOST}:9000"
     echo "API_ACCESS=$api_access"
     echo "API_SECRET=$api_secret"
     echo "VER_ACCESS=$ver_access"
@@ -220,7 +235,7 @@ mc admin user list uniplus
 
 # --- CORS: origem do web e ETag exposto ---------------------------------------
 log "Conferindo o CORS do bucket de envio"
-cabecalhos=$(curl -sS -D - -o /dev/null -H "Origin: $ORIGEM_WEB" "http://$HOST_IP:9000/$BUCKET_ENVIO/_cors")
+cabecalhos=$(curl -sS -D - -o /dev/null -H "Origin: $ORIGEM_WEB" "$MINIO_SCHEME://$MINIO_HOST:9000/$BUCKET_ENVIO/_cors")
 grep -qi "^access-control-allow-origin: $ORIGEM_WEB" <<<"$cabecalhos" || falha "CORS não libera $ORIGEM_WEB"
 grep -qi '^access-control-expose-headers:.*etag' <<<"$cabecalhos" || falha "CORS não expõe o ETag"
 
