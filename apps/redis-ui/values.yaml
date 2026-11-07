@@ -57,6 +57,10 @@ redisUi:
     username: default
     # true liga TLS na conexão pré-cadastrada (RI_REDIS_TLS).
     tls: false
+    # Secret com a cadeia que valida o certificado do Redis (RI_REDIS_TLS_CA_PATH),
+    # para cadeias fora do repositório de CAs da imagem. Ex.:
+    #   tlsCaSecret: {secretName: uniplus-unifesspa-tls, key: tls.crt}
+    tlsCaSecret: {}
 
   # === ExternalSecrets (Vault → K8s Secret) ===
   externalSecrets:
