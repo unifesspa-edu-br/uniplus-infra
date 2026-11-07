@@ -143,7 +143,7 @@ uniplusApiHost:
     name: uniplus
     username: uniplus
     # Modo SSL do Npgsql (ex.: VerifyFull valida cadeia e nome do certificado).
-    # Vazio: a connection string não traz o parâmetro, como antes.
+    # Vazio: a connection string não traz o parâmetro.
     sslMode: ""
 
   # === Backend Redis (default user) ===
@@ -358,6 +358,14 @@ uniplusApiHost:
     redisDefault:
       vaultPath: secret/standalone/redis/default
       passwordKey: password
+
+    # Chave local de cifragem como ExternalSecret. Desligado: o Secret é provido
+    # por fora do chart.
+    encryptionLocal:
+      enabled: false
+      secretName: uniplus-api-host-encryption-local
+      vaultPath: secret/standalone/uniplus-api-host/encryption
+      property: local_key
 
     kafkaAdmin:
       vaultPath: secret/standalone/kafka/admin
