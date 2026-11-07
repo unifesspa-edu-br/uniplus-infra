@@ -16,7 +16,8 @@
 #
 # Com VAULT_URL (ex.: https://uniplus-vault.unifesspa.edu.br), usa esse endereço
 # em vez do port-forward — para quem roda fora do host do cluster, como a VM de
-# dados da produção. O token vem de ROOT_TOKEN ou é pedido sem eco no terminal.
+# dados da produção. O token vem de ROOT_TOKEN, do ~/.bashrc (só sem VAULT_URL) ou
+# é pedido sem eco no terminal.
 #
 # Não faz `set -e`/`trap` próprios: o script que o carrega cria o tmpdir e chama
 # `vault_desconectar` no seu trap de saída.
@@ -41,13 +42,13 @@ vault_conectar() {
         }
     done
 
-    if [[ -z "${ROOT_TOKEN:-}" && -n "$VAULT_URL" && -t 0 ]]; then
-        read -rsp "Token do Vault: " ROOT_TOKEN
-        echo >&2
-    fi
     if [[ -z "${ROOT_TOKEN:-}" && -z "$VAULT_URL" ]]; then
         # SSH não abre shell interativo e o ~/.bashrc retorna cedo nesse caso.
         ROOT_TOKEN=$(bash -ic 'printf "%s" "${ROOT_TOKEN:-}"' 2>/dev/null)
+    fi
+    if [[ -z "${ROOT_TOKEN:-}" && -t 0 ]]; then
+        read -rsp "Token do Vault: " ROOT_TOKEN
+        echo >&2
     fi
     [[ -n "${ROOT_TOKEN:-}" ]] || {
         echo "ROOT_TOKEN não foi encontrado após carregar ~/.bashrc." >&2
@@ -98,8 +99,9 @@ vault_api() {
     local out="$_vault_tmp/vault-resposta.json"
     VAULT_BODY_FILE="$out"
     if [[ -n "$body" ]]; then
-        VAULT_HTTP_STATUS=$(curl -sS --config "$VAULT_CURL_CONFIG" -X "$method" \
-            -H 'Content-Type: application/json' --data-binary "$body" \
+        # O corpo pode carregar segredo: vai pela entrada padrão, nunca por argv.
+        VAULT_HTTP_STATUS=$(printf '%s' "$body" | curl -sS --config "$VAULT_CURL_CONFIG" -X "$method" \
+            -H 'Content-Type: application/json' --data-binary @- \
             -o "$out" -w '%{http_code}' "$VAULT_ADDR/v1/$path")
     else
         VAULT_HTTP_STATUS=$(curl -sS --config "$VAULT_CURL_CONFIG" -X "$method" \
