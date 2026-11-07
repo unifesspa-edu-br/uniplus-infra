@@ -101,7 +101,11 @@ Endpoints v1: Endpoints está deprecated desde o K8s 1.33. O label
 `kubernetes.io/service-name` é o que associa o EndpointSlice ao Service.
 
 Parâmetros (dict): bloco (chave do values, para as mensagens), nome, labels
-(já renderizados), host (IPv4 literal) e porta.
+(já renderizados), host (IPv4 literal), porta e, opcional, tlsServerName.
+
+Com tlsServerName o backend fala HTTPS e o Traefik valida o certificado contra
+esse nome (o host é um IP, que não consta no certificado). Gera o
+ServersTransport de mesmo nome do Service, que as rotas referenciam.
 */}}
 {{- define "minioProxy.backend" -}}
 {{- if not .host -}}
@@ -141,4 +145,36 @@ endpoints:
       - {{ .host | quote }}
     conditions:
       ready: true
+{{- if .tlsServerName }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: ServersTransport
+metadata:
+  name: {{ .nome }}
+  labels:
+    {{- .labels | nindent 4 }}
+spec:
+  serverName: {{ .tlsServerName | quote }}
+{{- end }}
+{{- end -}}
+
+{{/*
+Interface de administração do RabbitMQ (fora do cluster).
+*/}}
+{{- define "rabbitmqUiProxy.fullname" -}}
+{{- if .Values.rabbitmqUiProxy.fullnameOverride -}}
+{{- .Values.rabbitmqUiProxy.fullnameOverride | trunc 63 | trimSuffix "-" -}}
+{{- else -}}
+{{- printf "%s-rabbitmq-ui" .Release.Name | trunc 63 | trimSuffix "-" -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "rabbitmqUiProxy.labels" -}}
+app.kubernetes.io/name: rabbitmq-ui-proxy
+app.kubernetes.io/instance: {{ .Release.Name }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+app.kubernetes.io/part-of: uniplus
+app.kubernetes.io/component: rabbitmq-ui
+helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" }}
 {{- end -}}

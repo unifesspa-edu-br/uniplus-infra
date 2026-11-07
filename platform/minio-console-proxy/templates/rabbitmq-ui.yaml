@@ -1,0 +1,46 @@
+{{- $r := .Values.rabbitmqUiProxy -}}
+{{- if $r.enabled -}}
+{{- if not $r.ingress.host -}}
+{{- fail "rabbitmqUiProxy.ingress.host é obrigatório quando enabled=true (a IngressRoute precisa de Host(...) válido). Configurar em environments/<env>/values.yaml." -}}
+{{- end -}}
+{{- $fullname := include "rabbitmqUiProxy.fullname" . -}}
+{{ include "minioProxy.backend" (dict
+      "bloco" "rabbitmqUiProxy"
+      "nome" $fullname
+      "labels" (include "rabbitmqUiProxy.labels" .)
+      "host" $r.backend.host
+      "porta" $r.backend.port
+      "tlsServerName" $r.backend.tlsServerName) }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: {{ $fullname }}
+  labels:
+    {{- include "rabbitmqUiProxy.labels" . | nindent 4 }}
+spec:
+  entryPoints:
+    - {{ $r.ingress.entryPoint }}
+  routes:
+    - match: Host(`{{ $r.ingress.host }}`)
+      kind: Rule
+      {{- with $r.ingress.middlewares }}
+      middlewares:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      services:
+        - name: {{ $fullname }}
+          port: {{ $r.backend.port }}
+          {{- with $r.backend.tlsServerName }}
+          scheme: https
+          serversTransport: {{ $fullname }}
+          {{- end }}
+  {{- if $r.ingress.tls.enabled }}
+  {{- if $r.ingress.tls.secretName }}
+  tls:
+    secretName: {{ $r.ingress.tls.secretName }}
+  {{- else }}
+  tls: {}
+  {{- end }}
+  {{- end }}
+{{- end }}
