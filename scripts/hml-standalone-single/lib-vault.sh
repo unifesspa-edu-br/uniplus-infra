@@ -14,28 +14,38 @@
 #   vault_put <caminho> <chave=valor>... grava (KV v2); caminho sem o mount `secret`
 #   vault_api <método> <caminho> [json]  chamada crua em /v1/<caminho> (ver abaixo)
 #
+# Com VAULT_URL (ex.: https://uniplus-vault.unifesspa.edu.br), usa esse endereço
+# em vez do port-forward — para quem roda fora do host do cluster, como a VM de
+# dados da produção. O token vem de ROOT_TOKEN ou é pedido sem eco no terminal.
+#
 # Não faz `set -e`/`trap` próprios: o script que o carrega cria o tmpdir e chama
 # `vault_desconectar` no seu trap de saída.
 
 VAULT_NAMESPACE="${VAULT_NAMESPACE:-vault}"
 VAULT_POD="${VAULT_POD:-platform-vault-in-cluster-0}"
 VAULT_LOCAL_PORT="${VAULT_LOCAL_PORT:-18200}"
-VAULT_ADDR="http://127.0.0.1:${VAULT_LOCAL_PORT}"
+VAULT_URL="${VAULT_URL:-}"
+VAULT_ADDR="${VAULT_URL:-http://127.0.0.1:${VAULT_LOCAL_PORT}}"
 KUBECONFIG_PATH="${KUBECONFIG_PATH:-/etc/rancher/k3s/k3s.yaml}"
 _vault_pf_pid=""
 _vault_tmp=""
 
 vault_conectar() {
     _vault_tmp="${1:?vault_conectar exige o diretório temporário (0700)}"
-    local binary
-    for binary in kubectl curl python3 openssl; do
+    local binary binaries=(curl python3 openssl)
+    [[ -n "$VAULT_URL" ]] || binaries+=(kubectl)
+    for binary in "${binaries[@]}"; do
         command -v "$binary" >/dev/null || {
             echo "Comando obrigatório ausente: $binary" >&2
             return 1
         }
     done
 
-    if [[ -z "${ROOT_TOKEN:-}" ]]; then
+    if [[ -z "${ROOT_TOKEN:-}" && -n "$VAULT_URL" && -t 0 ]]; then
+        read -rsp "Token do Vault: " ROOT_TOKEN
+        echo >&2
+    fi
+    if [[ -z "${ROOT_TOKEN:-}" && -z "$VAULT_URL" ]]; then
         # SSH não abre shell interativo e o ~/.bashrc retorna cedo nesse caso.
         ROOT_TOKEN=$(bash -ic 'printf "%s" "${ROOT_TOKEN:-}"' 2>/dev/null)
     fi
@@ -44,11 +54,13 @@ vault_conectar() {
         return 1
     }
 
-    (
-        sudo sh -c 'KUBECONFIG="$1" exec kubectl -n "$2" port-forward "pod/$3" "$4:8200"' \
-            sh "$KUBECONFIG_PATH" "$VAULT_NAMESPACE" "$VAULT_POD" "$VAULT_LOCAL_PORT"
-    ) >"$_vault_tmp/vault-port-forward.log" 2>&1 &
-    _vault_pf_pid=$!
+    if [[ -z "$VAULT_URL" ]]; then
+        (
+            sudo sh -c 'KUBECONFIG="$1" exec kubectl -n "$2" port-forward "pod/$3" "$4:8200"' \
+                sh "$KUBECONFIG_PATH" "$VAULT_NAMESPACE" "$VAULT_POD" "$VAULT_LOCAL_PORT"
+        ) >"$_vault_tmp/vault-port-forward.log" 2>&1 &
+        _vault_pf_pid=$!
+    fi
 
     local _
     for _ in $(seq 1 30); do
