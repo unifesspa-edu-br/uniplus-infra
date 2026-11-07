@@ -260,6 +260,22 @@ uniplusApiHost:
     bucketDefinitivo: uniplus-candidato-definitivo
     rabbitMqSecretName: rabbitmq-api
     rabbitMqUriKey: RABBITMQ_URI
+    # RabbitMQ fora do cluster, por AMQPS. Ligado, o chart cria os Secrets
+    # `rabbitMqSecretName` (API) e `verificadorSecretName` (verificador) com a
+    # URI amqps://, a partir das senhas no Vault. Desligado, os Secrets vêm do
+    # chart platform/rabbitmq (broker dentro do cluster).
+    rabbitMqExterno:
+      enabled: false
+      host: ""                  # nome no certificado do broker
+      port: 5671
+      vhost: verificacao
+      verificadorSecretName: rabbitmq-verificador
+      api:
+        usuario: uniplus-api
+        vaultPath: standalone/rabbitmq/api
+      verificador:
+        usuario: uniplus-verificador
+        vaultPath: standalone/rabbitmq/verificador
 
   # === Envio de e-mail (seção Email:Smtp do uniplus-api) ===
   # `enabled` entrega à API (e ao Job de migration, hook de PreSync) a seção
@@ -461,6 +477,8 @@ uniplusApiHost:
     rabbitmq:
       namespace: ""             # ex.: rabbitmq
       port: 5672
+      # Broker em outro host: CIDR /32 do host (a regra usa `port`). Vazio = sem regra.
+      cidr: ""
     # Egress até o relay SMTP, na porta de email.porta. Obrigatório com email.enabled.
     smtpCIDR: ""                # ex.: 203.0.113.10/32
 

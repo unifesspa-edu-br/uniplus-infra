@@ -170,6 +170,15 @@ spec:
         - protocol: TCP
           port: {{ .port }}
     {{- end }}
+    {{- if .cidr }}
+    # RabbitMQ fora do cluster (outro host): egress só à porta do broker.
+    - to:
+        - ipBlock:
+            cidr: {{ .cidr }}
+      ports:
+        - protocol: TCP
+          port: {{ .port }}
+    {{- end }}
     {{- end }}
     {{- if .Values.uniplusApiHost.otel.enabled }}
     # OTel Collector DaemonSet (ADR-013) — egress OTLP gRPC (4317) e HTTP (4318)

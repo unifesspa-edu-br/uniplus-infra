@@ -43,6 +43,15 @@ spec:
         - protocol: TCP
           port: {{ $v.minio.port }}
     # RabbitMQ.
+    {{- if $v.rabbitmq.cidr }}
+    # Fora do cluster: só a porta do broker no host.
+    - to:
+        - ipBlock:
+            cidr: {{ $v.rabbitmq.cidr | quote }}
+      ports:
+        - protocol: TCP
+          port: {{ $v.rabbitmq.port }}
+    {{- else }}
     - to:
         - namespaceSelector:
             matchLabels:
@@ -53,6 +62,7 @@ spec:
       ports:
         - protocol: TCP
           port: {{ $v.rabbitmq.port }}
+    {{- end }}
     {{- if $v.espelho.enabled }}
     # Espelho da base de assinaturas do antivírus.
     - to:
