@@ -48,6 +48,14 @@
         }
       }
     },
+    "tlsStore": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "defaultSecretName": { "type": "string" }
+      }
+    },
     "middlewares": {
       "type": "object",
       "description": "Middlewares globais Uni+ (headers de segurança, compress).",

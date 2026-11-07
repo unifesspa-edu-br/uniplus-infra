@@ -7,8 +7,8 @@
 {{- fail (printf "acervoPublicoProxy.bucket deve ser um nome de bucket S3 válido — recebido %q." $a.bucket) -}}
 {{- end -}}
 {{- $prefixo := trimSuffix "/" $a.ingress.pathPrefix -}}
-{{- if not (regexMatch "^(/[a-z0-9-]+)+$" $prefixo) -}}
-{{- fail (printf "acervoPublicoProxy.ingress.pathPrefix deve ser um caminho não vazio, diferente da raiz, como /acervo — recebido %q. Na raiz, a rota capturaria o host inteiro." $a.ingress.pathPrefix) -}}
+{{- if and (ne $a.ingress.pathPrefix "/") (not (regexMatch "^(/[a-z0-9-]+)+$" $prefixo)) -}}
+{{- fail (printf "acervoPublicoProxy.ingress.pathPrefix deve ser um caminho como /acervo, ou / quando o host é só do acervo — recebido %q." $a.ingress.pathPrefix) -}}
 {{- end -}}
 {{- $fullname := include "acervoPublicoProxy.fullname" . -}}
 # Rota provisória da borda para o acervo público (ADR-0132 do uniplus-api,
