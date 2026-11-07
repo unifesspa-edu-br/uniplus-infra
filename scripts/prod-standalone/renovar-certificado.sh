@@ -94,12 +94,14 @@ print(pendentes)')
 # (secret/standalone/kafka/ca e o ca_cert do administrador). No KV v2 cada gravação
 # troca o conteúdo inteiro, então o usuário e a senha do administrador são relidos.
 atualizar_vault() {
+    local usuario senha
+    usuario=$(vault_get standalone/kafka/admin username) \
+        || { log_error "Não foi possível ler o usuário de secret/standalone/kafka/admin."; exit 1; }
+    senha=$(vault_get standalone/kafka/admin password) \
+        || { log_error "Não foi possível ler a senha de secret/standalone/kafka/admin."; exit 1; }
     vault_put standalone/kes/server "cert=$(cat "$TLS_BUNDLE")" "key=$(sudo cat "$TLS_KEY")"
     vault_put standalone/kafka/ca "ca_cert=$(cat "$TLS_BUNDLE")"
-    vault_put standalone/kafka/admin \
-        "username=$(vault_get standalone/kafka/admin username)" \
-        "password=$(vault_get standalone/kafka/admin password)" \
-        "ca_cert=$(cat "$TLS_BUNDLE")"
+    vault_put standalone/kafka/admin "username=$usuario" "password=$senha" "ca_cert=$(cat "$TLS_BUNDLE")"
 }
 
 renovar_app() {
