@@ -4868,20 +4868,35 @@ O par fica só nas VMs, nunca no Git: `/etc/uniplus/tls/unifesspa.edu.br.key` (0
    `scripts/prod-standalone/bootstrap-app.sh --revisao=vX.Y.Z` na `uniplus-prod-app`. Instala K3s,
    Helm e ArgoCD, publica o Secret `uniplus-unifesspa-tls`, registra o cluster com o label
    `uniplus.io/revision=vX.Y.Z` e aplica o projeto e os ApplicationSets. Nada é sincronizado.
-3. **Plataforma:** no ArgoCD, sincronizar à mão `traefik`, `external-secrets` e `vault`
-   (nesta ordem). O Vault é inicializado e aberto fora dos scripts (ver 23.6).
-4. **Segredos e bancos:** na `uniplus-prod-infra`, com o Vault aberto e o token em mãos (pedido sem
-   eco): `semear-vault.sh`, `provisionar-bancos.sh`, `provisionar-verificacao.sh` e
+3. **Plataforma:** no ArgoCD, sincronizar à mão, nesta ordem, `storage` (a StorageClass que o Vault
+   usa), `traefik`, `external-secrets` e `vault`.
+4. **Vault:** inicializar e abrir (Shamir 5/3, ver 23.6), fora dos scripts.
+5. **Preparar o Vault para o External Secrets:** `configurar-vault.sh` (monta `secret/` em KV v2,
+   habilita `auth/kubernetes` e cria a política e a role `external-secrets`). Idempotente. Precisa
+   rodar antes de qualquer segredo ser semeado.
+6. **Segredos e bancos**, na `uniplus-prod-infra`, com o Vault aberto e o token em mãos (pedido sem
+   eco), nesta ordem: `semear-vault.sh`, `provisionar-bancos.sh`, `provisionar-kafka.sh` (tópico
+   e usuário SCRAM do registro de acesso, CA do broker), `provisionar-verificacao.sh` e
    `provisionar-rabbitmq.sh`. Todos falam com `https://uniplus-vault.unifesspa.edu.br`.
-5. **Rota do ArgoCD:** `kubectl apply -f environments/prod-standalone/argocd-ingressroute.yaml`
+7. **Segredos que vêm de fora** (não nascem em nenhum script; quem opera os grava no Vault):
+   `standalone/smtp/uniplus` (`host`, `username`, `password`) e o `client_secret` de cada client
+   do Keycloak institucional, em `standalone/keycloak/clients/uniplus-api-selecao`,
+   `standalone/keycloak/clients/kafka-ui` e `standalone/keycloak/clients/apicurio-registry`. Os
+   clients são criados à parte no `keycloak.unifesspa.edu.br`.
+8. **Primeiro sync da API em dois tempos:** `primeiro-sync.sh` (na VM de aplicação). O Job de
+   migration (`PreSync`) roda antes dos demais recursos e precisa da ServiceAccount e dos Secrets
+   (banco, Redis, chave de cifra, OAuth do Geo, RabbitMQ, e-mail), que só nascem no sync comum. O
+   script sincroniza só a ServiceAccount e os ExternalSecrets (sync seletivo não roda hooks), espera
+   os Secrets ficarem prontos e lista o que faltar no Vault. Depois, o sync normal da Application
+   `uniplus-api-host-prod-standalone` roda a migration. É preciso só no primeiro sync; as
+   atualizações seguintes já encontram tudo.
+9. **Rota do ArgoCD:** `kubectl apply -f environments/prod-standalone/argocd-ingressroute.yaml`
    (depois de o Traefik registrar os CRDs). Hosts de administração respondem só à rede institucional
-   e à VPN (`middlewares.adminInterno.sourceRange`).
-6. **Aplicações:** sincronizar as demais Applications, uma a uma. Depois do KES saudável, rodar
-   `provisionar-arquivos-candidato.sh` na infraestrutura.
+   e à VPN (`middlewares.adminInterno.sourceRange`: `200.139.48.0/25` e `192.168.90.0/24`).
+10. **Aplicações:** sincronizar as demais Applications, uma a uma. Depois do KES saudável, rodar
+    `provisionar-arquivos-candidato.sh` na infraestrutura.
 
-Chaves de Keycloak ficam fora: o emissor é o institucional
-(`https://keycloak.unifesspa.edu.br/realms/unifesspa`) e os clients são criados à parte; o segredo
-de cada client é gravado em `secret/standalone/keycloak/clients/<client>`.
+O emissor OIDC é o Keycloak institucional (`https://keycloak.unifesspa.edu.br/realms/unifesspa`).
 
 ### 23.4 Atualização manual por tag
 
@@ -4911,8 +4926,10 @@ Nas duas VMs, uma de cada vez, com o mesmo par novo:
 
 O script confere chave, validade e nome, guarda o par anterior em `/etc/uniplus/tls/anterior`,
 reinstala o par para cada serviço e reinicia `uniplus-postgres`, `uniplus-redis`, `uniplus-minio`,
-`uniplus-kafka` e `uniplus-rabbitmq` (infra), ou atualiza o Secret TLS dos namespaces e reinicia o
-KES (app). Os clientes revalidam o certificado na próxima conexão; conferir depois com
+`uniplus-kafka` e `uniplus-rabbitmq` (infra), ou atualiza o Secret TLS dos namespaces, regrava no
+Vault o certificado do KES e o CA do Kafka (`kafka/ca` e `kafka/admin`), espera os ExternalSecrets
+sincronizarem e reinicia o KES (app). Na infra também troca o `kes.crt` em que o MinIO confia.
+Fazer a VM de aplicação primeiro. O script fala com o Vault por port-forward neste host. Os clientes revalidam o certificado na próxima conexão; conferir depois com
 `openssl s_client -connect uniplus-prod-infra.unifesspa.edu.br:5432 -starttls postgres`.
 
 ### 23.6 Reinício das VMs e abertura do Vault
