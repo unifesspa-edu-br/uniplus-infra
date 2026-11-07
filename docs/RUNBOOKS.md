@@ -4888,7 +4888,7 @@ O par fica só nas VMs, nunca no Git: `/etc/uniplus/tls/unifesspa.edu.br.key` (0
    (banco, Redis, chave de cifra, OAuth do Geo, RabbitMQ, e-mail), que só nascem no sync comum. O
    script sincroniza só a ServiceAccount e os ExternalSecrets (sync seletivo não roda hooks), espera
    os Secrets ficarem prontos e lista o que faltar no Vault. Depois, o sync normal da Application
-   `uniplus-api-host-prod-standalone` roda a migration. É preciso só no primeiro sync; as
+   `uniplus-api-host-in-cluster` roda a migration. É preciso só no primeiro sync; as
    atualizações seguintes já encontram tudo.
 9. **Rota do ArgoCD:** `kubectl apply -f environments/prod-standalone/argocd-ingressroute.yaml`
    (depois de o Traefik registrar os CRDs). Hosts de administração respondem só à rede institucional

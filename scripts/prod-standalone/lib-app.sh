@@ -4,6 +4,8 @@
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 AMBIENTE="prod-standalone"
+# Nome do cluster no ArgoCD; o ApplicationSet o usa como sufixo das Applications.
+NOME_DO_CLUSTER="in-cluster"
 # Namespaces que servem rotas com o certificado do domínio.
 NAMESPACES_TLS=(uniplus geo traefik vault minio-console-proxy argocd)
 TLS_SECRET_NAME="uniplus-unifesspa-tls"
@@ -47,7 +49,7 @@ registrar_cluster() {
 apiVersion: v1
 kind: Secret
 metadata:
-  name: cluster-in-cluster
+  name: cluster-$NOME_DO_CLUSTER
   namespace: argocd
   labels:
     argocd.argoproj.io/secret-type: cluster
@@ -56,7 +58,7 @@ metadata:
     uniplus.io/revision: $revisao
 type: Opaque
 stringData:
-  name: in-cluster
+  name: $NOME_DO_CLUSTER
   server: https://kubernetes.default.svc
   config: '{"tlsClientConfig":{"insecure":false}}'
 YAML
