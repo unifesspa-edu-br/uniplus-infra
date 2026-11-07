@@ -49,7 +49,8 @@
             "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
             "database": { "type": "string", "minLength": 1 },
             "username": { "type": "string", "minLength": 1 },
-            "sslMode": { "type": "string" }
+            "sslMode": { "type": "string" },
+            "sslFactory": { "type": "string" }
           },
           "required": ["kind", "sqlKind", "database", "username"]
         },

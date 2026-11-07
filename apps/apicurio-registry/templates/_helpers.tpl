@@ -68,5 +68,5 @@ vêm de values; postgresql é o único SQL kind suportado em produção
 (H2 fica fora — só para dev local).
 */}}
 {{- define "apicurioRegistry.jdbcUrl" -}}
-jdbc:postgresql://{{ .Values.apicurioRegistry.storage.host }}:{{ .Values.apicurioRegistry.storage.port }}/{{ .Values.apicurioRegistry.storage.database }}{{ with .Values.apicurioRegistry.storage.sslMode }}?sslmode={{ . }}{{ end }}
+jdbc:postgresql://{{ .Values.apicurioRegistry.storage.host }}:{{ .Values.apicurioRegistry.storage.port }}/{{ .Values.apicurioRegistry.storage.database }}{{ with .Values.apicurioRegistry.storage.sslMode }}?sslmode={{ . }}{{ with $.Values.apicurioRegistry.storage.sslFactory }}&sslfactory={{ . }}{{ end }}{{ end }}
 {{- end -}}
