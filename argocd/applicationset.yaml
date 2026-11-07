@@ -112,6 +112,23 @@ spec:
                   namespace: uniplus
                   aplicaMigration: false
                   targetEnvironment: hml-standalone-single
+                # Os mesmos quatro em produção, onde a sincronização é manual.
+                - app: uniplus-api-host
+                  namespace: uniplus
+                  targetEnvironment: prod-standalone
+                  aplicaMigration: true
+                - app: unifesspa-geo-api
+                  namespace: geo
+                  aplicaMigration: false
+                  targetEnvironment: prod-standalone
+                - app: clamav-espelho
+                  namespace: uniplus
+                  aplicaMigration: false
+                  targetEnvironment: prod-standalone
+                - app: verificador-rede
+                  namespace: uniplus
+                  aplicaMigration: false
+                  targetEnvironment: prod-standalone
           - clusters:
               selector:
                 matchLabels:
@@ -134,30 +151,30 @@ spec:
       # uniplus-platform AppSet para evitar drift.
       sources:
         - repoURL: https://github.com/unifesspa-edu-br/uniplus-infra
-          targetRevision: main
+          targetRevision: '{{ if eq .metadata.labels.environment "prod-standalone" }}{{ if not (index .metadata.labels "uniplus.io/revision") }}{{
+            fail "producao sem o label uniplus.io/revision" }}{{ end }}{{ index .metadata.labels "uniplus.io/revision" }}{{ else }}main{{ end }}'
           path: 'apps/{{.app}}'
           helm:
             valueFiles:
               - values.yaml
               - '$values/environments/{{.metadata.labels.environment}}/values.yaml'
         - repoURL: https://github.com/unifesspa-edu-br/uniplus-infra
-          targetRevision: main
+          targetRevision: '{{ if eq .metadata.labels.environment "prod-standalone" }}{{ if not (index .metadata.labels "uniplus.io/revision") }}{{
+            fail "producao sem o label uniplus.io/revision" }}{{ end }}{{ index .metadata.labels "uniplus.io/revision" }}{{ else }}main{{ end }}'
           ref: values
       destination:
         server: '{{.server}}'
         namespace: '{{.namespace}}'
       syncPolicy:
-        automated:
-          prune: true
-          allowEmpty: false
         syncOptions:
           - CreateNamespace=true
           - PruneLast=true
           - ApplyOutOfSyncOnly=true
 
-      # `retry` e `selfHeal` não ficam aqui: dependem de `aplicaMigration`, e o
-      # template é objeto tipado — um `{{...}}` ali viraria string onde o apiserver
-      # espera inteiro ou booleano. Vêm pelo `templatePatch` no fim deste AppSet,
+      # `automated` e `retry` não ficam aqui: `automated` só existe fora de
+      # produção, e `selfHeal` e `retry` dependem de `aplicaMigration`. O template
+      # é objeto tipado — um `{{...}}` ali viraria string onde o apiserver espera
+      # inteiro ou booleano. Vêm pelo `templatePatch` no fim deste AppSet,
       # renderizado como texto antes de virar YAML.
 
       # O webhook do External Secrets Operator injeta defaults do CRD que os
@@ -208,10 +225,24 @@ spec:
   # O bloco `retry` inteiro fica de fora quando o app aplica migration. Emitir
   # `limit: 0` deixaria um `retry` contendo só `backoff` — um bloco que não governa
   # nada e confunde quem inspeciona.
+  #
+  # Produção (environment `prod-standalone`): nenhuma Application sincroniza
+  # sozinha. O patch não traz `automated` nem `retry`; só marca a Application, e
+  # cada sync é uma ação manual sobre a revisão fixada no label
+  # `uniplus.io/revision` do cluster (docs/RUNBOOKS.md, seção de produção). O
+  # patch nunca pode renderizar vazio nem deixar `syncPolicy:` sem corpo, o que
+  # apagaria o `syncOptions` do template.
   templatePatch: |
+    {{- if eq .metadata.labels.environment "prod-standalone" }}
+    metadata:
+      annotations:
+        uniplus.io/atualizacao: manual
+    {{- else }}
     spec:
       syncPolicy:
         automated:
+          prune: true
+          allowEmpty: false
           selfHeal: {{ not .aplicaMigration }}
         {{- if not .aplicaMigration }}
         retry:
@@ -221,6 +252,7 @@ spec:
             factor: 2
             maxDuration: 3m
         {{- end }}
+    {{- end }}
 
 ---
 apiVersion: argoproj.io/v1alpha1
@@ -280,31 +312,26 @@ spec:
       # path absoluto pra consistência.
       sources:
         - repoURL: https://github.com/unifesspa-edu-br/uniplus-infra
-          targetRevision: main
+          targetRevision: '{{ if eq .metadata.labels.environment "prod-standalone" }}{{ if not (index .metadata.labels "uniplus.io/revision") }}{{
+            fail "producao sem o label uniplus.io/revision" }}{{ end }}{{ index .metadata.labels "uniplus.io/revision" }}{{ else }}main{{ end }}'
           path: 'platform/{{.component}}'
           helm:
             valueFiles:
               - values.yaml
               - '$values/environments/{{.metadata.labels.environment}}/values.yaml'
         - repoURL: https://github.com/unifesspa-edu-br/uniplus-infra
-          targetRevision: main
+          targetRevision: '{{ if eq .metadata.labels.environment "prod-standalone" }}{{ if not (index .metadata.labels "uniplus.io/revision") }}{{
+            fail "producao sem o label uniplus.io/revision" }}{{ end }}{{ index .metadata.labels "uniplus.io/revision" }}{{ else }}main{{ end }}'
           ref: values
       destination:
         server: '{{.server}}'
         namespace: '{{.component | replace "/" "-"}}'
+      # `automated` e `retry` vêm pelo `templatePatch` no fim deste AppSet: não
+      # existem em produção (ver o comentário em uniplus-apps).
       syncPolicy:
-        automated:
-          prune: true
-          selfHeal: true
         syncOptions:
           - CreateNamespace=true
           - ServerSideApply=true
-        retry:
-          limit: 5
-          backoff:
-            duration: 10s
-            factor: 2
-            maxDuration: 5m
       # Ver nota no AppSet uniplus-apps: ignora defaults injetados pelo webhook
       # do External Secrets Operator que geram OutOfSync benigno.
       ignoreDifferences:
@@ -318,3 +345,22 @@ spec:
             - '.spec.target.deletionPolicy'
             - '.spec.target.template.engineVersion'
             - '.spec.target.template.mergePolicy'
+
+  templatePatch: |
+    {{- if eq .metadata.labels.environment "prod-standalone" }}
+    metadata:
+      annotations:
+        uniplus.io/atualizacao: manual
+    {{- else }}
+    spec:
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+        retry:
+          limit: 5
+          backoff:
+            duration: 10s
+            factor: 2
+            maxDuration: 5m
+    {{- end }}
