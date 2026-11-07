@@ -37,7 +37,7 @@
 #                  Certificado (com cadeia), chave e bundle de CAs confiáveis,
 #                  em PEM. Preenchidos, substituem o certificado autoassinado e
 #                  o cliente administrativo passa a validar o nome do broker.
-#                  Vazios (default): certificado autoassinado, como antes.
+#                  Vazios (default): certificado autoassinado.
 #
 # Pré-requisitos: Docker instalado, usuário com sudo sem senha (ou rodar via sudo).
 set -euo pipefail
@@ -170,7 +170,12 @@ elif $DRY_RUN; then
 elif [[ -n "$KAFKA_TLS_CERT" ]]; then
     log_info "Instalando o certificado do domínio em $CERTS_DIR/..."
     sudo install -m 644 -o 1000 -g 1000 "$KAFKA_TLS_CERT" "$CERTS_DIR/server.crt"
-    sudo install -m 600 -o 1000 -g 1000 "$KAFKA_TLS_KEY" "$CERTS_DIR/server.key"
+    # O Kafka só lê chave PKCS#8 no keystore PEM; a do domínio pode vir em PKCS#1
+    # (BEGIN RSA PRIVATE KEY). A conversão sai por stdout para um arquivo 0600,
+    # sem a chave em argv.
+    (umask 077; sudo openssl pkcs8 -topk8 -nocrypt -in "$KAFKA_TLS_KEY" | sudo tee "$CERTS_DIR/server.key" >/dev/null)
+    sudo chown 1000:1000 "$CERTS_DIR/server.key"
+    sudo chmod 600 "$CERTS_DIR/server.key"
     sudo install -m 644 -o 1000 -g 1000 "$KAFKA_TLS_CA" "$CERTS_DIR/ca.crt"
     sudo bash -c "cat '$CERTS_DIR/server.crt' '$CERTS_DIR/server.key' > '$CERTS_DIR/server.pem'"
     sudo chown 1000:1000 "$CERTS_DIR/server.pem"

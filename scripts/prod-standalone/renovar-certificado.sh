@@ -7,8 +7,10 @@
 #   ./renovar-certificado.sh --vm=app|infra --cert=bundle.crt --key=chave.key [--dry-run]
 #
 # Na VM de aplicação, atualiza o Secret TLS nos namespaces (o Traefik recarrega
-# sozinho) e reinicia o KES depois de regravar o certificado dele no Vault. Na
-# VM de infraestrutura, reinstala o par para cada serviço e reinicia as unidades.
+# sozinho), regrava no Vault o certificado do KES e o CA do Kafka e, depois de os
+# ExternalSecrets sincronizarem, reinicia o KES. Na VM de infraestrutura, reinstala o
+# par para cada serviço (inclusive o certificado do KES que o MinIO confia) e reinicia
+# as unidades. Fazer a VM de aplicação primeiro.
 # O par antigo é guardado em /etc/uniplus/tls/anterior.
 set -euo pipefail
 
@@ -65,19 +67,60 @@ guardar_e_instalar() {
     run "sudo install -m 644 $NOVO_CERT $TLS_BUNDLE"
 }
 
+# Espera todos os ExternalSecrets do namespace terem sincronizado depois de `inicio`
+# (época em segundos) e ficado prontos; sem isso, o reinício leria o Secret velho.
+esperar_externalsecrets() {
+    local ns="$1" inicio="$2" _ pendentes
+    for _ in $(seq 1 36); do
+        pendentes=$(kubectl -n "$ns" get externalsecret -o json | INICIO="$inicio" python3 -c '
+import datetime, json, os, sys
+inicio = int(os.environ["INICIO"])
+pendentes = 0
+for es in json.load(sys.stdin)["items"]:
+    st = es.get("status", {})
+    ok = any(c["type"] == "Ready" and c["status"] == "True" for c in st.get("conditions", []))
+    t = st.get("refreshTime")
+    atualizado = t and datetime.datetime.fromisoformat(t.replace("Z", "+00:00")).timestamp() >= inicio
+    pendentes += 0 if ok and atualizado else 1
+print(pendentes)')
+        [[ "$pendentes" == 0 ]] && return 0
+        sleep 5
+    done
+    log_error "ExternalSecrets de $ns não sincronizaram em 3 minutos."
+    exit 1
+}
+
+# Regrava no Vault o que carrega o certificado: o do servidor KES e o CA do Kafka
+# (secret/standalone/kafka/ca e o ca_cert do administrador). No KV v2 cada gravação
+# troca o conteúdo inteiro, então o usuário e a senha do administrador são relidos.
+atualizar_vault() {
+    vault_put standalone/kes/server "cert=$(cat "$TLS_BUNDLE")" "key=$(sudo cat "$TLS_KEY")"
+    vault_put standalone/kafka/ca "ca_cert=$(cat "$TLS_BUNDLE")"
+    vault_put standalone/kafka/admin \
+        "username=$(vault_get standalone/kafka/admin username)" \
+        "password=$(vault_get standalone/kafka/admin password)" \
+        "ca_cert=$(cat "$TLS_BUNDLE")"
+}
+
 renovar_app() {
     export KUBECONFIG="$HOME/.kube/config"
     publicar_segredo_tls
     if $DRY_RUN; then
-        echo "[DRY-RUN] regravaria secret/standalone/kes/server no Vault e reiniciaria o deployment do KES"
+        echo "[DRY-RUN] regravaria no Vault (port-forward local) secret/standalone/kes/server, kafka/ca e kafka/admin"
+        echo "[DRY-RUN] esperaria os ExternalSecrets do KES sincronizarem e reiniciaria o KES"
         return 0
     fi
+    # Vazio de propósito: o Vault é alcançado por port-forward neste host, sem
+    # depender da lista de IPs liberados no Traefik.
+    export VAULT_URL=""
     # shellcheck source=lib-provisionar.sh
     source "$SCRIPT_DIR/lib-provisionar.sh"
-    export VAULT_URL="${VAULT_URL:-https://uniplus-vault.unifesspa.edu.br}"
     preparar_provisionamento
-    vault_put standalone/kes/server "cert=$(cat "$TLS_BUNDLE")" "key=$(sudo cat "$TLS_KEY")"
-    kubectl -n kes annotate externalsecret --all "force-sync=$(date +%s)" --overwrite
+    local inicio
+    inicio=$(date +%s)
+    atualizar_vault
+    kubectl -n kes annotate externalsecret --all "force-sync=$inicio" --overwrite
+    esperar_externalsecrets kes "$inicio"
     kubectl -n kes rollout restart deployment
     kubectl -n kes rollout status deployment --timeout=180s
 }
@@ -87,11 +130,14 @@ renovar_infra() {
     instalar_par_tls "$DATA_BASE/redis/tls" 999
     instalar_par_tls "$DATA_BASE/minio/tls" 1000
     instalar_par_tls "$DATA_BASE/rabbitmq/tls" 100
+    # O MinIO confia no KES por este arquivo; o KES serve o mesmo certificado.
+    run "sudo install -m 644 $TLS_BUNDLE /etc/uniplus-minio-kes/kes.crt"
     run "sudo install -m 644 -o 1000 -g 1000 $TLS_BUNDLE $KAFKA_CERTS_DIR/server.crt"
     run "sudo install -m 644 -o 1000 -g 1000 $TLS_BUNDLE $KAFKA_CERTS_DIR/ca.crt"
-    run "sudo install -m 600 -o 1000 -g 1000 $TLS_KEY $KAFKA_CERTS_DIR/server.key"
-    run "cat $KAFKA_CERTS_DIR/server.crt $KAFKA_CERTS_DIR/server.key | sudo tee $KAFKA_CERTS_DIR/server.pem >/dev/null"
-    run "sudo chown 1000:1000 $KAFKA_CERTS_DIR/server.pem && sudo chmod 600 $KAFKA_CERTS_DIR/server.pem"
+    # O Kafka só lê chave PKCS#8; a do domínio pode ser PKCS#1.
+    run "(umask 077; sudo openssl pkcs8 -topk8 -nocrypt -in $TLS_KEY | sudo tee $KAFKA_CERTS_DIR/server.key >/dev/null)"
+    run "sudo chown 1000:1000 $KAFKA_CERTS_DIR/server.key && sudo chmod 600 $KAFKA_CERTS_DIR/server.key"
+    run "sudo sh -c 'cat $KAFKA_CERTS_DIR/server.crt $KAFKA_CERTS_DIR/server.key > $KAFKA_CERTS_DIR/server.pem' && sudo chown 1000:1000 $KAFKA_CERTS_DIR/server.pem && sudo chmod 600 $KAFKA_CERTS_DIR/server.pem"
     reiniciar_unidades "${UNIDADES_INFRA[@]}"
 }
 
