@@ -4879,14 +4879,23 @@ falham ao ler a cadeia (sintoma: `curl` com erro 77).
 ### 23.2.1 Imagens do MinIO
 
 As imagens `quay.io/minio/minio`, `quay.io/minio/mc` e `quay.io/minio/kes` exigem autenticação no
-registro. Importá-las no containerd a partir de uma origem que já as tenha:
+registro. Copiá-las de uma origem que já as tenha, para o runtime de cada VM:
 
-```bash
-docker save quay.io/minio/minio quay.io/minio/mc quay.io/minio/kes -o minio-imagens.tar
-k3s ctr images import --platform linux/amd64 minio-imagens.tar
-```
+- **`uniplus-prod-infra`** (MinIO e `mc` rodam no Docker, pelo `setup-minio.sh`):
 
-O `--platform linux/amd64` evita um import truncado.
+  ```bash
+  docker save quay.io/minio/minio quay.io/minio/mc -o minio-docker.tar   # na origem
+  docker load -i minio-docker.tar                                        # na VM de infraestrutura
+  ```
+
+- **`uniplus-prod-app`** (o KES roda no K3s):
+
+  ```bash
+  docker save quay.io/minio/kes -o kes.tar                               # na origem
+  sudo k3s ctr images import --platform linux/amd64 kes.tar              # na VM de aplicação
+  ```
+
+O `--platform linux/amd64` evita um import truncado no containerd.
 
 ### 23.3 Bootstrap (ordem)
 
