@@ -4,7 +4,7 @@
 # estiver publicada e os pré-requisitos atendidos (DB, secrets, OIDC) ligam
 # via `unifesspaGeoApi.enabled: true`.
 #
-# NOTA: registrado em argocd/applicationset.yaml só para `hml-standalone-single`
+# NOTA: registrado em argocd/applicationset.yaml só para `prod-standalone`
 # (mecanismo de habilitação por-ambiente, story #457/task #458 — ver
 # argocd/README.md § Habilitação por-ambiente). Continua fora do
 # `standalone-compact` — não faz parte deste chart nem do valueFiles

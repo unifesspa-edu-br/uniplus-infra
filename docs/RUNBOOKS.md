@@ -4053,6 +4053,12 @@ validado com browser real via Playwright MCP — não só `curl`.
 
 ## 21. Ambiente de homologação real — host único (`hml-standalone-single`) — planejamento
 
+> **Fora deste repositório desde 07/11/2026.** A configuração de homologação (values do ambiente,
+> trecho do ApplicationSet, Application do verificador e o workflow `bump-tags-hml.yml`) saiu deste
+> repositório público; a implantação em homologação não passa mais por ele. O texto abaixo fica como
+> registro do bootstrap e do mecanismo anterior. Os scripts em `scripts/hml-standalone-single/`
+> continuam aqui.
+
 > **Status: planejamento, pré-bootstrap.** Ao contrário das seções 8–9 (`standalone-compact`, em
 > operação) e 20 (`lab-standalone-single`, implementado), esta seção descreve um ambiente **ainda
 > não provisionado**. A VM de destino (`192.168.21.134`, Ubuntu 24.04.4, 6 vCPU/31 GB RAM, 97 GB
@@ -4627,6 +4633,12 @@ receba o audit webhook. O script o configura assim que houver um endpoint.
 ---
 
 ## 22. Promoção de versão em homologação
+
+> **Fora deste repositório desde 07/11/2026.** A configuração de homologação (values do ambiente,
+> trecho do ApplicationSet, Application do verificador e o workflow `bump-tags-hml.yml`) saiu deste
+> repositório público; a implantação em homologação não passa mais por ele. O texto abaixo fica como
+> registro do bootstrap e do mecanismo anterior. Os scripts em `scripts/hml-standalone-single/`
+> continuam aqui.
 
 ### Como o deploy acontece hoje
 

@@ -1,6 +1,6 @@
-# Application do verificador de arquivos do candidato em produção (equivalente
-# de verificador-hml.yaml). O chart vive no uniplus-api; os valores, neste
-# repositório, em environments/prod-standalone/verificador.values.yaml.
+# Application do verificador de arquivos do candidato em produção. O chart vive
+# no uniplus-api; os valores, neste repositório, em
+# environments/prod-standalone/verificador.values.yaml.
 #
 # Sem sincronização automática: cada atualização é um sync manual. As duas
 # revisões são tags, nunca branch:

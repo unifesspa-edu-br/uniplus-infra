@@ -80,7 +80,7 @@ spec:
                 # context de portal/selecao/ingresso — namespace `uniplus`.
                 - app: uniplus-api-host
                   namespace: uniplus
-                  targetEnvironment: hml-standalone-single
+                  targetEnvironment: prod-standalone
                   # O único com hook `PreSync` que aplica migrations. Isso muda o
                   # significado de "sincronizar de novo": todo sync automático
                   # reexecuta o hook, e o `before-hook-creation` descarta o Job
@@ -97,34 +97,15 @@ spec:
                 - app: unifesspa-geo-api
                   namespace: geo
                   aplicaMigration: false
-                  targetEnvironment: hml-standalone-single
+                  targetEnvironment: prod-standalone
                 # Espelho interno da base do ClamAV (ADR-0147 do uniplus-api):
                 # abastece o freshclam dos sidecars do verificador.
                 - app: clamav-espelho
                   namespace: uniplus
                   aplicaMigration: false
-                  targetEnvironment: hml-standalone-single
+                  targetEnvironment: prod-standalone
                 # Isolamento de rede do verificador de arquivos do candidato
-                # (ADR-0146). O verificador em si é a Application
-                # argocd/applications/verificador-hml.yaml, com chart do
-                # uniplus-api.
-                - app: verificador-rede
-                  namespace: uniplus
-                  aplicaMigration: false
-                  targetEnvironment: hml-standalone-single
-                # Os mesmos quatro em produção, onde a sincronização é manual.
-                - app: uniplus-api-host
-                  namespace: uniplus
-                  targetEnvironment: prod-standalone
-                  aplicaMigration: true
-                - app: unifesspa-geo-api
-                  namespace: geo
-                  aplicaMigration: false
-                  targetEnvironment: prod-standalone
-                - app: clamav-espelho
-                  namespace: uniplus
-                  aplicaMigration: false
-                  targetEnvironment: prod-standalone
+                # (ADR-0146). O verificador em si usa o chart do uniplus-api.
                 - app: verificador-rede
                   namespace: uniplus
                   aplicaMigration: false
@@ -284,7 +265,7 @@ spec:
                 - component: vault-transit-bootstrap
                 # KES e RabbitMQ: cifra e verificação dos arquivos do candidato
                 # (ADR-0146 do uniplus-api). Desligados por default nos charts;
-                # só HML os liga.
+                # o ambiente que os usa os liga no próprio values.
                 - component: kes
                 - component: rabbitmq
                 - component: observability/prometheus
