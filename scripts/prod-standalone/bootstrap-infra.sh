@@ -56,7 +56,7 @@ step_redis() {
 step_minio() {
     # Escrito por provisionar-arquivos-candidato.sh depois que o KES existe; o
     # MinIO só o recebe nas execuções seguintes deste bootstrap.
-    if sudo test -f /etc/uniplus-minio-kes.env; then
+    if ! $DRY_RUN && sudo test -f /etc/uniplus-minio-kes.env; then
         export MINIO_EXTRA_ENV_FILE=/etc/uniplus-minio-kes.env
         export MINIO_EXTRA_MOUNT_DIR=/etc/uniplus-minio-kes
     fi
@@ -78,9 +78,9 @@ resumo() {
     cat <<RESUMO
 
 Infraestrutura configurada. Próximos passos:
-  1. Na VM de aplicação: ./bootstrap-app.sh, depois inicializar e abrir o Vault.
-  2. Aqui: VAULT_URL=https://uniplus-vault.unifesspa.edu.br ./semear-vault.sh
-  3. Aqui: ./provisionar-bancos.sh e ./provisionar-rabbitmq.sh
+  1. Na VM de aplicação: ./bootstrap-app.sh, abrir o Vault e rodar configurar-vault.sh.
+  2. Aqui, com o Vault aberto: ./semear-vault.sh, ./provisionar-bancos.sh,
+     ./provisionar-kafka.sh, ./provisionar-verificacao.sh e ./provisionar-rabbitmq.sh.
 Portas abertas só para ${APP_IP}: ${PORTAS_INFRA[*]}.
 RESUMO
 }

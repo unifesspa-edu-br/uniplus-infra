@@ -97,12 +97,15 @@ resumo() {
     cat <<RESUMO
 
 Aplicação preparada na revisão $REVISAO. Próximos passos (ver docs/RUNBOOKS.md):
-  1. Sincronizar, na ordem, traefik, external-secrets e vault pelo ArgoCD.
+  1. Sincronizar, na ordem, storage, traefik, external-secrets e vault pelo ArgoCD.
   2. Inicializar e abrir o Vault (Shamir 5/3), fora dos scripts.
-  3. Na VM de infraestrutura: semear-vault.sh, provisionar-bancos.sh,
+  3. configurar-vault.sh (mount, auth e role do External Secrets).
+  4. Na VM de infraestrutura: semear-vault.sh, provisionar-bancos.sh, provisionar-kafka.sh,
      provisionar-verificacao.sh e provisionar-rabbitmq.sh.
-  4. Aplicar a rota do ArgoCD: kubectl apply -f environments/prod-standalone/argocd-ingressroute.yaml
-  5. Sincronizar as demais Applications.
+  5. Gravar no Vault o que vem de fora: SMTP e os clients do Keycloak.
+  6. primeiro-sync.sh e, em seguida, o sync normal da API.
+  7. Aplicar a rota do ArgoCD: kubectl apply -f environments/prod-standalone/argocd-ingressroute.yaml
+  8. Sincronizar as demais Applications.
 Porta $PORTA_KES liberada para $INFRA_IP (KES, usada pelo MinIO).
 RESUMO
 }
