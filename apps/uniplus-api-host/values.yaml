@@ -142,12 +142,17 @@ uniplusApiHost:
     port: 5432
     name: uniplus
     username: uniplus
+    # Modo SSL do Npgsql (ex.: VerifyFull valida cadeia e nome do certificado).
+    # Vazio: a connection string não traz o parâmetro, como antes.
+    sslMode: ""
 
   # === Backend Redis (default user) ===
   redis:
     host: ""                    # ex.: 10.0.2.87
     port: 6379
     username: default
+    # true acrescenta ssl=true à connection string do StackExchange.Redis.
+    tls: false
 
   # === Backend Kafka ===
   # Desligado por padrão (issue #423 — sem Apicurio Registry no lab ainda,
@@ -204,6 +209,8 @@ uniplusApiHost:
   # === Backend MinIO S3 — bucket compartilhado com as demais APIs Uni+ ===
   storage:
     endpoint: ""                # ex.: 10.0.2.87:9000
+    # true liga Storage__UseSSL: a API fala HTTPS com o MinIO em `endpoint`.
+    useSsl: false
     bucketName: uniplus-storage
     # Nome pelo qual o navegador alcança a porta de dados — a API assina com ele
     # as URLs de download e de envio direto (a assinatura cobre o Host). Vazio:

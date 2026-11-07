@@ -61,6 +61,9 @@ unifesspaGeoApi:
     port: 5432
     name: uniplus_geo
     username: uniplus_geo_app
+    # Modo SSL do Npgsql (ex.: VerifyFull valida cadeia e nome do certificado).
+    # Vazio: a connection string não traz o parâmetro, como antes.
+    sslMode: ""
     # Nome em ConnectionStrings__<Name> (.NET config binding) — GeoDb.
     connectionStringName: GeoDb
 
@@ -69,6 +72,8 @@ unifesspaGeoApi:
     host: ""                    # ex.: 10.0.2.87
     port: 6379
     username: default
+    # true acrescenta ssl=true à connection string do StackExchange.Redis.
+    tls: false
 
   # === OIDC (Auth bearer — Geo API é resource server, não client OAuth) ===
   oidc:

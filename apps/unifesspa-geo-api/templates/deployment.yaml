@@ -109,7 +109,7 @@ spec:
                   name: {{ include "unifesspaGeoApi.postgresSecretName" . }}
                   key: POSTGRES_PASSWORD
             - name: ConnectionStrings__{{ $cs }}
-              value: "Host={{ .Values.unifesspaGeoApi.database.host }};Port={{ .Values.unifesspaGeoApi.database.port }};Database={{ .Values.unifesspaGeoApi.database.name }};Username={{ .Values.unifesspaGeoApi.database.username }};Password=$(POSTGRES_PASSWORD)"
+              value: "Host={{ .Values.unifesspaGeoApi.database.host }};Port={{ .Values.unifesspaGeoApi.database.port }};Database={{ .Values.unifesspaGeoApi.database.name }};Username={{ .Values.unifesspaGeoApi.database.username }};Password=$(POSTGRES_PASSWORD){{ with .Values.unifesspaGeoApi.database.sslMode }};SSL Mode={{ . }}{{ end }}"
             # === Redis (Connection string formato StackExchange.Redis) ===
             - name: REDIS_PASSWORD
               valueFrom:
@@ -117,7 +117,7 @@ spec:
                   name: {{ include "unifesspaGeoApi.redisSecretName" . }}
                   key: REDIS_PASSWORD
             - name: Redis__ConnectionString
-              value: "{{ .Values.unifesspaGeoApi.redis.host }}:{{ .Values.unifesspaGeoApi.redis.port }},user={{ .Values.unifesspaGeoApi.redis.username }},password=$(REDIS_PASSWORD)"
+              value: "{{ .Values.unifesspaGeoApi.redis.host }}:{{ .Values.unifesspaGeoApi.redis.port }},user={{ .Values.unifesspaGeoApi.redis.username }},password=$(REDIS_PASSWORD){{ if .Values.unifesspaGeoApi.redis.tls }},ssl=true{{ end }}"
             {{- if .Values.unifesspaGeoApi.oidc.enabled }}
             # === OIDC (Auth:* binding — bearer validation, resource server) ===
             - name: Auth__Authority

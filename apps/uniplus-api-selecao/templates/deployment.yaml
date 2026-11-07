@@ -97,7 +97,7 @@ spec:
                   name: {{ include "uniplusApiSelecao.postgresSecretName" . }}
                   key: POSTGRES_PASSWORD
             - name: ConnectionStrings__{{ $cs }}
-              value: "Host={{ .Values.uniplusApiSelecao.database.host }};Port={{ .Values.uniplusApiSelecao.database.port }};Database={{ .Values.uniplusApiSelecao.database.name }};Username={{ .Values.uniplusApiSelecao.database.username }};Password=$(POSTGRES_PASSWORD)"
+              value: "Host={{ .Values.uniplusApiSelecao.database.host }};Port={{ .Values.uniplusApiSelecao.database.port }};Database={{ .Values.uniplusApiSelecao.database.name }};Username={{ .Values.uniplusApiSelecao.database.username }};Password=$(POSTGRES_PASSWORD){{ with .Values.uniplusApiSelecao.database.sslMode }};SSL Mode={{ . }}{{ end }}"
             # === Redis (Connection string formato StackExchange.Redis) ===
             - name: REDIS_PASSWORD
               valueFrom:
@@ -105,7 +105,7 @@ spec:
                   name: {{ include "uniplusApiSelecao.redisSecretName" . }}
                   key: REDIS_PASSWORD
             - name: Redis__ConnectionString
-              value: "{{ .Values.uniplusApiSelecao.redis.host }}:{{ .Values.uniplusApiSelecao.redis.port }},user={{ .Values.uniplusApiSelecao.redis.username }},password=$(REDIS_PASSWORD)"
+              value: "{{ .Values.uniplusApiSelecao.redis.host }}:{{ .Values.uniplusApiSelecao.redis.port }},user={{ .Values.uniplusApiSelecao.redis.username }},password=$(REDIS_PASSWORD){{ if .Values.uniplusApiSelecao.redis.tls }},ssl=true{{ end }}"
             {{- if .Values.uniplusApiSelecao.kafka.enabled }}
             # === Kafka (SASL_SSL + SCRAM via .NET nested binding) ===
             # Confluent.Kafka client lê estas env como AdminClientConfig/
@@ -143,6 +143,10 @@ spec:
                   key: MINIO_SECRET_KEY
             - name: Storage__Endpoint
               value: {{ .Values.uniplusApiSelecao.storage.endpoint | quote }}
+            {{- if .Values.uniplusApiSelecao.storage.useSsl }}
+            - name: Storage__UseSSL
+              value: "true"
+            {{- end }}
             - name: Storage__AccessKey
               value: "$(MINIO_ACCESS_KEY)"
             - name: Storage__SecretKey
