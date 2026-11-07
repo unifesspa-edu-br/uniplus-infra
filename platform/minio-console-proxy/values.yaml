@@ -26,6 +26,9 @@ minioConsoleProxy:
     host: ""                    # ex.: 10.2.2.11
     # Port do MinIO Console (não da API S3 9000).
     consolePort: 9001
+    # Nome no certificado do MinIO. Preenchido, o Traefik fala HTTPS com o
+    # backend e valida o certificado contra este nome. Vazio: HTTP.
+    tlsServerName: ""
 
   # === Exposição externa via Traefik IngressRoute ===
   ingress:
@@ -71,6 +74,8 @@ acervoPublicoProxy:
     host: ""                    # ex.: 192.168.21.134
     # Porta de dados S3 do MinIO.
     port: 9000
+    # Ver minioConsoleProxy.backend.tlsServerName.
+    tlsServerName: ""
 
   # Bucket público. Precisa ser o mesmo criado pelo setup do MinIO e o mesmo de
   # `uniplusApiHost.acervoPublico.bucket`.
@@ -113,6 +118,8 @@ portaDeDadosProxy:
     # IPv4 literal do host onde a porta de dados do MinIO escuta.
     host: ""                    # ex.: 192.168.21.134
     port: 9000
+    # Ver minioConsoleProxy.backend.tlsServerName.
+    tlsServerName: ""
 
   # Buckets alcançáveis pela rota — os de onde a API gera URL assinada. Cada
   # item: `nome` e `envio` (true quando a API assina PUT para ele; sem isso o
@@ -128,4 +135,29 @@ portaDeDadosProxy:
       secretName: ""
     # Middlewares adicionais. Nenhum pode reescrever caminho nem cabeçalho de
     # requisição, ou a assinatura deixa de bater.
+    middlewares: []
+
+# === Interface de administração do RabbitMQ ===
+# Rota da borda para a interface de gerência (management) do RabbitMQ, que roda
+# fora do cluster. Sem autenticação própria da borda: restrinja por origem em
+# `ingress.middlewares`.
+rabbitmqUiProxy:
+  # Liga/desliga a rota. Default false.
+  enabled: false
+  fullnameOverride: ""
+
+  backend:
+    # IPv4 literal do host onde o RabbitMQ escuta.
+    host: ""
+    port: 15672
+    # Ver minioConsoleProxy.backend.tlsServerName.
+    tlsServerName: ""
+
+  ingress:
+    entryPoint: websecure
+    host: ""
+    tls:
+      enabled: true
+      # Vazio: o Traefik escolhe o certificado pelo SNI entre os já carregados.
+      secretName: ""
     middlewares: []

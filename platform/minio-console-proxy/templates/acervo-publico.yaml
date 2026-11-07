@@ -23,7 +23,8 @@
       "nome" $fullname
       "labels" (include "acervoPublicoProxy.labels" .)
       "host" $a.backend.host
-      "porta" $a.backend.port) }}
+      "porta" $a.backend.port
+      "tlsServerName" $a.backend.tlsServerName) }}
 ---
 # /acervo/<chave> → /<bucket>/<chave>. O bucket é fixado aqui: nenhum caminho
 # que passe por esta rota alcança outro bucket da porta de dados.
@@ -89,6 +90,10 @@ spec:
       services:
         - name: {{ $fullname }}
           port: {{ $a.backend.port }}
+          {{- with $a.backend.tlsServerName }}
+          scheme: https
+          serversTransport: {{ $fullname }}
+          {{- end }}
   {{- if $a.ingress.tls.enabled }}
   {{- if $a.ingress.tls.secretName }}
   tls:

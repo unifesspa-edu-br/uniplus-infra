@@ -4,5 +4,6 @@
       "nome" (include "minioConsoleProxy.fullname" .)
       "labels" (include "minioConsoleProxy.labels" .)
       "host" .Values.minioConsoleProxy.backend.host
-      "porta" .Values.minioConsoleProxy.backend.consolePort) }}
+      "porta" .Values.minioConsoleProxy.backend.consolePort
+      "tlsServerName" .Values.minioConsoleProxy.backend.tlsServerName) }}
 {{- end }}

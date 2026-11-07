@@ -21,6 +21,10 @@ spec:
       services:
         - name: {{ include "minioConsoleProxy.fullname" . }}
           port: {{ .Values.minioConsoleProxy.backend.consolePort }}
+          {{- with .Values.minioConsoleProxy.backend.tlsServerName }}
+          scheme: https
+          serversTransport: {{ include "minioConsoleProxy.fullname" $ }}
+          {{- end }}
           # Service ExternalName não tem endpoint K8s — Traefik faz resolução
           # DNS contra o externalName e proxa request para lá. Sem `passHostHeader=false`
           # explícito, Traefik mantém o Host original (minio.standalone...);

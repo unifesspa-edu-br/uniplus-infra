@@ -32,7 +32,8 @@
       "nome" $fullname
       "labels" (include "portaDeDadosProxy.labels" .)
       "host" $p.backend.host
-      "porta" $p.backend.port) }}
+      "porta" $p.backend.port
+      "tlsServerName" $p.backend.tlsServerName) }}
 {{- $rotas := list
       (dict "caminhos" $objetos "metodos" "Method(`GET`) || Method(`HEAD`) || Method(`OPTIONS`)" "copia" false) -}}
 {{- if $envios -}}
@@ -87,6 +88,10 @@ spec:
       services:
         - name: {{ $fullname }}
           port: {{ $p.backend.port }}
+          {{- with $p.backend.tlsServerName }}
+          scheme: https
+          serversTransport: {{ $fullname }}
+          {{- end }}
     {{- end }}
   {{- if $p.ingress.tls.enabled }}
   {{- if $p.ingress.tls.secretName }}
