@@ -220,8 +220,6 @@ uniplusApiHost:
       tokenEndpoint: https://keycloak.unifesspa.edu.br/realms/unifesspa/protocol/openid-connect/token
       clientId: uniplus-api-selecao
       vaultPath: secret/standalone/keycloak/clients/uniplus-api-selecao
-      # O Job de migration (PreSync) roda antes do ESO e precisa achar o Secret.
-      existingSecret: uniplus-api-host-geo-oauth
 
   verificacao:
     criarCredencial: true
