@@ -14,6 +14,10 @@
 # Variáveis de ambiente:
 #   DATA_HOST_IP   IPv4 privado a bindar (default: auto-detectado via `hostname -I`)
 #   DATA_BASE      Diretório base dos volumes de dados (default: /var/lib/uniplus)
+#   REDIS_TLS_DIR  Diretório com public.crt e private.key legíveis pelo uid 999.
+#                  Preenchido, o Redis passa a aceitar SÓ TLS (port 0, tls-port
+#                  6379). Vazio (default): porta 6379 sem TLS, como antes.
+#   REDIS_TLS_HOST Nome no certificado, usado pelo teste de PING com validação.
 #
 # Pré-requisitos: Docker instalado, usuário com sudo sem senha (ou rodar via sudo).
 set -euo pipefail
@@ -49,6 +53,27 @@ CONF_DIR="/etc/uniplus-redis"
 REDIS_CONF="$CONF_DIR/redis.conf"
 ACL_FILE="$CONF_DIR/users.acl"
 UNIT_FILE="/etc/systemd/system/uniplus-redis.service"
+REDIS_TLS_DIR="${REDIS_TLS_DIR:-}"
+REDIS_TLS_HOST="${REDIS_TLS_HOST:-}"
+
+redis_port_conf="port 6379"
+redis_tls_mount=""
+redis_cli_tls=""
+if [[ -n "$REDIS_TLS_DIR" ]]; then
+    if [[ -z "$REDIS_TLS_HOST" ]]; then
+        echo "ERRO: REDIS_TLS_DIR exige REDIS_TLS_HOST (nome no certificado)." >&2
+        exit 1
+    fi
+    redis_port_conf='port 0
+tls-port 6379
+tls-cert-file /tls/public.crt
+tls-key-file /tls/private.key
+tls-auth-clients no
+tls-protocols "TLSv1.2 TLSv1.3"'
+    redis_tls_mount="  -v $REDIS_TLS_DIR:/tls:ro \\
+"
+    redis_cli_tls="--tls -h $REDIS_TLS_HOST"
+fi
 
 log_info()    { echo "[INFO] $*"; }
 log_success() { echo "[ OK ] $*"; }
@@ -123,7 +148,7 @@ if $DRY_RUN; then
 else
     sudo tee "$REDIS_CONF" >/dev/null <<CONF
 bind $DATA_HOST_IP 127.0.0.1 -::1
-port 6379
+$redis_port_conf
 protected-mode yes
 
 aclfile /usr/local/etc/redis/users.acl
@@ -166,7 +191,7 @@ ExecStartPre=-/usr/bin/docker rm -f uniplus-redis
 ExecStart=/usr/bin/docker run --rm --name uniplus-redis \\
   --network host \\
   -v $DATA_BASE/redis/data:/data \\
-  -v /etc/uniplus-redis:/usr/local/etc/redis:ro \\
+${redis_tls_mount}  -v /etc/uniplus-redis:/usr/local/etc/redis:ro \\
   redis:8.6.3-alpine \\
   redis-server /usr/local/etc/redis/redis.conf
 
@@ -194,7 +219,7 @@ else
     fi
     attempts=0
     until sudo docker exec -i uniplus-redis sh -c \
-            'read -r PW; REDISCLI_AUTH="$PW" redis-cli ping' \
+            "read -r PW; REDISCLI_AUTH=\"\$PW\" redis-cli $redis_cli_tls ping" \
             <<<"$pw" 2>/dev/null | grep -q PONG; do
         attempts=$(( attempts + 1 ))
         if (( attempts >= 12 )); then
