@@ -55,6 +55,8 @@ redisUi:
     # Username Redis ACL. Redis standalone usa `default` (sem ACL custom);
     # password do role `default` vem do ESO `redisDefault`.
     username: default
+    # true liga TLS na conexão pré-cadastrada (RI_REDIS_TLS).
+    tls: false
 
   # === ExternalSecrets (Vault → K8s Secret) ===
   externalSecrets:
@@ -85,6 +87,8 @@ redisUi:
   ingress:
     enabled: false
     entryPoint: websecure
+    # Middlewares Traefik adicionais ao basicAuth (ex.: restrição por rede).
+    middlewares: []
     host: ""                    # ex.: redis-ui.standalone.portaluni.com.br
     tls:
       enabled: true

@@ -172,6 +172,12 @@ middlewares:
   compress:
     enabled: true
 
+  # Restrição das rotas de administração por origem (middleware
+  # uniplus-admin-interno). Desligado por default.
+  adminInterno:
+    enabled: false
+    sourceRange: []
+
 # ============================================================================
 # NetworkPolicy — ingress de 80/443 da internet (NodePort/LoadBalancer);
 # egress para os namespaces das apps (uniplus, vault, etc.).

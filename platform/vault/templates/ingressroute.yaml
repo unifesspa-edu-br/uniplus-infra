@@ -14,6 +14,10 @@ spec:
   routes:
     - match: Host(`{{ required "ingress.host é obrigatório quando ingress.enabled=true" .Values.ingress.host }}`)
       kind: Rule
+      {{- with .Values.ingress.middlewares }}
+      middlewares:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       services:
         - name: {{ .Release.Name }}-vault
           port: 8200

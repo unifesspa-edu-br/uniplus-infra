@@ -38,12 +38,20 @@ spec:
     {{- if $ing.pathPrefix }}
     - match: Host(`{{ $ing.host }}`) && PathPrefix(`{{ $ing.pathPrefix }}`)
       kind: Rule
+      {{- with $ing.middlewares }}
+      middlewares:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       services:
         - name: {{ $svcName }}
           port: {{ $svcPort }}
     {{- else }}
     - match: Host(`{{ $ing.host }}`)
       kind: Rule
+      {{- with $ing.middlewares }}
+      middlewares:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       services:
         - name: {{ $svcName }}
           port: {{ $svcPort }}

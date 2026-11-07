@@ -46,7 +46,8 @@
             "host": { "type": "string" },
             "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
             "alias": { "type": "string", "minLength": 1 },
-            "username": { "type": "string", "minLength": 1 }
+            "username": { "type": "string", "minLength": 1 },
+            "tls": { "type": "boolean" }
           },
           "required": ["port", "alias", "username"]
         },
@@ -91,6 +92,7 @@
           "properties": {
             "enabled": { "type": "boolean" },
             "entryPoint": { "type": "string" },
+            "middlewares": { "type": "array" },
             "host": { "type": "string" },
             "tls": {
               "type": "object",

@@ -105,6 +105,8 @@ kafkaUi:
   ingress:
     enabled: false
     entryPoint: websecure
+    # Middlewares Traefik aplicados à rota (ex.: restrição por rede).
+    middlewares: []
     host: ""                     # ex.: kafka-ui.standalone.portaluni.com.br
     tls:
       enabled: true

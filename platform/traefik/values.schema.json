@@ -74,6 +74,14 @@
             "referrerPolicy": { "type": "string" }
           }
         },
+        "adminInterno": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "sourceRange": { "type": "array", "items": { "type": "string" } }
+          }
+        },
         "compress": {
           "type": "object",
           "additionalProperties": true,

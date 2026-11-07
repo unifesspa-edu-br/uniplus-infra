@@ -122,6 +122,7 @@
           "properties": {
             "enabled": { "type": "boolean" },
             "entryPoint": { "type": "string" },
+            "middlewares": { "type": "array" },
             "host": { "type": "string" },
             "tls": {
               "type": "object",

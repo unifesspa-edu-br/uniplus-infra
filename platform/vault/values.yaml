@@ -220,3 +220,5 @@ ingress:
   enabled: false
   host: ""
   entryPoint: websecure
+  # Middlewares Traefik da rota (ex.: restrição por rede).
+  middlewares: []

@@ -88,6 +88,7 @@ grafana:
     pathPrefix: ""        # subpath (ex.: /grafana) ou vazio (subdomain)
     serviceName: ""       # default: <Release.Name>-grafana (Service do subchart)
     servicePort: 80       # porta do Service do subchart Grafana
+    middlewares: []       # Middlewares Traefik da rota (ex.: restrição por rede)
     tls:
       enabled: true
       secretName: ""      # vazio = Traefik usa default cert (LE prod via cert-manager + Certificate emitido em outro template ou chart)
