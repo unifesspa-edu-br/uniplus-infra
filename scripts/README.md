@@ -64,8 +64,8 @@ host único (K3s + Docker na mesma VM), complementar ao `standalone-compact`
 ## Produção (duas VMs)
 
 `prod-standalone/` traz os scripts da produção: `bootstrap-infra.sh` e `bootstrap-app.sh` (uma
-VM cada), `atualizar-producao.sh` (registra uma tag), `renovar-certificado.sh` e o provisionamento
-de bancos, segredos e filas. Todos aceitam `--dry-run`. Ver a seção 23 do `docs/RUNBOOKS.md`.
+VM cada), `atualizar-producao.sh` (registra uma tag), `primeiro-sync.sh`, `renovar-certificado.sh` e o
+provisionamento do Vault, dos bancos, do Kafka e das filas. Todos aceitam `--dry-run`. Ver a seção 23 do `docs/RUNBOOKS.md`.
 
 ## Histórico
 
