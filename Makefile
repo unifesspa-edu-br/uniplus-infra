@@ -27,14 +27,14 @@ CHART_DIRS      := $(dir $(CHARTS_ALL))
 YAML_DIRS := apps/ platform/ data/ environments/ argocd/
 
 # Environments existentes (atualizar quando san-* / 3-DC forem criados).
-ENVS := standalone-compact hml-standalone-single
+ENVS := standalone-compact hml-standalone-single prod-standalone
 
 # Regressão de roteamento path-based: os três charts que compartilham a
 # convenção Host() + PathPrefix() precisam continuar renderizando nos
 # ambientes existentes antes do rollout. O lab não integra ENVS porque nem
 # todos os charts de plataforma são aplicáveis nele.
 ROUTING_CHART_DIRS := apps/uniplus-api-host/ apps/uniplus-api-portal/ apps/uniplus-web/
-ROUTING_ENVS       := standalone-compact lab-standalone-single hml-standalone-single
+ROUTING_ENVS       := standalone-compact lab-standalone-single hml-standalone-single prod-standalone
 
 # Comando markdownlint via npx (não exige instalação global).
 MARKDOWNLINT := npx --yes markdownlint-cli2
@@ -110,7 +110,7 @@ shellcheck:  ## Roda shellcheck em scripts/*.sh (skip gracefully se não instala
 # binário instalado leva reprovação por achado que ninguém precisa corrigir.
 	@printf "$(BLUE)→ shellcheck$(RESET)\n"
 	@if command -v shellcheck >/dev/null 2>&1; then \
-	    shellcheck --severity=warning scripts/*.sh; \
+	    shellcheck --severity=warning scripts/*.sh scripts/prod-standalone/*.sh; \
 	else \
 	    printf "$(YELLOW)⚠ shellcheck não instalado — esta verificação NÃO foi executada$(RESET)\n"; \
 	    printf "  O CI a executa no PR; localmente, instale para exercer o gate antes de abrir:\n"; \
