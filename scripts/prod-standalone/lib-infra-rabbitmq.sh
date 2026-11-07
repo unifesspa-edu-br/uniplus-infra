@@ -10,6 +10,9 @@ RABBITMQ_GID=101
 RABBITMQ_TLS_DIR="$DATA_BASE/rabbitmq/tls"
 RABBITMQ_CONFIG_DIR="$DATA_BASE/rabbitmq/config"
 RABBITMQ_MEMORY_BYTES=2147483648
+# A imagem recusa RABBITMQ_DEFAULT_PASS_FILE (variável obsoleta); usuário e senha
+# do administrador vão por arquivo de ambiente root:root 0600, lido pelo docker.
+RABBITMQ_ENV_FILE=/etc/credstore/uniplus-rabbitmq.env
 
 conf_rabbitmq() {
     cat <<CONF
@@ -43,17 +46,15 @@ Type=simple
 Restart=always
 RestartSec=10
 TimeoutStartSec=300
-LoadCredential=admin-password:/etc/credstore/uniplus-rabbitmq-admin-password
 ExecStartPre=-/usr/bin/docker rm -f uniplus-rabbitmq
 ExecStart=/usr/bin/docker run --rm --name uniplus-rabbitmq \\
   --network host \\
-  --hostname ${INFRA_FQDN} \\
+  --hostname ${INFRA_FQDN%%.*} \\
   --memory ${RABBITMQ_MEMORY_BYTES} \\
-  -e RABBITMQ_DEFAULT_USER=rabbitmq-admin \\
-  -e RABBITMQ_DEFAULT_PASS_FILE=/run/secrets/admin-password \\
-  -v \${CREDENTIALS_DIRECTORY}/admin-password:/run/secrets/admin-password:ro \\
+  --env-file ${RABBITMQ_ENV_FILE} \\
   -v ${DATA_BASE}/rabbitmq/data:/var/lib/rabbitmq \\
   -v ${RABBITMQ_TLS_DIR}:/etc/rabbitmq-tls:ro \\
+  -v ${RABBITMQ_CONFIG_DIR}/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro \\
   -v ${RABBITMQ_CONFIG_DIR}/10-uniplus.conf:/etc/rabbitmq/conf.d/10-uniplus.conf:ro \\
   ${RABBITMQ_IMAGE}
 ExecStop=/usr/bin/docker stop -t 60 uniplus-rabbitmq
@@ -74,11 +75,13 @@ step_rabbitmq() {
     instalar_par_tls "$RABBITMQ_TLS_DIR" "$RABBITMQ_UID"
     garantir_credencial "$creds_file" admin_pw
 
+    printf '[rabbitmq_management].\n' | gravar_arquivo_root "$RABBITMQ_CONFIG_DIR/enabled_plugins" 644
+    run "sudo install -d -m 700 /etc/credstore"
     if $DRY_RUN; then
-        echo "[DRY-RUN] copiaria admin_pw para /etc/credstore/uniplus-rabbitmq-admin-password (modo 400)"
+        echo "[DRY-RUN] gravaria $RABBITMQ_ENV_FILE com o usuário e a senha do administrador (modo 600)"
     else
-        ler_credencial "$creds_file" admin_pw | tr -d '\n' \
-            | gravar_arquivo_root /etc/credstore/uniplus-rabbitmq-admin-password 400
+        printf 'RABBITMQ_DEFAULT_USER=rabbitmq-admin\nRABBITMQ_DEFAULT_PASS=%s\n' \
+            "$(ler_credencial "$creds_file" admin_pw)" | gravar_arquivo_root "$RABBITMQ_ENV_FILE" 600
     fi
     unidade_rabbitmq | gravar_arquivo_root /etc/systemd/system/uniplus-rabbitmq.service 644
 
@@ -91,4 +94,23 @@ step_rabbitmq() {
     else
         sudo systemctl start uniplus-rabbitmq
     fi
+    aguardar_gerencia_rabbitmq
+}
+
+# Qualquer resposta HTTP da gerência (200 ou 401 sem credencial) prova que o
+# broker subiu e que o certificado é aceito pelo nome; sem resposta, o bootstrap falha.
+aguardar_gerencia_rabbitmq() {
+    $DRY_RUN && { echo "[DRY-RUN] esperaria a gerência do RabbitMQ em https://$INFRA_FQDN:15671"; return 0; }
+    local _ codigo
+    for _ in $(seq 1 60); do
+        codigo=$(sudo curl -s -o /dev/null -w '%{http_code}' --max-time 5 --cacert "$TLS_BUNDLE" \
+            --resolve "$INFRA_FQDN:15671:127.0.0.1" "https://$INFRA_FQDN:15671/api/overview" || true)
+        if [[ "$codigo" == 200 || "$codigo" == 401 ]]; then
+            log_success "Gerência do RabbitMQ responde por HTTPS."
+            return 0
+        fi
+        sleep 5
+    done
+    log_error "A gerência do RabbitMQ não respondeu em 5 minutos; veja 'journalctl -u uniplus-rabbitmq'."
+    exit 1
 }

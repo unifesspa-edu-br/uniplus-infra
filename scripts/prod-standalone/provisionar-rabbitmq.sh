@@ -26,9 +26,14 @@ mostrar_uso() {
 chamar_api() {
     local metodo="$1" caminho="$2" corpo="${3:-}"
     local args=(-fsS --max-time 20 --config "$PROVISIONAR_TMP/rabbitmq.curl"
-        --resolve "$INFRA_FQDN:15671:127.0.0.1" -X "$metodo")
-    [[ -z "$corpo" ]] || args+=(-H 'Content-Type: application/json' --data-binary "$corpo")
-    curl "${args[@]}" "$BASE/$caminho" -o /dev/null
+        --cacert "$TLS_BUNDLE" --resolve "$INFRA_FQDN:15671:127.0.0.1" -X "$metodo")
+    if [[ -n "$corpo" ]]; then
+        # O corpo pode ter senha: vai pela entrada padrão, nunca por argv.
+        printf '%s' "$corpo" | curl "${args[@]}" -H 'Content-Type: application/json' --data-binary @- \
+            "$BASE/$caminho" -o /dev/null
+    else
+        curl "${args[@]}" "$BASE/$caminho" -o /dev/null
+    fi
 }
 
 provisionar_usuario() {
