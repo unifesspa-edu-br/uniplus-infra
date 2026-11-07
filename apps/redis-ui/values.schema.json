@@ -47,7 +47,15 @@
             "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
             "alias": { "type": "string", "minLength": 1 },
             "username": { "type": "string", "minLength": 1 },
-            "tls": { "type": "boolean" }
+            "tls": { "type": "boolean" },
+            "tlsCaSecret": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "secretName": { "type": "string" },
+                "key": { "type": "string" }
+              }
+            }
           },
           "required": ["port", "alias", "username"]
         },

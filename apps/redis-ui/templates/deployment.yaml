@@ -74,6 +74,12 @@ spec:
             # no próprio host. Ligue backend.tls quando o Redis exigir TLS.
             - name: RI_REDIS_TLS
               value: {{ .Values.redisUi.backend.tls | quote }}
+            {{- with .Values.redisUi.backend.tlsCaSecret }}
+            # A interface valida o certificado do Redis: uma cadeia que não está no
+            # repositório de CAs da imagem precisa ser entregue aqui.
+            - name: RI_REDIS_TLS_CA_PATH
+              value: /etc/redis-ca/{{ .key }}
+            {{- end }}
             {{- with .Values.redisUi.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -83,6 +89,11 @@ spec:
             # cada restart.
             - name: data
               mountPath: /data
+            {{- with .Values.redisUi.backend.tlsCaSecret }}
+            - name: redis-ca
+              mountPath: /etc/redis-ca
+              readOnly: true
+            {{- end }}
           startupProbe:
             httpGet:
               path: /api/health/
@@ -104,4 +115,9 @@ spec:
       volumes:
         - name: data
           emptyDir: {}
+        {{- with .Values.redisUi.backend.tlsCaSecret }}
+        - name: redis-ca
+          secret:
+            secretName: {{ .secretName }}
+        {{- end }}
 {{- end }}
