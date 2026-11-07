@@ -151,7 +151,7 @@ indentação do include e produziria itens fora da lista.
 {{- $db := .Values.uniplusApiHost.database }}
 {{- range list "UniPlusDb" "ConfiguracaoDb" "OrganizacaoDb" "SelecaoDb" "IngressoDb" "PublicacoesDb" "DiscentesDb" "AutorizacaoDb" }}
 - name: ConnectionStrings__{{ . }}
-  value: "Host={{ $db.host }};Port={{ $db.port }};Database={{ $db.name }};Username={{ $db.username }};Password=$(POSTGRES_PASSWORD)"
+  value: "Host={{ $db.host }};Port={{ $db.port }};Database={{ $db.name }};Username={{ $db.username }};Password=$(POSTGRES_PASSWORD){{ with $db.sslMode }};SSL Mode={{ . }}{{ end }}"
 {{- end }}
 # === Redis (Connection string formato StackExchange.Redis) ===
 - name: REDIS_PASSWORD
@@ -160,7 +160,7 @@ indentação do include e produziria itens fora da lista.
       name: {{ include "uniplusApiHost.redisSecretName" . }}
       key: REDIS_PASSWORD
 - name: Redis__ConnectionString
-  value: "{{ .Values.uniplusApiHost.redis.host }}:{{ .Values.uniplusApiHost.redis.port }},user={{ .Values.uniplusApiHost.redis.username }},password=$(REDIS_PASSWORD)"
+  value: "{{ .Values.uniplusApiHost.redis.host }}:{{ .Values.uniplusApiHost.redis.port }},user={{ .Values.uniplusApiHost.redis.username }},password=$(REDIS_PASSWORD){{ if .Values.uniplusApiHost.redis.tls }},ssl=true{{ end }}"
 # === Kafka — BootstrapServers SEMPRE setado (nunca omitido). O host
 # lê via string.IsNullOrWhiteSpace em dois pontos independentes
 # (WolverineOutboxConfiguration + SelecaoMessagingRegistration no
@@ -206,6 +206,10 @@ indentação do include e produziria itens fora da lista.
       key: MINIO_SECRET_KEY
 - name: Storage__Endpoint
   value: {{ .Values.uniplusApiHost.storage.endpoint | quote }}
+{{- if .Values.uniplusApiHost.storage.useSsl }}
+- name: Storage__UseSSL
+  value: "true"
+{{- end }}
 - name: Storage__AccessKey
   value: "$(MINIO_ACCESS_KEY)"
 - name: Storage__SecretKey
