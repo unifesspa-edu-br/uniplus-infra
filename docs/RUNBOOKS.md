@@ -17,6 +17,7 @@
 - [9. Data services no data-host (standalone)](#9-data-services-no-data-host-standalone)
 - [20. Ambiente de laboratório — host único (`lab-standalone-single`)](#20-ambiente-de-laboratório--host-único-lab-standalone-single)
 - [21. Ambiente de homologação real — host único (`hml-standalone-single`) — planejamento](#21-ambiente-de-homologação-real--host-único-hml-standalone-single--planejamento)
+- [23. Produção em duas VMs (`prod-standalone`)](#23-produção-em-duas-vms-prod-standalone)
 
 ## 1. Procedimentos Rotineiros
 
@@ -4827,3 +4828,117 @@ curl -s -o /dev/null -w '%{http_code}\n' "$H/uniplus-candidato-envio/x"         
 
 Com uma URL assinada emitida pela API (botão Baixar ou envio de documento na inscrição), o download
 e o envio respondem 200 no Chrome e no Firefox.
+
+## 23. Produção em duas VMs (`prod-standalone`)
+
+Decisão em [ADR-015](adrs/ADR-015-producao-em-duas-vms-com-tls-e-atualizacao-manual.md). Os scripts
+ficam em `scripts/prod-standalone/` e todos aceitam `--dry-run`. Valores em
+`environments/prod-standalone/values.yaml`.
+
+| VM | IP | Papel |
+|---|---|---|
+| `uniplus-prod-app` | `200.139.48.121` | K3s: Traefik (80/443), ArgoCD, Vault, External Secrets, KES, APIs, web, Apicurio, verificador, ClamAV, observabilidade |
+| `uniplus-prod-infra` | `200.139.48.122` | Docker + systemd: PostgreSQL com PostGIS, MinIO, Redis, Kafka, RabbitMQ; dados em `/var/lib/uniplus` |
+
+As aplicações alcançam a infraestrutura pelo nome `uniplus-prod-infra.unifesspa.edu.br`, que o
+certificado curinga `*.unifesspa.edu.br` valida. Não há CA interna.
+
+### 23.1 Portas
+
+Firewall já ativo. A infraestrutura aceita só de `200.139.48.121`: 5432 (PostgreSQL), 6379
+(Redis), 9000 (MinIO), 9092 (Kafka), 5671 (RabbitMQ AMQPS) e 15671 (gerência do RabbitMQ). A VM de
+aplicação aceita 22, 80 e 443 de fora e as redes de pods e serviços (`10.42.0.0/16`, `10.43.0.0/16`).
+
+Uma porta a mais é necessária: **7373 na VM de aplicação, apenas para `200.139.48.122`**. O MinIO
+(infraestrutura) chega ao KES (cluster) por ela, com TLS e validação do certificado. O
+`bootstrap-app.sh` abre a regra; o chart do KES a repete na NetworkPolicy (`kes.networkPolicy.hostCidrs`).
+O KES é alcançado pelo nome `uniplus-prod-app.unifesspa.edu.br` (variável `KES_HOST`), que precisa
+resolver para `200.139.48.121`.
+
+### 23.2 Certificado
+
+O par fica só nas VMs, nunca no Git: `/etc/uniplus/tls/unifesspa.edu.br.key` (0600) e
+`/etc/uniplus/tls/unifesspa.edu.br-bundle.crt`. Quem opera a VM o instala antes de qualquer script.
+
+### 23.3 Bootstrap (ordem)
+
+1. **Infra:** `scripts/prod-standalone/bootstrap-infra.sh` na `uniplus-prod-infra`. Sobe os cinco
+   serviços só com TLS (portas sem TLS desligadas) e libera as portas para a VM de aplicação.
+2. **App:** com o repositório na tag de produção (`git checkout vX.Y.Z`),
+   `scripts/prod-standalone/bootstrap-app.sh --revisao=vX.Y.Z` na `uniplus-prod-app`. Instala K3s,
+   Helm e ArgoCD, publica o Secret `uniplus-unifesspa-tls`, registra o cluster com o label
+   `uniplus.io/revision=vX.Y.Z` e aplica o projeto e os ApplicationSets. Nada é sincronizado.
+3. **Plataforma:** no ArgoCD, sincronizar à mão `traefik`, `external-secrets` e `vault`
+   (nesta ordem). O Vault é inicializado e aberto fora dos scripts (ver 23.6).
+4. **Segredos e bancos:** na `uniplus-prod-infra`, com o Vault aberto e o token em mãos (pedido sem
+   eco): `semear-vault.sh`, `provisionar-bancos.sh`, `provisionar-verificacao.sh` e
+   `provisionar-rabbitmq.sh`. Todos falam com `https://uniplus-vault.unifesspa.edu.br`.
+5. **Rota do ArgoCD:** `kubectl apply -f environments/prod-standalone/argocd-ingressroute.yaml`
+   (depois de o Traefik registrar os CRDs). Hosts de administração respondem só à rede institucional
+   e à VPN (`middlewares.adminInterno.sourceRange`).
+6. **Aplicações:** sincronizar as demais Applications, uma a uma. Depois do KES saudável, rodar
+   `provisionar-arquivos-candidato.sh` na infraestrutura.
+
+Chaves de Keycloak ficam fora: o emissor é o institucional
+(`https://keycloak.unifesspa.edu.br/realms/unifesspa`) e os clients são criados à parte; o segredo
+de cada client é gravado em `secret/standalone/keycloak/clients/<client>`.
+
+### 23.4 Atualização manual por tag
+
+Nenhuma Application de produção tem `syncPolicy.automated`: o ArgoCD só mostra o que mudou. A
+revisão dos charts e dos valores é uma tag deste repositório, **validada antes em homologação**.
+
+1. Criar e publicar a tag (`vX.Y.Z`) a partir do commit já validado em homologação.
+2. Na `uniplus-prod-app`: `git fetch --tags && git checkout vX.Y.Z`.
+3. `scripts/prod-standalone/atualizar-producao.sh --revisao=vX.Y.Z`. Confere que o checkout está
+   na tag, grava `uniplus.io/revision` no cluster e reaplica o projeto, os ApplicationSets e o
+   verificador. As Applications passam a apontar para a tag.
+4. No ArgoCD, revisar o diff de cada Application e sincronizar à mão. Nas APIs, o sync do
+   `uniplus-api-host` roda a migração (`PreSync`); sincronizá-lo antes dos demais consumidores.
+5. Reverter é repetir o procedimento com a tag anterior.
+
+Sem o label `uniplus.io/revision` no cluster, o ApplicationSet falha de propósito em vez de seguir
+`main`. O verificador usa o mesmo mecanismo (marcador `REVISAO_UNIPLUS_INFRA` trocado na aplicação).
+
+### 23.5 Renovação do certificado
+
+Nas duas VMs, uma de cada vez, com o mesmo par novo:
+
+```bash
+./scripts/prod-standalone/renovar-certificado.sh --vm=infra --cert=novo-bundle.crt --key=nova.key
+./scripts/prod-standalone/renovar-certificado.sh --vm=app   --cert=novo-bundle.crt --key=nova.key
+```
+
+O script confere chave, validade e nome, guarda o par anterior em `/etc/uniplus/tls/anterior`,
+reinstala o par para cada serviço e reinicia `uniplus-postgres`, `uniplus-redis`, `uniplus-minio`,
+`uniplus-kafka` e `uniplus-rabbitmq` (infra), ou atualiza o Secret TLS dos namespaces e reinicia o
+KES (app). Os clientes revalidam o certificado na próxima conexão; conferir depois com
+`openssl s_client -connect uniplus-prod-infra.unifesspa.edu.br:5432 -starttls postgres`.
+
+### 23.6 Reinício das VMs e abertura do Vault
+
+- **Infra:** as cinco unidades `uniplus-*` sobem sozinhas (`systemctl is-active uniplus-postgres
+  uniplus-redis uniplus-minio uniplus-kafka uniplus-rabbitmq`).
+- **App:** o K3s e o ArgoCD voltam sozinhos. O Vault volta **selado** (Shamir 5/3, ADR-014):
+  abrir pela interface em `https://uniplus-vault.unifesspa.edu.br` (restrita à rede institucional) ou
+  por `kubectl exec` com três das cinco chaves. Enquanto selado, o External Secrets não renova
+  segredos e as aplicações novas não sobem. Reiniciar a infra antes da app evita erros de conexão
+  no início.
+
+A inicialização do Vault (`operator init`, 5 chaves, limiar 3) é manual e fora dos scripts; cada
+chave vai a um custodiante diferente.
+
+### 23.7 Política do acervo público
+
+A leitura anônima do bucket `uniplus-acervo-publico` só vale para quem chega pelo Traefik. A condição
+`aws:SourceIp` em `scripts/prod-standalone/minio/acervo-publico.policy.json` é `200.139.48.121/32`
+(IP da VM de aplicação), no lugar de `10.42.0.0/16` de homologação, porque em produção o Traefik
+alcança o MinIO por outra máquina e a origem da conexão é o IP público dela. Um `GET` anônimo
+direto em `uniplus-prod-infra.unifesspa.edu.br:9000` a partir de outro IP é recusado.
+
+### 23.8 Não verificável sem as VMs
+
+Os scripts e os valores foram validados por renderização, `shellcheck` e `--dry-run`. Dependem de
+conferência na primeira execução real: a imagem `postgis/postgis:18-3.6` aceitar `hba_file` e
+`ssl_key_file` nos caminhos montados, o dono do diretório TLS de cada container (uids 999, 1000 e
+100), o nome DNS `uniplus-prod-app` para o KES e a ordem de sync no ArgoCD.
