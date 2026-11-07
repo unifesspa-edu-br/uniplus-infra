@@ -1,0 +1,649 @@
+# Ambiente: prod-standalone
+#
+# Produção em duas VMs (ADR-015). `uniplus-prod-app` (200.139.48.121) roda
+# K3s, Traefik, ArgoCD, Vault, as APIs e os frontends. `uniplus-prod-infra`
+# (200.139.48.122) roda PostgreSQL, MinIO, Redis, Kafka e RabbitMQ em systemd.
+#
+# Todo tráfego entre as VMs usa TLS com o certificado *.unifesspa.edu.br
+# validado pelo cliente, por isso os serviços de dados são acessados pelo nome
+# uniplus-prod-infra.unifesspa.edu.br e nunca por IP. Nenhuma Application
+# sincroniza sozinha: a revisão é a tag do label uniplus.io/revision do cluster
+# (argocd/applicationset.yaml).
+#
+# Desligado explicitamente o que o chart liga por padrão e esta produção não usa
+# (cert-manager, Vault Transit, observabilidade, Keycloak próprio).
+
+cluster:
+  name: prod-standalone
+  region: unifesspa
+  dc: prod-standalone
+
+# ----------------------------------------------------------------------------
+# Plataforma
+# ----------------------------------------------------------------------------
+
+vault:
+  enabled: true
+
+  global:
+    tlsDisable: true # TLS terminado no Traefik; o tráfego fica dentro do K3s
+
+  server:
+    ha:
+      enabled: true
+      replicas: 1
+
+      disruptionBudget:
+        enabled: false
+
+      raft:
+        enabled: true
+        setNodeId: true
+        config: |
+          ui = true
+
+          listener "tcp" {
+            tls_disable     = 1
+            address         = "0.0.0.0:8200"
+            cluster_address = "0.0.0.0:8201"
+          }
+
+          storage "raft" {
+            path = "/vault/data"
+          }
+
+    dataStorage:
+      size: 2Gi
+      storageClass: prod-local-nvme
+    auditStorage:
+      size: 2Gi
+      storageClass: prod-local-nvme
+
+vaultTransit:
+  enabled: false
+
+vaultTransitBootstrap:
+  enabled: false
+
+networkPolicy:
+  enabled: true
+  appConsumerNamespaces:
+    - kes
+  # O apiserver do K3s roda no host: o egress é avaliado depois do DNAT.
+  kubeApiCidrs:
+    - 10.43.0.0/16
+    - 200.139.48.121/32
+  appNamespaces:
+    - uniplus
+    - vault
+    - geo
+    - argocd
+  # O Traefik alcança o MinIO (9000) e a interface do RabbitMQ (15671) na VM de
+  # dados, ambos em HTTPS.
+  externalBackends:
+    - cidr: 200.139.48.122/32
+      ports:
+        - 9000
+        - 15671
+
+# Vault: rota própria, pois o desbloqueio é pela tela dele. Restrita à rede
+# institucional e à VPN.
+ingress:
+  enabled: true
+  host: uniplus-vault.unifesspa.edu.br
+  entryPoint: websecure
+  middlewares:
+    - name: uniplus-admin-interno
+      namespace: traefik
+
+serviceMonitor:
+  enabled: false
+
+clusterSecretStore:
+  enabled: true
+  vaultServer: "http://platform-vault-in-cluster.vault.svc.cluster.local:8200"
+
+storage:
+  enabled: true
+  storageClass:
+    name: prod-local-nvme
+
+cert-manager:
+  enabled: false
+
+# O Secret uniplus-unifesspa-tls (certificado do domínio) é criado pelo
+# bootstrap e renovado por scripts/prod-standalone/renovar-certificado.sh.
+tlsStore:
+  enabled: true
+  defaultSecretName: uniplus-unifesspa-tls
+
+# Rede institucional e VPN com acesso às rotas de administração.
+middlewares:
+  adminInterno:
+    enabled: true
+    sourceRange:
+      - 200.139.48.0/25
+
+traefik:
+  service:
+    type: NodePort
+  ports:
+    web:
+      hostPort: 80
+    websecure:
+      hostPort: 443
+      # O envio direto de arquivo do candidato passa por aqui; um documento
+      # grande numa conexão lenta passa dos 60s do default.
+      transport:
+        respondingTimeouts:
+          readTimeout: 300s
+  ingressRoute:
+    dashboard:
+      enabled: true
+      entryPoints:
+        - websecure
+      matchRule: Host(`uniplus-traefik.unifesspa.edu.br`)
+      middlewares:
+        - name: uniplus-admin-interno
+      tls: {}
+
+# ----------------------------------------------------------------------------
+# APIs
+# ----------------------------------------------------------------------------
+
+uniplusApiHost:
+  enabled: true
+
+  image:
+    tag: v0.50.0
+
+  migrationJob:
+    enabled: true
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 6Gi
+
+  database:
+    host: uniplus-prod-infra.unifesspa.edu.br
+    sslMode: VerifyFull
+
+  redis:
+    host: uniplus-prod-infra.unifesspa.edu.br
+    tls: true
+
+  registroDeAcesso:
+    enabled: true
+    kafka:
+      bootstrapServers: uniplus-prod-infra.unifesspa.edu.br:9092
+
+  storage:
+    endpoint: uniplus-prod-infra.unifesspa.edu.br:9000
+    useSsl: true
+    publicEndpoint: uniplus-arquivos.unifesspa.edu.br
+    publicUseSsl: true
+
+  acervoPublico:
+    enderecoBase: https://uniplus-acervo.unifesspa.edu.br
+
+  autorizacao:
+    enderecoDaConfiguracao: https://uniplus.unifesspa.edu.br/configuracao
+
+  oidc:
+    issuerUri: https://keycloak.unifesspa.edu.br/realms/unifesspa
+
+  cors:
+    allowedOrigins:
+      - https://uniplus.unifesspa.edu.br
+
+  reverseProxy:
+    trustedNetworks:
+      - 10.42.0.0/16
+
+  encryption:
+    provider: local
+
+  geo:
+    baseUrl: http://unifesspa-geo-api-in-cluster-unifesspa-geo-api.geo.svc.cluster.local:8080
+    oauth:
+      tokenEndpoint: https://keycloak.unifesspa.edu.br/realms/unifesspa/protocol/openid-connect/token
+      clientId: uniplus-api-selecao
+      vaultPath: secret/standalone/keycloak/clients/uniplus-api-selecao
+      # O Job de migration (PreSync) roda antes do ESO e precisa achar o Secret.
+      existingSecret: uniplus-api-host-geo-oauth
+
+  verificacao:
+    criarCredencial: true
+    enabled: true
+    rabbitMqExterno:
+      enabled: true
+      host: uniplus-prod-infra.unifesspa.edu.br
+
+  email:
+    criarCredencial: true
+    enabled: true
+    remetente: nao-responda@unifesspa.edu.br
+    nomeRemetente: UNI+ UNIFESSPA
+
+  extraEnv:
+    - name: UniPlus__Encryption__LocalKey
+      valueFrom:
+        secretKeyRef:
+          name: uniplus-api-host-encryption-local
+          key: LOCAL_KEY
+    - name: Autorizacao__Instalacao__DominiosInstitucionais__0
+      value: unifesspa.edu.br
+
+  ingress:
+    enabled: true
+    entryPoint: websecure
+    host: uniplus-api.unifesspa.edu.br
+    pathPrefixes:
+      - /api/ingresso
+      - /api/selecao
+      - /api/configuracao
+      - /api/organizacao
+      - /api/publicacoes
+      - /api/autorizacao
+      - /api/profile
+      - /openapi
+    tls:
+      enabled: true
+      secretName: uniplus-unifesspa-tls
+
+  networkPolicy:
+    enabled: true
+    dataHostCIDR: 200.139.48.122/32
+    # Keycloak institucional, fora das VMs: HTTPS direto no endereço dele.
+    oidcIssuerCIDR: 200.139.48.23/32
+    oidcIssuerPort: 443
+    clientesInternos:
+      - appName: uniplus-api-portal
+    geo:
+      namespace: geo
+    rabbitmq:
+      cidr: 200.139.48.122/32
+      port: 5671
+    smtpCIDR: 200.139.48.39/32
+
+  otel:
+    enabled: false
+
+uniplusApiPortal:
+  enabled: true
+
+  image:
+    tag: v0.50.0
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 768Mi
+
+  database:
+    host: uniplus-prod-infra.unifesspa.edu.br
+    sslMode: VerifyFull
+    name: uniplus_portal
+    username: portal
+
+  redis:
+    host: uniplus-prod-infra.unifesspa.edu.br
+    tls: true
+
+  storage:
+    endpoint: uniplus-prod-infra.unifesspa.edu.br:9000
+    useSsl: true
+
+  kafka:
+    enabled: false
+
+  externalSecrets:
+    oidcClient:
+      enabled: false
+
+  oidc:
+    issuerUri: https://keycloak.unifesspa.edu.br/realms/unifesspa
+
+  cors:
+    allowedOrigins:
+      - https://uniplus.unifesspa.edu.br
+
+  reverseProxy:
+    trustedNetworks:
+      - 10.42.0.0/16
+
+  extraEnv:
+    - name: Origens__SelecaoBaseUrl
+      value: http://uniplus-api-host-in-cluster-uniplus-api-host.uniplus.svc.cluster.local:8080
+    - name: Origens__PublicacoesBaseUrl
+      value: http://uniplus-api-host-in-cluster-uniplus-api-host.uniplus.svc.cluster.local:8080
+
+  ingress:
+    enabled: true
+    entryPoint: websecure
+    host: uniplus-api.unifesspa.edu.br
+    pathPrefix: /api/portal
+    tls:
+      enabled: true
+      secretName: uniplus-unifesspa-tls
+
+  networkPolicy:
+    enabled: true
+    dataHostCIDR: 200.139.48.122/32
+    oidcIssuerCIDR: 200.139.48.23/32
+    oidcIssuerPort: 443
+    origens:
+      - appName: uniplus-api-host
+        port: 8080
+
+  otel:
+    enabled: false
+
+unifesspaGeoApi:
+  enabled: true
+
+  database:
+    host: uniplus-prod-infra.unifesspa.edu.br
+    sslMode: VerifyFull
+
+  redis:
+    host: uniplus-prod-infra.unifesspa.edu.br
+    tls: true
+
+  oidc:
+    issuerUri: https://keycloak.unifesspa.edu.br/realms/unifesspa
+
+  cors:
+    allowedOrigins:
+      - https://uniplus.unifesspa.edu.br
+
+  reverseProxy:
+    trustedNetworks:
+      - 10.42.0.0/16
+
+  networkPolicy:
+    dataHostCIDR: 200.139.48.122/32
+    oidcIssuerCIDR: 200.139.48.23/32
+    oidcIssuerPort: 443
+    clientesInternos:
+      - namespace: uniplus
+        appName: uniplus-api-host
+
+  ingress:
+    enabled: true
+    host: geo-api.unifesspa.edu.br
+    tls:
+      enabled: true
+      secretName: uniplus-unifesspa-tls
+
+# ----------------------------------------------------------------------------
+# Frontends
+# ----------------------------------------------------------------------------
+
+uniplusWeb:
+  enabled: true
+
+  apps:
+    portal:
+      enabled: true
+      host: uniplus.unifesspa.edu.br
+      pathPrefix: /portal
+      tag: v0.49.1
+      runtimeConfig:
+        apiUrl: https://uniplus-api.unifesspa.edu.br
+        geoApiUrl: https://geo-api.unifesspa.edu.br
+        oidc:
+          issuerUrl: https://keycloak.unifesspa.edu.br/realms/unifesspa
+          clientId: uniplus-portal
+        keycloak:
+          url: https://keycloak.unifesspa.edu.br
+          realm: unifesspa
+
+    selecao:
+      enabled: true
+      host: uniplus.unifesspa.edu.br
+      pathPrefix: /selecao
+      tag: v0.49.1
+      runtimeConfig:
+        apiUrl: https://uniplus-api.unifesspa.edu.br
+        geoApiUrl: https://geo-api.unifesspa.edu.br
+        oidc:
+          issuerUrl: https://keycloak.unifesspa.edu.br/realms/unifesspa
+          clientId: uniplus-portal
+        keycloak:
+          url: https://keycloak.unifesspa.edu.br
+          realm: unifesspa
+
+    ingresso:
+      enabled: true
+      host: uniplus.unifesspa.edu.br
+      pathPrefix: /ingresso
+      tag: v0.49.1
+      runtimeConfig:
+        apiUrl: https://uniplus-api.unifesspa.edu.br
+        oidc:
+          issuerUrl: https://keycloak.unifesspa.edu.br/realms/unifesspa
+          clientId: uniplus-portal
+        keycloak:
+          url: https://keycloak.unifesspa.edu.br
+          realm: unifesspa
+
+    configuracao:
+      enabled: true
+      host: uniplus.unifesspa.edu.br
+      pathPrefix: /configuracao
+      tag: v0.49.1
+      runtimeConfig:
+        apiUrl: https://uniplus-api.unifesspa.edu.br
+        geoApiUrl: https://geo-api.unifesspa.edu.br
+        oidc:
+          issuerUrl: https://keycloak.unifesspa.edu.br/realms/unifesspa
+          clientId: uniplus-portal
+        keycloak:
+          url: https://keycloak.unifesspa.edu.br
+          realm: unifesspa
+
+  ingress:
+    enabled: true
+    entryPoint: websecure
+    tls:
+      enabled: true
+      secretName: uniplus-unifesspa-tls
+      certManager:
+        enabled: false
+    rootRedirect:
+      enabled: true
+      to: /portal/
+
+clamavEspelho:
+  enabled: true
+  persistence:
+    storageClassName: prod-local-nvme
+
+# ----------------------------------------------------------------------------
+# Borda para a VM de dados (HTTPS validado contra o nome do certificado)
+# ----------------------------------------------------------------------------
+
+acervoPublicoProxy:
+  enabled: true
+
+  backend:
+    host: 200.139.48.122
+    tlsServerName: uniplus-prod-infra.unifesspa.edu.br
+
+  ingress:
+    host: uniplus-acervo.unifesspa.edu.br
+    pathPrefix: /
+
+portaDeDadosProxy:
+  enabled: true
+
+  backend:
+    host: 200.139.48.122
+    tlsServerName: uniplus-prod-infra.unifesspa.edu.br
+
+  # Os mesmos buckets de uniplusApiHost.storage.bucketName e
+  # uniplusApiHost.verificacao (mudar um exige mudar aqui).
+  buckets:
+    - nome: uniplus-storage
+      envio: true
+    - nome: uniplus-candidato-envio
+      envio: true
+    - nome: uniplus-candidato-definitivo
+
+  ingress:
+    host: uniplus-arquivos.unifesspa.edu.br
+
+rabbitmqUiProxy:
+  enabled: true
+
+  backend:
+    host: 200.139.48.122
+    port: 15671
+    tlsServerName: uniplus-prod-infra.unifesspa.edu.br
+
+  ingress:
+    host: uniplus-rabbitmq-ui.unifesspa.edu.br
+    middlewares:
+      - name: uniplus-admin-interno
+        namespace: traefik
+
+# ----------------------------------------------------------------------------
+# Verificação dos arquivos do candidato
+# ----------------------------------------------------------------------------
+
+# O MinIO (VM de dados) fala com o KES por HTTPS no hostPort 7373 desta VM; a
+# origem chega como o IP da VM de dados.
+kes:
+  enabled: true
+
+  vault:
+    address: http://platform-vault-in-cluster.vault.svc.cluster.local:8200
+
+  networkPolicy:
+    hostCidrs:
+      - 200.139.48.122/32
+
+# O broker roda na VM de dados (AMQPS); o chart do cluster não é usado.
+rabbitmq:
+  enabled: false
+
+verificadorRede:
+  enabled: true
+
+  minio:
+    cidr: 200.139.48.122/32
+    port: 9000
+
+  rabbitmq:
+    cidr: 200.139.48.122/32
+    port: 5671
+
+# ----------------------------------------------------------------------------
+# Administração (só interna, por host próprio)
+# ----------------------------------------------------------------------------
+
+apicurioRegistry:
+  enabled: true
+
+  storage:
+    host: uniplus-prod-infra.unifesspa.edu.br
+    sslMode: verify-full
+
+  oidc:
+    issuerUri: https://keycloak.unifesspa.edu.br/realms/unifesspa
+
+  ingress:
+    enabled: true
+    entryPoint: websecure
+    host: uniplus-apicurio.unifesspa.edu.br
+    middlewares:
+      - name: uniplus-admin-interno
+        namespace: traefik
+    tls:
+      enabled: true
+      secretName: uniplus-unifesspa-tls
+
+  networkPolicy:
+    enabled: true
+    dataHostCIDR: 200.139.48.122/32
+    oidcIssuerCIDR: 200.139.48.23/32
+    oidcIssuerPort: 443
+
+  serviceMonitor:
+    enabled: false
+
+kafkaUi:
+  enabled: true
+
+  kafka:
+    bootstrapServers: uniplus-prod-infra.unifesspa.edu.br:9092
+
+  oidc:
+    issuerUri: https://keycloak.unifesspa.edu.br/realms/unifesspa
+
+  ingress:
+    enabled: true
+    entryPoint: websecure
+    host: uniplus-kafka-ui.unifesspa.edu.br
+    middlewares:
+      - name: uniplus-admin-interno
+        namespace: traefik
+    tls:
+      enabled: true
+      secretName: uniplus-unifesspa-tls
+
+  networkPolicy:
+    dataHostCIDR: 200.139.48.122/32
+    oidcIssuerCIDR: 200.139.48.23/32
+    oidcIssuerPort: 443
+
+redisUi:
+  enabled: true
+
+  backend:
+    host: uniplus-prod-infra.unifesspa.edu.br
+    tls: true
+
+  ingress:
+    enabled: true
+    entryPoint: websecure
+    host: uniplus-redis-ui.unifesspa.edu.br
+    middlewares:
+      - name: uniplus-admin-interno
+        namespace: traefik
+    tls:
+      enabled: true
+      secretName: uniplus-unifesspa-tls
+
+  networkPolicy:
+    dataHostCIDR: 200.139.48.122/32
+
+# ----------------------------------------------------------------------------
+# Fora desta produção
+# ----------------------------------------------------------------------------
+
+keycloak:
+  enabled: false
+
+kubePrometheusStack:
+  enabled: false
+
+grafana:
+  enabled: false
+
+loki:
+  enabled: false
+
+tempo:
+  enabled: false
+
+otelCollector:
+  enabled: false
