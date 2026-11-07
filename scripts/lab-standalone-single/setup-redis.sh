@@ -16,7 +16,7 @@
 #   DATA_BASE      Diretório base dos volumes de dados (default: /var/lib/uniplus)
 #   REDIS_TLS_DIR  Diretório com public.crt e private.key legíveis pelo uid 999.
 #                  Preenchido, o Redis passa a aceitar SÓ TLS (port 0, tls-port
-#                  6379). Vazio (default): porta 6379 sem TLS, como antes.
+#                  6379). Vazio (default): porta 6379 sem TLS.
 #   REDIS_TLS_HOST Nome no certificado, usado pelo teste de PING com validação.
 #
 # Pré-requisitos: Docker instalado, usuário com sudo sem senha (ou rodar via sudo).

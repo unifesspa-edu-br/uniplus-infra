@@ -33,7 +33,7 @@
 #   MINIO_TLS_DIR  Diretório com public.crt e private.key legíveis pelo uid 1000.
 #                  Preenchido, o MinIO serve HTTPS (--certs-dir) e a verificação
 #                  de saúde e o mc passam a usar https://$MINIO_PUBLIC_HOST:9000,
-#                  validando o certificado. Vazio (default): HTTP, como antes.
+#                  validando o certificado. Vazio (default): HTTP.
 #   MINIO_PUBLIC_HOST
 #                  Nome no certificado (obrigatório com MINIO_TLS_DIR).
 #

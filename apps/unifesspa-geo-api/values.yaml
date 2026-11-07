@@ -62,7 +62,7 @@ unifesspaGeoApi:
     name: uniplus_geo
     username: uniplus_geo_app
     # Modo SSL do Npgsql (ex.: VerifyFull valida cadeia e nome do certificado).
-    # Vazio: a connection string não traz o parâmetro, como antes.
+    # Vazio: a connection string não traz o parâmetro.
     sslMode: ""
     # Nome em ConnectionStrings__<Name> (.NET config binding) — GeoDb.
     connectionStringName: GeoDb

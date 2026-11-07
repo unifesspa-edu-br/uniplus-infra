@@ -72,7 +72,7 @@ uniplusApiIngresso:
     name: uniplus_ingresso
     username: ingresso
     # Modo SSL do Npgsql (ex.: VerifyFull valida cadeia e nome do certificado).
-    # Vazio: a connection string não traz o parâmetro, como antes.
+    # Vazio: a connection string não traz o parâmetro.
     sslMode: ""
     # Nome em ConnectionStrings__<Name>Db (.NET config binding).
     connectionStringName: IngressoDb
