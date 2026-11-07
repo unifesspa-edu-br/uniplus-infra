@@ -4,8 +4,10 @@
 # O Job roda antes dos demais recursos e consome a ServiceAccount e os Secrets que
 # só nascem na fase Sync; num ambiente novo ele falharia por falta deles. Este
 # script faz o primeiro tempo: sincroniza só a ServiceAccount e os ExternalSecrets
-# da Application (sync seletivo não executa os hooks) e espera os Secrets ficarem
-# prontos. O segundo tempo é o sync normal, que já encontra tudo e roda o Job.
+# da Application e espera os Secrets ficarem prontos. O sync seletivo também
+# executa o hook PreSync (observado em produção), então o Job de migration pode
+# rodar já neste tempo; se falhar por falta de Secret, o segundo tempo (sync
+# normal) repete o Job com os Secrets já criados.
 #
 # Uso:
 #   ./primeiro-sync.sh [--app=uniplus-api-host] [--namespace=uniplus] [--dry-run]
@@ -47,6 +49,10 @@ montar_operacao() {
     kubectl -n argocd get application "$APPLICATION" -o json | python3 -c '
 import json, sys
 app = json.load(sys.stdin)
+# syncOptions da operação substitui as do spec; repete-as e acrescenta SSA.
+opcoes = list(app.get("spec", {}).get("syncPolicy", {}).get("syncOptions") or [])
+if "ServerSideApply=true" not in opcoes:
+    opcoes.append("ServerSideApply=true")
 recursos = [
     {"group": r.get("group", ""), "kind": r["kind"], "name": r["name"], "namespace": r.get("namespace", "")}
     for r in app.get("status", {}).get("resources", [])
@@ -56,7 +62,7 @@ if not recursos:
     sys.exit("A Application não lista ServiceAccount nem ExternalSecret; faça o refresh no ArgoCD.")
 print(json.dumps({"operation": {
     "initiatedBy": {"username": "primeiro-sync"},
-    "sync": {"resources": recursos, "syncOptions": ["ServerSideApply=true"]},
+    "sync": {"resources": recursos, "syncOptions": opcoes},
 }}))'
 }
 
@@ -100,7 +106,7 @@ esperar_secrets() {
 }
 
 if $DRY_RUN; then
-    echo "[DRY-RUN] sync seletivo de ServiceAccount e ExternalSecret em $APPLICATION (sem hooks)"
+    echo "[DRY-RUN] sync seletivo de ServiceAccount e ExternalSecret em $APPLICATION (o hook PreSync também roda)"
     echo "[DRY-RUN] esperaria os ExternalSecrets de $NAMESPACE ficarem prontos ($ESPERA_SEGUNDOS s)"
     exit 0
 fi
@@ -109,4 +115,6 @@ kubectl -n argocd patch application "$APPLICATION" --type merge -p "$operacao"
 log_info "Sync seletivo de $APPLICATION iniciado."
 esperar_operacao
 esperar_secrets "$operacao"
-log_success "Primeiro tempo concluído. Faça agora o sync normal de $APPLICATION (roda o Job de migration)."
+log_success "Primeiro tempo concluído."
+log_info "O sync seletivo executa o hook PreSync: o Job de migration pode já ter rodado."
+log_info "Faça agora o sync normal de $APPLICATION. Se o Job tiver falhado por falta de Secret, esse sync o executa de novo."
