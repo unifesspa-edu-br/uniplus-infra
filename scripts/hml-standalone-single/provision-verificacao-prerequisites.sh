@@ -109,9 +109,10 @@ print(json.dumps({
 if vault_existe standalone/kes/server; then
     log "Certificado do KES já existe no Vault — preservado."
 elif [[ -n "$KES_CERT_FILE" ]]; then
-    [[ -r "$KES_CERT_FILE" && -r "$KES_KEY_FILE" ]] || { echo "KES_CERT_FILE e KES_KEY_FILE devem ser legíveis." >&2; exit 1; }
+    # A chave do domínio é de root (0600): lida com sudo, nunca copiada para fora do Vault.
+    sudo test -r "$KES_CERT_FILE" && sudo test -r "$KES_KEY_FILE" || { echo "KES_CERT_FILE e KES_KEY_FILE devem ser legíveis." >&2; exit 1; }
     log "Gravando o certificado do domínio como certificado do servidor KES"
-    vault_put standalone/kes/server "cert=$(cat "$KES_CERT_FILE")" "key=$(cat "$KES_KEY_FILE")"
+    vault_put standalone/kes/server "cert=$(sudo cat "$KES_CERT_FILE")" "key=$(sudo cat "$KES_KEY_FILE")"
 else
     log "Gerando o certificado do servidor KES"
     openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes \
