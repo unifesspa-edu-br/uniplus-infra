@@ -61,6 +61,12 @@ host único (K3s + Docker na mesma VM), complementar ao `standalone-compact`
 — ver `lab-standalone-single/README.md` e a issue
 [#395](https://github.com/unifesspa-edu-br/uniplus-infra/issues/395).
 
+## Produção (duas VMs)
+
+`prod-standalone/` traz os scripts da produção: `bootstrap-infra.sh` e `bootstrap-app.sh` (uma
+VM cada), `atualizar-producao.sh` (registra uma tag), `renovar-certificado.sh` e o provisionamento
+de bancos, segredos e filas. Todos aceitam `--dry-run`. Ver a seção 23 do `docs/RUNBOOKS.md`.
+
 ## Histórico
 
 Até 2026-05-19 o diretório também trazia `bootstrap-lab.sh` e `teardown-lab.sh` para um laboratório multi-DC (Ryzen 9950X + i7) que nunca foi provisionado. Os scripts foram removidos junto com `environments/lab-*`, `environments/prod-*` e `environments/standalone/` (ver `CHANGELOG.md`).
