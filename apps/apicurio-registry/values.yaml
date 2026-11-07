@@ -51,6 +51,9 @@ apicurioRegistry:
     port: 5432
     database: apicurio
     username: apicurio
+    # Valor do parâmetro sslmode do JDBC (ex.: verify-full). Vazio: a URL não
+    # traz o parâmetro.
+    sslMode: ""
 
   # === OIDC (Keycloak realm uniplus) ===
   # Apicurio usa Quarkus OIDC. Confidential client `apicurio-registry` no
@@ -114,6 +117,8 @@ apicurioRegistry:
   ingress:
     enabled: false
     entryPoint: websecure
+    # Middlewares Traefik aplicados à rota (ex.: restrição por rede).
+    middlewares: []
     host: ""                     # ex.: schema-registry.standalone.portaluni.com.br
     tls:
       enabled: true

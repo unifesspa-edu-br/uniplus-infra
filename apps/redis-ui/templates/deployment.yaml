@@ -70,11 +70,10 @@ spec:
                 secretKeyRef:
                   name: {{ include "redisUi.redisDefaultSecretName" . }}
                   key: REDIS_PASSWORD
-            # TLS=false: Redis standalone aceita conexões plaintext na
-            # subnet privada VCN. NetworkPolicy restringe egress para
-            # 10.0.2.87:6379 apenas — sem exposição externa.
+            # TLS desligado por padrão: o Redis de HML aceita conexões sem TLS
+            # no próprio host. Ligue backend.tls quando o Redis exigir TLS.
             - name: RI_REDIS_TLS
-              value: "false"
+              value: {{ .Values.redisUi.backend.tls | quote }}
             {{- with .Values.redisUi.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
