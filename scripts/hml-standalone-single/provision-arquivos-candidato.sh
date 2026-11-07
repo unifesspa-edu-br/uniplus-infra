@@ -58,6 +58,12 @@ POLICY_DIR="$SCRIPT_DIR/minio"
 log() { echo "[$(date -u +%H:%M:%S)] $*"; }
 falha() { echo "ERRO: $*" >&2; exit 1; }
 
+# Com HTTPS, o setup do MinIO reescreve a unit: sem o diretório do certificado ele a
+# reescreveria em HTTP e derrubaria a validação que este script usa em seguida.
+if [[ "$MINIO_SCHEME" == https && ( -z "${MINIO_TLS_DIR:-}" || -z "${MINIO_PUBLIC_HOST:-}" ) ]]; then
+    falha "MINIO_SCHEME=https exige MINIO_TLS_DIR e MINIO_PUBLIC_HOST."
+fi
+
 tmpdir=$(mktemp -d)
 chmod 700 "$tmpdir"
 cleanup() {
