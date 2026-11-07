@@ -19,6 +19,6 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       services:
-        - name: {{ .Release.Name }}-vault
+        - name: {{ include "vault-wrapper.serviceName" . }}
           port: 8200
 {{- end }}
