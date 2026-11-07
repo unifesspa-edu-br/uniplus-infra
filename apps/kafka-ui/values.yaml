@@ -49,6 +49,9 @@ kafkaUi:
     # self-signed que cobre IP da subnet privada.
     securityProtocol: SASL_SSL
     saslMechanism: SCRAM-SHA-512
+    # ssl.endpoint.identification.algorithm do cliente: vazio não verifica o nome
+    # do broker; `https` verifica.
+    sslEndpointIdentification: ""
 
   # === OIDC (Keycloak realm uniplus) ===
   # AKHQ usa Micronaut OIDC. Confidential client `kafka-ui` no realm —

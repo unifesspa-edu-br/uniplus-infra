@@ -14,10 +14,9 @@ akhq:
         sasl.jaas.config: 'org.apache.kafka.common.security.scram.ScramLoginModule required username="${KAFKA_USERNAME}" password="${KAFKA_PASSWORD}";'
         ssl.truststore.type: PEM
         ssl.truststore.location: /etc/akhq/certs/ca.crt
-        # Self-signed cert do broker tem SAN cobrindo IP + DNS, mas
-        # disabilitar hostname verification mantém o pattern do
-        # admin.properties do data-host (§13).
-        ssl.endpoint.identification.algorithm: ""
+        # Vazio desliga a verificação do nome do broker (certificado autoassinado
+        # do data-host, §13); `https` valida o nome contra o certificado.
+        ssl.endpoint.identification.algorithm: {{ .Values.kafkaUi.kafka.sslEndpointIdentification | quote }}
 
   # Segurança: OIDC via Keycloak realm `uniplus`.
   #
