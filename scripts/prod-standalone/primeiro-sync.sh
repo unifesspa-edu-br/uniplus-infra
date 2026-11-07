@@ -59,15 +59,42 @@ print(json.dumps({"operation": {
 }}))'
 }
 
-esperar_secrets() {
-    if kubectl -n "$NAMESPACE" wait --for=condition=Ready externalsecret --all \
+externalsecrets_da_operacao() {
+    python3 -c '
+import json, sys
+for r in json.loads(sys.argv[1])["operation"]["sync"]["resources"]:
+    if r["kind"] == "ExternalSecret":
+        print(r["name"])' "$1"
+}
+
+# O patch só registra a operação; os ExternalSecrets passam a existir quando o
+# ArgoCD a conclui. Esperar por nome evita aceitar um conjunto parcial.
+esperar_operacao() {
+    if ! kubectl -n argocd wait application "$APPLICATION" \
+        --for=jsonpath='{.status.operationState.phase}'=Succeeded \
         --timeout="${ESPERA_SEGUNDOS}s"; then
+        log_error "O sync seletivo de $APPLICATION não terminou com sucesso:"
+        kubectl -n argocd get application "$APPLICATION" \
+            -o jsonpath='{.status.operationState.message}{"\n"}' >&2
+        exit 1
+    fi
+}
+
+esperar_secrets() {
+    local nome pendentes=()
+    while read -r nome; do
+        [[ -z "$nome" ]] && continue
+        if ! kubectl -n "$NAMESPACE" wait --for=condition=Ready "externalsecret/$nome" \
+            --timeout="${ESPERA_SEGUNDOS}s" >/dev/null 2>&1; then
+            pendentes+=("$nome")
+        fi
+    done < <(externalsecrets_da_operacao "$1")
+    if ((${#pendentes[@]} == 0)); then
         log_success "Todos os ExternalSecrets estão prontos."
         return 0
     fi
     log_error "ExternalSecrets que não ficaram prontos (falta segredo no Vault?):"
-    kubectl -n "$NAMESPACE" get externalsecret --no-headers \
-        | awk '$NF != "True" && $(NF-1) != "True" {print "  " $1}' >&2
+    printf '  %s\n' "${pendentes[@]}" >&2
     exit 1
 }
 
@@ -79,5 +106,6 @@ fi
 operacao=$(montar_operacao)
 kubectl -n argocd patch application "$APPLICATION" --type merge -p "$operacao"
 log_info "Sync seletivo de $APPLICATION iniciado."
-esperar_secrets
+esperar_operacao
+esperar_secrets "$operacao"
 log_success "Primeiro tempo concluído. Faça agora o sync normal de $APPLICATION (roda o Job de migration)."
