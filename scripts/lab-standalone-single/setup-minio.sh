@@ -30,6 +30,13 @@
 #                  Diretório do host montado somente leitura em /etc/minio/extra
 #                  (certificado do KES). Vazio no lab.
 #
+#   MINIO_TLS_DIR  Diretório com public.crt e private.key legíveis pelo uid 1000.
+#                  Preenchido, o MinIO serve HTTPS (--certs-dir) e a verificação
+#                  de saúde e o mc passam a usar https://$MINIO_PUBLIC_HOST:9000,
+#                  validando o certificado. Vazio (default): HTTP, como antes.
+#   MINIO_PUBLIC_HOST
+#                  Nome no certificado (obrigatório com MINIO_TLS_DIR).
+#
 # Pré-requisitos: Docker instalado, usuário com sudo sem senha (ou rodar via sudo).
 set -euo pipefail
 
@@ -65,11 +72,30 @@ MINIO_IMAGE="quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z"
 MC_IMAGE="quay.io/minio/mc:latest"
 MINIO_EXTRA_ENV_FILE="${MINIO_EXTRA_ENV_FILE:-}"
 MINIO_EXTRA_MOUNT_DIR="${MINIO_EXTRA_MOUNT_DIR:-}"
+MINIO_TLS_DIR="${MINIO_TLS_DIR:-}"
+MINIO_PUBLIC_HOST="${MINIO_PUBLIC_HOST:-}"
+
+minio_scheme="http"
+minio_host="$DATA_HOST_IP"
+minio_certs_args=""
+if [[ -n "$MINIO_TLS_DIR" ]]; then
+    if [[ -z "$MINIO_PUBLIC_HOST" ]]; then
+        echo "ERRO: MINIO_TLS_DIR exige MINIO_PUBLIC_HOST (nome no certificado)." >&2
+        exit 1
+    fi
+    minio_scheme="https"
+    minio_host="$MINIO_PUBLIC_HOST"
+    minio_certs_args="--certs-dir /certs"
+fi
 
 # Trechos opcionais do `docker run` da unit. Ficam vazios sem as variáveis acima.
 extra_run_args=""
 if [[ -n "$MINIO_EXTRA_ENV_FILE" ]]; then
     extra_run_args+="  --env-file $MINIO_EXTRA_ENV_FILE \\
+"
+fi
+if [[ -n "$MINIO_TLS_DIR" ]]; then
+    extra_run_args+="  -v $MINIO_TLS_DIR:/certs:ro \\
 "
 fi
 if [[ -n "$MINIO_EXTRA_MOUNT_DIR" ]]; then
@@ -209,7 +235,7 @@ ExecStart=/usr/bin/docker run --rm --name uniplus-minio \\
   -e MINIO_USERNAME -e MINIO_GROUPNAME -e MINIO_UID -e MINIO_GID \\
 ${extra_run_args}  -v $DATA_BASE/minio/data:/data \\
   $MINIO_IMAGE \\
-  server --address $DATA_HOST_IP:9000 --console-address $DATA_HOST_IP:9001 /data
+  server $minio_certs_args --address $DATA_HOST_IP:9000 --console-address $DATA_HOST_IP:9001 /data
 
 ExecStop=/usr/bin/docker stop -t 30 uniplus-minio
 
@@ -229,7 +255,7 @@ else
     sudo systemctl start uniplus-minio
     log_info "Aguardando MinIO aceitar conexões..."
     attempts=0
-    until curl -sf "http://$DATA_HOST_IP:9000/minio/health/live" >/dev/null 2>&1; do
+    until curl -sf "$minio_scheme://$minio_host:9000/minio/health/live" >/dev/null 2>&1; do
         attempts=$(( attempts + 1 ))
         if (( attempts >= 18 )); then
             log_error "MinIO não respondeu em 90s. Ver: sudo journalctl -u uniplus-minio -n 50"
@@ -258,7 +284,7 @@ else
     # com `set -e`, a falha encerraria o script com a credencial root em /tmp.
     trap 'sudo shred -u "$mc_env_file" 2>/dev/null || sudo rm -f "$mc_env_file"' EXIT
     sudo bash -c "cat > '$mc_env_file'" <<EOF
-MC_HOST_uniplus=http://${root_user}:${root_pw}@${DATA_HOST_IP}:9000
+MC_HOST_uniplus=${minio_scheme}://${root_user}:${root_pw}@${minio_host}:9000
 EOF
     sudo chown root:root "$mc_env_file"
     sudo chmod 600 "$mc_env_file"

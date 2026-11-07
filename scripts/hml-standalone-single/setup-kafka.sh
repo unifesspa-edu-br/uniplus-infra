@@ -30,6 +30,14 @@
 # Variáveis de ambiente:
 #   DATA_HOST_IP   IPv4 privado a bindar (default: auto-detectado via `ip route get`)
 #   DATA_BASE      Diretório base dos volumes de dados (default: /var/lib/uniplus)
+#   KAFKA_PUBLIC_HOST
+#                  Nome anunciado aos clientes e usado no quorum (default:
+#                  DATA_HOST_IP). Deve constar no certificado.
+#   KAFKA_TLS_CERT, KAFKA_TLS_KEY, KAFKA_TLS_CA
+#                  Certificado (com cadeia), chave e bundle de CAs confiáveis,
+#                  em PEM. Preenchidos, substituem o certificado autoassinado e
+#                  o cliente administrativo passa a validar o nome do broker.
+#                  Vazios (default): certificado autoassinado, como antes.
 #
 # Pré-requisitos: Docker instalado, usuário com sudo sem senha (ou rodar via sudo).
 set -euo pipefail
@@ -87,7 +95,20 @@ run() {
     fi
 }
 
-log_info "DATA_HOST_IP=$DATA_HOST_IP DATA_BASE=$DATA_BASE DRY_RUN=$DRY_RUN"
+KAFKA_PUBLIC_HOST="${KAFKA_PUBLIC_HOST:-$DATA_HOST_IP}"
+KAFKA_TLS_CERT="${KAFKA_TLS_CERT:-}"
+KAFKA_TLS_KEY="${KAFKA_TLS_KEY:-}"
+KAFKA_TLS_CA="${KAFKA_TLS_CA:-}"
+kafka_ident_line="ssl.endpoint.identification.algorithm="
+if [[ -n "$KAFKA_TLS_CERT" ]]; then
+    if [[ -z "$KAFKA_TLS_KEY" || -z "$KAFKA_TLS_CA" ]]; then
+        echo "ERRO: KAFKA_TLS_CERT exige KAFKA_TLS_KEY e KAFKA_TLS_CA." >&2
+        exit 1
+    fi
+    kafka_ident_line="ssl.endpoint.identification.algorithm=https"
+fi
+
+log_info "DATA_HOST_IP=$DATA_HOST_IP KAFKA_PUBLIC_HOST=$KAFKA_PUBLIC_HOST DATA_BASE=$DATA_BASE DRY_RUN=$DRY_RUN"
 
 # data dir 1000:1000 (appuser do container); certs_dir/config_dir 755
 # root:root — uid 1000 precisa traverse para abrir os PEMs e o
@@ -145,7 +166,16 @@ if sudo test -f "$CERTS_DIR/server.crt" 2>/dev/null && \
    sudo test -f "$CERTS_DIR/server.pem" 2>/dev/null; then
     log_success "Certs Kafka completos (crt/key/ca/pem) — preservando."
 elif $DRY_RUN; then
-    log_warn "Dry-run: cert self-signed seria gerado em $CERTS_DIR/"
+    log_warn "Dry-run: cert seria instalado em $CERTS_DIR/"
+elif [[ -n "$KAFKA_TLS_CERT" ]]; then
+    log_info "Instalando o certificado do domínio em $CERTS_DIR/..."
+    sudo install -m 644 -o 1000 -g 1000 "$KAFKA_TLS_CERT" "$CERTS_DIR/server.crt"
+    sudo install -m 600 -o 1000 -g 1000 "$KAFKA_TLS_KEY" "$CERTS_DIR/server.key"
+    sudo install -m 644 -o 1000 -g 1000 "$KAFKA_TLS_CA" "$CERTS_DIR/ca.crt"
+    sudo bash -c "cat '$CERTS_DIR/server.crt' '$CERTS_DIR/server.key' > '$CERTS_DIR/server.pem'"
+    sudo chown 1000:1000 "$CERTS_DIR/server.pem"
+    sudo chmod 600 "$CERTS_DIR/server.pem"
+    log_success "Certificado instalado em $CERTS_DIR/."
 else
     log_info "Gerando cert self-signed PEM (10 anos, SAN: $DATA_HOST_IP + localhost)..."
     ssl_cnf="$CERTS_DIR/openssl.cnf"
@@ -212,9 +242,9 @@ if ! $DRY_RUN && ! $already_initialized && sudo test -f "$CREDS_FILE"; then
     sudo tee "$fmt_props" >/dev/null <<EOF
 process.roles=broker,controller
 node.id=1
-controller.quorum.voters=1@$DATA_HOST_IP:9093
+controller.quorum.voters=1@$KAFKA_PUBLIC_HOST:9093
 listeners=SASL_SSL://$DATA_HOST_IP:9092,CONTROLLER://$DATA_HOST_IP:9093
-advertised.listeners=SASL_SSL://$DATA_HOST_IP:9092
+advertised.listeners=SASL_SSL://$KAFKA_PUBLIC_HOST:9092
 controller.listener.names=CONTROLLER
 inter.broker.listener.name=SASL_SSL
 listener.security.protocol.map=CONTROLLER:SASL_SSL,SASL_SSL:SASL_SSL
@@ -269,9 +299,9 @@ else
 # === KRaft topology (single-node combined) ===
 process.roles=broker,controller
 node.id=1
-controller.quorum.voters=1@$DATA_HOST_IP:9093
+controller.quorum.voters=1@$KAFKA_PUBLIC_HOST:9093
 listeners=SASL_SSL://$DATA_HOST_IP:9092,CONTROLLER://$DATA_HOST_IP:9093
-advertised.listeners=SASL_SSL://$DATA_HOST_IP:9092
+advertised.listeners=SASL_SSL://$KAFKA_PUBLIC_HOST:9092
 controller.listener.names=CONTROLLER
 inter.broker.listener.name=SASL_SSL
 listener.security.protocol.map=CONTROLLER:SASL_SSL,SASL_SSL:SASL_SSL
@@ -320,7 +350,7 @@ sasl.mechanism=SCRAM-SHA-512
 sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username="admin" password="$admin_pw_props";
 ssl.truststore.type=PEM
 ssl.truststore.location=$CERTS_DIR/ca.crt
-ssl.endpoint.identification.algorithm=
+$kafka_ident_line
 EOF
     sudo chown 1000:1000 "$ADMIN_PROPS"
     sudo chmod 600 "$ADMIN_PROPS"
@@ -392,7 +422,7 @@ else
             -v "$CERTS_DIR/ca.crt:$CERTS_DIR/ca.crt:ro" \
             --entrypoint /opt/kafka/bin/kafka-broker-api-versions.sh \
             "$KAFKA_IMAGE" \
-            --bootstrap-server "$DATA_HOST_IP:9092" \
+            --bootstrap-server "$KAFKA_PUBLIC_HOST:9092" \
             --command-config /tmp/admin.properties &>/dev/null; do
         attempts=$(( attempts + 1 ))
         if (( attempts >= 36 )); then
