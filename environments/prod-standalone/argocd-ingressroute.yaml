@@ -1,0 +1,25 @@
+# Rota da interface do ArgoCD, só para a rede institucional e a VPN. O
+# argocd-server roda em modo inseguro (HTTP) atrás do Traefik, que termina o TLS.
+# Aplicada depois de o Traefik ter registrado os CRDs (ver docs/RUNBOOKS.md).
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: argocd-server
+  namespace: argocd
+  labels:
+    app.kubernetes.io/name: argocd-server
+    app.kubernetes.io/part-of: uniplus
+spec:
+  entryPoints:
+    - websecure
+  routes:
+    - kind: Rule
+      match: Host(`uniplus-argocd.unifesspa.edu.br`)
+      middlewares:
+        - name: uniplus-admin-interno
+          namespace: traefik
+      services:
+        - name: argocd-server
+          port: 80
+  tls:
+    secretName: uniplus-unifesspa-tls
