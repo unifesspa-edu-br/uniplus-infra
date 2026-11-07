@@ -27,14 +27,14 @@ CHART_DIRS      := $(dir $(CHARTS_ALL))
 YAML_DIRS := apps/ platform/ data/ environments/ argocd/
 
 # Environments existentes (atualizar quando san-* / 3-DC forem criados).
-ENVS := standalone-compact hml-standalone-single prod-standalone
+ENVS := standalone-compact prod-standalone
 
 # Regressão de roteamento path-based: os três charts que compartilham a
 # convenção Host() + PathPrefix() precisam continuar renderizando nos
 # ambientes existentes antes do rollout. O lab não integra ENVS porque nem
 # todos os charts de plataforma são aplicáveis nele.
 ROUTING_CHART_DIRS := apps/uniplus-api-host/ apps/uniplus-api-portal/ apps/uniplus-web/
-ROUTING_ENVS       := standalone-compact lab-standalone-single hml-standalone-single prod-standalone
+ROUTING_ENVS       := standalone-compact lab-standalone-single prod-standalone
 
 # Comando markdownlint via npx (não exige instalação global).
 MARKDOWNLINT := npx --yes markdownlint-cli2
