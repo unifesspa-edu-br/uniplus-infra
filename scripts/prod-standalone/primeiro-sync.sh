@@ -18,10 +18,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib-comum.sh
 source "$SCRIPT_DIR/lib-comum.sh"
+# shellcheck source=lib-app.sh
+source "$SCRIPT_DIR/lib-app.sh"
 
 APP="uniplus-api-host"
 NAMESPACE="uniplus"
-AMBIENTE="prod-standalone"
 ESPERA_SEGUNDOS=300
 
 mostrar_uso() {
@@ -39,7 +40,7 @@ done
 analisar_argumentos "${resto[@]}"
 exigir_usuario_comum
 export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"
-APPLICATION="$APP-$AMBIENTE"
+APPLICATION="$APP-$NOME_DO_CLUSTER"
 
 # Monta o patch de operação com a ServiceAccount e os ExternalSecrets da Application.
 montar_operacao() {
