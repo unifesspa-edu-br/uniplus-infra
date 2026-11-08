@@ -8,12 +8,12 @@ do uniplus-api, issue `uniplus-infra#682`).
 
 ```text
 MinIO (host, systemd) ──mTLS :7373 (hostPort)──▶ KES (pod) ──Kubernetes auth──▶ Vault
-                                                              KV secret/kes/*  (chaves mestras, cifradas)
+                                                              KV plataforma-<amb>/kes-keystore/*  (chaves mestras, cifradas)
                                                               transit/uniplus-kes-kek (cifra cada chave)
 ```
 
 - A chave mestra `uniplus-arquivos-candidato` fica no KV de plataforma do ambiente
-  (`plataforma-<amb>`, prefixo `kes`), cifrada pela
+  (`plataforma-<amb>`, prefixo exclusivo `kes-keystore`), cifrada pela
   chave Transit `uniplus-kes-kek`. Cada objeto recebe uma chave de dados própria.
 - O KES autentica no Vault pela ServiceAccount `kes` (namespace `kes`), na role
   `kes`, com política mínima.

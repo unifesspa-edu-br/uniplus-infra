@@ -34,9 +34,11 @@ kes:
     # Sem default utilizável: cada ambiente informa o Service do Vault.
     address: ""
     # KV v2 e prefixo onde o KES guarda as chaves mestras (cifradas). O KV é o de
-    # plataforma do ambiente (plataforma-<amb>); sem default utilizável.
+    # plataforma do ambiente (plataforma-<amb>); sem default utilizável. O prefixo é
+    # exclusivo do keystore: o certificado e as chaves de API do KES (`kes/server`,
+    # `kes/api-keys`) ficam fora dele, e a política do KES não os alcança.
     kvEngine: ""
-    kvPrefix: kes
+    kvPrefix: kes-keystore
     # Chave Transit que cifra cada chave mestra antes de ir ao KV.
     transitEngine: transit
     transitKey: uniplus-kes-kek
