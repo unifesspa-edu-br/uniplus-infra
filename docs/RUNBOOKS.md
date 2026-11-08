@@ -1,6 +1,6 @@
 # Runbooks operacionais
 
-Procedimentos do ambiente `uniplus-prd`. A decisão da topologia está na [ADR-015](adrs/ADR-015-producao-em-duas-vms-com-tls-e-atualizacao-manual.md). Os scripts ficam em `scripts/servicos-no-host/`, todos aceitam `--dry-run` e usam `AMBIENTE=prd` por padrão (`hml` também é aceito). Os caminhos dos segredos no Vault estão em [vault-caminhos.md](vault-caminhos.md).
+Procedimentos do ambiente `uniplus-prd`. A decisão da topologia está na [ADR-015](adrs/ADR-015-producao-em-duas-vms-com-tls-e-atualizacao-manual.md). Os scripts ficam em `scripts/servicos-no-host/`, todos aceitam `--dry-run` e usam `AMBIENTE=prd` por padrão (`hml` também é aceito, exceto em `bootstrap-app.sh` e `atualizar-producao.sh`: homologação traz os próprios ApplicationSets e values). Os caminhos dos segredos no Vault estão em [vault-caminhos.md](vault-caminhos.md).
 
 ## Sumário
 

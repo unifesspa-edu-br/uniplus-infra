@@ -18,6 +18,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib-comum.sh"
 # shellcheck source=lib-app.sh
 source "$SCRIPT_DIR/lib-app.sh"
+exigir_producao
 
 K3S_VERSION="v1.36.2+k3s1"
 HELM_VERSION="v3.21.2"

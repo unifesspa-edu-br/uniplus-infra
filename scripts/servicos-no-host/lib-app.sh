@@ -8,6 +8,14 @@ NOME_DO_AMBIENTE="uniplus-$AMBIENTE"
 NAMESPACES_TLS=(uniplus geo traefik vault minio-console-proxy argocd kafka-ui redis-ui apicurio-registry)
 TLS_SECRET_NAME="uniplus-unifesspa-tls"
 
+# Registrar o cluster e aplicar os ApplicationSets deste repositório só serve à
+# produção: os outros ambientes trazem os próprios, com os próprios values.
+exigir_producao() {
+    [[ "$AMBIENTE" == prd ]] && return 0
+    log_error "$(basename "$0") só instala e atualiza a produção (AMBIENTE=prd); recebido: '$AMBIENTE'."
+    exit 2
+}
+
 # Confere que a revisão é uma tag existente deste repositório e que o checkout
 # local está exatamente nela: o que se aplica é o que a tag contém.
 validar_revisao() {
