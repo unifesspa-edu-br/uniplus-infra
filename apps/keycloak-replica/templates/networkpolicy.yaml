@@ -1,7 +1,7 @@
 {{- if and .Values.keycloak.enabled .Values.keycloak.networkPolicy.enabled }}
 {{- $np := .Values.keycloak.networkPolicy -}}
 {{- if not $np.dataHostCIDR -}}
-{{- fail "keycloak.networkPolicy.dataHostCIDR é obrigatório quando keycloak.networkPolicy.enabled=true. Sem ele, o egress para Postgres é bloqueado pelo default-deny do NetworkPolicy (policyTypes inclui Egress) e o Pod fica em CrashLoopBackOff sem conseguir conectar ao DB. Setar para <ip>/32 do data-host em environments/<env>/values.yaml (ex.: 10.0.2.87/32 em standalone). Para desabilitar a guarda, setar networkPolicy.enabled=false." -}}
+{{- fail "keycloak.networkPolicy.dataHostCIDR é obrigatório quando keycloak.networkPolicy.enabled=true. Sem ele, o egress para Postgres é bloqueado pelo default-deny do NetworkPolicy (policyTypes inclui Egress) e o Pod fica em CrashLoopBackOff sem conseguir conectar ao DB. Setar para <ip>/32 do data-host em environments/<env>/values.yaml (ex.: 10.0.2.87/32 no ambiente de nó único). Para desabilitar a guarda, setar networkPolicy.enabled=false." -}}
 {{- end -}}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

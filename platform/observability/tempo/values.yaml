@@ -1,10 +1,9 @@
 # Defaults para o Tempo no cluster Uni+.
 #
 # Topologia (ADR-012): single-binary (chart `grafana/tempo`, 1 réplica).
-# Em prod-{sp1,sp2} pode evoluir para tempo-distributed (chart separado)
-# quando volumetria justificar; PA1 fica desligado por default.
+# Em produção pode evoluir para tempo-distributed (chart separado)
 #
-# Storage backend: S3-compatible. Em standalone aponta para MinIO local
+# Storage backend: S3-compatible. No ambiente de nó único aponta para MinIO local
 # (data-host 10.2.2.11:9000) com credenciais escopadas (user `tempo-svc`,
 # policy `tempo-rw`) custodiadas no Vault `minio/tempo`
 # e injetadas via ExternalSecret + envFrom + `-config.expand-env=true`.
@@ -17,7 +16,7 @@
 # Acesso pelo Grafana: ClusterIP do Tempo — datasource Grafana usa
 # http://<tempo-svc>.observability-tempo.svc.cluster.local:3200.
 #
-# Retention: 72h (3 dias) em standalone. Operacional para validação;
+# Retention: 72h (3 dias) no ambiente de nó único. Operacional para validação;
 # alinhado com `observability.tempo.retention` declarado em values do env.
 #
 # IMPORTANTE — toggles do subchart upstream ficam dentro do bloco `tempo:`
@@ -42,10 +41,10 @@ tempo:
     tag: ""                  # default = appVersion do Chart.yaml
 
     # ----- Retention (block_retention no compactor) -----
-    # 72h em standalone; cobre 3 dias de incident postmortem sem inflar bucket.
+    # 72h no ambiente de nó único; cobre 3 dias de incident postmortem sem inflar bucket.
     retention: 72h
 
-    # ----- Multitenancy off (single-tenant em standalone) -----
+    # ----- Multitenancy off (single-tenant no ambiente de nó único) -----
     multitenancyEnabled: false
 
     # ----- Reporting upstream off (não enviar telemetria pro Grafana Labs) -----
@@ -114,14 +113,14 @@ tempo:
           secret_key: "${TEMPO_S3_SECRET_ACCESS_KEY}"
           # MinIO exige path-style (forcePathStyle no SDK Go AWS).
           forcepathstyle: true
-          # MinIO standalone está em http (TLS no Traefik externo, não interno).
+          # O MinIO está em http (TLS no Traefik externo, não interno).
           insecure: true
 
     # ----- Server -----
     server:
       http_listen_port: 3200
 
-    # ----- Receivers: APENAS OTLP em standalone -----
+    # ----- Receivers: APENAS OTLP no ambiente de nó único -----
     # Apps usam OpenTelemetry SDK que emite OTLP gRPC ou HTTP. Jaeger e
     # OpenCensus ficam off para reduzir surface de ataque e ports expostos.
     receivers:
@@ -143,7 +142,7 @@ tempo:
     # Default vazio; environment popula com secretRef no Secret tempo-s3-creds.
     extraEnvFrom: []
 
-    # ----- Recursos default lab — ajustar quando push real chegar -----
+    # ----- Recursos default — ajustar quando push real chegar -----
     resources:
       requests:
         cpu: 100m
@@ -168,7 +167,7 @@ tempo:
   # Atenção: chart upstream usa `storageClassName` (NÃO `storageClass` como
   # outros charts Grafana — Loki, por exemplo). Setar `storageClass` aqui é
   # silenciosamente ignorado e o PVC fica com default class do cluster.
-  # Codex P1 PR #222 capturou esse drift no override standalone.
+  # Codex P1 PR #222 capturou esse drift no override do ambiente.
   persistence:
     enabled: true
     accessModes:
@@ -177,7 +176,7 @@ tempo:
     # storageClassName definido por environment.
 
   # ============================================================================
-  # Service: ClusterIP em standalone
+  # Service: ClusterIP no ambiente de nó único
   # ============================================================================
   service:
     type: ClusterIP
@@ -218,7 +217,7 @@ tempo:
 # Wrapper Uni+ — ExternalSecret + NetworkPolicy próprios
 # ============================================================================
 # Bloco `tempoWrapper:` sob chave prefixada pelo chart name (mesma justificativa
-# do `lokiWrapper:` no chart Loki) — environment file standalone é compartilhado
+# do `lokiWrapper:` no chart Loki) — o arquivo do ambiente é compartilhado
 # entre todos os wrappers, e chaves top-level homônimas duplicariam.
 
 tempoWrapper:

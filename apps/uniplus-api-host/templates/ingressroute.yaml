@@ -1,6 +1,6 @@
 {{- if and .Values.uniplusApiHost.enabled .Values.uniplusApiHost.ingress.enabled -}}
 {{- if not .Values.uniplusApiHost.ingress.host -}}
-{{- fail "uniplusApiHost.ingress.host é obrigatório quando ingress.enabled=true (ex.: api-portal.standalone.portaluni.com.br)." -}}
+{{- fail "uniplusApiHost.ingress.host é obrigatório quando ingress.enabled=true (ex.: uniplus.unifesspa.edu.br)." -}}
 {{- end -}}
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute
@@ -16,7 +16,7 @@ spec:
     # Host + PathPrefix sem StripPrefix: o Host é composition root e serve vários
     # módulos (e rotas transversais) sob o mesmo FQDN. Os controllers .NET já
     # registram a rota com o prefixo completo (não aplicar UsePathBase) — o Traefik
-    # apenas encaminha o path intacto. Uma rota por prefixo. Ver docs/RUNBOOKS.md §21.3.
+    # apenas encaminha o path intacto. Uma rota por prefixo. Ver docs/RUNBOOKS.md
   {{- range .Values.uniplusApiHost.ingress.pathPrefixes }}
     - match: Host(`{{ $.Values.uniplusApiHost.ingress.host }}`) && PathPrefix(`{{ . }}`)
       kind: Rule

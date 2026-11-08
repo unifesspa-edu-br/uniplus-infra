@@ -2,10 +2,10 @@
 {{- if not .Values.unifesspaGeoApi.networkPolicy.dataHostCIDR -}}
 {{- fail "unifesspaGeoApi.networkPolicy.dataHostCIDR é obrigatório (egress para Postgres + Redis no data-host)." -}}
 {{- end -}}
-{{/* Issuer in-cluster (*.svc.cluster.local) já é coberto pela regra de
-     egress "Keycloak in-cluster" abaixo (namespaceSelector+podSelector) —
+{{/* Issuer do cluster (*.svc.cluster.local) já é coberto pela regra de
+     egress "Keycloak do cluster" abaixo (namespaceSelector+podSelector) —
      não precisa de CIDR. Só exigimos oidcIssuerCIDR quando o issuer for um
-     hostname externo (ex.: servido via Traefik em standalone-compact),
+     hostname externo (ex.: servido via Traefik no ambiente de nó único),
      cuja resolução DNS sai pela rede externa, não pelo cluster. */}}
 {{- $issuerInCluster := contains ".svc.cluster.local" .Values.unifesspaGeoApi.oidc.issuerUri -}}
 {{- if and .Values.unifesspaGeoApi.oidc.enabled (not $issuerInCluster) (not .Values.unifesspaGeoApi.networkPolicy.oidcIssuerCIDR) -}}
@@ -33,7 +33,7 @@ spec:
         - protocol: TCP
           port: 8080
     {{- range .Values.unifesspaGeoApi.networkPolicy.clientesInternos }}
-    # Cliente in-cluster do Geo: {{ .namespace }}/{{ .appName }}.
+    # Cliente do cluster do Geo: {{ .namespace }}/{{ .appName }}.
     - from:
         - namespaceSelector:
             matchLabels:
@@ -75,7 +75,7 @@ spec:
         - protocol: TCP
           port: 6379  # Redis
     {{- if .Values.unifesspaGeoApi.oidc.enabled }}
-    # Keycloak in-cluster — JWKS/discovery para bearer validation (resource server).
+    # Keycloak do cluster — JWKS/discovery para bearer validation (resource server).
     - to:
         - namespaceSelector:
             matchLabels:
@@ -88,9 +88,9 @@ spec:
           port: {{ .Values.unifesspaGeoApi.networkPolicy.keycloakPort }}
     {{- if not $issuerInCluster }}
     # Egress HTTPS para o IP do OIDC issuer (Keycloak via Traefik). Necessário
-    # quando Auth:Authority aponta pro hostname público (ex.: standalone-compact:
-    # https://standalone.portaluni.com.br/auth/realms/uniplus) em vez do Service
-    # in-cluster — a regra acima não cobre esse caso, já que a resolução DNS do
+    # quando Auth:Authority aponta pro hostname público (ex.: uniplus-prd:
+    # https://uniplus.unifesspa.edu.br/auth/realms/uniplus) em vez do Service
+    # do cluster — a regra acima não cobre esse caso, já que a resolução DNS do
     # hostname público sai pela rede externa, não pelo cluster.
     - to:
         - ipBlock:

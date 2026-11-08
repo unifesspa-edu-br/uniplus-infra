@@ -55,7 +55,7 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.apicurioRegistry.networkPolicy.dataHostPort }}
-    # Keycloak in-cluster (fallback útil se issuerUri for Service DNS).
+    # Keycloak do cluster (fallback útil se issuerUri for Service DNS).
     - to:
         - namespaceSelector:
             matchLabels:
@@ -67,8 +67,8 @@ spec:
         - protocol: TCP
           port: {{ .Values.apicurioRegistry.networkPolicy.keycloakPort }}
     {{- if .Values.apicurioRegistry.oidc.enabled }}
-    # OIDC issuer público (HTTPS). Em standalone, Apicurio chama
-    # `https://standalone.portaluni.com.br/auth/realms/uniplus` que
+    # OIDC issuer público (HTTPS). No ambiente de nó único, Apicurio chama
+    # `https://uniplus.unifesspa.edu.br/auth/realms/uniplus` que
     # resolve para o public IP do k8s-host (164.152.53.29) e entra via
     # Traefik IngressRoute do Keycloak. Sem este egress, o OIDC discovery
     # falha em default-deny (TLS handshake never completes).

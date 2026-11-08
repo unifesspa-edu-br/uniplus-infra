@@ -20,7 +20,7 @@ uniplusApiPortal:
 
   imagePullSecrets: []
 
-  # API stateless. Em standalone 1 réplica para reduzir uso de recursos.
+  # API stateless. No ambiente de nó único 1 réplica para reduzir uso de recursos.
   replicas: 1
 
   resources:
@@ -87,7 +87,7 @@ uniplusApiPortal:
 
   # === Backend Kafka (SASL_SSL + SCRAM-SHA-512, ADR-009) ===
   # Pode ser desligado em primeiro deploy se SCRAM users per-app ainda não
-  # foram provisionados. Em standalone usa SCRAM admin compartilhado.
+  # foram provisionados. No ambiente de nó único usa SCRAM admin compartilhado.
   kafka:
     enabled: true
     bootstrapServers: ""        # ex.: 10.0.2.87:9092
@@ -106,7 +106,7 @@ uniplusApiPortal:
   # === OIDC (Auth bearer) ===
   oidc:
     enabled: true
-    issuerUri: ""               # ex.: https://standalone.portaluni.com.br/auth/realms/uniplus
+    issuerUri: ""               # ex.: https://uniplus.unifesspa.edu.br/auth/realms/uniplus
     audience: uniplus
 
   # === CA customizada (opt-in) — ver comentário completo em
@@ -124,10 +124,10 @@ uniplusApiPortal:
   # === CORS (obrigatório fora de Development) ===
   # APIs validam no startup que Cors:AllowedOrigins esteja preenchido em
   # ASPNETCORE_ENVIRONMENT=Production. Lista de origins (frontend SPA, ex.:
-  # https://portal.standalone.portaluni.com.br). Renderiza como env vars
+  # https://uniplus.unifesspa.edu.br). Renderiza como env vars
   # Cors__AllowedOrigins__0=..., __1=..., etc (.NET nested config binding).
   cors:
-    allowedOrigins: []          # ex.: ["https://portal.standalone.portaluni.com.br"]
+    allowedOrigins: []          # ex.: ["https://uniplus.unifesspa.edu.br"]
 
   # === Redes confiáveis do proxy reverso (obrigatório fora de Development) ===
   # O middleware de forwarded headers só honra X-Forwarded-Proto e X-Forwarded-For
@@ -179,9 +179,9 @@ uniplusApiPortal:
   ingress:
     enabled: false
     entryPoint: websecure
-    host: ""                    # ex.: api-portal.standalone.portaluni.com.br
-    # Prefixo de path opcional (Host + PathPrefix, sem StripPrefix) — RUNBOOKS §21.3.
-    # Vazio/ausente → rota `Host()` pura (preserva standalone-compact/lab).
+    host: ""                    # ex.: uniplus.unifesspa.edu.br
+    # Prefixo de path opcional (Host + PathPrefix, sem StripPrefix) — docs/RUNBOOKS.md
+    # Vazio/ausente → rota `Host()` pura (preserva os ambientes de nó único).
     # Ex. HML: pathPrefix: /api/portal
     pathPrefix: ""
     tls:
@@ -192,8 +192,7 @@ uniplusApiPortal:
   # Exporta traces + metrics + logs via OTLP para o OTel Collector DaemonSet
   # do cluster (namespace observability-otelcol). Endpoint vazio + enabled=true
   # é rejeitado pelo guard do template — pod só sobe quando o environment
-  # popular o endpoint real (release name do collector varia entre standalone
-  # e demais ambientes). Sem este wiring, o SDK .NET cai no default
+  # popular o endpoint real (release name do collector varia por ambiente). Sem este wiring, o SDK .NET cai no default
   # http://localhost:4317 e drops silenciosos para um sink inexistente.
   otel:
     enabled: true
@@ -219,7 +218,7 @@ uniplusApiPortal:
     oidcIssuerPort: 443
     # CIDR adicional para Schema Registry (ADR-0051) quando o Apicurio
     # estiver em IP público distinto do OIDC issuer. Vazio = assume
-    # co-locação com oidcIssuerCIDR (default standalone — ambos subdomínios
+    # co-locação com oidcIssuerCIDR (default: ambos subdomínios
     # resolvem via Traefik no mesmo k8s-host). Em environments com IPs
     # distintos, definir aqui para liberar egress HTTPS separado.
     schemaRegistryCIDR: ""
@@ -232,10 +231,10 @@ uniplusApiPortal:
     # Vault Transit (ADR-0027) — namespace + port do servidor Vault.
     # Regra de egress é renderizada apenas quando encryption.provider=vault.
     # Em environments com Vault em outro cluster, manter encryption.provider=local
-    # ou expor o Vault via Service/Ingress in-cluster proxy.
+    # ou expor o Vault via Service/Ingress do cluster proxy.
     vaultNamespace: vault
     vaultPort: 8200
-    # Origens in-cluster que a Portal consome direto pelo Service, sem passar
+    # Origens do cluster que a Portal consome direto pelo Service, sem passar
     # pelo Traefik (egress para pods do mesmo namespace).
     # Ex.: [{ appName: uniplus-api-host, port: 8080 }]
     origens: []

@@ -19,7 +19,7 @@
 {{- end -}}
 {{- if eq .Values.uniplusApiHost.encryption.provider "vault" -}}
   {{- if not .Values.uniplusApiHost.encryption.vaultAddress -}}
-  {{- fail "uniplusApiHost.encryption.vaultAddress é obrigatório quando encryption.provider=vault. Configurar em environments/<env>/values.yaml (ex.: http://platform-vault-uniplus-standalone.vault.svc.cluster.local:8200)." -}}
+  {{- fail "uniplusApiHost.encryption.vaultAddress é obrigatório quando encryption.provider=vault. Configurar em environments/<env>/values.yaml (ex.: http://platform-vault.vault.svc.cluster.local:8200)." -}}
   {{- end -}}
   {{- if not .Values.uniplusApiHost.encryption.kubernetesRole -}}
   {{- fail "uniplusApiHost.encryption.kubernetesRole é obrigatório quando encryption.provider=vault. A role precisa existir no Vault (uniplus-infra#219) com bound_service_account_names incluindo a SA deste chart." -}}

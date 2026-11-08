@@ -10,82 +10,45 @@
 
 ## Sobre
 
-Este repositório contém todos os manifests, charts Helm, scripts e documentação operacional necessários para provisionar e operar a plataforma **Uni+** em diferentes ambientes — desde laboratório local de validação arquitetural até produção em datacenter Tier III.
+Este repositório contém todos os manifests, charts Helm, scripts e documentação operacional necessários para provisionar e operar a plataforma **Uni+** no ambiente `uniplus-prd`.
 
 A plataforma Uni+ é o sistema institucional unificado da UNIFESSPA para processos seletivos, ingresso e portal acadêmico, composta por três módulos integrados (Portal, Seleção e Ingresso) com autenticação federada via Gov.br.
-
-### Topologias suportadas
-
-O mesmo conjunto de charts e scripts é deployable em duas topologias distintas — escolhidas pelo SLA pretendido, não por preferência técnica. Detalhes em [docs/ARCHITECTURE.md §5.5](docs/ARCHITECTURE.md#55-topologias-suportadas).
-
-| Topologia | Descrição | Quando usar | ADRs |
-|---|---|---|---|
-| **3-DC** (`SP1` + `SP2` + `PA1`) | Ativo-ativo entre EVEO Cotia/Osasco + DC institucional UNIFESSPA Marabá. HA por componente (Patroni/KRaft/MinIO distribuído). Sobrevive a falha de site. | Produção plena, HML que exercita DR, certificação institucional. | ADRs 001–007, 009 |
-| **Standalone** (monolocal) | Single-site provider-agnostic (lab, OCI Always Free, on-prem). Duas VMs (`k8s-host` + `data-host`). K3s single-node + Postgres/Kafka/MinIO/Vault em modo single. Mesmos charts, divergência só em `environments/standalone/values.yaml`. | Validação técnica antes de 3-DC, smoke E2E, treinamento, DR exploration, ambientes institucionais com SLA single-site. | [ADR-008](docs/adrs/ADR-008-topologia-standalone.md), [ADR-009](docs/adrs/ADR-009-kafka-sasl-ssl-scram-standalone.md), [ADR-010](docs/adrs/ADR-010-keycloak-config-cli-realm-reconcile.md) |
 
 ## Estrutura do repositório
 
 ```
 uniplus-infra/
-├── apps/                       # Charts Helm das aplicações Uni+
-│   ├── uniplus-web/            # Frontend Angular Nx (3 apps internas)
-│   ├── uniplus-api-portal/     # API .NET 10 — módulo Portal
-│   ├── uniplus-api-selecao/    # API .NET 10 — módulo Seleção
-│   ├── uniplus-api-ingresso/   # API .NET 10 — módulo Ingresso
-│   ├── clamav-espelho/         # Espelho interno das assinaturas do ClamAV
-│   └── keycloak-replica/       # Serviço OIDC local (Keycloak na implementação atual)
-├── platform/                   # Componentes de plataforma (infra do K8s)
-│   ├── traefik/                # API Gateway + Ingress Controller
-│   ├── argocd/                 # GitOps controller
-│   ├── vault/                  # Gestão de secrets
-│   ├── external-secrets/       # Sync Vault → K8s Secrets
-│   ├── cert-manager/           # Provisionamento TLS automático
-│   └── observability/          # Prometheus, Grafana, Loki, Tempo, OTel
-├── data/                       # Componentes stateful (fora do K8s)
-│   ├── postgres/               # 3 instâncias + Patroni + PgBouncer
-│   ├── kafka/                  # Cluster KRaft
-│   ├── minio/                  # Storage de objetos distribuído
-│   └── redis/                  # Cache distribuído
-├── environments/               # Overrides por ambiente
-│   └── standalone-compact/     # Único ambiente operacional (OCI GRU, AMD E4.Flex)
-├── argocd/                     # Bootstrap GitOps (ApplicationSet)
-├── provisioning/oci/           # Provisionamento OpenTofu
-│   └── standalone-compact/     # VMs E4.Flex em sa-saopaulo-1
-├── docs/                       # Documentação operacional
-│   ├── ARCHITECTURE.md         # Visão arquitetural da plataforma
-│   ├── RUNBOOKS.md             # Procedimentos operacionais (standalone)
-│   ├── adrs/                   # Architecture Decision Records
-│   └── images/                 # Diagramas C4 e ilustrações
-├── scripts/                    # Scripts de automação
-│   ├── bootstrap-standalone.sh # Provisiona K3s + data services no host
-│   ├── validate-cluster.sh     # Valida saúde do cluster
-│   ├── smoke-*.sh              # Smokes (dashboards, encryption, metrics)
-│   └── validate-standalone.sh  # Validação pós-bootstrap standalone
-└── .github/                    # CI/CD workflows
+├── apps/                       # Charts Helm das aplicações
+├── platform/                   # Componentes de plataforma (Traefik, Vault, External Secrets, KES, observabilidade...)
+├── environments/
+│   └── uniplus-prd/            # Overrides do ambiente de produção
+├── argocd/                     # Bootstrap GitOps (ApplicationSets)
+├── docs/                       # RUNBOOKS, caminhos do Vault, reprodutibilidade, ADRs
+├── scripts/
+│   └── servicos-no-host/       # Scripts das duas VMs (infraestrutura e aplicação)
+└── .github/                    # CI
 ```
 
 ## Princípios arquiteturais
 
 **1. GitOps como fonte única de verdade.** Todo o estado declarativo da plataforma reside neste repositório. O ArgoCD em cada cluster reconcilia continuamente o estado real com o desejado.
 
-**2. Topologia atual: standalone-compact.** A plataforma opera hoje em 1 cluster K3s + 1 data-host externo em OCI GRU (sa-saopaulo-1), shape E4.Flex AMD. O modelo dos 3 DCs (`SP1`+`SP2`+`PA1`) é a topologia de referência institucional para o futuro; sua adoção depende de acordo com EVEO e DIRSI. Detalhes em [docs/ARCHITECTURE.md §5.5](docs/ARCHITECTURE.md#55-topologias-suportadas).
+**2. Duas VMs.** A aplicação roda em K3s numa VM; PostgreSQL, Redis, MinIO, Kafka e RabbitMQ rodam na outra, em containers sob systemd, só com TLS.
 
-**3. Ativo-ativo no nível da plataforma.** Cada componente usa o mecanismo nativo de HA, replicação, sincronização ou quorum suportado pelo produto. Onde multi-writer limpo não existir, distribuímos responsabilidade e usamos failover controlado, sem simular multi-master artificial.
+**3. Componentes stateful fora do Kubernetes.** Backup, restore e diagnóstico independem da saúde do K8s.
 
-**4. Componentes stateful fora do Kubernetes.** PostgreSQL, Kafka e MinIO operam como containers gerenciados por systemd diretamente no host Linux, garantindo performance previsível e operação simplificada (backup, restore, troubleshooting).
+**4. Segredos nunca em código.** Toda credencial reside no Vault, com um KV por sistema e ambiente, e é injetada nos pods pelo External Secrets Operator. Os manifests contêm apenas referências (`ExternalSecret`).
 
-**5. Secrets nunca em código.** Toda credencial, chave ou token reside no cofre institucional e é injetada nos pods via External Secrets Operator. Os manifests do Git contêm apenas referências (`ExternalSecret`).
-
-**6. Soberania institucional como meta.** No standalone-compact (atual) a soberania ainda depende do provedor OCI. Quando o modelo 3-DC for revivido, `PA1` (Marabá) hospedará LDAP institucional, OIDC source institucional e destino de backup, sem virar ponto único de falha para o atendimento.
+**5. Atualização manual por tag.** A produção só muda quando alguém aponta o cluster para uma tag validada em homologação.
 
 ## Documentação
 
 | Documento | Descrição |
 |-----------|-----------|
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Visão arquitetural completa, com diagramas C4 |
-| [docs/RUNBOOKS.md](docs/RUNBOOKS.md) | Procedimentos operacionais (bootstrap, failover, backup) |
-| [docs/REPRODUCIBILITY.md](docs/REPRODUCIBILITY.md) | Como recriar o ambiente do zero (recreate drill, checklist de passos manuais) |
-| [docs/adrs/](docs/adrs/) | Architecture Decision Records (ADR-008+ vigentes) |
+| [docs/RUNBOOKS.md](docs/RUNBOOKS.md) | Procedimentos operacionais (bootstrap, atualização, certificado) |
+| [docs/vault-caminhos.md](docs/vault-caminhos.md) | KV por sistema e ambiente e mapa de caminhos |
+| [docs/REPRODUCIBILITY.md](docs/REPRODUCIBILITY.md) | O que é codificado e o que é manual |
+| [docs/adrs/](docs/adrs/) | Architecture Decision Records  |
 | [docs/validacao/](docs/validacao/) | Relatórios de validação executadas |
 
 ## Tecnologias e ferramentas
@@ -109,18 +72,6 @@ uniplus-infra/
 | Cache | Valkey / Redis OSS-compatible + Sentinel | a definir |
 | Antimalware | ClamAV | latest |
 | IdP federado | Keycloak | 25+ |
-
-## Status atual
-
-| Componente | Lab SP1 | Lab SP2 | Lab PA1 | Prod SP1 | Prod SP2 | Prod PA1 |
-|------------|---------|---------|---------|----------|----------|----------|
-| Provisionamento | 🟡 em planejamento | 🟡 em planejamento | 🟡 em planejamento | ⚪ aguardando contrato EVEO | ⚪ aguardando contrato EVEO | 🟡 institucional |
-| GitOps / ArgoCD | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ |
-| OIDC | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | 🟡 fonte institucional |
-| Backup / DR | ⚪ | ⚪ | ⚪ | ⚪ | ⚪ | 🟡 destino institucional |
-| Aplicações Uni+ | ⚪ | ⚪ | — | ⚪ | ⚪ | — |
-
-🟢 operacional · 🟡 em construção · 🔴 com problemas · ⚪ não iniciado
 
 ## Contribuindo
 

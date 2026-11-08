@@ -5,18 +5,18 @@ OpenTelemetry Collector para Uni+ — agente unificado que:
 - Recebe traces OTLP dos apps → Tempo
 - Enriquece com metadata K8s (k8sattributes processor)
 
-> Decisão arquitetural: ver [ADR-013](../../../docs/adrs/ADR-013-otel-collector-daemonset-standalone.md).
+> Decisão arquitetural: ver ADR-013.
 >
 > ⚠️ **Pasta renomeada de `otel-collector` para `otelcol`** — release name >53 chars (limite Helm) com nome longo. Diretório, AppSet `component` e Chart `name` foram atualizados em conjunto.
 
 ## Visão geral
 
-- **Modo**: DaemonSet único (agent + gateway combinados em standalone). Em prod, separar.
+- **Modo**: DaemonSet único (agent + gateway combinados no ambiente de nó único). Em prod, separar.
 - **Imagem**: `otel/opentelemetry-collector-k8s` (distribuição K8s — inclui contrib receivers/exporters).
 - **Receivers**: APENAS OTLP gRPC (`:4317`) + HTTP (`:4318`). Jaeger/Zipkin desligados.
 - **Exporters**: `otlphttp/loki` (Loki 3.x suporta OTLP nativo em `/otlp`), `otlphttp/tempo` (Tempo OTLP HTTP), `debug` (stdout).
 - **Pipelines**: `logs` e `traces`. **SEM `metrics`** — Prometheus já scrape direto.
-- **Resource attrs**: `cluster=standalone`, `dc=standalone` em todos spans/logs.
+- **Resource attrs**: `cluster=uniplus`, `dc=uniplus` em todos spans/logs.
 
 ## Estrutura
 
@@ -37,9 +37,9 @@ platform/observability/otelcol/
 
 O chart upstream tem [bug Helm conhecido (#12879)](https://github.com/helm/helm/pull/12879) onde `null` em sub-keys NÃO remove receivers/exporters do default merge. `alternateConfig` substitui a config inteira, dando controle autoritativo. Trade-off: precisamos manter a config completa (sem benefício de merge), mas isso é o pattern correto pra evitar receivers indesejados expostos no Service.
 
-## Por que `mode: daemonset` em standalone single-node
+## Por que `mode: daemonset` no ambiente de nó único
 
-Os presets `logsCollection` (filelog receiver com hostPath em `/var/log/containers`) e `kubernetesAttributes` (precisa watch em pods do nó) **assumem mode daemonset**. Em standalone single-node, é equivalente a Deployment 1-replica para fins de routing OTLP entre apps e collector — mas o pattern segue o esperado pelos presets.
+Os presets `logsCollection` (filelog receiver com hostPath em `/var/log/containers`) e `kubernetesAttributes` (precisa watch em pods do nó) **assumem mode daemonset**. No ambiente de nó único, é equivalente a Deployment 1-replica para fins de routing OTLP entre apps e collector — mas o pattern segue o esperado pelos presets.
 
 ## Deploy
 
@@ -50,15 +50,15 @@ Via ArgoCD ApplicationSet `uniplus-platform`. Namespace gerado: `observability-o
 ```bash
 helm dependency update platform/observability/otelcol
 helm lint platform/observability/otelcol
-helm template platform-observability-otelcol-uniplus-standalone \
+helm template platform-observability-otelcol \
   platform/observability/otelcol \
-  -f environments/standalone-compact/values.yaml \
+  -f environments/uniplus-prd/values.yaml \
   --namespace observability-otelcol
 ```
 
 Esperado: 7 recursos (ServiceAccount, ConfigMap, ClusterRole, ClusterRoleBinding, DaemonSet, Service, NetworkPolicy).
 
-## Smoke pós-sync (standalone)
+## Smoke pós-sync
 
 ```bash
 ssh ubuntu@137.131.131.6
@@ -67,7 +67,7 @@ sudo k3s kubectl -n observability-otelcol get pods                 # 1/1 Running
 # Push de log via OTLP HTTP (de outro pod no NS uniplus)
 sudo k3s kubectl -n uniplus run otel-smoke --rm -i --restart=Never \
   --image=curlimages/curl -- \
-  curl -X POST http://platform-observability-otelcol-uniplus-standalone.observability-otelcol:4318/v1/logs \
+  curl -X POST http://platform-observability-otelcol.observability-otelcol:4318/v1/logs \
   -H 'Content-Type: application/json' -d '{...}'
 
 # Validar log no Loki (datasource Grafana ou via port-forward Loki)
@@ -75,7 +75,7 @@ sudo k3s kubectl -n uniplus run otel-smoke --rm -i --restart=Never \
 
 ## Pendências (próximos PRs)
 
-- **Datasources Loki + Tempo no Grafana** — habilitar via override em `environments/standalone-compact/values.yaml` no bloco `grafana.datasources` (Fase 3 do plano).
+- **Datasources Loki + Tempo no Grafana** — habilitar via override em `environments/uniplus-prd/values.yaml` no bloco `grafana.datasources` (Fase 3 do plano).
 - **MetricsGenerator + ServiceMonitor** — quando o Prometheus consumidor estiver pronto.
 - **Pipeline `metrics`** — se algum app passar a expor métricas só via OTLP.
 

@@ -4,12 +4,12 @@ Traefik IngressController v3 — entrypoints HTTP/HTTPS, IngressRoute CRDs, midd
 
 ## Visão geral
 
-Wrapper do chart oficial [traefik/traefik-helm-chart](https://github.com/traefik/traefik-helm-chart). Roda no cluster do ambiente operacional (`standalone-compact`); o design multi-cluster permanece válido para o modelo 3-DC quando revivido.
+Wrapper do chart oficial [traefik/traefik-helm-chart](https://github.com/traefik/traefik-helm-chart). Roda no cluster do ambiente operacional (`uniplus-prd`).
 
 **Upstream:** https://github.com/traefik/traefik-helm-chart
 **Versão upstream empacotada:** v3.6.15 (chart 39.0.9)
 
-K3s vem com Traefik pré-instalado por default. O `scripts/bootstrap-standalone.sh` desabilita explicitamente esse Traefik default (`--disable traefik`) para que este chart wrapper seja a única instância no cluster — sem conflito de IngressClass nem de bind 80/443. Re-executar o bootstrap após mudanças nesse script aplica o reset (K3s recria os manifests de bundled apps em cada start sem `--disable`).
+K3s vem com Traefik pré-instalado por default. O `scripts/provisionar-bancos.sh` desabilita explicitamente esse Traefik default (`--disable traefik`) para que este chart wrapper seja a única instância no cluster — sem conflito de IngressClass nem de bind 80/443. Re-executar o bootstrap após mudanças nesse script aplica o reset (K3s recria os manifests de bundled apps em cada start sem `--disable`).
 
 ## Estrutura
 
@@ -31,11 +31,11 @@ ServiceMonitor + dashboard IngressRoute vêm do subchart upstream (gateados por 
 
 Após o ApplicationSet sincronizar:
 
-1. Pod do Traefik sobe (1 réplica em standalone/lab; 2+ em prod via override)
+1. Pod do Traefik sobe (1 réplica no ambiente de nó único; 2+ em prod via override)
 2. CRDs `ingressroutes.traefik.io`, `middlewares.traefik.io`, `serverstransports.traefik.io`, etc. são instaladas
 3. IngressClass `traefik` (default do cluster) fica disponível
 4. 2 Middlewares Uni+ ficam prontos (headers-security, compress)
-5. Em standalone, hostPort binda 0.0.0.0:80 e 0.0.0.0:443 direto na VM com IP público
+5. No ambiente de nó único, hostPort binda 0.0.0.0:80 e 0.0.0.0:443 direto na VM com IP público
 6. Em prod, Service `LoadBalancer` provisiona um LB do provider (override por env)
 
 ## Variáveis principais
@@ -43,10 +43,10 @@ Após o ApplicationSet sincronizar:
 | Variável | Default | Notas |
 |---|---|---|
 | `traefik.enabled` | `true` | Liga o subchart |
-| `traefik.deployment.replicas` | `1` | 1 em lab/standalone, 2+ em prod (override) |
+| `traefik.deployment.replicas` | `1` | 1 em nó único, 2+ em prod (override) |
 | `traefik.service.type` | `NodePort` | `LoadBalancer` em prod (override) |
-| `traefik.ports.web.hostPort` | `80` | Bind direto na VM (standalone) |
-| `traefik.ports.websecure.hostPort` | `443` | Bind direto na VM (standalone) |
+| `traefik.ports.web.hostPort` | `80` | Bind direto na VM |
+| `traefik.ports.websecure.hostPort` | `443` | Bind direto na VM |
 | `traefik.ingressClass.name` | `traefik` | Referenciado pelo cert-manager (#15) |
 | `traefik.ingressRoute.dashboard.enabled` | `false` | Habilitar atrás de OIDC + IP allowlist |
 | `traefik.metrics.prometheus.serviceMonitor.enabled` | `false` | Ligar quando #26 (Prometheus) chegar |
@@ -68,7 +68,7 @@ metadata:
 spec:
   entryPoints: [websecure]
   routes:
-    - match: Host(`<env-fqdn>`)              # ex.: standalone.portaluni.com.br
+    - match: Host(`<env-fqdn>`)              # ex.: uniplus.unifesspa.edu.br
       kind: Rule
       middlewares:
         - name: uniplus-headers-security     # nome FIXO do middleware Uni+
@@ -84,9 +84,9 @@ spec:
 
 Os middlewares têm **nomes fixos** (`uniplus-headers-security`, `uniplus-compress`) e vivem no namespace onde o Traefik está instalado (geralmente `traefik`) — independente do release name dinâmico do ApplicationSet. Substituir `<env-fqdn>` pelo FQDN do environment (definido em `environments/<env>/values.yaml` sob `ingress.host`).
 
-## Pathing standalone
+## Pathing
 
-FQDN único `standalone.portaluni.com.br` com pathing controlado pelo Traefik:
+FQDN único `uniplus.unifesspa.edu.br` com pathing controlado pelo Traefik:
 
 | Path | Backend |
 |---|---|
@@ -131,4 +131,4 @@ NetworkPolicy do chart:
 - [#14](https://github.com/unifesspa-edu-br/uniplus-infra/issues/14) — esta task
 - [#15](https://github.com/unifesspa-edu-br/uniplus-infra/issues/15) — cert-manager (consome a IngressClass `traefik`)
 - ADR-004 (borda externa)
-- ADR-008 (topologia standalone)
+- ADR-008

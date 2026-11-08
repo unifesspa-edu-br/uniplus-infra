@@ -56,7 +56,7 @@ spec:
               value: "true"
             # Pre-setup connection (sem ID = conexão única default).
             # Ao bootar, RedisInsight cria essa conexão automaticamente
-            # apontando para o Redis standalone no data-host.
+            # apontando para o Redis no data-host.
             - name: RI_REDIS_HOST
               value: {{ .Values.redisUi.backend.host | quote }}
             - name: RI_REDIS_PORT

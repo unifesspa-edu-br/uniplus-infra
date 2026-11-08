@@ -4,9 +4,9 @@ description: |
   OpenTelemetry Collector — agente unificado para coleta de logs (filelog
   receiver), traces (OTLP) e métricas (futuro). Empacotado como chart wrapper
   sobre open-telemetry/opentelemetry-collector em modo DaemonSet (single-node
-  em standalone — atua simultaneamente como agent e gateway).
+  no ambiente de nó único — atua simultaneamente como agent e gateway).
 
-  Decisão arquitetural: ver docs/adrs/ADR-013-otel-collector-daemonset-standalone.md
+  Decisão arquitetural: ver docs/adrs (ADR-013)
 type: application
 
 version: 0.1.0

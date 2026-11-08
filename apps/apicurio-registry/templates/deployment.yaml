@@ -6,7 +6,7 @@
 {{- fail "apicurioRegistry.enabled=true requer externalSecrets.enabled=true. O Deployment lê DB_PASSWORD do Secret `<fullname>-db` (sintetizado pelo ESO) via secretKeyRef e, quando OIDC está on, também QUARKUS_OIDC_CREDENTIALS_SECRET de `<fullname>-oidc-client`. Sem ESO, ambos os Secrets não existem e o pod entra em CreateContainerConfigError silenciosamente. Habilite externalSecrets ou desabilite o chart." -}}
 {{- end -}}
 {{- if and .Values.apicurioRegistry.oidc.enabled (not .Values.apicurioRegistry.oidc.issuerUri) -}}
-{{- fail "apicurioRegistry.oidc.enabled=true requer oidc.issuerUri não-vazio. Sem isso, o fallback `http://localhost:9999/oidc-disabled` (que existe APENAS para o caso oidc.enabled=false) seria usado e o pod nunca completa OIDC discovery — silently inativo. Configurar issuerUri em environments/<env>/values.yaml (ex.: https://standalone.portaluni.com.br/auth/realms/uniplus)." -}}
+{{- fail "apicurioRegistry.oidc.enabled=true requer oidc.issuerUri não-vazio. Sem isso, o fallback `http://localhost:9999/oidc-disabled` (que existe APENAS para o caso oidc.enabled=false) seria usado e o pod nunca completa OIDC discovery — silently inativo. Configurar issuerUri em environments/<env>/values.yaml (ex.: https://uniplus.unifesspa.edu.br/auth/realms/uniplus)." -}}
 {{- end -}}
 apiVersion: apps/v1
 kind: Deployment
@@ -155,7 +155,7 @@ spec:
           {{- end }}
           # Health probes: Apicurio Registry 3.2.4 NÃO expõe `/q/health/*`
           # do Quarkus SmallRye Health por default — esses paths retornam 404
-          # mesmo com pod totalmente up (validado runtime no cluster standalone
+          # mesmo com pod totalmente up (validado runtime no cluster
           # 2026-05-08). A imagem `apicurio/apicurio-registry:3.2.4` desabilita
           # ou move os endpoints health internos.
           #
@@ -164,7 +164,7 @@ spec:
           # HTTP server up + JDBC pool inicializado + REST routing OK). Auth
           # NÃO requerido nesse path (system info é público).
           #
-          # Mesmo path para start/live/ready é OK em standalone (1 réplica,
+          # Mesmo path para start/live/ready é OK no ambiente de nó único (1 réplica,
           # sem rolling restart agressivo); diferenciar entre fases requer
           # health endpoints separados que Apicurio 3.x não expõe.
           startupProbe:

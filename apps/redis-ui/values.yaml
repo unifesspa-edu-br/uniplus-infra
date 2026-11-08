@@ -1,7 +1,7 @@
 # Defaults do chart apps/redis-ui/.
 # Cada environment (environments/<env>/values.yaml) sobrescreve apenas o
 # necessário. Por padrão DESABILITADO — só ambientes que precisam de UI
-# Redis (ex.: standalone) ligam via `redisUi.enabled: true`.
+# Redis (ex.: produção) ligam via `redisUi.enabled: true`.
 
 commonLabels:
   app.kubernetes.io/part-of: uniplus
@@ -23,8 +23,8 @@ redisUi:
   imagePullSecrets: []
 
   # RedisInsight é stateful (SQLite local em /data — connections, settings,
-  # query history). Single-replica é o pattern correto. emptyDir é OK em
-  # standalone porque a connection pré-setup é re-aplicada em restart via
+  # query history). Single-replica é o pattern correto. emptyDir é OK
+  # porque a connection pré-setup é re-aplicada em restart via
   # env vars; perda de query history é aceitável.
   replicas: 1
 
@@ -51,8 +51,8 @@ redisUi:
     host: ""                    # ex.: 10.0.2.87
     port: 6379
     # Alias mostrado na lista de connections do UI (puramente cosmético).
-    alias: standalone
-    # Username Redis ACL. Redis standalone usa `default` (sem ACL custom);
+    alias: uniplus
+    # Username Redis ACL. Redis usa `default` (sem ACL custom);
     # password do role `default` vem do ESO `redisDefault`.
     username: default
     # true liga TLS na conexão pré-cadastrada (RI_REDIS_TLS).
@@ -70,7 +70,7 @@ redisUi:
       kind: ClusterSecretStore
       name: plataforma
 
-    # Password do role `default` do Redis standalone (custodiado em
+    # Password do role `default` do Redis (custodiado em
     # Vault em PR #133). Sintetizado em Secret K8s e injetado como
     # env RI_REDIS_PASSWORD via secretKeyRef.
     redisDefault:
@@ -93,7 +93,7 @@ redisUi:
     entryPoint: websecure
     # Middlewares Traefik adicionais ao basicAuth (ex.: restrição por rede).
     middlewares: []
-    host: ""                    # ex.: redis-ui.standalone.portaluni.com.br
+    host: ""                    # ex.: uniplus.unifesspa.edu.br
     tls:
       enabled: true
       secretName: ""            # criado pelo cert-manager se certManager.enabled

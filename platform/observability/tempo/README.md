@@ -2,23 +2,23 @@
 
 Backend de traces distribuídos para o Uni+ — chart wrapper sobre `grafana/tempo`
 (single-binary mode) com receivers OTLP e storage S3-compatible
-(MinIO em standalone).
+(MinIO no ambiente de nó único).
 
-> Decisão arquitetural: ver [ADR-012](../../../docs/adrs/ADR-012-tempo-singlebinary-s3-standalone.md).
+> Decisão arquitetural: ver ADR-012.
 
 ## Visão geral
 
 - **Modo**: single-binary (1 réplica) — apropriado para single-cluster com
-  baixa volumetria (standalone POC, lab).
-- **Storage**: S3-compatible. Em standalone aponta para MinIO local
+  baixa volumetria (baixa volumetria).
+- **Storage**: S3-compatible. No ambiente de nó único aponta para MinIO local
   (`10.2.2.11:9000`, bucket `tempo-traces`, credencial dedicada `tempo-svc`
   custodiada em Vault `minio/tempo`).
 - **Receivers**: APENAS OTLP (gRPC `:4317` + HTTP `:4318`). Jaeger e
   OpenCensus desligados — apps Uni+ usam OpenTelemetry SDK que emite OTLP
   nativo.
-- **Retention**: 72h (3 dias) em standalone, via `compactor.compaction.block_retention`.
+- **Retention**: 72h (3 dias) no ambiente de nó único, via `compactor.compaction.block_retention`.
 - **Acesso**: Service ClusterIP — Grafana datasource consome
-  `http://platform-observability-tempo-uniplus-standalone.observability-tempo.svc.cluster.local:3200`.
+  `http://platform-observability-tempo.observability-tempo.svc.cluster.local:3200`.
 
 ## Estrutura
 
@@ -58,7 +58,7 @@ só leem `.Values.tempoWrapper.{externalSecrets,networkPolicy}`.
 - `tempoQuery` (UI Jaeger-like) está **desligado** — UI fica no Grafana
   datasource, evitando duplicação de capacidade.
 
-## Componentes desligados em standalone
+## Componentes desligados no ambiente de nó único
 
 - `tempoQuery` (UI Jaeger): Grafana datasource cobre.
 - `metricsGenerator`: gera métricas a partir de traces; ligar quando o
@@ -76,19 +76,19 @@ gerado pelo AppSet: `observability-tempo`.
 ```bash
 helm dependency update platform/observability/tempo
 helm lint platform/observability/tempo
-helm template platform-observability-tempo-uniplus-standalone \
+helm template platform-observability-tempo \
   platform/observability/tempo \
-  -f environments/standalone-compact/values.yaml \
+  -f environments/uniplus-prd/values.yaml \
   --namespace observability-tempo
 ```
 
-## Smoke pós-sync (standalone)
+## Smoke pós-sync
 
 ```bash
 ssh ubuntu@137.131.131.6
 sudo k3s kubectl -n observability-tempo get pods           # 1/1 Running
 sudo k3s kubectl -n observability-tempo port-forward \
-  svc/platform-observability-tempo-uniplus-standalone 3200:3200 4318:4318 &
+  svc/platform-observability-tempo 3200:3200 4318:4318 &
 
 # Push de trace via OTLP/HTTP
 TS=$(date +%s)
@@ -109,7 +109,7 @@ curl -s 'http://127.0.0.1:3200/api/search?tags=service.name=smoke' | jq
 
 - **#30** — OTel Collector com OTLP receivers + exporter para este Tempo.
 - **Datasource Tempo no Grafana** — habilitar via override em
-  `environments/standalone-compact/values.yaml` no bloco `grafana.datasources` (PR
+  `environments/uniplus-prd/values.yaml` no bloco `grafana.datasources` (PR
   separado).
 - **MetricsGenerator + ServiceMonitor** — quando o Prometheus consumidor
   estiver pronto.
@@ -121,4 +121,4 @@ curl -s 'http://127.0.0.1:3200/api/search?tags=service.name=smoke' | jq
 - [Tempo OTLP receivers](https://grafana.com/docs/tempo/latest/configuration/#otlp)
 - ADR-012 — decisão arquitetural completa
 - ADR-011 — pattern análogo do Loki (referência)
-- ADR-008 — topologia standalone monolocal
+- ADR-008

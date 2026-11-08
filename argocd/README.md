@@ -4,9 +4,9 @@ Configurações do ArgoCD para o Uni+: AppProject e ApplicationSets.
 
 ## Visão geral
 
-O ArgoCD é instalado no cluster do ambiente operacional (`standalone-compact`) e gerencia o ciclo de vida das aplicações Uni+. O design é multi-cluster (o ApplicationSet matcha qualquer cluster com o label `uniplus.io/managed=true`), pronto para o dia em que o modelo 3-DC for revivido.
+O ArgoCD é instalado no cluster do ambiente operacional (`uniplus-prd`) e gerencia o ciclo de vida das aplicações Uni+. O design é multi-cluster (o ApplicationSet matcha qualquer cluster com o label `uniplus.io/managed=true`).
 
-A instalação inicial do ArgoCD é feita pelo `scripts/bootstrap-standalone.sh` (role `standalone-k8s`). Após instalado, os manifests neste diretório são aplicados via `kubectl apply -f` (uma vez), e a partir daí o ArgoCD se autogerencia (incluindo seus próprios upgrades).
+A instalação inicial do ArgoCD é feita pelo `scripts/servicos-no-host/bootstrap-app.sh`. Após instalado, os manifests neste diretório são aplicados via `kubectl apply -f` (uma vez), e a partir daí o ArgoCD se autogerencia (incluindo seus próprios upgrades).
 
 ## Estrutura
 
@@ -37,7 +37,7 @@ argocd/
 
 1. **uniplus-apps** — gera Applications para os charts em `apps/`. Dois grupos:
    - **Sempre ligados** (todo cluster registrado): uniplus-web, uniplus-api-portal, uniplus-api-selecao, uniplus-api-ingresso, keycloak-replica, kafka-ui, apicurio-registry, redis-ui
-   - **Habilitados só em ambientes específicos** (mecanismo por-ambiente, ver seção abaixo): uniplus-api-host, unifesspa-geo-api, clamav-espelho, verificador-rede (NetworkPolicy do verificador de arquivos) — hoje só em `prod-standalone`
+   - **Habilitados só em ambientes específicos** (mecanismo por-ambiente, ver seção abaixo): uniplus-api-host, unifesspa-geo-api, clamav-espelho, verificador-rede (NetworkPolicy do verificador de arquivos) — hoje só em `uniplus-prd`
    - A verificação de antivírus dos arquivos do candidato é do verificador (uniplus-api#2054), com clamd sidecar. O `clamav-espelho` abastece a base de assinaturas desses sidecars.
 
 2. **uniplus-platform** — gera Applications para componentes de plataforma:
@@ -71,10 +71,10 @@ O mecanismo — um segundo `matrix` generator dentro do MESMO ApplicationSet `un
           elements:
             - app: uniplus-api-host
               namespace: uniplus
-              targetEnvironment: prod-standalone
+              targetEnvironment: uniplus-prd
             - app: unifesspa-geo-api
               namespace: geo
-              targetEnvironment: prod-standalone
+              targetEnvironment: uniplus-prd
       # 2) `clusters.selector.matchLabels` referencia `{{.targetEnvironment}}`
       #    do elemento acima — só o cluster com esse `environment` label
       #    sobrevive à combinação; nos demais, nenhuma Application nasce.
@@ -98,7 +98,7 @@ Após o ArgoCD estar instalado:
 ```bash
 # Registrar este cluster
 argocd cluster add <context> --label uniplus.io/managed=true \
-                              --label environment=standalone-compact
+                              --label environment=uniplus-prd
 
 # Aplicar AppProject
 kubectl apply -f argocd/project.yaml
@@ -119,7 +119,7 @@ Por padrão, todos os ApplicationSets têm:
 - `syncOptions: CreateNamespace=true` — cria namespaces se não existirem
 - `retry.limit: 5` com backoff exponencial
 
-## Produção (`prod-standalone`)
+## Produção (`uniplus-prd`)
 
 Em produção não há sincronização automática: nenhuma Application tem `syncPolicy.automated`, e
 cada atualização é um sync manual. O ApplicationSet gera as Applications de produção com as quatro
@@ -127,9 +127,9 @@ fontes na revisão do label `uniplus.io/revision` do cluster (uma tag deste repo
 homologação); sem o label, a geração falha de propósito. O cluster é registrado e a revisão trocada
 por `scripts/servicos-no-host/bootstrap-app.sh` e `atualizar-producao.sh`. O verificador tem
 Application própria (`applications/verificador.yaml`). Procedimento completo em
-[docs/RUNBOOKS.md](../docs/RUNBOOKS.md#234-atualização-manual-por-tag).
+[docs/RUNBOOKS.md](../docs/RUNBOOKS.md#3-atualização-manual-por-tag).
 
 ## Relacionamento com a documentação
 
-- Setup inicial do ArgoCD: `scripts/bootstrap-standalone.sh` (instala K3s + ArgoCD)
+- Setup inicial do ArgoCD: `scripts/servicos-no-host/bootstrap-app.sh` (instala K3s + ArgoCD)
 - Operação: [docs/RUNBOOKS.md](../docs/RUNBOOKS.md#12-deploy-de-mudança-via-gitops)

@@ -24,7 +24,7 @@ anterior (uma imagem por módulo), abandonada pelo ADR-0097.
 
 | Recurso | De onde vem |
 |---|---|
-| Role + database Postgres únicos (`uniplus`/`uniplus`) | Custódia manual — ver `environments/lab-standalone-single/README.md` |
+| Role + database Postgres únicos (`uniplus`/`uniplus`) | Criados por `scripts/servicos-no-host/provisionar-bancos.sh` |
 | Senha do role no Vault | `postgres` |
 | Vault + External Secrets Operator | `platform/vault/` + `platform/external-secrets/` |
 | `UniPlus__Encryption__LocalKey` (quando `encryption.provider=local`) | Secret K8s manual, não versionado — ver `extraEnv` no values.yaml do environment |
@@ -51,33 +51,6 @@ equivalente** aqui — descoberto por bug real durante a Task uniplus-infra#412
 `localhost:9092` e fica em loop de reconexão eterno, mantendo `/health`
 (readiness) permanentemente `Unhealthy` mesmo com o transporte Wolverine
 desligado.
-
-## Imagem: sem publish em GHCR ainda
-
-O pipeline `publish-images.yml` do `uniplus-api` só dispara em tags
-`v*.*.*` — nenhuma foi criada para o módulo `host` até o momento. Publicar
-uma teria efeito real em produção (release pública), fora do escopo de
-uma Task de lab.
-
-Para o lab, a imagem é buildada localmente e importada direto no
-containerd do k3s (sem passar por um registry):
-
-```bash
-cd ../uniplus-api  # repositório uniplus-api clonado lado a lado
-docker build -f docker/Dockerfile.host -t uniplus-api-host:local-lab .
-docker save uniplus-api-host:local-lab -o /tmp/uniplus-api-host.tar
-scp /tmp/uniplus-api-host.tar uniplus@<ip-da-vm>:/tmp/
-ssh uniplus@<ip-da-vm> "sudo k3s ctr images import /tmp/uniplus-api-host.tar"
-```
-
-`environments/lab-standalone-single/values.yaml` aponta
-`image.registry: docker.io/library`, `image.tag: local-lab`,
-`pullPolicy: Never` — sem `Never`, o kubelet tentaria puxar de um registry
-remoto inexistente mesmo com a imagem já presente localmente.
-
-Quando o pipeline publicar a primeira release real (`ghcr.io/unifesspa-edu-br/uniplus-api-host`),
-atualizar `image.registry`/`image.repository`/`image.tag`/`pullPolicy` no
-environment e remover o build local.
 
 ## Roteamento path-based
 
@@ -110,7 +83,7 @@ quando forem expostos no mesmo domínio.
 |---|---|---|
 | `uniplusApiHost.database.name`/`username` | `uniplus`/`uniplus` | Banco único — 6 connection strings (`UniPlusDb`, `ConfiguracaoDb`, `OrganizacaoDb`, `SelecaoDb`, `IngressoDb`, `PublicacoesDb`) apontam todas para cá |
 | `uniplusApiHost.kafka.enabled` | `false` | Desligado até o Apicurio Registry entrar no lab (issue #423) |
-| `uniplusApiHost.registroDeAcesso.enabled` | `false` | Liga o Kafka do registro de acesso (`RegistroDeAcesso__Kafka__*`), independente de `kafka.enabled`. Exige `kafka.bootstrapServers` do bloco próprio e o usuário SCRAM no Vault (RUNBOOKS §13.11) |
+| `uniplusApiHost.registroDeAcesso.enabled` | `false` | Liga o Kafka do registro de acesso (`RegistroDeAcesso__Kafka__*`), independente de `kafka.enabled`. Exige `kafka.bootstrapServers` do bloco próprio e o usuário SCRAM no Vault (docs/RUNBOOKS.md) |
 | `uniplusApiHost.schemaRegistry.url` | `""` | Feature off; ver bloco Kafka acima |
 | `uniplusApiHost.oidc.enabled` | `true` | Bearer validation apenas — o Host não se autentica como client M2M contra nada |
 | `uniplusApiHost.ingress.pathPrefixes` | `[]` | Lista opcional de subpaths do Host. Cada item gera `Host() && PathPrefix()` sem `StripPrefix`; vazia mantém `Host()` puro |

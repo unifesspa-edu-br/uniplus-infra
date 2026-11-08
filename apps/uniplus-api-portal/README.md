@@ -6,7 +6,7 @@ API .NET 10 do módulo Portal — conteúdo institucional e perfis
 
 ## Visão geral
 
-Componente da plataforma Uni+. Veja [docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md) para contexto.
+Componente da plataforma Uni+.
 
 ## Pré-requisitos
 

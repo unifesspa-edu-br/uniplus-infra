@@ -1,6 +1,6 @@
 {{- if and .Values.unifesspaGeoApi.enabled .Values.unifesspaGeoApi.ingress.enabled -}}
 {{- if not .Values.unifesspaGeoApi.ingress.host -}}
-{{- fail "unifesspaGeoApi.ingress.host é obrigatório quando ingress.enabled=true (ex.: api-geo.standalone.portaluni.com.br)." -}}
+{{- fail "unifesspaGeoApi.ingress.host é obrigatório quando ingress.enabled=true (ex.: uniplus.unifesspa.edu.br)." -}}
 {{- end -}}
 apiVersion: traefik.io/v1alpha1
 kind: IngressRoute

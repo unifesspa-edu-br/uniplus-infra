@@ -1,11 +1,10 @@
 # Defaults para o Loki no cluster Uni+.
 #
-# Topologia (ADR-011): SingleBinary em standalone (1 réplica, replication
-# factor 1, sem caches separados, sem gateway). Em prod-{sp1,sp2} pode
+# Topologia (ADR-011): SingleBinary no ambiente de nó único (1 réplica, replication
+# factor 1, sem caches separados, sem gateway). Em produção pode
 # evoluir para SimpleScalable com `deploymentMode` override no environment;
-# PA1 fica desligado por default (agregação separada).
 #
-# Storage backend: S3-compatible. Em standalone aponta para MinIO local
+# Storage backend: S3-compatible. No ambiente de nó único aponta para MinIO local
 # (data-host 10.2.2.11:9000) com credenciais escopadas (user `loki-svc`,
 # policy `loki-rw`) custodiadas no Vault `minio/loki`
 # e injetadas via ExternalSecret + envFrom.
@@ -13,9 +12,8 @@
 # Acesso pelo Grafana: ClusterIP do Loki (sem gateway) — datasource
 # Grafana usa http://<loki-svc>.observability-loki.svc.cluster.local:3100.
 #
-# Retention: 168h (7 dias) em standalone (operacional). Override por
-# environment quando definirmos política de compliance — ver
-# docs/ARCHITECTURE.md §9 para padrão de retenção por DC.
+# Retention: 168h (7 dias) no ambiente de nó único (operacional). Override por
+# environment quando definirmos política de compliance.
 #
 # Push de logs: futura responsabilidade do OTel Collector (#30) em modo
 # DaemonSet com filelog receiver — Loki não precisa de Promtail próprio.
@@ -34,14 +32,13 @@ loki:
   # Modo de deploy
   # ============================================================================
   # SingleBinary: tudo num pod só (ingester + querier + compactor + distributor
-  # + frontend). Apropriado para single-cluster com baixa volumetria (standalone
-  # POC, lab). Limita escala mas elimina complexidade de coordenação entre
+  # + frontend). Apropriado para single-cluster com baixa volumetria (baixa volumetria). Limita escala mas elimina complexidade de coordenação entre
   # componentes. ADR-011 documenta trade-offs.
   deploymentMode: SingleBinary
 
   loki:
     # auth_enabled=false: aceita push/query sem header X-Scope-OrgID.
-    # Standalone single-tenant — sem multi-tenancy.
+    # Single-tenant — sem multi-tenancy.
     auth_enabled: false
 
     # ----- Storage S3 (creds vêm de env via singleBinary.extraEnvFrom) -----
@@ -65,7 +62,7 @@ loki:
         secretAccessKey: "${LOKI_S3_SECRET_ACCESS_KEY}"
         # MinIO exige path-style addressing (vs virtual-hosted da AWS).
         s3ForcePathStyle: true
-        # MinIO standalone está em http (TLS terminado no Traefik para acesso
+        # O MinIO está em http (TLS terminado no Traefik para acesso
         # externo, mas tráfego interno cluster→data-host é http puro pela
         # subnet privada VCN). Em prod com TLS no MinIO, mudar para false.
         insecure: true
@@ -81,8 +78,8 @@ loki:
             prefix: loki_index_
             period: 24h
 
-    # ----- Replication factor: 1 em standalone (1 ingester) -----
-    # Default upstream é 3 (assumindo SimpleScalable+). Standalone tem 1
+    # ----- Replication factor: 1 no ambiente de nó único (1 ingester) -----
+    # Default upstream é 3 (assumindo SimpleScalable+). Aqui há 1
     # réplica do SingleBinary, então tem que ser 1; senão Loki quebra com
     # "not enough ingesters" no startup.
     commonConfig:
@@ -94,14 +91,14 @@ loki:
     # de marcar para deleção. Aplicado pelo compactor (compactor.retention_enabled
     # abaixo). Override por environment.
     limits_config:
-      retention_period: 168h          # 7 dias — standalone POC
+      retention_period: 168h          # 7 dias
       reject_old_samples: true
       reject_old_samples_max_age: 168h
       max_cache_freshness_per_query: 10m
       split_queries_by_interval: 15m
       query_timeout: 300s
       volume_enabled: true
-      # ingestion_rate em MB/s por tenant. Default 4 é OK para standalone.
+      # ingestion_rate em MB/s por tenant. Default 4 é OK para este ambiente.
       ingestion_rate_mb: 4
       ingestion_burst_size_mb: 6
 
@@ -119,7 +116,7 @@ loki:
       enabled: false
 
   # ============================================================================
-  # Componentes desligados em standalone (modo SingleBinary)
+  # Componentes desligados no ambiente de nó único (modo SingleBinary)
   # ============================================================================
   # Toggles ABAIXO ficam dentro do bloco `loki:` para serem propagados ao
   # subchart upstream. Se ficarem no top-level, NÃO são lidos pelo subchart
@@ -197,7 +194,7 @@ loki:
       - -config.expand-env=true
 
     # Env vars do Secret sintetizado pelo ESO com credenciais MinIO.
-    # Default vazio — environment standalone popula com secretRef do Secret
+    # Default vazio — o ambiente popula com secretRef do Secret
     # cujo nome bate com o helper uniplus-loki.s3SecretName.
     extraEnvFrom: []
 
@@ -210,7 +207,7 @@ loki:
         - ReadWriteOnce
       # storageClass: <definido por environment>
 
-    # Recursos default lab — Tabela 10.1 (Loki SingleBinary é leve em
+    # Recursos default — Tabela 10.1 (Loki SingleBinary é leve em
     # baixa volumetria; ajustar quando push real chegar).
     resources:
       requests:
@@ -228,7 +225,7 @@ loki:
 # ============================================================================
 # Bloco `lokiWrapper:` agrupa configs do wrapper SOB CHAVE PREFIXADA pelo
 # nome do chart. Por que não chave genérica `uniplusExternalSecrets:` ou
-# `uniplusNetworkPolicy:` no top-level? Porque o environment file standalone
+# `uniplusNetworkPolicy:` no top-level? Porque o arquivo do ambiente
 # é COMPARTILHADO entre todos os charts wrapper (Loki, Tempo, OTel Collector,
 # etc.) — chaves top-level homônimas seriam DUPLICADAS no YAML quando dois
 # wrappers configuram seus respectivos secrets+policies, com YAML duplicate
@@ -241,10 +238,10 @@ loki:
 lokiWrapper:
   # Sintese do Secret K8s com credenciais MinIO via External Secrets Operator.
   # Precisa de ESO instalado e ClusterSecretStore `plataforma` apontando
-  # para o Vault standalone.
+  # para o Vault.
   externalSecrets:
-    # Default off para o helm template standalone funcionar fora do cluster
-    # (lab K3s sem ESO + Vault). Environment standalone liga.
+    # Default off para o helm template funcionar fora do cluster
+    # (K3s sem ESO + Vault). O ambiente liga.
     enabled: false
     refreshInterval: "1h"
     secretStoreRef:

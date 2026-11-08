@@ -1,6 +1,6 @@
 {{- if and .Values.redisUi.enabled .Values.redisUi.ingress.enabled -}}
 {{- if not .Values.redisUi.ingress.host -}}
-{{- fail "redisUi.ingress.host é obrigatório quando ingress.enabled=true (Traefik IngressRoute requer Host(...) válido). Configurar em environments/<env>/values.yaml (ex.: redis-ui.standalone.portaluni.com.br)." -}}
+{{- fail "redisUi.ingress.host é obrigatório quando ingress.enabled=true (Traefik IngressRoute requer Host(...) válido). Configurar em environments/<env>/values.yaml (ex.: uniplus.unifesspa.edu.br)." -}}
 {{- end -}}
 {{- if not .Values.redisUi.externalSecrets.enabled -}}
 {{- fail "redisUi.ingress.enabled=true requer externalSecrets.enabled=true. IngressRoute referencia o middleware basicAuth, que depende do Secret htpasswd sintetizado pelo ESO. Sem ESO, o middleware fica sem Secret válido e Traefik rejeita o IngressRoute. (Defense-in-depth: o deployment.yaml também tem este guard.)" -}}

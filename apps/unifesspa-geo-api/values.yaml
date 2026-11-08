@@ -7,7 +7,7 @@
 # NOTA: registrado em argocd/applicationset.yaml só para `uniplus-prd`
 # (mecanismo de habilitação por-ambiente, story #457/task #458 — ver
 # argocd/README.md § Habilitação por-ambiente). Continua fora do
-# `standalone-compact` — não faz parte deste chart nem do valueFiles
+# `uniplus-prd` — não faz parte deste chart nem do valueFiles
 # desse ambiente. Ligar de fato (`unifesspaGeoApi.enabled: true`) em
 # qualquer ambiente é follow-up separado, condicionado ao provisionamento
 # dos secrets do Vault (postgres/geo, redis já compartilhado, geo/encryption)
@@ -29,7 +29,7 @@ unifesspaGeoApi:
 
   imagePullSecrets: []
 
-  # API stateless. Em standalone/lab 1 réplica para reduzir uso de recursos.
+  # API stateless. No ambiente de nó único 1 réplica para reduzir uso de recursos.
   replicas: 1
 
   resources:
@@ -112,7 +112,7 @@ unifesspaGeoApi:
 
   # === CORS (obrigatório fora de Development, mesmo padrão das demais APIs Uni+) ===
   cors:
-    allowedOrigins: []          # ex.: ["https://selecao.standalone.portaluni.com.br"]
+    allowedOrigins: []          # ex.: ["https://uniplus.unifesspa.edu.br"]
 
   # === Redes confiáveis do proxy reverso (obrigatório fora de Development) ===
   # O middleware de forwarded headers só honra X-Forwarded-Proto e X-Forwarded-For
@@ -162,7 +162,7 @@ unifesspaGeoApi:
   ingress:
     enabled: false
     entryPoint: websecure
-    host: ""                    # ex.: api-geo.standalone.portaluni.com.br
+    host: ""                    # ex.: uniplus.unifesspa.edu.br
     tls:
       enabled: true
       secretName: ""
@@ -172,7 +172,7 @@ unifesspaGeoApi:
     enabled: true
     traefikNamespace: traefik
     monitoringNamespace: observability-prometheus
-    # Aplicações in-cluster que chamam o Geo direto pelo Service, sem passar
+    # Aplicações do cluster que chamam o Geo direto pelo Service, sem passar
     # pelo Traefik. Ex.: [{ namespace: uniplus, appName: uniplus-api-host }]
     clientesInternos: []
     dataHostCIDR: ""             # ex.: 10.0.2.0/24
@@ -180,8 +180,8 @@ unifesspaGeoApi:
     keycloakNamespace: keycloak-replica
     keycloakPort: 8080
     # Egress HTTPS para o IP do OIDC issuer quando Auth:Authority aponta pro
-    # hostname público do Keycloak (ex.: https://standalone.portaluni.com.br/auth/realms/uniplus,
-    # servido via Traefik) em vez do Service in-cluster. Obrigatório quando
+    # hostname público do Keycloak (ex.: https://uniplus.unifesspa.edu.br/auth/realms/uniplus,
+    # servido via Traefik) em vez do Service do cluster. Obrigatório quando
     # oidc.enabled=true — sem isso, discovery/JWKS falha sob NetworkPolicy
     # em CNIs que a enforçam (Calico etc.; flannel no lab não enforça).
     oidcIssuerCIDR: ""            # ex.: 164.152.53.29/32

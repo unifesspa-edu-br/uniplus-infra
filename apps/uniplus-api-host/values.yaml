@@ -31,7 +31,7 @@ uniplusApiHost:
 
   imagePullSecrets: []
 
-  # API stateless. Em standalone 1 réplica para reduzir uso de recursos.
+  # API stateless. No ambiente de nó único 1 réplica para reduzir uso de recursos.
   replicas: 1
 
   # Estratégia de atualização do Deployment: `RollingUpdate` (padrão) ou
@@ -190,7 +190,7 @@ uniplusApiHost:
   #
   # A credencial é um usuário SCRAM próprio, com ACL só de Write e Describe no
   # tópico — nunca o `admin`. O produtor não cria o tópico: ele precisa existir
-  # antes da subida (docs/RUNBOOKS.md, §13.11). Com `enabled: true` a API
+  # antes da subida (docs/RUNBOOKS.md). Com `enabled: true` a API
   # recusa a partida se qualquer variável obrigatória faltar.
   registroDeAcesso:
     enabled: false
@@ -230,7 +230,7 @@ uniplusApiHost:
   # contrato público é `enderecoBase` + chave do objeto, então `enderecoBase` é
   # o caminho da borda — nunca a porta de dados do MinIO (`storage.endpoint`).
   # A aplicação não cria o bucket nem lhe aplica política: os dois vêm do setup
-  # do MinIO (scripts/lab-standalone-single/setup-minio.sh).
+  # do MinIO (scripts/servicos-no-host/instalar-minio.sh).
   #
   # Viram AcervoPublico__Bucket e AcervoPublico__EnderecoBase. Fora de
   # Development (`aspnet.environment`), a aplicação recusa a partida com
@@ -300,7 +300,7 @@ uniplusApiHost:
   # precisa de um client_secret próprio no Keycloak. ===
   oidc:
     enabled: true
-    issuerUri: ""               # ex.: https://standalone.portaluni.com.br/auth/realms/uniplus
+    issuerUri: ""               # ex.: https://uniplus.unifesspa.edu.br/auth/realms/uniplus
     audience: uniplus
 
   # === CA customizada (opt-in) ===
@@ -332,7 +332,7 @@ uniplusApiHost:
 
   # === CORS (obrigatório fora de Development) ===
   cors:
-    allowedOrigins: []          # ex.: ["https://portal.standalone.portaluni.com.br"]
+    allowedOrigins: []          # ex.: ["https://uniplus.unifesspa.edu.br"]
 
   # === Redes confiáveis do proxy reverso (obrigatório fora de Development) ===
   # O middleware de forwarded headers só honra X-Forwarded-Proto e X-Forwarded-For
@@ -410,12 +410,12 @@ uniplusApiHost:
   ingress:
     enabled: false
     entryPoint: websecure
-    host: ""                    # ex.: api.standalone.portaluni.com.br
-    # Roteamento path-based (Host + PathPrefix, sem StripPrefix) — RUNBOOKS §21.3.
+    host: ""                    # ex.: uniplus.unifesspa.edu.br
+    # Roteamento path-based (Host + PathPrefix, sem StripPrefix) — docs/RUNBOOKS.md
     # Lista opcional de prefixos servidos no MESMO host: cada entrada gera uma rota
     # apontando pro mesmo Service (o Host multiplexa módulos + rotas transversais).
     # Vazia/ausente → rota `Host()` pura (comportamento atual; preserva
-    # standalone-compact/lab). Semântica de prefixo literal do Traefik v3
+    # os ambientes de nó único). Semântica de prefixo literal do Traefik v3
     # (`/api/selecao` casa com `/api/selecao/...`); entradas duplicadas/sobrepostas
     # são permitidas (todas → mesmo Service). Ex. HML:
     #   pathPrefixes:
@@ -474,7 +474,7 @@ uniplusApiHost:
     otelCollectorNamespace: observability-otelcol
     vaultNamespace: vault
     vaultPort: 8200
-    # Egress até o Geo in-cluster. namespace vazio = sem regra.
+    # Egress até o Geo do cluster. namespace vazio = sem regra.
     geo:
       namespace: ""             # ex.: geo
       port: 8080

@@ -1,7 +1,7 @@
 # Defaults do chart apps/apicurio-registry/.
 # Cada environment (environments/<env>/values.yaml) sobrescreve apenas o
 # necessário. Por padrão o chart fica DESABILITADO — só os ambientes que
-# precisam de Schema Registry (ex.: standalone) ligam via
+# precisam de Schema Registry (ex.: produção) ligam via
 # `apicurioRegistry.enabled: true`.
 
 commonLabels:
@@ -24,7 +24,7 @@ apicurioRegistry:
   imagePullSecrets: []
 
   # Apicurio é stateless (todo state vai pro Postgres externo). 1 réplica
-  # é suficiente em standalone — DB faz single-source-of-truth. HA real
+  # é suficiente no ambiente de nó único — DB faz single-source-of-truth. HA real
   # exige Postgres replicado (Fase prod com Patroni).
   replicas: 1
 
@@ -40,9 +40,9 @@ apicurioRegistry:
     create: true
     name: ""
 
-  # === Storage SQL (Postgres standalone) ===
+  # === Storage SQL (Postgres) ===
   # DB e role provisionados pelo step_data_setup_apicurio_db do
-  # bootstrap-standalone.sh. Senha em Vault — ver externalSecrets.dbCreds.
+  # provisionar-bancos.sh. Senha em Vault — ver externalSecrets.dbCreds.
   storage:
     kind: sql
     sqlKind: postgresql
@@ -69,7 +69,7 @@ apicurioRegistry:
   # sem SLA/controle.
   oidc:
     enabled: true
-    issuerUri: ""                # ex.: https://standalone.portaluni.com.br/auth/realms/uniplus
+    issuerUri: ""                # ex.: https://uniplus.unifesspa.edu.br/auth/realms/uniplus
     clientId: apicurio-registry
     # Path do claim do JWT que carrega as roles/groups. Pattern reusa
     # `groups` do mapper já existente no realm (full path: /admins/kafka).
@@ -102,16 +102,16 @@ apicurioRegistry:
       name: plataforma
 
     # Senha do role `apicurio` no Postgres. Gerada pelo
-    # step_data_setup_apicurio_db do bootstrap-standalone.sh em
+    # provisionar-bancos.sh em
     # .bootstrap-creds-apicurio; operador custodia em Vault path abaixo
-    # via §15.2 do RUNBOOKS após primeira execução.
+    # via docs/RUNBOOKS.md após primeira execução.
     dbCreds:
       vaultPath: postgres/apicurio
       passwordKey: password
 
     # client_secret OIDC do confidential client `apicurio-registry` no realm
     # uniplus. Gerado pelo Keycloak no import inicial; operador recupera via
-    # kcadm.sh e custodia em Vault (RUNBOOKS §15.1).
+    # kcadm.sh e custodia em Vault (docs/RUNBOOKS.md).
     oidcClient:
       vaultPath: keycloak/apicurio-registry
       clientSecretKey: client_secret
@@ -122,13 +122,13 @@ apicurioRegistry:
     entryPoint: websecure
     # Middlewares Traefik aplicados à rota (ex.: restrição por rede).
     middlewares: []
-    host: ""                     # ex.: schema-registry.standalone.portaluni.com.br
+    host: ""                     # ex.: uniplus.unifesspa.edu.br
     tls:
       enabled: true
       secretName: ""             # criado pelo cert-manager se certManager.enabled
 
   # === NetworkPolicy ===
-  # Egress: Postgres data-host (10.0.2.87:5432) + DNS + Keycloak in-cluster
+  # Egress: Postgres data-host (10.0.2.87:5432) + DNS + Keycloak do cluster
   # + OIDC issuer público (HTTPS port 443).
   # Ingress: Traefik + Prometheus (se ServiceMonitor on).
   networkPolicy:
@@ -139,8 +139,8 @@ apicurioRegistry:
     # CIDR usado pelo keycloak-replica (storage compartilhado).
     dataHostCIDR: ""
     dataHostPort: 5432
-    # Service do Keycloak local (in-cluster). Default casa com release name
-    # padrão do chart keycloak-replica em standalone.
+    # Service do Keycloak local (do cluster). Default casa com release name
+    # padrão do chart keycloak-replica no ambiente de nó único.
     keycloakService: keycloak-replica
     keycloakNamespace: keycloak-replica
     keycloakPort: 8080

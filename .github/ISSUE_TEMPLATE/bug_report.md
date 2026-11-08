@@ -12,10 +12,7 @@ assignees: ''
 
 ## Ambiente afetado
 
-- [ ] standalone-compact
-
-<!-- Único ambiente operacional. Os environments do modelo 3-DC (lab-*, prod-*)
-     serão adicionados quando esse modelo for revivido. -->
+- [ ] uniplus-prd
 
 ## Como reproduzir
 
