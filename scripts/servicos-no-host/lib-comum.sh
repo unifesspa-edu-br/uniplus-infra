@@ -16,13 +16,15 @@ DATA_BASE="${DATA_BASE:-/var/lib/uniplus}"
 TLS_DIR="${TLS_DIR:-/etc/uniplus/tls}"
 TLS_KEY="$TLS_DIR/unifesspa.edu.br.key"
 TLS_BUNDLE="$TLS_DIR/unifesspa.edu.br-bundle.crt"
-# Nome público do Vault do ambiente (rota do Traefik, certificado do domínio). Em
-# produção é fixo; em outro ambiente precisa ser informado, para que um script de
-# HML nunca alcance o Vault de produção por omissão.
+# Nomes do ambiente: o do Vault (rota do Traefik, certificado do domínio) e o da VM
+# de aplicação (K3s, KES). Em produção são fixos; em outro ambiente precisam ser
+# informados, para que um script de HML nunca alcance produção por omissão.
 if [[ "$AMBIENTE" == prd ]]; then
     NOME_DO_VAULT="${NOME_DO_VAULT:-uniplus-vault.unifesspa.edu.br}"
+    APP_FQDN="${APP_FQDN:-uniplus-prod-app.unifesspa.edu.br}"
 else
     NOME_DO_VAULT="${NOME_DO_VAULT:-}"
+    APP_FQDN="${APP_FQDN:-}"
 fi
 DRY_RUN=false
 
@@ -48,6 +50,13 @@ definir_url_do_vault() {
         exit 2
     }
     export VAULT_URL="https://$NOME_DO_VAULT"
+}
+
+exigir_app_fqdn() {
+    [[ -n "$APP_FQDN" ]] || {
+        log_error "Informe APP_FQDN (nome da VM de aplicação de AMBIENTE=$AMBIENTE)."
+        exit 2
+    }
 }
 
 # Executa o comando, ou só o mostra em --dry-run.

@@ -85,17 +85,32 @@ for r in json.load(sys.stdin).get("status", {}).get("resources", []):
         print(r["name"])'
 }
 
-# O patch só registra a operação; os ExternalSecrets passam a existir quando o
-# ArgoCD a conclui.
+# O patch só registra a operação. Um `Succeeded` que já estava no status é de uma
+# operação anterior: só conta o estado da operação iniciada depois do patch.
 esperar_operacao() {
-    if ! kubectl -n argocd wait application "$APPLICATION" \
-        --for=jsonpath='{.status.operationState.phase}'=Succeeded \
-        --timeout="${ESPERA_SEGUNDOS}s"; then
-        log_error "O primeiro sync de $APPLICATION não terminou com sucesso:"
-        kubectl -n argocd get application "$APPLICATION" \
-            -o jsonpath='{.status.operationState.message}{"\n"}' >&2
-        exit 1
-    fi
+    local inicio=$1 limite=$((SECONDS + ESPERA_SEGUNDOS)) estado
+    while ((SECONDS < limite)); do
+        estado=$(kubectl -n argocd get application "$APPLICATION" -o json | python3 -c '
+import json, sys
+from datetime import datetime
+op = json.load(sys.stdin).get("status", {}).get("operationState") or {}
+iniciada = op.get("startedAt")
+if not iniciada or datetime.fromisoformat(iniciada.replace("Z", "+00:00")).timestamp() < float(sys.argv[1]):
+    print("Aguardando")
+else:
+    print(op.get("phase", "Aguardando"))' "$inicio")
+        case "$estado" in
+            Succeeded) return 0 ;;
+            Failed|Error)
+                log_error "O primeiro sync de $APPLICATION não terminou com sucesso:"
+                kubectl -n argocd get application "$APPLICATION" \
+                    -o jsonpath='{.status.operationState.message}{"\n"}' >&2
+                exit 1 ;;
+        esac
+        sleep 5
+    done
+    log_error "O primeiro sync de $APPLICATION não terminou em ${ESPERA_SEGUNDOS}s."
+    exit 1
 }
 
 esperar_secrets() {
@@ -122,9 +137,10 @@ if $DRY_RUN; then
     exit 0
 fi
 operacao=$(montar_operacao)
+inicio=$(date +%s)
 kubectl -n argocd patch application "$APPLICATION" --type merge -p "$operacao"
 log_info "Primeiro sync de $APPLICATION iniciado (Job de migration desligado nesta operação)."
-esperar_operacao
+esperar_operacao "$inicio"
 esperar_secrets
 log_success "Primeiro tempo concluído."
 log_info "Faça agora o sync normal de $APPLICATION: o Job de migration roda com a ServiceAccount e os Secrets já criados."

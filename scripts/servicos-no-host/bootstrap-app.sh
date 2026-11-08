@@ -23,7 +23,7 @@ K3S_VERSION="v1.36.2+k3s1"
 HELM_VERSION="v3.21.2"
 ARGOCD_VERSION="v2.14.3"
 REVISAO=""
-APP_FQDN="${APP_FQDN:-uniplus-prod-app.unifesspa.edu.br}"
+exigir_app_fqdn
 PORTA_KES=7373
 # Service do Vault (nome da release do chart platform/vault) e seu namespace.
 VAULT_SERVICE="${VAULT_SERVICE:-platform-vault}"
@@ -50,7 +50,7 @@ step_k3s() {
         log_success "K3s já instalado."
     else
         run "curl -sfL https://get.k3s.io | INSTALL_K3S_VERSION=$K3S_VERSION sh -s - \
-            --node-name uniplus-prod-app \
+            --node-name ${APP_FQDN%%.*} \
             --tls-san $APP_IP --tls-san $APP_FQDN \
             --disable servicelb --disable traefik \
             --write-kubeconfig-mode 600"
