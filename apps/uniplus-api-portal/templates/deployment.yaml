@@ -16,10 +16,10 @@
 {{- end -}}
 {{- if eq .Values.uniplusApiPortal.encryption.provider "vault" -}}
   {{- if not .Values.uniplusApiPortal.encryption.vaultAddress -}}
-  {{- fail "uniplusApiPortal.encryption.vaultAddress é obrigatório quando encryption.provider=vault. Configurar em environments/<env>/values.yaml (ex.: http://platform-vault.vault.svc.cluster.local:8200)." -}}
+  {{- fail "uniplusApiPortal.encryption.vaultAddress é obrigatório quando encryption.provider=vault. Configurar em environments/<env>/values.yaml (URL HTTPS pelo nome do certificado do Vault)." -}}
   {{- end -}}
   {{- if not .Values.uniplusApiPortal.encryption.kubernetesRole -}}
-  {{- fail "uniplusApiPortal.encryption.kubernetesRole é obrigatório quando encryption.provider=vault. A role precisa existir no Vault (uniplus-infra#219) com bound_service_account_names incluindo a SA deste chart." -}}
+  {{- fail "uniplusApiPortal.encryption.kubernetesRole é obrigatório quando encryption.provider=vault. O portal não cifra hoje; se passar a cifrar, a role precisa existir no Vault com bound_service_account_names igual à SA deste chart." -}}
   {{- end -}}
 {{- end -}}
 {{- if and .Values.uniplusApiPortal.otel.enabled (not .Values.uniplusApiPortal.otel.exporter.endpoint) -}}

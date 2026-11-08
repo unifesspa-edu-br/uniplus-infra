@@ -29,7 +29,7 @@
             "address": { "type": "string" },
             "kvEngine": { "type": "string" },
             "kvPrefix": { "type": "string", "minLength": 1 },
-            "transitEngine": { "type": "string", "minLength": 1 },
+            "transitEngine": { "type": "string" },
             "transitKey": { "type": "string", "minLength": 1 },
             "authEngine": { "type": "string", "minLength": 1 },
             "authRole": { "type": "string", "minLength": 1 }

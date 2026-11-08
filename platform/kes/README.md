@@ -9,7 +9,7 @@ do uniplus-api, issue `uniplus-infra#682`).
 ```text
 MinIO (host, systemd) ──mTLS :7373 (hostPort)──▶ KES (pod) ──Kubernetes auth──▶ Vault
                                                               KV plataforma-<amb>/kes-keystore/*  (chaves mestras, cifradas)
-                                                              transit/uniplus-kes-kek (cifra cada chave)
+                                                              plataforma-<amb>-transit/uniplus-kes-kek (cifra cada chave)
 ```
 
 - A chave mestra `uniplus-arquivos-candidato` fica no KV de plataforma do ambiente
@@ -38,6 +38,7 @@ do chart lê o resultado em `kes/server` e
 |---|---|
 | `kes.enabled` | Liga o chart (default `false`). |
 | `kes.vault.address` | URL HTTPS do Vault pelo nome do certificado (resolvido para o Service pelo CoreDNS). Obrigatório quando ligado. |
+| `kes.vault.transitEngine` | Mount Transit de plataforma (`plataforma-<amb>-transit`). Obrigatório quando ligado. |
 | `kes.hostPort` | Porta em que o MinIO alcança o KES (7373). |
 | `kes.keyName` | Chave mestra (`uniplus-arquivos-candidato`). |
 | `kes.cache.*` | Expiração do cache (disponibilidade x revogação). |

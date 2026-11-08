@@ -19,10 +19,13 @@
 {{- end -}}
 {{- if eq .Values.uniplusApiHost.encryption.provider "vault" -}}
   {{- if not .Values.uniplusApiHost.encryption.vaultAddress -}}
-  {{- fail "uniplusApiHost.encryption.vaultAddress é obrigatório quando encryption.provider=vault. Configurar em environments/<env>/values.yaml (ex.: http://platform-vault.vault.svc.cluster.local:8200)." -}}
+  {{- fail "uniplusApiHost.encryption.vaultAddress é obrigatório quando encryption.provider=vault. Configurar em environments/<env>/values.yaml (URL HTTPS pelo nome do certificado do Vault, ex.: https://uniplus-vault.unifesspa.edu.br:8200)." -}}
+  {{- end -}}
+  {{- if not .Values.uniplusApiHost.encryption.vaultTransitMount -}}
+  {{- fail "uniplusApiHost.encryption.vaultTransitMount é obrigatório quando encryption.provider=vault (ex.: uniplus-prd-transit)." -}}
   {{- end -}}
   {{- if not .Values.uniplusApiHost.encryption.kubernetesRole -}}
-  {{- fail "uniplusApiHost.encryption.kubernetesRole é obrigatório quando encryption.provider=vault. A role precisa existir no Vault (uniplus-infra#219) com bound_service_account_names incluindo a SA deste chart." -}}
+  {{- fail "uniplusApiHost.encryption.kubernetesRole é obrigatório quando encryption.provider=vault. A role (uniplus-api-host) é criada por configurar-vault.sh, com bound_service_account_names igual à SA deste chart." -}}
   {{- end -}}
 {{- end -}}
 {{- if and .Values.uniplusApiHost.otel.enabled (not .Values.uniplusApiHost.otel.exporter.endpoint) -}}

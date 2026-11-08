@@ -101,18 +101,21 @@ uniplusApiHost:
       memory: 1Gi
 
   serviceAccount:
-    # Nome FIXO para que a role Vault Kubernetes auth (uniplus-api) — que
-    # vincula bound_service_account_names — encontre esta SA independente
-    # do release name gerado pelo ApplicationSet (`uniplus-api-host-<env>`).
+    # Nome FIXO para que a role Vault Kubernetes auth `uniplus-api-host`
+    # (scripts/servicos-no-host/lib-transit.sh), que vincula
+    # bound_service_account_names, encontre esta SA independente do release.
     create: true
     name: uniplus-api-host
 
   # Cifragem (UniPlus:Encryption). Default Provider=local exige LocalKey via
-  # env/Secret — environment override pode trocar para vault em cluster
-  # onde platform/vault-transit-bootstrap está aplicado (uniplus-infra#219).
+  # env/Secret (dev e CI). Com Provider=vault a API usa o Transit do próprio sistema:
+  # vaultAddress é `https://<nome público do Vault>:8200`, vaultTransitMount é
+  # `uniplus-<amb>-transit` e kubernetesRole é `uniplus-api-host`. O mount, as 7
+  # chaves, a política e a role vêm de scripts/servicos-no-host/configurar-vault.sh.
   encryption:
     provider: local
     vaultAddress: ""
+    vaultTransitMount: transit
     kubernetesRole: ""
 
   # Schema Registry (ADR-0051) — feature off quando url está vazio (default

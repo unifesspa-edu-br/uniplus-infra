@@ -3,6 +3,9 @@
 {{- if not $k.vault.address }}
 {{- fail "kes.vault.address é obrigatório quando kes.enabled=true (URL HTTPS do Vault pelo nome do certificado, ex.: https://uniplus-vault.unifesspa.edu.br:8200)." -}}
 {{- end }}
+{{- if not $k.vault.transitEngine }}
+{{- fail "kes.vault.transitEngine é obrigatório quando kes.enabled=true: o mount Transit de plataforma do ambiente (ex.: plataforma-prd-transit), que guarda a chave que cifra o keystore." -}}
+{{- end }}
 {{- if not $k.vault.kvEngine }}
 {{- fail "kes.vault.kvEngine é obrigatório quando kes.enabled=true: o KV de plataforma do ambiente (ex.: plataforma-prd)." -}}
 {{- end }}

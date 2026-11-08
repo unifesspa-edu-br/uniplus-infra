@@ -3,8 +3,9 @@
 # Secrets: monta um KV v2 por sistema e ambiente (uniplus-<amb>, geo-<amb>,
 # plataforma-<amb>), habilita a autenticação Kubernetes e cria, para cada sistema,
 # uma política de leitura só no próprio KV e uma role ligada à ServiceAccount da
-# ClusterSecretStore correspondente. Um sistema não lê o KV do outro. Idempotente:
-# o que já existe é reaplicado sem erro.
+# ClusterSecretStore correspondente. Um sistema não lê o KV do outro. Cria também o
+# Transit de cada sistema, com as chaves e as políticas e roles das APIs que cifram
+# (lib-transit.sh). Idempotente: o que já existe é reaplicado sem erro.
 #
 # Uso: [AMBIENTE=prd|hml] [VAULT_URL=...] ./configurar-vault.sh [--dry-run]
 # Rodar antes de semear-vault.sh, de qualquer máquina com o token raiz do Vault.
@@ -15,6 +16,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib-comum.sh"
 # shellcheck source=lib-provisionar.sh
 source "$SCRIPT_DIR/lib-provisionar.sh"
+# shellcheck source=lib-transit.sh
+source "$SCRIPT_DIR/lib-transit.sh"
 
 SISTEMAS=(uniplus geo plataforma)
 
@@ -75,6 +78,7 @@ if $DRY_RUN; then
         echo "[DRY-RUN] montaria $sistema-$AMBIENTE/ (KV v2) e aplicaria a política e a role external-secrets-$sistema em $VAULT_URL"
     done
     echo "[DRY-RUN] habilitaria auth/kubernetes"
+    echo "[DRY-RUN] montaria o Transit $MOUNT_UNIPLUS, $MOUNT_GEO e $MOUNT_PLATAFORMA com as chaves e a política e a role de $SA_API_HOST e $SA_GEO"
     exit 0
 fi
 preparar_provisionamento
@@ -83,3 +87,4 @@ for sistema in "${SISTEMAS[@]}"; do
     montar_kv "$sistema-$AMBIENTE"
     criar_politica_e_role "$sistema" "$sistema-$AMBIENTE"
 done
+configurar_transit

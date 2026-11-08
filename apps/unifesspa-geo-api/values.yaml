@@ -40,16 +40,12 @@ unifesspaGeoApi:
       cpu: 1000m
       memory: 512Mi
 
-  # NOTA (encryption.provider=vault): a role Vault `uniplus-api`
-  # (platform/vault-transit-bootstrap/values.yaml) só vincula
-  # `boundSa: uniplus-api-portal,uniplus-api-selecao,uniplus-api-ingresso`.
-  # Se ligar Vault mode para Geo, ou fixar `name` aqui como um desses 3 nomes
-  # E adicionar `unifesspa-geo-api` ao boundSa da role existente, ou criar uma
-  # role Vault dedicada — deixar `name` vazio (SA auto-gerada) não vai
-  # autenticar, o Kubernetes auth login será negado.
+  # Nome FIXO: a role Vault `unifesspa-geo-api` (scripts/servicos-no-host/lib-transit.sh)
+  # vincula bound_service_account_names a esta SA no namespace `geo`. Um nome gerado
+  # pelo release não autenticaria (o login Kubernetes seria negado).
   serviceAccount:
     create: true
-    name: ""
+    name: unifesspa-geo-api
 
   aspnet:
     environment: Production
@@ -104,6 +100,8 @@ unifesspaGeoApi:
   # inconsistente; EncryptionWarmupHostedService força a resolução do
   # singleton em Host.StartAsync para fail-fast garantido (nunca 500 na
   # primeira request cifrada).
+  # Com Provider=vault: vaultAddress é `https://<nome público do Vault>:8200`,
+  # vaultTransitMount é `geo-<amb>-transit` e kubernetesRole é `unifesspa-geo-api`.
   encryption:
     provider: local
     vaultAddress: ""
