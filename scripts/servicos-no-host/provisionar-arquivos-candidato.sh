@@ -44,7 +44,7 @@ if $DRY_RUN; then
     exit 0
 fi
 
-export VAULT_URL="${VAULT_URL:-https://uniplus-vault.unifesspa.edu.br}"
+definir_url_do_vault
 HOST_IP="$INFRA_IP"
 ORIGEM_WEB="${ORIGEM_WEB:-https://uniplus.unifesspa.edu.br}"
 KES_HOST="${KES_HOST:-uniplus-prod-app.unifesspa.edu.br}"
@@ -53,8 +53,7 @@ MINIO_SCHEME=https
 MINIO_TLS_DIR="${MINIO_TLS_DIR:-$DATA_BASE/minio/tls}"
 MINIO_PUBLIC_HOST="$INFRA_FQDN"
 KES_CA_FILE="$TLS_BUNDLE"
-ACERVO_PUBLICO_POLICY_FILE="$SCRIPT_DIR/minio/acervo-publico.policy.json"
-export MINIO_TLS_DIR MINIO_PUBLIC_HOST ACERVO_PUBLICO_POLICY_FILE
+export MINIO_TLS_DIR MINIO_PUBLIC_HOST
 AUDIT_WEBHOOK_ENDPOINT="${AUDIT_WEBHOOK_ENDPOINT:-}"
 AUDIT_WEBHOOK_TOKEN="${AUDIT_WEBHOOK_TOKEN:-}"
 

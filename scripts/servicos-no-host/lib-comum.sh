@@ -16,6 +16,14 @@ DATA_BASE="${DATA_BASE:-/var/lib/uniplus}"
 TLS_DIR="${TLS_DIR:-/etc/uniplus/tls}"
 TLS_KEY="$TLS_DIR/unifesspa.edu.br.key"
 TLS_BUNDLE="$TLS_DIR/unifesspa.edu.br-bundle.crt"
+# Nome público do Vault do ambiente (rota do Traefik, certificado do domínio). Em
+# produção é fixo; em outro ambiente precisa ser informado, para que um script de
+# HML nunca alcance o Vault de produção por omissão.
+if [[ "$AMBIENTE" == prd ]]; then
+    NOME_DO_VAULT="${NOME_DO_VAULT:-uniplus-vault.unifesspa.edu.br}"
+else
+    NOME_DO_VAULT="${NOME_DO_VAULT:-}"
+fi
 DRY_RUN=false
 
 log_info()    { echo "[INFO] $*"; }
@@ -27,6 +35,20 @@ case "$AMBIENTE" in
     prd|hml) ;;
     *) log_error "AMBIENTE inválido: '$AMBIENTE' (use prd ou hml)."; exit 2 ;;
 esac
+
+# Define VAULT_URL só quando a variável não existe. Vazio definido de propósito é
+# respeitado e significa "usar o port-forward do host do cluster" (lib-vault.sh).
+definir_url_do_vault() {
+    if [[ -v VAULT_URL ]]; then
+        export VAULT_URL
+        return 0
+    fi
+    [[ -n "$NOME_DO_VAULT" ]] || {
+        log_error "Informe NOME_DO_VAULT (nome público do Vault de AMBIENTE=$AMBIENTE) ou VAULT_URL."
+        exit 2
+    }
+    export VAULT_URL="https://$NOME_DO_VAULT"
+}
 
 # Executa o comando, ou só o mostra em --dry-run.
 run() {

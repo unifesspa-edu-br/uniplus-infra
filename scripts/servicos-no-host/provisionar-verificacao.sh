@@ -39,7 +39,7 @@ if $DRY_RUN; then
     exit 0
 fi
 
-export VAULT_URL="${VAULT_URL:-https://uniplus-vault.unifesspa.edu.br}"
+definir_url_do_vault
 HOST_IP="$APP_IP"
 KES_CERT_FILE="$TLS_BUNDLE"
 KES_KEY_FILE="$TLS_KEY"

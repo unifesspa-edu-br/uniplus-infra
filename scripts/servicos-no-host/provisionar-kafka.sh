@@ -68,7 +68,7 @@ if $DRY_RUN; then
     echo "[DRY-RUN] $acao o tópico, o usuário SCRAM e o CA no Vault, com bootstrap $BOOTSTRAP"
     exit 0
 fi
-export VAULT_URL="${VAULT_URL:-https://uniplus-vault.unifesspa.edu.br}"
+definir_url_do_vault
 
 tmpdir=$(mktemp -d)
 chmod 700 "$tmpdir"
