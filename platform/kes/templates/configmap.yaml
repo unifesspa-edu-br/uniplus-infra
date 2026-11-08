@@ -1,7 +1,7 @@
 {{- if .Values.kes.enabled }}
 {{- $k := .Values.kes -}}
 {{- if not $k.vault.address }}
-{{- fail "kes.vault.address é obrigatório quando kes.enabled=true (ex.: http://platform-vault.vault.svc.cluster.local:8200)." -}}
+{{- fail "kes.vault.address é obrigatório quando kes.enabled=true (URL HTTPS do Vault pelo nome do certificado, ex.: https://uniplus-vault.unifesspa.edu.br:8200)." -}}
 {{- end }}
 {{- if not $k.vault.kvEngine }}
 {{- fail "kes.vault.kvEngine é obrigatório quando kes.enabled=true: o KV de plataforma do ambiente (ex.: plataforma-prd)." -}}

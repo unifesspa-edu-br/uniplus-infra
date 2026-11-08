@@ -37,7 +37,7 @@ do chart lê o resultado em `kes/server` e
 | Chave | Descrição |
 |---|---|
 | `kes.enabled` | Liga o chart (default `false`). |
-| `kes.vault.address` | Service do Vault. Obrigatório quando ligado. |
+| `kes.vault.address` | URL HTTPS do Vault pelo nome do certificado (resolvido para o Service pelo CoreDNS). Obrigatório quando ligado. |
 | `kes.hostPort` | Porta em que o MinIO alcança o KES (7373). |
 | `kes.keyName` | Chave mestra (`uniplus-arquivos-candidato`). |
 | `kes.cache.*` | Expiração do cache (disponibilidade x revogação). |

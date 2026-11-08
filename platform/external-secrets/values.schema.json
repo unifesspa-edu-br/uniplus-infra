@@ -64,7 +64,7 @@
         },
         "vaultServer": {
           "type": "string",
-          "description": "URL do Vault no cluster local (http://platform-vault.vault.svc.cluster.local:8200). Vazio apenas com enabled=false."
+          "description": "URL HTTPS do Vault pelo nome do certificado (https://uniplus-vault.unifesspa.edu.br:8200). Vazio apenas com enabled=false."
         },
         "stores": {
           "type": "array",

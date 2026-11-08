@@ -83,10 +83,12 @@ external-secrets:
 clusterSecretStore:
   enabled: false
 
-  # Endpoint do Vault no cluster local. NÃO HÁ DEFAULT UTILIZÁVEL — cada
-  # ambiente DEVE sobrescrever. O chart `platform/vault/` não força
-  # `fullnameOverride`, então o Service leva o nome da release:
-  #   http://platform-vault.vault.svc.cluster.local:8200
+  # Endereço do Vault, em HTTPS e pelo NOME PÚBLICO dele (o do certificado do
+  # domínio), nunca pelo nome do Service: o curinga não cobre *.svc.cluster.local,
+  # e o CoreDNS do cluster resolve o nome público para o Service (bootstrap-app.sh).
+  # O ESO valida a cadeia com as CAs da imagem. NÃO HÁ DEFAULT UTILIZÁVEL — cada
+  # ambiente DEVE sobrescrever:
+  #   https://uniplus-vault.unifesspa.edu.br:8200
   vaultServer: ""
 
   # Uma entrada por store. Os ExternalSecrets dos charts citam só o `name`.

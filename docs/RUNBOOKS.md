@@ -97,7 +97,9 @@ O `--platform linux/amd64` evita um import truncado no containerd.
    serviços só com TLS (portas sem TLS desligadas) e libera as portas para a VM de aplicação.
 2. **App:** com o repositório na tag de produção (`git checkout vX.Y.Z`),
    `scripts/servicos-no-host/bootstrap-app.sh --revisao=vX.Y.Z` na `uniplus-prod-app`. Instala K3s,
-   Helm e ArgoCD, publica o Secret `uniplus-unifesspa-tls`, registra o cluster com o label
+   Helm e ArgoCD, grava a reescrita do CoreDNS que leva o nome do Vault ao Service dele
+   (ConfigMap `coredns-custom`, ver [2.5](#25-tls-do-vault)), publica o Secret `uniplus-unifesspa-tls`
+   (inclusive no namespace `vault`), registra o cluster com o label
    `uniplus.io/revision=vX.Y.Z` e aplica o projeto e os ApplicationSets. Nada é sincronizado.
 3. **Plataforma:** no ArgoCD, sincronizar à mão, nesta ordem, `storage` (a StorageClass que o Vault
    usa), `traefik`, `external-secrets` e `vault`.
@@ -133,12 +135,40 @@ O `--platform linux/amd64` evita um import truncado no containerd.
 
 O emissor OIDC é o Keycloak institucional (`https://keycloak.unifesspa.edu.br/realms/unifesspa`).
 
-### 2.5 Não verificável sem as VMs
+### 2.5 TLS do Vault
+
+O listener do Vault serve TLS com o certificado do domínio, montado do Secret `uniplus-unifesspa-tls` do
+namespace `vault` (`tls.crt` com a cadeia completa). Nada fala com o Vault em texto claro, e nenhum cliente
+pula a validação do certificado.
+
+- **Nome:** o curinga não cobre `*.svc.cluster.local`, então os consumidores dentro do cluster
+  (External Secrets, KES, APIs) chamam `https://uniplus-vault.unifesspa.edu.br:8200`. O nome é parâmetro do
+  ambiente (values e `NOME_DO_VAULT` nos scripts; em outro ambiente que não `prd` a variável é obrigatória).
+- **Resolução no cluster:** o `bootstrap-app.sh` grava o ConfigMap `coredns-custom` (`vault.override`),
+  que o CoreDNS do K3s importa. Ele reescreve o nome público para `platform-vault.vault.svc.cluster.local`
+  e devolve a resposta com o nome original. O ConfigMap não é do K3s, então `kubectl apply` é
+  idempotente e uma atualização do K3s não o apaga; o CoreDNS só o relê ao reiniciar, e o script o
+  reinicia quando o ConfigMap muda. Conferir de dentro do cluster:
+  `kubectl -n vault exec platform-vault-0 -c vault -- nslookup uniplus-vault.unifesspa.edu.br` deve devolver o
+  ClusterIP do Service `platform-vault`.
+- **Validação:** as imagens do External Secrets (distroless) e do KES (UBI micro com o bundle de CAs) trazem as
+  CAs públicas, as APIs .NET usam o repositório de CAs do sistema (já validam o Keycloak e o MinIO com o
+  mesmo certificado), e o Traefik valida o backend pelo `ServersTransport` com `serverName` igual ao nome do
+  Vault. Nada usa `skip-verify`. Se a cadeia entregue não chegar a uma raiz dessas imagens, a correção é
+  completar a cadeia em `tls.crt`, não relaxar a validação.
+- **Scripts:** sem `VAULT_URL`, abrem um port-forward para o pod e o `curl` resolve o nome do Vault para
+  `127.0.0.1` só naquela porta; o certificado continua sendo validado pelo nome. A CLI dentro do pod
+  (`kubectl -n vault exec platform-vault-0 -c vault -- vault status`) valida pelo `VAULT_TLS_SERVER_NAME`.
+- **Renovação:** o `renovar-certificado.sh` troca o Secret, espera o kubelet projetá-lo no pod, manda o Vault
+  reler o listener com `SIGHUP` (sem reiniciar, para não selá-lo) e confere o certificado servido.
+
+### 2.6 Não verificável sem as VMs
 
 Os scripts e os valores foram validados por renderização, `shellcheck` e `--dry-run`. Dependem de
 conferência na primeira execução real: a imagem `postgis/postgis:18-3.6` aceitar `hba_file` e
 `ssl_key_file` nos caminhos montados, o dono do diretório TLS de cada container (uids 999, 1000 e
-100), o nome DNS `uniplus-prod-app` para o KES e a ordem de sync no ArgoCD.
+100), o nome DNS `uniplus-prod-app` para o KES, a ordem de sync no ArgoCD e a sintaxe da reescrita do
+CoreDNS (conferir com o `nslookup` da seção 2.5 antes de abrir o Vault).
 
 ## 3. Atualização manual por tag
 
@@ -169,7 +199,8 @@ Nas duas VMs, uma de cada vez, com o mesmo par novo:
 O script confere chave, validade e nome, guarda o par anterior em `/etc/uniplus/tls/anterior`,
 reinstala o par para cada serviço e reinicia `uniplus-postgres`, `uniplus-redis`, `uniplus-minio`,
 `uniplus-kafka` e `uniplus-rabbitmq` (infra), ou atualiza o Secret TLS dos namespaces, regrava no
-Vault o certificado do KES e o CA do Kafka (`kafka/ca` e `kafka/admin`), espera os ExternalSecrets
+Vault o certificado do KES e o CA do Kafka (`kafka/ca` e `kafka/admin`), manda o Vault reler o
+certificado do listener (`SIGHUP`, sem selá-lo), espera os ExternalSecrets
 sincronizarem e reinicia o KES (app). Na infra também troca o `kes.crt` em que o MinIO confia.
 Fazer a VM de aplicação primeiro. O script fala com o Vault por port-forward neste host. Os clientes revalidam o certificado na próxima conexão; conferir depois com
 `openssl s_client -connect uniplus-prod-infra.unifesspa.edu.br:5432 -starttls postgres`.
@@ -180,7 +211,8 @@ Fazer a VM de aplicação primeiro. O script fala com o Vault por port-forward n
   uniplus-redis uniplus-minio uniplus-kafka uniplus-rabbitmq`).
 - **App:** o K3s e o ArgoCD voltam sozinhos. O Vault volta **selado** (Shamir 5/3, ADR-014):
   abrir pela interface em `https://uniplus-vault.unifesspa.edu.br` (restrita à rede institucional) ou
-  por `kubectl exec` com três das cinco chaves. Enquanto selado, o External Secrets não renova
+  por `kubectl -n vault exec -it platform-vault-0 -c vault -- vault operator unseal` com três das cinco
+  chaves. Enquanto selado, o External Secrets não renova
   segredos e as aplicações novas não sobem. Reiniciar a infra antes da app evita erros de conexão
   no início.
 
