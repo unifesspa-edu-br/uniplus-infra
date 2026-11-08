@@ -2,7 +2,7 @@
 # PostgreSQL 18 + PostGIS da VM de infraestrutura de produção. Carregado com
 # `source` por bootstrap-infra.sh, depois de lib-comum.sh.
 #
-# Só aceita conexão TLS vinda da VM de aplicação (hostssl), com o certificado
+# Só aceita conexão TLS vinda da aplicação (hostssl, origem APP_CIDR), com o certificado
 # curinga da instituição; o cliente valida o nome pelo FQDN da VM.
 
 POSTGRES_IMAGE="postgis/postgis:18-3.6"
@@ -13,7 +13,7 @@ POSTGRES_CONFIG_DIR="$DATA_BASE/postgres/config"
 hba_postgres() {
     printf '%s\n' \
         'local all all trust' \
-        "hostssl all all ${APP_IP}/32 scram-sha-256"
+        "hostssl all all ${APP_CIDR} scram-sha-256"
 }
 
 unidade_postgres() {

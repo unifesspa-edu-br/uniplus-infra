@@ -6,6 +6,9 @@
 APP_IP="${APP_IP:-200.139.48.121}"
 INFRA_IP="${INFRA_IP:-200.139.48.122}"
 INFRA_FQDN="${INFRA_FQDN:-uniplus-prod-infra.unifesspa.edu.br}"
+# Origem das conexões da aplicação aos serviços de dados. Com as duas VMs, é o
+# IP da VM de aplicação; num host só, os pods chegam com o IP da rede de pods.
+APP_CIDR="${APP_CIDR:-$APP_IP/32}"
 DATA_BASE="${DATA_BASE:-/var/lib/uniplus}"
 TLS_DIR="${TLS_DIR:-/etc/uniplus/tls}"
 TLS_KEY="$TLS_DIR/unifesspa.edu.br.key"
@@ -112,6 +115,22 @@ garantir_docker() {
     run "sudo apt-get update -qq"
     run "sudo apt-get install -y docker.io"
     run "sudo systemctl enable --now docker"
+}
+
+# Sem swap: falta de memória precisa aparecer como processo encerrado, não como
+# lentidão sem causa visível. Desliga o swap ativo e comenta as linhas de swap do
+# /etc/fstab, para que não volte no próximo boot.
+desligar_swap() {
+    if $DRY_RUN; then
+        echo "[DRY-RUN] swapoff -a e comentaria as linhas de swap do /etc/fstab"
+        return 0
+    fi
+    sudo swapoff -a
+    if grep -qE '^[^#].*[[:space:]]swap[[:space:]]' /etc/fstab; then
+        sudo sed -i -E 's|^([^#].*[[:space:]]swap[[:space:]].*)$|# \1|' /etc/fstab
+        sudo systemctl daemon-reload
+    fi
+    log_success "Swap desligado."
 }
 
 # Reinicia as unidades listadas, esperando cada uma voltar a ficar ativa.
