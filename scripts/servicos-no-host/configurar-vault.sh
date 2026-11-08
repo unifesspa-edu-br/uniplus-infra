@@ -5,7 +5,8 @@
 # uma política de leitura só no próprio KV e uma role ligada à ServiceAccount da
 # ClusterSecretStore correspondente. Um sistema não lê o KV do outro. Cria também o
 # Transit de cada sistema, com as chaves e as políticas e roles das APIs que cifram
-# (lib-transit.sh). Idempotente: o que já existe é reaplicado sem erro.
+# (lib-transit.sh). Antes de tudo habilita a auditoria, para que nenhum segredo
+# seja gravado sem rastro. Idempotente: o que já existe é reaplicado sem erro.
 #
 # Uso: [AMBIENTE=prd|hml] [VAULT_URL=...] ./configurar-vault.sh [--dry-run]
 # Rodar antes de semear-vault.sh, de qualquer máquina com o token raiz do Vault.
@@ -46,6 +47,47 @@ montar_kv() {
     fi
 }
 
+# Dois destinos de auditoria: com um só, a falha dele faz o Vault recusar todas as
+# requisições. O arquivo fica no volume de auditoria do chart, rotacionado pelo
+# sidecar audit-rotate; a saída padrão do pod é rotacionada pelo kubelet.
+AUDITORIA=("stdout:stdout" "file:/vault/audit/audit.log")
+
+# Imprime o file_path do device de auditoria habilitado no caminho: vazio se não há
+# device, "?" se o device não é do tipo file.
+destino_da_auditoria() {
+    CAMINHO="$1/" python3 -c '
+import json, os, sys
+resposta = json.load(sys.stdin)
+device = resposta.get("data", resposta).get(os.environ["CAMINHO"])
+if device is None:
+    print("")
+elif device.get("type") != "file":
+    print("?")
+else:
+    print(device.get("options", {}).get("file_path", "?"))
+' <"$VAULT_BODY_FILE"
+}
+
+habilitar_auditoria() {
+    local item caminho destino
+    for item in "${AUDITORIA[@]}"; do
+        caminho="${item%%:*}" destino="${item#*:}"
+        exigir_sucesso GET sys/audit
+        case "$(destino_da_auditoria "$caminho")" in
+            "$destino")
+                log_success "Auditoria $caminho/ já habilitada."
+                continue ;;
+            "") ;;
+            *)
+                log_error "Auditoria $caminho/ existe com outro destino; conferir com vault audit list -detailed."
+                exit 1 ;;
+        esac
+        exigir_sucesso PUT "sys/audit/$caminho" \
+            "{\"type\":\"file\",\"options\":{\"file_path\":\"$destino\"}}"
+        log_success "Auditoria $caminho/ habilitada ($destino)."
+    done
+}
+
 habilitar_auth_kubernetes() {
     vault_api GET sys/auth
     if grep -q '"kubernetes/"' "$VAULT_BODY_FILE"; then
@@ -77,11 +119,13 @@ if $DRY_RUN; then
     for sistema in "${SISTEMAS[@]}"; do
         echo "[DRY-RUN] montaria $sistema-$AMBIENTE/ (KV v2) e aplicaria a política e a role external-secrets-$sistema em $VAULT_URL"
     done
+    echo "[DRY-RUN] habilitaria a auditoria em stdout/ e em file/ (/vault/audit/audit.log)"
     echo "[DRY-RUN] habilitaria auth/kubernetes"
     echo "[DRY-RUN] montaria o Transit $MOUNT_UNIPLUS, $MOUNT_GEO e $MOUNT_PLATAFORMA com as chaves e a política e a role de $SA_API_HOST e $SA_GEO"
     exit 0
 fi
 preparar_provisionamento
+habilitar_auditoria
 habilitar_auth_kubernetes
 for sistema in "${SISTEMAS[@]}"; do
     montar_kv "$sistema-$AMBIENTE"
