@@ -56,7 +56,7 @@ step_minio() {
     # o KES existe, é incluído por instalar-minio.sh nas execuções seguintes.
     instalar_par_tls "$DATA_BASE/minio/tls" "$MINIO_UID"
     DATA_HOST_IP="$INFRA_IP" MINIO_TLS_DIR="$DATA_BASE/minio/tls" MINIO_PUBLIC_HOST="$INFRA_FQDN" \
-        ACERVO_PUBLICO_POLICY_FILE="$SCRIPT_DIR/minio/acervo-publico.policy.json" \
+        ACERVO_PUBLICO_ORIGEM="$APP_CIDR" \
         chamar "$SCRIPT_DIR/instalar-minio.sh"
 }
 

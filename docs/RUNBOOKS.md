@@ -189,10 +189,11 @@ chave vai a um custodiante diferente.
 
 ## 6. Política do acervo público
 
-A leitura anônima do bucket `uniplus-acervo-publico` só vale para quem chega pelo Traefik. A condição
-`aws:SourceIp` em `scripts/servicos-no-host/minio/acervo-publico.policy.json` é `200.139.48.121/32`
-(IP da VM de aplicação), no lugar de `10.42.0.0/16` de homologação, porque em produção o Traefik
-alcança o MinIO por outra máquina e a origem da conexão é o IP público dela. Um `GET` anônimo
+A leitura anônima do bucket `uniplus-acervo-publico` só vale para quem chega pelo Traefik. O
+`instalar-minio.sh` gera a política do modelo `scripts/servicos-no-host/minio/acervo-publico.policy.json.modelo`,
+com `aws:SourceIp` igual a `APP_CIDR` (por padrão `200.139.48.121/32`, o IP da VM de aplicação, porque em
+produção o Traefik alcança o MinIO por outra máquina e a origem da conexão é o IP público dela; num host
+só, é a rede de pods). Quem precisar de outra regra informa `ACERVO_PUBLICO_POLICY_FILE`, que vale como está. Um `GET` anônimo
 direto em `uniplus-prod-infra.unifesspa.edu.br:9000` a partir de outro IP é recusado.
 
 ## 7. Diagnóstico

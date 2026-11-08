@@ -10,10 +10,14 @@
 # Variáveis de ambiente:
 #   DATA_HOST_IP   IPv4 privado a bindar (default: auto-detectado via `hostname -I`)
 #   DATA_BASE      Diretório base dos volumes de dados (default: /var/lib/uniplus)
+#   ACERVO_PUBLICO_ORIGEM
+#                  CIDR de onde o Traefik alcança o MinIO (a origem efetiva das
+#                  conexões ao acervo, normalmente APP_CIDR). Entra no modelo
+#                  minio/acervo-publico.policy.json.modelo.
 #   ACERVO_PUBLICO_POLICY_FILE
-#                  Política anônima do bucket do acervo público, versionada no
-#                  repositório (default: minio/acervo-publico.policy.json ao lado
-#                  deste script).
+#                  Política anônima do bucket do acervo público já pronta. Se
+#                  informada, vale como está e ACERVO_PUBLICO_ORIGEM é dispensada.
+#                  Sem ela, a política é gerada do modelo versionado.
 #
 #   MINIO_EXTRA_ENV_FILE
 #                  Arquivo de ambiente adicional entregue ao container (docker
@@ -106,7 +110,31 @@ fi
 # nem lhe aplica política — é este script que o provisiona.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ACERVO_PUBLICO_BUCKET="uniplus-acervo-publico"
-ACERVO_PUBLICO_POLICY_FILE="${ACERVO_PUBLICO_POLICY_FILE:-$SCRIPT_DIR/minio/acervo-publico.policy.json}"
+ACERVO_PUBLICO_POLICY_FILE="${ACERVO_PUBLICO_POLICY_FILE:-}"
+ACERVO_PUBLICO_ORIGEM="${ACERVO_PUBLICO_ORIGEM:-}"
+mc_env_file=""
+politica_gerada=""
+
+# Remove o que o script deixa no host: o arquivo de credenciais do mc (root:root
+# 0600, mesmo quando um comando mc falha e o `set -e` encerra o script) e a política
+# gerada do modelo.
+limpar_temporarios() {
+    [[ -z "$politica_gerada" ]] || rm -f "$politica_gerada"
+    [[ -z "$mc_env_file" ]] || sudo shred -u "$mc_env_file" 2>/dev/null || sudo rm -f "$mc_env_file"
+}
+trap limpar_temporarios EXIT
+
+# Gera a política do acervo a partir do modelo versionado, com a origem informada.
+gerar_politica_do_acervo() {
+    [[ "$ACERVO_PUBLICO_ORIGEM" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}/[0-9]{1,2}$ ]] || {
+        log_error "Informe ACERVO_PUBLICO_ORIGEM (CIDR IPv4, ex.: 10.0.0.5/32) ou ACERVO_PUBLICO_POLICY_FILE."
+        exit 1
+    }
+    politica_gerada=$(mktemp)
+    chmod 644 "$politica_gerada"
+    sed "s|__ORIGEM__|$ACERVO_PUBLICO_ORIGEM|" "$SCRIPT_DIR/minio/acervo-publico.policy.json.modelo" >"$politica_gerada"
+    ACERVO_PUBLICO_POLICY_FILE="$politica_gerada"
+}
 
 log_info()    { echo "[INFO] $*"; }
 log_success() { echo "[ OK ] $*"; }
@@ -127,6 +155,7 @@ log_info "DATA_HOST_IP=$DATA_HOST_IP DATA_BASE=$DATA_BASE DRY_RUN=$DRY_RUN"
 # ausente, ou que conceda mais que leitura de objeto, aborta aqui — e não depois
 # de o bucket já existir sem política ou com uma política larga demais.
 if ! $SKIP_BUCKETS; then
+    [[ -n "$ACERVO_PUBLICO_POLICY_FILE" ]] || gerar_politica_do_acervo
     if [[ ! -f "$ACERVO_PUBLICO_POLICY_FILE" ]]; then
         log_error "Política do acervo público não encontrada: $ACERVO_PUBLICO_POLICY_FILE"
         exit 1
@@ -278,9 +307,6 @@ else
     # qualquer usuário do host) — passadas via --env-file num arquivo
     # temporário root:root 0600, removido logo após o uso.
     mc_env_file=$(sudo mktemp /tmp/uniplus-mc-env.XXXXXX)
-    # Remove o arquivo de credenciais também quando um dos comandos mc falha:
-    # com `set -e`, a falha encerraria o script com a credencial root em /tmp.
-    trap 'sudo shred -u "$mc_env_file" 2>/dev/null || sudo rm -f "$mc_env_file"' EXIT
     sudo bash -c "cat > '$mc_env_file'" <<EOF
 MC_HOST_uniplus=${minio_scheme}://${root_user}:${root_pw}@${minio_host}:9000
 EOF
@@ -310,7 +336,7 @@ EOF
         "$MC_IMAGE" \
         anonymous get-json "uniplus/$ACERVO_PUBLICO_BUCKET"
     sudo shred -u "$mc_env_file" 2>/dev/null || sudo rm -f "$mc_env_file"
-    trap - EXIT
+    mc_env_file=""
     log_success "Buckets baseline prontos (keycloak-backups, loki-chunks, tempo-traces, app-uploads, uniplus-storage)."
     log_success "Acervo público pronto ($ACERVO_PUBLICO_BUCKET, leitura anônima só de objeto)."
 fi

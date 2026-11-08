@@ -7,9 +7,9 @@
 # arquivo versionado. Os temporários ficam em ~/tmp/prod (0700) e são destruídos
 # na saída.
 
-# VAULT_URL vazio (definido de propósito) usa o port-forward do host do cluster.
-VAULT_URL="${VAULT_URL-https://uniplus-vault.unifesspa.edu.br}"
-export VAULT_URL
+# VAULT_URL vazio (definido de propósito) usa o port-forward do host do cluster; sem
+# a variável, vale o Vault público do ambiente (NOME_DO_VAULT).
+definir_url_do_vault
 PROVISIONAR_TMP=""
 
 # shellcheck source=lib-vault.sh

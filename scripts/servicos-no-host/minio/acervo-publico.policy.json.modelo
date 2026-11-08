@@ -17,7 +17,7 @@
       "Condition": {
         "IpAddress": {
           "aws:SourceIp": [
-            "200.139.48.121/32"
+            "__ORIGEM__"
           ]
         }
       }
