@@ -104,10 +104,13 @@ O `--platform linux/amd64` evita um import truncado no containerd.
 3. **Plataforma:** no ArgoCD, sincronizar à mão, nesta ordem, `storage` (a StorageClass que o Vault
    usa), `traefik`, `external-secrets` e `vault`.
 4. **Vault:** inicializar e abrir (Shamir 5/3, ver [seção 5](#5-reinício-das-vms-e-abertura-do-vault)), fora dos scripts.
-5. **Preparar o Vault para o External Secrets:** `configurar-vault.sh` (monta um KV v2 por sistema, `uniplus-prd`, `geo-prd` e `plataforma-prd`, habilita
-   `auth/kubernetes` e cria, para cada sistema, uma política de leitura só no próprio KV e a role
-   `external-secrets-<sistema>`). Idempotente. Precisa
-   rodar antes de qualquer segredo ser semeado.
+5. **Preparar o Vault:** `configurar-vault.sh` monta um KV v2 por sistema (`uniplus-prd`, `geo-prd` e
+   `plataforma-prd`), habilita `auth/kubernetes` e cria, para cada sistema, uma política de leitura só no
+   próprio KV e a role `external-secrets-<sistema>`. Monta também um Transit por sistema
+   (`uniplus-prd-transit`, `geo-prd-transit`, `plataforma-prd-transit`), cria as chaves de cifra e, para
+   `uniplus-api-host` e `unifesspa-geo-api`, a política e a role com `update` só nas chaves de cada um
+   (tabela em [`vault-caminhos.md`](vault-caminhos.md)). Idempotente. Precisa rodar antes de qualquer
+   segredo ser semeado e antes do `provisionar-verificacao.sh`, que exige a `uniplus-kes-kek`.
 6. **Segredos e bancos**, na `uniplus-prod-infra`, com o Vault aberto e o token em mãos (pedido sem
    eco), nesta ordem: `semear-vault.sh`, `provisionar-bancos.sh`, `provisionar-kafka.sh` (tópico
    e usuário SCRAM do registro de acesso, CA do broker), `provisionar-verificacao.sh` e

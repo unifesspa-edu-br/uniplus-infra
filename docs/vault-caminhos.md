@@ -31,7 +31,7 @@ O caminho antigo ficava no mount `secret/`, sob um prefixo único do ambiente (`
 |---|---|---|
 | `postgres/uniplus` | `uniplus-<amb>` | `postgres` |
 | `postgres/portal` | `uniplus-<amb>` | `postgres-portal` |
-| `uniplus-api-host/encryption` | `uniplus-<amb>` | `encryption` |
+| `uniplus-api-host/encryption` | — | descartado: a API cifra pelo Transit (abaixo) |
 | `keycloak/clients/uniplus-api-host` | `uniplus-<amb>` | `keycloak/uniplus-api-host` |
 | `keycloak/clients/uniplus-api-portal` | `uniplus-<amb>` | `keycloak/uniplus-api-portal` |
 | `keycloak/clients/uniplus-api-selecao` (client OAuth do Geo) | `uniplus-<amb>` | `keycloak/uniplus-api-selecao` |
@@ -46,7 +46,7 @@ O caminho antigo ficava no mount `secret/`, sob um prefixo único do ambiente (`
 | `redis/default` | `uniplus-<amb>`, `geo-<amb>` e `plataforma-<amb>` | `redis` |
 | `smtp/uniplus` | `uniplus-<amb>` e `plataforma-<amb>` | `smtp` |
 | `postgres/geo` | `geo-<amb>` | `postgres` |
-| `geo/encryption` | `geo-<amb>` | `encryption` |
+| `geo/encryption` | — | descartado: o Geo cifra pelo Transit (abaixo) |
 | `postgres/apicurio` | `plataforma-<amb>` | `postgres/apicurio` |
 | `postgres/keycloak` | `plataforma-<amb>` | `postgres/keycloak` |
 | `keycloak/admin` | `plataforma-<amb>` | `keycloak/admin` |
@@ -64,7 +64,18 @@ O caminho antigo ficava no mount `secret/`, sob um prefixo único do ambiente (`
 | keystore do KES (chaves mestras cifradas) | `plataforma-<amb>` | `kes-keystore/*` (prefixo exclusivo, em `kes.vault.kvPrefix`; KV em `kes.vault.kvEngine`) |
 | `vault/root`, `vault-transit-bootstrap/token` | — | descartados (desenho antigo) |
 
-O mount `transit` (cifra das APIs e chave `uniplus-kes-kek` do KES) não muda.
+## Transit (cifra)
+
+Um mount Transit por sistema e ambiente. O mount genérico `transit/` deixa de existir. As chaves são AES-256-GCM, não exportáveis, sem backup em claro e com `deletion_allowed=false`; nunca se altera `min_decryption_version` nem se faz `trim`.
+
+| Mount | Chaves | Quem usa | Operações |
+|---|---|---|---|
+| `uniplus-<amb>-transit` | `uniplus-selecao-identificadores-aesgcm`, `uniplus-selecao-sensiveis-aesgcm`, `uniplus-discentes-identificadores-aesgcm`, `uniplus-idempotency-aesgcm` | `uniplus-api-host` (namespace `uniplus`) | `encrypt`, `decrypt` |
+| `uniplus-<amb>-transit` | `uniplus-selecao-identificadores-hmac`, `uniplus-selecao-sensiveis-hmac`, `instalacao-codigo` | `uniplus-api-host` | `hmac` (e `hmac/<chave>/<algoritmo>`) |
+| `geo-<amb>-transit` | `geo-idempotency-aesgcm` | `unifesspa-geo-api` (namespace `geo`) | `encrypt`, `decrypt` |
+| `plataforma-<amb>-transit` | `uniplus-kes-kek` | KES (namespace `kes`) | `encrypt`, `decrypt` |
+
+Todas as operações são `update` sobre `<mount>/<operação>/<chave>`. O `uniplus-api-portal` não cifra (o `Program.cs` dele não registra a cifragem), então não tem role nem política. A `uniplus-kes-kek` mantém o nome porque protege arquivos já cifrados; onde ela já existe em outro mount, move-se com `vault secrets move transit plataforma-<amb>-transit`.
 
 ## Roles e políticas no Vault
 
@@ -74,4 +85,6 @@ O mount `transit` (cifra das APIs e chave `uniplus-kes-kek` do KES) não muda.
 - a política `external-secrets-<s>`, com `read` em `<s>-<amb>/data/*` e `<s>-<amb>/metadata/*`;
 - a role Kubernetes `external-secrets-<s>`, ligada à ServiceAccount `external-secrets-<s>` do namespace `external-secrets`.
 
-O KES usa a política e a role `kes`, com acesso só a `plataforma-<amb>/data/kes-keystore/*` (não alcança `kes/server` nem `kes/api-keys`) e às chaves Transit. O KV `secret/` e a política `external-secrets-read` do desenho anterior deixam de ser criados.
+Para cada API que cifra, `configurar-vault.sh` cria a política e a role Kubernetes de mesmo nome, ligada à ServiceAccount de mesmo nome e ao namespace dela, com `update` só nas operações da tabela acima: `uniplus-api-host` (`uniplus`) e `unifesspa-geo-api` (`geo`).
+
+O KES usa a política e a role `kes` (criadas por `provisionar-verificacao.sh`), com acesso só a `plataforma-<amb>/data/kes-keystore/*` (não alcança `kes/server` nem `kes/api-keys`) e a `encrypt`/`decrypt` da `uniplus-kes-kek` em `plataforma-<amb>-transit`. O KV `secret/` e a política `external-secrets-read` do desenho anterior deixam de ser criados.

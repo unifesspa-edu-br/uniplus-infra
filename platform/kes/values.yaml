@@ -39,8 +39,9 @@ kes:
     # `kes/api-keys`) ficam fora dele, e a política do KES não os alcança.
     kvEngine: ""
     kvPrefix: kes-keystore
-    # Chave Transit que cifra cada chave mestra antes de ir ao KV.
-    transitEngine: transit
+    # Mount Transit de plataforma do ambiente (plataforma-<amb>-transit), sem default
+    # utilizável, e a chave que cifra cada chave mestra antes de ir ao KV.
+    transitEngine: ""
     transitKey: uniplus-kes-kek
     # Autenticação por Kubernetes: mount e role (SA `kes` no namespace `kes`).
     authEngine: kubernetes

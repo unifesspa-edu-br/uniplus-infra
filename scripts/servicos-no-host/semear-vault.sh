@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Grava no Vault de produção os segredos que nascem na VM de infraestrutura:
-# Redis, usuário raiz do MinIO, administradores do RabbitMQ e do Kafka, segredos
-# das interfaces de administração e as chaves locais de cifra das APIs. Só grava o que ainda não existe; nunca troca segredo vivo.
+# Redis, usuário raiz do MinIO, administradores do RabbitMQ e do Kafka e segredos
+# das interfaces de administração. As APIs cifram pelo Transit do Vault (criado por
+# configurar-vault.sh), então não há chave de cifra a semear. Só grava o que ainda não existe; nunca troca segredo vivo.
 #
 # Cada sistema tem o próprio KV (uniplus-<amb>, geo-<amb>, plataforma-<amb>): o
 # segredo compartilhado é gravado no KV de cada sistema que o consome (mapa em
@@ -58,21 +59,14 @@ semear_interfaces() {
     log_success "plataforma/redis-ui/basic-auth gravado no Vault."
 }
 
-semear_chaves_locais() {
-    garantir_no_vault uniplus/encryption "local_key=$(openssl rand -base64 32)"
-    garantir_no_vault geo/encryption "local_key=$(openssl rand -base64 32)"
-}
-
 analisar_argumentos "$@"
 exigir_usuario_comum
 if $DRY_RUN; then
     echo "[DRY-RUN] gravaria no Vault, se ausentes: redis (uniplus, geo, plataforma), minio/root e kafka/admin (uniplus, plataforma),"
-    echo "[DRY-RUN]   plataforma/rabbitmq/admin, plataforma/kafka-ui/jwt, plataforma/redis-ui/basic-auth,"
-    echo "[DRY-RUN]   uniplus/encryption, geo/encryption"
+    echo "[DRY-RUN]   plataforma/rabbitmq/admin, plataforma/kafka-ui/jwt, plataforma/redis-ui/basic-auth"
     exit 0
 fi
 preparar_provisionamento
 semear_servicos_de_dados
 semear_kafka
 semear_interfaces
-semear_chaves_locais

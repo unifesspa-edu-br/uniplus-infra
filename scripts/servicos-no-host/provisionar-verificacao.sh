@@ -4,8 +4,9 @@
 # uniplus-infra#682). É a parte "escrita no Vault" que os charts platform/kes e
 # platform/rabbitmq não fazem:
 #
-#   - Transit `transit/` e a chave `uniplus-kes-kek` (cifra as chaves do KES);
-#   - política `kes` (só o prefixo `kes-keystore/` do KV de plataforma) e role Kubernetes auth `kes` (ServiceAccount kes/kes);
+#   - política `kes` (só o prefixo `kes-keystore/` do KV de plataforma e a chave
+#     `uniplus-kes-kek` do Transit de plataforma, que configurar-vault.sh cria) e
+#     role Kubernetes auth `kes` (ServiceAccount kes/kes);
 #   - certificado do servidor KES (plataforma/kes/server);
 #   - identidades do KES: `minio` (generate/decrypt) e `provisioner` (cria a chave);
 #   - senhas do RabbitMQ (admin, API, verificador);
@@ -35,7 +36,7 @@ mostrar_uso() {
 analisar_argumentos "$@"
 exigir_usuario_comum
 if $DRY_RUN; then
-    echo "[DRY-RUN] provisionaria no Vault a cifra, a política, a role e as identidades do KES, as senhas do RabbitMQ e as do MinIO"
+    echo "[DRY-RUN] provisionaria no Vault a política, a role e as identidades do KES, as senhas do RabbitMQ e as do MinIO"
     exit 0
 fi
 
@@ -48,6 +49,7 @@ KES_IMAGE="${KES_IMAGE:-quay.io/minio/kes:2025-03-12T09-35-18Z}"
 KES_NAMESPACE="kes"
 KES_SERVICE_ACCOUNT="kes"
 TRANSIT_KEY="uniplus-kes-kek"
+TRANSIT_MOUNT="plataforma-$AMBIENTE-transit"
 # Igual a kes.vault.kvPrefix do chart platform/kes.
 KES_KEYSTORE_PREFIX="kes-keystore"
 tmpdir=$(mktemp -d)
@@ -65,38 +67,30 @@ vault_conectar "$tmpdir"
 
 log() { echo "[$(date -u +%H:%M:%S)] $*"; }
 
-# --- Transit e chave que cifra as chaves mestras do KES ----------------------
-vault_api GET sys/mounts
-[[ "$VAULT_HTTP_STATUS" == 200 ]] || { echo "Falha ao listar mounts (HTTP $VAULT_HTTP_STATUS)." >&2; exit 1; }
-if ! grep -q '"transit/"' "$VAULT_BODY_FILE"; then
-    log "Habilitando o mount transit/"
-    vault_api POST sys/mounts/transit '{"type":"transit"}'
-    [[ "$VAULT_HTTP_STATUS" =~ ^20[04]$ ]] || { echo "Falha ao habilitar transit (HTTP $VAULT_HTTP_STATUS)." >&2; exit 1; }
-fi
-vault_api GET "transit/keys/$TRANSIT_KEY"
-if [[ "$VAULT_HTTP_STATUS" == 404 ]]; then
-    log "Criando a chave Transit $TRANSIT_KEY (não exportável, sem backup em claro)"
-    vault_api POST "transit/keys/$TRANSIT_KEY" \
-        '{"type":"aes256-gcm96","exportable":false,"allow_plaintext_backup":false}'
-    [[ "$VAULT_HTTP_STATUS" =~ ^20[04]$ ]] || { echo "Falha ao criar a chave Transit (HTTP $VAULT_HTTP_STATUS)." >&2; exit 1; }
-elif [[ "$VAULT_HTTP_STATUS" != 200 ]]; then
-    echo "Falha ao consultar a chave Transit (HTTP $VAULT_HTTP_STATUS)." >&2
-    exit 1
-fi
+# --- Chave que cifra as chaves mestras do KES -------------------------------
+# O mount Transit de plataforma e a chave `uniplus-kes-kek` são criados por
+# configurar-vault.sh. Aqui só se confere que existem: sem a chave o KES não sobe.
+vault_api GET "$TRANSIT_MOUNT/keys/$TRANSIT_KEY"
+case "$VAULT_HTTP_STATUS" in
+    200) ;;
+    404) echo "A chave $TRANSIT_MOUNT/$TRANSIT_KEY não existe; rode configurar-vault.sh antes." >&2; exit 1 ;;
+    *) echo "Falha ao consultar a chave Transit (HTTP $VAULT_HTTP_STATUS)." >&2; exit 1 ;;
+esac
 
 # --- Política e role do KES --------------------------------------------------
 # O KES só toca o prefixo exclusivo do keystore no KV de plataforma (nunca `kes/server`
-# nem `kes/api-keys`, que ficam ao lado) e cifra/decifra com a própria chave Transit.
+# nem `kes/api-keys`, que ficam ao lado) e cifra/decifra com a própria chave, no
+# Transit de plataforma.
 politica=$(python3 -c '
 import json, sys
-t, kv, p = sys.argv[1], sys.argv[2], sys.argv[3]
+t, kv, p, m = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 print(json.dumps({"policy": "\n".join([
     "path \"%s/data/%s/*\" { capabilities = [\"create\", \"read\", \"delete\"] }" % (kv, p),
     "path \"%s/metadata/%s/*\" { capabilities = [\"list\", \"delete\"] }" % (kv, p),
     "path \"%s/metadata/%s\" { capabilities = [\"list\"] }" % (kv, p),
-    "path \"transit/encrypt/%s\" { capabilities = [\"update\"] }" % t,
-    "path \"transit/decrypt/%s\" { capabilities = [\"update\"] }" % t,
-]) + "\n"}), end="")' "$TRANSIT_KEY" "plataforma-$AMBIENTE" "$KES_KEYSTORE_PREFIX")
+    "path \"%s/encrypt/%s\" { capabilities = [\"update\"] }" % (m, t),
+    "path \"%s/decrypt/%s\" { capabilities = [\"update\"] }" % (m, t),
+]) + "\n"}), end="")' "$TRANSIT_KEY" "plataforma-$AMBIENTE" "$KES_KEYSTORE_PREFIX" "$TRANSIT_MOUNT")
 log "Escrevendo a política kes"
 vault_api PUT sys/policies/acl/kes "$politica"
 [[ "$VAULT_HTTP_STATUS" =~ ^20[04]$ ]] || { echo "Falha ao escrever a política kes (HTTP $VAULT_HTTP_STATUS)." >&2; exit 1; }

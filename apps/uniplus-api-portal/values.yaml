@@ -32,18 +32,16 @@ uniplusApiPortal:
       memory: 512Mi
 
   serviceAccount:
-    # Nome FIXO para que a role Vault Kubernetes auth (uniplus-api) — que
-    # vincula bound_service_account_names — encontre esta SA independente
-    # do release name gerado pelo ApplicationSet (`uniplus-api-portal-<env>`).
-    # Mesmo pattern usado em platform/external-secrets/values.yaml linha 31.
+    # Nome FIXO, independente do release name gerado pelo ApplicationSet. O portal
+    # não cifra nada, então não tem role nem política no Vault.
     create: true
     name: uniplus-api-portal
 
-  # Cifragem (UniPlus:Encryption). Default Provider=local exige LocalKey via
-  # appsettings/Vault — environment override pode trocar para vault em cluster
-  # onde platform/vault-transit-bootstrap está aplicado (uniplus-infra#219).
-  # Pré-requisito quando Provider=vault: kubernetesRole deve existir no Vault
-  # com bound_service_account_names incluindo serviceAccount.name acima.
+  # Cifragem (UniPlus:Encryption). O portal NÃO registra a cifragem (o Program.cs
+  # dele não chama AddUniPlusEncryption), então estas chaves não têm efeito e ele não
+  # precisa de Transit. Se um dia cifrar, é preciso uma role e uma política próprias
+  # no Vault, só com as chaves que ele usar (scripts/servicos-no-host/lib-transit.sh),
+  # e o mount de VaultTransitMount no template.
   encryption:
     provider: local
     vaultAddress: ""

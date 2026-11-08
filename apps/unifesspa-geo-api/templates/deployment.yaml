@@ -10,10 +10,10 @@
 {{- end -}}
 {{- if eq .Values.unifesspaGeoApi.encryption.provider "vault" -}}
   {{- if not .Values.unifesspaGeoApi.encryption.vaultAddress -}}
-  {{- fail "unifesspaGeoApi.encryption.vaultAddress é obrigatório quando encryption.provider=vault." -}}
+  {{- fail "unifesspaGeoApi.encryption.vaultAddress é obrigatório quando encryption.provider=vault (URL HTTPS pelo nome do certificado do Vault)." -}}
   {{- end -}}
   {{- if not .Values.unifesspaGeoApi.encryption.kubernetesRole -}}
-  {{- fail "unifesspaGeoApi.encryption.kubernetesRole é obrigatório quando encryption.provider=vault. A role precisa existir no Vault com bound_service_account_names incluindo a SA deste chart." -}}
+  {{- fail "unifesspaGeoApi.encryption.kubernetesRole é obrigatório quando encryption.provider=vault. A role (unifesspa-geo-api) é criada por configurar-vault.sh, com bound_service_account_names igual à SA deste chart." -}}
   {{- end -}}
 {{- end -}}
 {{- if and .Values.unifesspaGeoApi.otel.enabled (not .Values.unifesspaGeoApi.otel.exporter.endpoint) -}}

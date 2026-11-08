@@ -71,6 +71,8 @@ networkPolicy:
   enabled: true
   appConsumerNamespaces:
     - kes
+    - uniplus
+    - geo
   # O apiserver do K3s roda no host: o egress é avaliado depois do DNAT.
   kubeApiCidrs:
     - 10.43.0.0/16
@@ -184,10 +186,6 @@ uniplusApiHost:
   migrationJob:
     enabled: true
 
-  externalSecrets:
-    encryptionLocal:
-      enabled: true
-
   resources:
     requests:
       cpu: 250m
@@ -232,8 +230,13 @@ uniplusApiHost:
     trustedNetworks:
       - 10.42.0.0/16
 
+  # Cifra pelo Transit do Vault: mount próprio do Uni+ e role ligada à ServiceAccount
+  # uniplus-api-host (scripts/servicos-no-host/configurar-vault.sh).
   encryption:
-    provider: local
+    provider: vault
+    vaultAddress: https://uniplus-vault.unifesspa.edu.br:8200
+    vaultTransitMount: uniplus-prd-transit
+    kubernetesRole: uniplus-api-host
 
   geo:
     baseUrl: http://unifesspa-geo-api-unifesspa-geo-api.geo.svc.cluster.local:8080
@@ -256,11 +259,6 @@ uniplusApiHost:
     nomeRemetente: UNI+ UNIFESSPA
 
   extraEnv:
-    - name: UniPlus__Encryption__LocalKey
-      valueFrom:
-        secretKeyRef:
-          name: uniplus-api-host-encryption-local
-          key: LOCAL_KEY
     - name: Autorizacao__Instalacao__DominiosInstitucionais__0
       value: unifesspa.edu.br
 
@@ -374,6 +372,14 @@ uniplusApiPortal:
 
 unifesspaGeoApi:
   enabled: true
+
+  # Cifra pelo Transit do Vault: mount próprio do Geo e role ligada à ServiceAccount
+  # unifesspa-geo-api (scripts/servicos-no-host/configurar-vault.sh).
+  encryption:
+    provider: vault
+    vaultAddress: https://uniplus-vault.unifesspa.edu.br:8200
+    vaultTransitMount: geo-prd-transit
+    kubernetesRole: unifesspa-geo-api
 
   database:
     host: uniplus-prod-infra.unifesspa.edu.br
@@ -551,6 +557,7 @@ kes:
   vault:
     address: https://uniplus-vault.unifesspa.edu.br:8200
     kvEngine: plataforma-prd
+    transitEngine: plataforma-prd-transit
 
   networkPolicy:
     hostCidrs:

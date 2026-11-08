@@ -332,12 +332,15 @@ indentação do include e produziria itens fora da lista.
 {{- end }}
 # === Cifragem (UniPlus:Encryption) ===
 # Provider=local exige LocalKey via env/Secret; Provider=vault exige
-# VaultAddress + KubernetesRole bound à ServiceAccount deste Deployment.
+# VaultAddress, VaultTransitMount e KubernetesRole bound à ServiceAccount deste
+# Deployment.
 - name: UniPlus__Encryption__Provider
   value: {{ .Values.uniplusApiHost.encryption.provider | quote }}
 {{- if eq .Values.uniplusApiHost.encryption.provider "vault" }}
 - name: UniPlus__Encryption__VaultAddress
   value: {{ .Values.uniplusApiHost.encryption.vaultAddress | quote }}
+- name: UniPlus__Encryption__VaultTransitMount
+  value: {{ .Values.uniplusApiHost.encryption.vaultTransitMount | quote }}
 - name: UniPlus__Encryption__KubernetesRole
   value: {{ .Values.uniplusApiHost.encryption.kubernetesRole | quote }}
 {{- end }}
