@@ -3,6 +3,10 @@
 # systemd, só com AMQPS (5671) e gerência HTTPS (15671). O vhost e os usuários
 # da API e do verificador são criados por provisionar-rabbitmq.sh, que lê as
 # senhas do Vault.
+#
+# As portas do Erlang (epmd 4369 e distribuição 25672) escutam só no loopback:
+# um nó único não fala com outros nós, e o CLI dentro do container acha o nó pelo
+# próprio nome, mapeado para 127.0.0.1.
 
 RABBITMQ_IMAGE="rabbitmq:4.1.4-management-alpine"
 RABBITMQ_UID=100
@@ -50,6 +54,9 @@ ExecStartPre=-/usr/bin/docker rm -f uniplus-rabbitmq
 ExecStart=/usr/bin/docker run --rm --name uniplus-rabbitmq \\
   --network host \\
   --hostname ${INFRA_FQDN%%.*} \\
+  --add-host ${INFRA_FQDN%%.*}:127.0.0.1 \\
+  -e ERL_EPMD_ADDRESS=127.0.0.1 \\
+  -e "RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS=-kernel inet_dist_use_interface {127,0,0,1}" \\
   --memory ${RABBITMQ_MEMORY_BYTES} \\
   --env-file ${RABBITMQ_ENV_FILE} \\
   -v ${DATA_BASE}/rabbitmq/data:/var/lib/rabbitmq \\

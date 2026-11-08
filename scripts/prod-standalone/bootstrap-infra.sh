@@ -87,6 +87,7 @@ RESUMO
 
 analisar_argumentos "$@"
 exigir_usuario_comum
+desligar_swap
 exigir_par_tls
 garantir_docker
 step_postgres

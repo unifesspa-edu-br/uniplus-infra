@@ -112,6 +112,7 @@ RESUMO
 
 analisar_revisao "$@"
 exigir_usuario_comum
+desligar_swap
 validar_revisao "$REVISAO"
 step_k3s
 step_helm
