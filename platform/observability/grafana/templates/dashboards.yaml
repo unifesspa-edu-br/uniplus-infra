@@ -1,3 +1,4 @@
+{{- if .Values.grafana.enabled }}
 {{/*
   Gera um ConfigMap por arquivo JSON em dashboards/.
   O sidecar grafana/grafana detecta a label `grafana_dashboard: "1"` e
@@ -32,8 +33,9 @@ metadata:
   annotations:
     meta.helm.sh/release-name: {{ $.Release.Name }}
     meta.helm.sh/release-namespace: {{ $.Release.Namespace }}
-    grafana_folder: "Uni+ Standalone"
+    grafana_folder: "Uni+"
 data:
   {{ base $path }}: |
 {{ $content | toString | trim | indent 4 }}
+{{- end }}
 {{- end }}

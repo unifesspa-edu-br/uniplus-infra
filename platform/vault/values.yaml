@@ -1,28 +1,14 @@
-# Defaults para o Vault de aplicação em SP1 e SP2.
-#
-# Topologia (ADR-007): cluster K3s em SP1 e SP2 hospeda este Vault em
-# HA Raft (3 réplicas). Auto-unseal via `seal "transit"` apontando para o
-# Vault Transit em PA1 (chart `platform/vault-transit/`).
+# Defaults para o Vault de aplicação: HA Raft com unseal manual (Shamir 5/3).
 #
 # Bootstrap manual após o primeiro deploy em cada ambiente: ver
-# docs/RUNBOOKS.md §1.4.B.
-#
-# IMPORTANTE: o bloco `seal "transit"` na config Raft NÃO está presente
-# nos defaults — só `vault.server.ha.raft.config` deste arquivo gera Vault
-# HA com Shamir manual (útil para `helm template` / `helm lint` standalone).
-# A configuração real com Transit é definida em cada environment, que
-# substitui `vault.server.ha.raft.config` por uma string que inclui o bloco
-# seal apontando para o Transit do environment correspondente. Veja
-# environments/<env>-{sp1,sp2}/values.yaml.
+# docs/RUNBOOKS.md, seção do Vault.
 
 vault:
   enabled: true
 
   global:
     enabled: true
-    # TLS no listener interno do Vault. Default false até cert-manager (#15)
-    # entregar certificados via Secret. TLS terminado no Traefik (#14) por
-    # enquanto. Ligar para true quando #14 + #15 estiverem prontos.
+    # TLS no listener interno do Vault. O TLS é terminado no Traefik.
     tlsDisable: true
 
   # Vault Agent Injector — injeta secrets em Pods de aplicação anotados.
@@ -44,9 +30,7 @@ vault:
       repository: hashicorp/vault
       tag: "1.21.2"
 
-    # HA Raft 3 réplicas — topologia idêntica em todas as fases (ADR-007).
-    # Recursos reduzidos por default; environments de prod elevam conforme
-    # Tabela 10.1 do ARCHITECTURE.md.
+    # HA Raft. Recursos reduzidos por default; o ambiente eleva conforme a carga.
     ha:
       enabled: true
       replicas: 3
@@ -54,9 +38,8 @@ vault:
       raft:
         enabled: true
         setNodeId: true
-        # Config Raft default — SEM seal Transit. Cada environment de SP1/SP2
-        # substitui esta string inteira para incluir o bloco
-        # `seal "transit"` apontando para o Vault Transit em PA1.
+        # Config Raft default, com unseal manual. O ambiente pode substituir
+        # esta string inteira.
         config: |
           ui = true
 
@@ -136,8 +119,7 @@ vault:
             cpu: 50m
             memory: 32Mi
 
-    # Recursos lab — alinhados a "1 (HA: 3) | 200m → 500m | 256 MB → 512 MB"
-    # da Tabela 10.1. Em prod elevar conforme tabela.
+    # Recursos padrão; o ambiente os ajusta conforme a carga.
     resources:
       requests:
         cpu: 200m
@@ -155,19 +137,6 @@ vault:
         app.kubernetes.io/part-of: uniplus
         app.kubernetes.io/component: vault
 
-# Topologia de rede do ambiente. Obrigatório nos environments SP1/SP2 que usam
-# auto-unseal Transit. Fonte única de verdade para IP/porta do endpoint Transit:
-# o template networkpolicy.yaml e o Secret vault-transit-endpoint derivam daqui.
-topology:
-  # IP (obrigatoriamente um endereço IPv4) do host PA1 acessível pelos clusters SP1/SP2.
-  # Usado como ipBlock.cidr/<host>/32 na NetworkPolicy — hostnames não são válidos aqui.
-  # Vazio por default — torna o egress Transit e o Secret opcionais (helm lint OK).
-  pa1HostIP: ""
-  # Porta do endpoint Transit em PA1 (NodePort em lab, 443 em prod via IngressRoute HTTPS).
-  transitNodePort: 8200
-  # Esquema do endpoint Transit. https obrigatório após achado #37 (PR #70).
-  transitScheme: https
-
 # NetworkPolicy controlando ingress/egress no Pod do Vault de aplicação.
 networkPolicy:
   enabled: true
@@ -179,8 +148,7 @@ networkPolicy:
   # transit/{encrypt,decrypt}). Cada entrada gera uma regra de ingress 8200.
   # Vazio = sem regra; aplicações em namespaces fora desta lista não
   # alcançarão o Vault server (mesmo com NetworkPolicy de egress permissiva
-  # do lado do consumidor). Em standalone, `uniplus` é o namespace dos pods
-  # uniplus-api-{selecao,portal,ingresso} (encryption.provider=vault).
+  # do lado do consumidor).
   appConsumerNamespaces: []
   # CIDRs restritos para egress ao Kubernetes API server (service registration).
   # Padrão: service CIDR do K3s (10.43.0.0/16) — cobre o ClusterIP do
@@ -192,13 +160,10 @@ networkPolicy:
   kubeApiCidrs:
     - 10.43.0.0/16
   # Egress para cloud provider IMDS (169.254.169.254) + KMS endpoints
-  # públicos (HTTPS:443 internet). Necessário quando o seal block é
-  # "ocikms"/"awskms"/"gcpckms"/"azurekeyvault" e Vault autentica via
-  # Instance Principal (default em VMs gerenciadas pelo provider). Sem
-  # essas rotas, Vault SDK panica em `getRequestMetadata.func1` porque
-  # o signer fica nil. Default false em SP1/SP2 (auto-unseal Transit
-  # via PA1 — não precisa IMDS); habilitar em standalone e qualquer
-  # ambiente que use cloud KMS direto.
+  # públicos (HTTPS:443 internet). Necessário só quando o seal block é
+  # "ocikms"/"awskms"/"gcpckms"/"azurekeyvault" e o Vault autentica via
+  # Instance Principal. Sem essas rotas, o SDK do Vault entra em pânico.
+  # Desligado por padrão: o unseal é manual.
   cloudKmsEgressEnabled: false
 
 # ServiceMonitor para Prometheus (Vault expõe métricas em /v1/sys/metrics).

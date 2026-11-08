@@ -13,7 +13,7 @@
       "properties": {
         "enabled": {
           "type": "boolean",
-          "description": "Liga/desliga o subchart. False em PA1 (que só hospeda Vault Transit)."
+          "description": "Liga/desliga o subchart."
         },
         "global": {
           "type": "object",
@@ -22,7 +22,7 @@
             "enabled": { "type": "boolean" },
             "tlsDisable": {
               "type": "boolean",
-              "description": "TLS no listener interno do Vault. Default true até cert-manager (#15) entregar."
+              "description": "TLS no listener interno do Vault. O TLS é terminado no Traefik."
             }
           }
         },
@@ -62,7 +62,7 @@
                   "type": "integer",
                   "minimum": 1,
                   "maximum": 7,
-                  "description": "3 nas topologias 3-DC (lab/prod/hml SP1+SP2+PA1) conforme ADR-007. 1 na topologia standalone (single-host) conforme ADR-008 — Raft com peer único, mantido como backend para fidelidade arquitetural."
+                  "description": "Número de réplicas do Raft: 1 num nó só, 3 ou mais para HA."
                 },
                 "raft": {
                   "type": "object",
@@ -72,7 +72,7 @@
                     "setNodeId": { "type": "boolean" },
                     "config": {
                       "type": "string",
-                      "description": "HCL config string. Cada environment SP1/SP2 substitui esta para incluir seal \"transit\"."
+                      "description": "HCL config string; o ambiente pode substituí-la."
                     }
                   }
                 }
@@ -141,29 +141,6 @@
         }
       }
     },
-    "topology": {
-      "type": "object",
-      "additionalProperties": true,
-      "description": "Topologia de rede do ambiente. Obrigatório nos environments SP1/SP2 com auto-unseal Transit. additionalProperties=true permite chaves extras em PA1 (ex.: hostIP) sem invalidar o schema.",
-      "properties": {
-        "pa1HostIP": {
-          "type": "string",
-          "pattern": "^([0-9]{1,3}\\.){3}[0-9]{1,3}$|^$",
-          "description": "IPv4 do host PA1 acessível pelos clusters SP. Usado como ipBlock.cidr — deve ser IP, não hostname."
-        },
-        "transitNodePort": {
-          "type": "integer",
-          "minimum": 1,
-          "maximum": 65535,
-          "description": "Porta do endpoint Transit (NodePort em lab, 443 em prod via IngressRoute)."
-        },
-        "transitScheme": {
-          "type": "string",
-          "enum": ["http", "https"],
-          "description": "Esquema do endpoint Transit. https obrigatório após achado #37."
-        }
-      }
-    },
     "networkPolicy": {
       "type": "object",
       "additionalProperties": true,
@@ -171,14 +148,6 @@
         "enabled": { "type": "boolean" },
         "externalSecretsNamespace": { "type": "string" },
         "traefikNamespace": { "type": "string" }
-      }
-    },
-    "vaultTransit": {
-      "type": "object",
-      "additionalProperties": true,
-      "description": "Override do chart platform/vault-transit/ neste cluster (normalmente enabled=false em SP1/SP2).",
-      "properties": {
-        "enabled": { "type": "boolean" }
       }
     },
     "serviceMonitor": {

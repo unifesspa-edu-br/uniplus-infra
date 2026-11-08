@@ -187,9 +187,6 @@ uniplusApiPortal:
     tls:
       enabled: true
       secretName: ""
-      certManager:
-        enabled: false
-        clusterIssuer: ""       # ex.: letsencrypt-prod
 
   # === OpenTelemetry (ADR-0018 uniplus-api + ADR-013 uniplus-infra) ===
   # Exporta traces + metrics + logs via OTLP para o OTel Collector DaemonSet

@@ -11,7 +11,7 @@
 # (argocd/applicationset.yaml).
 #
 # Desligado explicitamente o que o chart liga por padrão e esta produção não usa
-# (cert-manager, Vault Transit, observabilidade, Keycloak próprio).
+# (observabilidade, Keycloak próprio).
 
 cluster:
   name: prod-standalone
@@ -59,12 +59,6 @@ vault:
       size: 2Gi
       storageClass: prod-local-nvme
 
-vaultTransit:
-  enabled: false
-
-vaultTransitBootstrap:
-  enabled: false
-
 networkPolicy:
   enabled: true
   appConsumerNamespaces:
@@ -107,9 +101,6 @@ storage:
   enabled: true
   storageClass:
     name: prod-local-nvme
-
-cert-manager:
-  enabled: false
 
 # O Secret uniplus-unifesspa-tls (certificado do domínio) é criado pelo
 # bootstrap e renovado por scripts/servicos-no-host/renovar-certificado.sh.
@@ -461,8 +452,6 @@ uniplusWeb:
     tls:
       enabled: true
       secretName: uniplus-unifesspa-tls
-      certManager:
-        enabled: false
     rootRedirect:
       enabled: true
       to: /portal/
@@ -535,10 +524,6 @@ kes:
   networkPolicy:
     hostCidrs:
       - 200.139.48.122/32
-
-# O broker roda na VM de dados (AMQPS); o chart do cluster não é usado.
-rabbitmq:
-  enabled: false
 
 verificadorRede:
   enabled: true

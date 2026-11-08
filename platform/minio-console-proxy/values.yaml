@@ -40,9 +40,6 @@ minioConsoleProxy:
     tls:
       enabled: true
       secretName: ""            # criado pelo cert-manager se certManager.enabled
-      certManager:
-        enabled: false
-        clusterIssuer: ""       # ex.: letsencrypt-staging | letsencrypt-prod
 
     # Middleware Traefik para reescrever Host header e/ou forçar redirect.
     # MinIO Console aceita acesso por hostname diferente sem rewrite porque

@@ -43,12 +43,6 @@ spec:
                 - app: uniplus-api-portal
                   namespace: uniplus
                   aplicaMigration: false
-                - app: uniplus-api-selecao
-                  namespace: uniplus
-                  aplicaMigration: false
-                - app: uniplus-api-ingresso
-                  namespace: uniplus
-                  aplicaMigration: false
                 - app: keycloak-replica
                   namespace: uniplus
                   aplicaMigration: false
@@ -258,16 +252,12 @@ spec:
                 - component: storage
                 - component: minio-console-proxy
                 - component: traefik
-                - component: cert-manager
                 - component: external-secrets
                 - component: vault
-                - component: vault-transit
-                - component: vault-transit-bootstrap
-                # KES e RabbitMQ: cifra e verificação dos arquivos do candidato
-                # (ADR-0146 do uniplus-api). Desligados por default nos charts;
-                # o ambiente que os usa os liga no próprio values.
+                # KES: cifra dos arquivos do candidato (ADR-0146 do uniplus-api).
+                # Desligado por default no chart; o ambiente que o usa o liga no
+                # próprio values.
                 - component: kes
-                - component: rabbitmq
                 - component: observability/prometheus
                 - component: observability/grafana
                 - component: observability/loki

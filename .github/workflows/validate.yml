@@ -19,7 +19,7 @@ jobs:
       - name: Run yamllint
         run: |
           yamllint -c .yamllint.yaml \
-            apps/ platform/ data/ environments/ argocd/
+            apps/ platform/ environments/ argocd/
 
   helm-lint:
     name: Helm Lint
@@ -63,28 +63,6 @@ jobs:
           scandir: './scripts'
           severity: warning
 
-  tofu-validate:
-    name: Tofu Validate
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup OpenTofu
-        uses: opentofu/setup-opentofu@v1
-        with:
-          tofu_version: '1.8.0'
-
-      - name: Tofu fmt + validate (standalone-compact)
-        run: |
-          set -euo pipefail
-          DIR=provisioning/oci/standalone-compact
-          echo "=== tofu fmt -check ==="
-          tofu -chdir="$DIR" fmt -check -diff
-          echo "=== tofu init -backend=false ==="
-          tofu -chdir="$DIR" init -backend=false -input=false
-          echo "=== tofu validate ==="
-          tofu -chdir="$DIR" validate
-
   schema-validate:
     name: Schema Validate
     runs-on: ubuntu-latest
@@ -99,7 +77,7 @@ jobs:
       - name: Validate values.schema.json across charts × environments
         run: |
           set -euo pipefail
-          ENVS="standalone-compact"
+          ENVS="prod-standalone"
           FAILS=0
           for chart_dir in apps/*/ platform/*/; do
             chart_name=$(basename "$chart_dir")
@@ -153,7 +131,7 @@ jobs:
         run: |
           set -euo pipefail
           K8S_VERSION="1.31.0"
-          ENVS="standalone-compact"
+          ENVS="prod-standalone"
           FAILS=0
           for chart in apps/*/ platform/*/ platform/observability/*/; do
             [ -f "$chart/Chart.yaml" ] || continue
@@ -172,8 +150,8 @@ jobs:
                 FAILS=$((FAILS+1))
                 continue
               fi
-              # Charts desabilitados em env (ex.: vault em PA1, grafana em PA1)
-              # produzem render vazio — kubeconform/RFC 1123 passam trivialmente.
+              # Charts desabilitados no ambiente produzem render vazio —
+              # kubeconform/RFC 1123 passam trivialmente.
               # kubeconform: estrutura/OpenAPI (campos obrigatórios, tipos,
               # kinds, YAML duplicate-key). -ignore-missing-schemas pula CRDs
               # (ServiceMonitor, IngressRoute, etc.) sem schema disponível.

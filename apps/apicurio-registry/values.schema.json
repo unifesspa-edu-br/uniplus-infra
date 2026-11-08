@@ -124,15 +124,7 @@
               "additionalProperties": false,
               "properties": {
                 "enabled": { "type": "boolean" },
-                "secretName": { "type": "string" },
-                "certManager": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "properties": {
-                    "enabled": { "type": "boolean" },
-                    "clusterIssuer": { "type": "string" }
-                  }
-                }
+                "secretName": { "type": "string" }
               }
             }
           }

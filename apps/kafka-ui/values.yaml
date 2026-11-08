@@ -114,9 +114,6 @@ kafkaUi:
     tls:
       enabled: true
       secretName: ""             # criado pelo cert-manager se certManager.enabled
-      certManager:
-        enabled: false
-        clusterIssuer: ""        # ex.: letsencrypt-staging | letsencrypt-prod
 
   # === NetworkPolicy ===
   # Egress: Kafka data-host (10.0.2.87:9092) + DNS + Keycloak
