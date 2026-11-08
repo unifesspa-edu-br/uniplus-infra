@@ -19,7 +19,11 @@ Procedimentos do ambiente `uniplus-prd`. A decisão da topologia está na [ADR-0
 1. No Grafana (`https://grafana.uniplus.unifesspa.edu.br`), conferir pods saudáveis, taxa de erro das APIs e consumer lag do Kafka.
 2. No ArgoCD, conferir que nenhuma Application está `Degraded`.
 3. Nas VMs, `systemctl is-active uniplus-postgres uniplus-redis uniplus-minio uniplus-kafka uniplus-rabbitmq` na infraestrutura.
-4. Conferir o backup da noite anterior.
+
+O backup em armazenamento independente ainda não está definido (pedido à CTIC). Até lá, antes de
+qualquer mudança: `pg_dumpall` do PostgreSQL e `vault operator raft snapshot save` do Vault, guardados
+fora das VMs. O snapshot do Vault é tão necessário quanto o dump: sem as chaves do Transit, os dados
+cifrados do banco e os arquivos do MinIO ficam ilegíveis.
 
 ### 1.2 Deploy de mudança via GitOps
 
@@ -103,8 +107,8 @@ O `--platform linux/amd64` evita um import truncado no containerd.
    (ConfigMap `coredns-custom`, ver [2.5](#25-tls-do-vault)), publica o Secret `uniplus-unifesspa-tls`
    (inclusive no namespace `vault`), registra o cluster com o label
    `uniplus.io/revision=vX.Y.Z` e aplica o projeto e os ApplicationSets. Nada é sincronizado.
-3. **Plataforma:** no ArgoCD, sincronizar à mão, nesta ordem, `storage` (a StorageClass que o Vault
-   usa), `traefik`, `external-secrets` e `vault`.
+3. **Plataforma:** no ArgoCD, sincronizar à mão, nesta ordem, `platform-storage` (a StorageClass que
+   o Vault usa), `platform-traefik`, `platform-external-secrets` e `platform-vault`.
 4. **Vault:** inicializar e abrir (Shamir 5/3, ver [seção 5](#5-reinício-das-vms-e-abertura-do-vault)), fora dos scripts.
 5. **Preparar o Vault:** `configurar-vault.sh` monta um KV v2 por sistema (`uniplus-prd`, `geo-prd` e
    `plataforma-prd`), habilita `auth/kubernetes` e cria, para cada sistema, uma política de leitura só no
