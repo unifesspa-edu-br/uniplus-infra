@@ -170,9 +170,9 @@ grafana:
     refreshInterval: "1h"
     secretStoreRef:
       kind: ClusterSecretStore
-      name: vault-default
+      name: plataforma
     oidcClient:
-      vaultPath: ""  # ex.: secret/standalone/keycloak/clients/grafana
+      vaultPath: ""  # ex.: keycloak/grafana
       clientSecretKey: client_secret
 
   grafana.ini:

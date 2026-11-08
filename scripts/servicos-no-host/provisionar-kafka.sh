@@ -5,8 +5,8 @@
 #   - tópico `autorizacao_registros_de_acesso`: 3 partições, fator de replicação 1
 #     (nó único), `retention.ms=-1` e `cleanup.policy=delete`;
 #   - usuário SCRAM `uniplus-api-registro-acesso-svc`, com senha gerada aqui e
-#     guardada só no Vault (`secret/standalone/kafka/<usuário>`);
-#   - CA do broker em `secret/standalone/kafka/ca` (chave `ca_cert`), de onde o
+#     guardada só no Vault (`uniplus/kafka/<usuário>`, KV do Uni+);
+#   - CA do broker em `uniplus/kafka/ca` (chave `ca_cert`), de onde o
 #     ExternalSecret do chart `uniplus-api-host` o lê. É certificado público,
 #     lido de /etc/uniplus-kafka/certs/ca.crt, mas é gravado sem passar por argv;
 #   - ACL literal no tópico: só `Write` e `Describe`. Sem `Create`, `Delete`,
@@ -42,8 +42,8 @@ BOOTSTRAP="$INFRA_FQDN:9092"
 USUARIO="uniplus-api-registro-acesso-svc"
 TOPICO="autorizacao_registros_de_acesso"
 PARTICOES=3
-VAULT_CAMINHO="standalone/kafka/$USUARIO"
-VAULT_CAMINHO_CA="standalone/kafka/ca"
+VAULT_CAMINHO="uniplus/kafka/$USUARIO"
+VAULT_CAMINHO_CA="uniplus/kafka/ca"
 ADMIN_PROPERTIES="$DATA_BASE/kafka/admin.properties"
 CA_CRT="/etc/uniplus-kafka/certs/ca.crt"
 
@@ -128,7 +128,7 @@ import json, sys
 print(json.dumps({"data": {"ca_cert": open(sys.argv[1]).read().rstrip("\n")}}))' "$pem" >"$corpo" )
     VAULT_BODY_FILE="$tmpdir/vault-resposta.json"
     VAULT_HTTP_STATUS=$(curl -sS --config "$VAULT_CURL_CONFIG" -X POST -H 'Content-Type: application/json' \
-        --data-binary "@$corpo" -o "$VAULT_BODY_FILE" -w '%{http_code}' "$VAULT_ADDR/v1/secret/data/$VAULT_CAMINHO_CA")
+        --data-binary "@$corpo" -o "$VAULT_BODY_FILE" -w '%{http_code}' "$VAULT_ADDR/v1/$(vault_caminho_dados "$VAULT_CAMINHO_CA")")
     rm -f "$corpo"
     [[ "$VAULT_HTTP_STATUS" == 200 ]] || { rm -f "$pem"; falha "Vault respondeu HTTP $VAULT_HTTP_STATUS ao gravar $VAULT_CAMINHO_CA"; }
     [[ "$(vault_get "$VAULT_CAMINHO_CA" ca_cert)" == "$(cat "$pem")" ]] \

@@ -6,7 +6,7 @@
 #
 # Storage backend: S3-compatible. Em standalone aponta para MinIO local
 # (data-host 10.2.2.11:9000) com credenciais escopadas (user `tempo-svc`,
-# policy `tempo-rw`) custodiadas no Vault `secret/standalone/minio/tempo`
+# policy `tempo-rw`) custodiadas no Vault `minio/tempo`
 # e injetadas via ExternalSecret + envFrom + `-config.expand-env=true`.
 #
 # Receivers: APENAS OTLP (gRPC :4317 + HTTP :4318). Os outros (jaeger,
@@ -227,12 +227,12 @@ tempoWrapper:
     refreshInterval: "1h"
     secretStoreRef:
       kind: ClusterSecretStore
-      name: vault-default
+      name: plataforma
     # Nome explícito do Secret. Vazio = derivar via helper uniplus-tempo.s3SecretName
     # ("tempo-s3-creds"). Ver ADR-012 / ADR-011 §"Por que NÃO incluir release name".
     s3SecretName: ""
     s3:
-      vaultPath: "secret/standalone/minio/tempo"
+      vaultPath: "minio/tempo"
       accessKeyIdKey: "accesskey"
       secretAccessKeyKey: "secretkey"
       endpointKey: "endpoint"

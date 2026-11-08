@@ -8,7 +8,7 @@ Ative apenas em ambientes que precisam de UI Redis (debug operacional, ver keys/
 
 ## Auth
 
-RedisInsight 2.x **não tem auth nativa**. Proteção via Traefik `basicAuth` middleware (htpasswd bcrypt custodiado em Vault em `secret/standalone/redis-ui/basic-auth`). Operador gera uma vez:
+RedisInsight 2.x **não tem auth nativa**. Proteção via Traefik `basicAuth` middleware (htpasswd bcrypt custodiado em Vault em `redis-ui/basic-auth`). Operador gera uma vez:
 
 ```bash
 htpasswd -nbB <username> <senha>
@@ -28,7 +28,7 @@ Backend Redis pré-cadastrado via env vars `RI_REDIS_*`. Aparece automaticamente
 | `RI_REDIS_HOST` | `10.0.2.87` |
 | `RI_REDIS_PORT` | `6379` |
 | `RI_REDIS_USERNAME` | `default` |
-| `RI_REDIS_PASSWORD` | (do Vault `secret/standalone/redis/default`) |
+| `RI_REDIS_PASSWORD` | (do Vault `redis`) |
 
 ## Operação
 

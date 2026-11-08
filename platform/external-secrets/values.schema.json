@@ -13,12 +13,12 @@
       "properties": {
         "enabled": {
           "type": "boolean",
-          "description": "Liga/desliga o subchart. False em PA1 (que só hospeda Vault Transit, não consome ESO)."
+          "description": "Liga/desliga o subchart."
         },
         "replicaCount": {
           "type": "integer",
           "minimum": 1,
-          "description": "Réplicas do controller principal. 1 em lab/standalone, 2+ em prod."
+          "description": "Réplicas do controller principal. 1 num nó só, 2+ para alta disponibilidade."
         },
         "resources": { "$ref": "#/$defs/k8sResources" },
         "webhook": {
@@ -55,42 +55,34 @@
     },
     "clusterSecretStore": {
       "type": "object",
-      "description": "ClusterSecretStore default apontando para o Vault de aplicação local.",
-      "additionalProperties": true,
+      "description": "ClusterSecretStores do Vault de aplicação local: uma por sistema e ambiente.",
+      "additionalProperties": false,
       "properties": {
         "enabled": {
           "type": "boolean",
-          "description": "Liga o ClusterSecretStore. Manter false até Vault inicializado e role external-secrets configurado (#64)."
-        },
-        "name": {
-          "type": "string",
-          "description": "Nome do recurso ClusterSecretStore criado."
+          "description": "Liga as ClusterSecretStores. Manter false até o Vault estar inicializado e configurar-vault.sh ter rodado."
         },
         "vaultServer": {
           "type": "string",
-          "description": "URL do Vault no cluster local. Sem default utilizável — cada environment sobrescreve com http(s)://platform-vault-<cluster>.vault.svc.cluster.local:8200 (vault chart não força fullnameOverride, então Service leva o release name do ApplicationSet). Empty string permitido apenas quando clusterSecretStore.enabled=false."
+          "description": "URL do Vault no cluster local (http://platform-vault.vault.svc.cluster.local:8200). Vazio apenas com enabled=false."
         },
-        "vaultPath": {
-          "type": "string",
-          "description": "Path do KV v2 no Vault (default: secret)."
-        },
-        "vaultAuth": {
-          "type": "object",
-          "additionalProperties": true,
-          "required": ["role", "serviceAccount"],
-          "properties": {
-            "role": {
-              "type": "string",
-              "description": "Nome do role no Vault auth/kubernetes vinculado à policy external-secrets-read."
-            },
-            "serviceAccount": {
-              "type": "object",
-              "additionalProperties": true,
-              "required": ["name", "namespace"],
-              "properties": {
-                "name": { "type": "string" },
-                "namespace": { "type": "string" }
-              }
+        "stores": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "vaultPath", "namespaces"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1, "description": "Nome da ClusterSecretStore, citado pelos ExternalSecrets." },
+              "vaultPath": { "type": "string", "minLength": 1, "description": "KV v2 do sistema no ambiente (ex.: uniplus-prd)." },
+              "namespaces": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "type": "string", "minLength": 1 },
+                "description": "Únicos namespaces que podem usar a store."
+              },
+              "role": { "type": "string", "description": "Papel no auth/kubernetes do Vault. Default external-secrets-<name>." },
+              "serviceAccount": { "type": "string", "description": "ServiceAccount no namespace do ESO. Default external-secrets-<name>." }
             }
           }
         }

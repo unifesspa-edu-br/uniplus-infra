@@ -14,10 +14,10 @@ Ver [docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md) para o contexto arquitetu
 
 - Kubernetes 1.30+ + Helm 3.x
 - Postgres com database `keycloak` + role `keycloak` provisionados (em standalone, codificado em `scripts/bootstrap-standalone.sh::step_data_setup_postgres`)
-- Vault de aplicação inicializado, ESO `ClusterSecretStore` `vault-default` com STATUS=Valid+Ready
+- Vault de aplicação inicializado, ESO `ClusterSecretStore` `plataforma` com STATUS=Valid+Ready
 - Secrets no Vault:
-  - `secret/standalone/postgres/keycloak` (fields: `host`, `port`, `database`, `username`, `password`)
-  - `secret/standalone/keycloak/admin` (fields: `username`, `password`) — bootstrap admin do master realm
+  - `postgres/keycloak` (fields: `host`, `port`, `database`, `username`, `password`)
+  - `keycloak/admin` (fields: `username`, `password`) — bootstrap admin do master realm
   - O client `uniplus-portal` é **public client** (SPA + PKCE) — não há `client_secret` para custodiar.
 - cert-manager + ClusterIssuer `letsencrypt-staging` ou `letsencrypt-prod` Ready
 - Traefik Running com hostPort 80/443 (single-host) ou Service LoadBalancer (multi-DC)
@@ -32,7 +32,7 @@ Por padrão o chart fica **desabilitado** (`keycloak.enabled: false`). Apenas en
 
 - `templates/deployment.yaml` — Deployment Keycloak 26.7.x com `start --import-realm`, env vars de DB/admin via secret refs, probes na management port 9000
 - `templates/service.yaml` — ClusterIP com port `http` (8080) + port `management` (9000)
-- `templates/externalsecret.yaml` — 2 ExternalSecrets (DB credentials + bootstrap admin) consumindo `ClusterSecretStore vault-default`
+- `templates/externalsecret.yaml` — 2 ExternalSecrets (DB credentials + bootstrap admin) consumindo `ClusterSecretStore plataforma`
 - `templates/configmap-realm.yaml` — ConfigMap com `uniplus-realm.json` montado em `/opt/keycloak/data/import/`
 - `templates/ingressroute.yaml` — Traefik IngressRoute path `/auth/*` com TLS via cert-manager
 - `templates/externalsecret-smtp.yaml` — ExternalSecret do relay SMTP (host, usuário, senha), gateado por `keycloak.smtp.enabled`

@@ -74,15 +74,15 @@ kafkaUi:
     refreshInterval: "1h"
     secretStoreRef:
       kind: ClusterSecretStore
-      name: vault-default
+      name: plataforma
 
     # SCRAM admin do Kafka + CA cert do broker self-signed.
-    # Gerados em `secret/standalone/kafka/admin` via §13.2 do RUNBOOKS
+    # Gerados em `kafka/admin` via §13.2 do RUNBOOKS
     # após bootstrap. ca_cert é PEM completo do CA do broker (necessário
     # para AKHQ validar o handshake TLS — broker usa self-signed sem
     # cadeia institucional).
     kafkaAdmin:
-      vaultPath: secret/standalone/kafka/admin
+      vaultPath: kafka/admin
       usernameKey: username
       passwordKey: password
       caCertKey: ca_cert
@@ -92,7 +92,7 @@ kafkaUi:
     # e custodiado no Vault. AKHQ NÃO suporta public client/PKCE para
     # provider customizado em 0.27.x.
     oidcClient:
-      vaultPath: secret/standalone/keycloak/clients/kafka-ui
+      vaultPath: keycloak/kafka-ui
       clientSecretKey: client_secret
 
     # JWT signing secret — assina cookies/tokens internos do Micronaut
@@ -101,7 +101,7 @@ kafkaUi:
     # requests (Codex P1 round 2). Operador gera 32 bytes hex e custodia
     # em Vault durante pré-flight (RUNBOOKS §14.1).
     jwt:
-      vaultPath: secret/standalone/kafka-ui/jwt
+      vaultPath: kafka-ui/jwt
       signingSecretKey: signing_secret
 
   # === Exposição externa via Traefik IngressRoute ===
@@ -129,8 +129,8 @@ kafkaUi:
     dataHostPort: 9092
     # Service do Keycloak local (in-cluster). Default casa com release name
     # padrão do chart keycloak-replica em standalone.
-    keycloakService: keycloak-replica-uniplus-standalone
-    keycloakNamespace: uniplus
+    keycloakService: keycloak-replica
+    keycloakNamespace: keycloak-replica
     keycloakPort: 8080
     # CIDR do endpoint público do OIDC issuer. AKHQ chama `.well-known/
     # openid-configuration`, `/token`, `/userinfo` em HTTPS port 443 contra

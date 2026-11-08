@@ -49,7 +49,7 @@ provisionar_usuario() {
 analisar_argumentos "$@"
 exigir_usuario_comum
 if $DRY_RUN; then
-    echo "[DRY-RUN] PUT $BASE/vhosts/$VHOST e usuários de secret/standalone/rabbitmq/{api,verificador}"
+    echo "[DRY-RUN] PUT $BASE/vhosts/$VHOST e usuários de uniplus/rabbitmq/{api,verificador}"
     exit 0
 fi
 preparar_provisionamento
@@ -57,5 +57,5 @@ printf 'user = "rabbitmq-admin:%s"\n' "$(ler_credencial "$DATA_BASE/rabbitmq/.bo
     >"$PROVISIONAR_TMP/rabbitmq.curl"
 chmod 600 "$PROVISIONAR_TMP/rabbitmq.curl"
 chamar_api PUT "vhosts/$VHOST" '{"default_queue_type":"quorum"}'
-provisionar_usuario standalone/rabbitmq/api
-provisionar_usuario standalone/rabbitmq/verificador
+provisionar_usuario uniplus/rabbitmq/api
+provisionar_usuario uniplus/rabbitmq/verificador

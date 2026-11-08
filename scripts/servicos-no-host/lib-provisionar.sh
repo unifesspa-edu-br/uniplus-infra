@@ -44,7 +44,8 @@ psql_superusuario() {
         psql -U postgres -v ON_ERROR_STOP=1 -tA "$@"
 }
 
-# Grava no Vault só se o caminho ainda não existe: nunca troca segredo vivo.
+# Grava no Vault só se o caminho (<sistema>/<caminho>) ainda não existe: nunca
+# troca segredo vivo.
 garantir_no_vault() {
     local caminho="$1"
     shift
@@ -54,4 +55,16 @@ garantir_no_vault() {
         vault_put "$caminho" "$@"
         log_success "$caminho gravado no Vault."
     fi
+}
+
+# Grava o mesmo segredo no KV de cada sistema que o consome: o isolamento por
+# sistema impede um sistema de ler o KV do outro, então o segredo compartilhado
+# (Redis, MinIO raiz, administrador do Kafka, SMTP) existe em cada um.
+# Uso: garantir_compartilhado "uniplus plataforma" <caminho interno> chave=valor...
+garantir_compartilhado() {
+    local sistemas="$1" interno="$2" sistema
+    shift 2
+    for sistema in $sistemas; do
+        garantir_no_vault "$sistema/$interno" "$@"
+    done
 }

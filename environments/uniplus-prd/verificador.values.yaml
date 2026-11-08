@@ -1,16 +1,22 @@
 # Valores de produção do chart infra/helm/verificador (uniplus-api), lidos pela
-# Application argocd/applications/verificador-prod.yaml.
+# Application argocd/applications/verificador.yaml.
 #
 # Contrato de integração:
 #   RabbitMQ   Secret `rabbitmq-verificador` (namespace uniplus), criado pela
 #              API host (verificacao.rabbitMqExterno): URI AMQPS do broker na
 #              VM de dados, vhost `verificacao`.
 #   MinIO      uniplus-prod-infra.unifesspa.edu.br:9000 por HTTPS; credencial no
-#              Vault em secret/standalone/minio/arquivos-candidato-verificador.
+#              KV uniplus-prd, em minio/arquivos-candidato-verificador.
 #   Rede       NetworkPolicy do chart apps/verificador-rede, pelo label
 #              app.kubernetes.io/name=uniplus-verificador.
 #   Espelho    http://clamav-espelho.uniplus.svc.cluster.local
 replicaCount: 2
+
+externalSecrets:
+  secretStoreRef:
+    name: uniplus
+  minio:
+    vaultPath: minio/arquivos-candidato-verificador
 
 minio:
   endpoint: uniplus-prod-infra.unifesspa.edu.br:9000

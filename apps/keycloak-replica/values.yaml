@@ -178,13 +178,13 @@ keycloak:
     refreshInterval: "1h"
     secretStoreRef:
       kind: ClusterSecretStore
-      name: vault-default
+      name: plataforma
     db:
-      vaultPath: secret/standalone/postgres/keycloak
+      vaultPath: postgres/keycloak
       usernameKey: username
       passwordKey: password
     bootstrapAdmin:
-      vaultPath: secret/standalone/keycloak/admin
+      vaultPath: keycloak/admin
       usernameKey: username
       passwordKey: password
       # uniplus-portal é public client (SPA + PKCE) — não há client_secret
@@ -269,8 +269,8 @@ keycloak:
     refreshInterval: "1h"
     secretStoreRef:
       kind: ClusterSecretStore
-      name: vault-default
-    vaultPath: secret/standalone/smtp/uniplus
+      name: plataforma
+    vaultPath: smtp
     hostKey: host
     usernameKey: username
     passwordKey: password
@@ -292,10 +292,10 @@ keycloak:
     refreshInterval: "1h"
     secretStoreRef:
       kind: ClusterSecretStore
-      name: vault-default
+      name: plataforma
     # Lista de clientes OIDC a sincronizar do Vault.
     # Cada item: { envName, vaultPath, vaultKey }
     #   envName  — variável injetada no Pod (referenciada como ${envName} no realm.json)
-    #   vaultPath — path no Vault (ex.: secret/standalone/keycloak/clients/grafana)
+    #   vaultPath — path no Vault (ex.: keycloak/grafana)
     #   vaultKey — propriedade dentro do segredo (ex.: client_secret)
     clients: []

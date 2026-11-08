@@ -12,7 +12,7 @@ Backend de traces distribuídos para o Uni+ — chart wrapper sobre `grafana/tem
   baixa volumetria (standalone POC, lab).
 - **Storage**: S3-compatible. Em standalone aponta para MinIO local
   (`10.2.2.11:9000`, bucket `tempo-traces`, credencial dedicada `tempo-svc`
-  custodiada em Vault `secret/standalone/minio/tempo`).
+  custodiada em Vault `minio/tempo`).
 - **Receivers**: APENAS OTLP (gRPC `:4317` + HTTP `:4318`). Jaeger e
   OpenCensus desligados — apps Uni+ usam OpenTelemetry SDK que emite OTLP
   nativo.

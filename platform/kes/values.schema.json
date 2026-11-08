@@ -27,7 +27,7 @@
           "additionalProperties": false,
           "properties": {
             "address": { "type": "string" },
-            "kvEngine": { "type": "string", "minLength": 1 },
+            "kvEngine": { "type": "string" },
             "kvPrefix": { "type": "string", "minLength": 1 },
             "transitEngine": { "type": "string", "minLength": 1 },
             "transitKey": { "type": "string", "minLength": 1 },

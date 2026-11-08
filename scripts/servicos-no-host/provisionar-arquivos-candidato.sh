@@ -92,14 +92,14 @@ vault_conectar "$tmpdir"
 if [[ -n "$KES_CA_FILE" ]]; then
     kes_cert=$(cat "$KES_CA_FILE")
 else
-    kes_cert=$(vault_get standalone/kes/server cert) || falha "certificado do KES ausente no Vault (rodar provisionar-verificacao.sh)"
+    kes_cert=$(vault_get plataforma/kes/server cert) || falha "certificado do KES ausente no Vault (rodar provisionar-verificacao.sh)"
 fi
-kes_key_minio=$(vault_get standalone/kes/api-keys minio) || falha "chave de API do MinIO no KES ausente no Vault"
-kes_key_provisioner=$(vault_get standalone/kes/api-keys provisioner) || falha "chave de API do provisioner no KES ausente no Vault"
-api_access=$(vault_get standalone/minio/arquivos-candidato-api access_key) || falha "credencial da API ausente no Vault"
-api_secret=$(vault_get standalone/minio/arquivos-candidato-api secret_key) || falha "credencial da API ausente no Vault"
-ver_access=$(vault_get standalone/minio/arquivos-candidato-verificador access_key) || falha "credencial do verificador ausente no Vault"
-ver_secret=$(vault_get standalone/minio/arquivos-candidato-verificador secret_key) || falha "credencial do verificador ausente no Vault"
+kes_key_minio=$(vault_get plataforma/kes/api-keys minio) || falha "chave de API do MinIO no KES ausente no Vault"
+kes_key_provisioner=$(vault_get plataforma/kes/api-keys provisioner) || falha "chave de API do provisioner no KES ausente no Vault"
+api_access=$(vault_get uniplus/minio/arquivos-candidato-api access_key) || falha "credencial da API ausente no Vault"
+api_secret=$(vault_get uniplus/minio/arquivos-candidato-api secret_key) || falha "credencial da API ausente no Vault"
+ver_access=$(vault_get uniplus/minio/arquivos-candidato-verificador access_key) || falha "credencial do verificador ausente no Vault"
+ver_secret=$(vault_get uniplus/minio/arquivos-candidato-verificador secret_key) || falha "credencial do verificador ausente no Vault"
 printf '%s\n' "$kes_cert" >"$tmpdir/kes.crt"
 
 # --- KES no ar ----------------------------------------------------------------
