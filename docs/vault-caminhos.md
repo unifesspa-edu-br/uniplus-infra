@@ -61,7 +61,7 @@ O caminho antigo ficava no mount `secret/`, sob um prefixo único do ambiente (`
 | `kes/server` | `plataforma-<amb>` | `kes/server` |
 | `kes/identities` | `plataforma-<amb>` | `kes/identities` |
 | `kes/api-keys` | `plataforma-<amb>` | `kes/api-keys` |
-| `secret/data/kes/*` (chaves mestras do KES) | `plataforma-<amb>` | `kes/*` (prefixo configurado em `kes.vault.kvPrefix`, KV em `kes.vault.kvEngine`) |
+| keystore do KES (chaves mestras cifradas) | `plataforma-<amb>` | `kes-keystore/*` (prefixo exclusivo, em `kes.vault.kvPrefix`; KV em `kes.vault.kvEngine`) |
 | `vault/root`, `vault-transit-bootstrap/token` | — | descartados (desenho antigo) |
 
 O mount `transit` (cifra das APIs e chave `uniplus-kes-kek` do KES) não muda.
@@ -74,4 +74,4 @@ O mount `transit` (cifra das APIs e chave `uniplus-kes-kek` do KES) não muda.
 - a política `external-secrets-<s>`, com `read` em `<s>-<amb>/data/*` e `<s>-<amb>/metadata/*`;
 - a role Kubernetes `external-secrets-<s>`, ligada à ServiceAccount `external-secrets-<s>` do namespace `external-secrets`.
 
-O KES usa a política e a role `kes`, com acesso a `plataforma-<amb>/data/kes/*` e às chaves Transit. O KV `secret/` e a política `external-secrets-read` do desenho anterior deixam de ser criados.
+O KES usa a política e a role `kes`, com acesso só a `plataforma-<amb>/data/kes-keystore/*` (não alcança `kes/server` nem `kes/api-keys`) e às chaves Transit. O KV `secret/` e a política `external-secrets-read` do desenho anterior deixam de ser criados.

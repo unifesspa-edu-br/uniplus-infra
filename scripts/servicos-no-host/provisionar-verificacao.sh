@@ -5,7 +5,7 @@
 # platform/rabbitmq não fazem:
 #
 #   - Transit `transit/` e a chave `uniplus-kes-kek` (cifra as chaves do KES);
-#   - política `kes` e role Kubernetes auth `kes` (ServiceAccount kes/kes);
+#   - política `kes` (só o prefixo `kes-keystore/` do KV de plataforma) e role Kubernetes auth `kes` (ServiceAccount kes/kes);
 #   - certificado do servidor KES (plataforma/kes/server);
 #   - identidades do KES: `minio` (generate/decrypt) e `provisioner` (cria a chave);
 #   - senhas do RabbitMQ (admin, API, verificador);
@@ -48,6 +48,8 @@ KES_IMAGE="${KES_IMAGE:-quay.io/minio/kes:2025-03-12T09-35-18Z}"
 KES_NAMESPACE="kes"
 KES_SERVICE_ACCOUNT="kes"
 TRANSIT_KEY="uniplus-kes-kek"
+# Igual a kes.vault.kvPrefix do chart platform/kes.
+KES_KEYSTORE_PREFIX="kes-keystore"
 tmpdir=$(mktemp -d)
 chmod 700 "$tmpdir"
 cleanup() {
@@ -83,17 +85,18 @@ elif [[ "$VAULT_HTTP_STATUS" != 200 ]]; then
 fi
 
 # --- Política e role do KES --------------------------------------------------
-# O KES só toca o próprio prefixo no KV de plataforma e cifra/decifra com a própria chave Transit.
+# O KES só toca o prefixo exclusivo do keystore no KV de plataforma (nunca `kes/server`
+# nem `kes/api-keys`, que ficam ao lado) e cifra/decifra com a própria chave Transit.
 politica=$(python3 -c '
 import json, sys
-t, kv = sys.argv[1], sys.argv[2]
+t, kv, p = sys.argv[1], sys.argv[2], sys.argv[3]
 print(json.dumps({"policy": "\n".join([
-    "path \"%s/data/kes/*\" { capabilities = [\"create\", \"read\", \"delete\"] }" % kv,
-    "path \"%s/metadata/kes/*\" { capabilities = [\"list\", \"delete\"] }" % kv,
-    "path \"%s/metadata/kes\" { capabilities = [\"list\"] }" % kv,
+    "path \"%s/data/%s/*\" { capabilities = [\"create\", \"read\", \"delete\"] }" % (kv, p),
+    "path \"%s/metadata/%s/*\" { capabilities = [\"list\", \"delete\"] }" % (kv, p),
+    "path \"%s/metadata/%s\" { capabilities = [\"list\"] }" % (kv, p),
     "path \"transit/encrypt/%s\" { capabilities = [\"update\"] }" % t,
     "path \"transit/decrypt/%s\" { capabilities = [\"update\"] }" % t,
-]) + "\n"}), end="")' "$TRANSIT_KEY" "plataforma-$AMBIENTE")
+]) + "\n"}), end="")' "$TRANSIT_KEY" "plataforma-$AMBIENTE" "$KES_KEYSTORE_PREFIX")
 log "Escrevendo a política kes"
 vault_api PUT sys/policies/acl/kes "$politica"
 [[ "$VAULT_HTTP_STATUS" =~ ^20[04]$ ]] || { echo "Falha ao escrever a política kes (HTTP $VAULT_HTTP_STATUS)." >&2; exit 1; }
