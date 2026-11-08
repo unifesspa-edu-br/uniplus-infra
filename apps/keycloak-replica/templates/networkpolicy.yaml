@@ -51,6 +51,22 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.keycloak.managementPort }}
+    # Aplicações de outros namespaces que chamam o Keycloak pelo Service (OIDC
+    # discovery, JWKS, token): cada uma tem namespace próprio e sem esta regra o
+    # default-deny as barra. Uma regra por cliente, para não cruzar namespaces e
+    # pods de clientes diferentes.
+    {{- range $c := $np.clientesInternos }}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $c.namespace | quote }}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ $c.appName | quote }}
+      ports:
+        - protocol: TCP
+          port: {{ $.Values.keycloak.http.httpPort }}
+    {{- end }}
     # Job realm-reconcile (ADR-010) consome a admin REST API do KC para
     # reconciliar declarativamente o realm.json em re-deploy. Roda no mesmo
     # namespace; precisa cruzar a NetworkPolicy. Escopo cirúrgico: só pods
