@@ -68,13 +68,13 @@ redisUi:
     refreshInterval: "1h"
     secretStoreRef:
       kind: ClusterSecretStore
-      name: vault-default
+      name: plataforma
 
     # Password do role `default` do Redis standalone (custodiado em
     # Vault em PR #133). Sintetizado em Secret K8s e injetado como
     # env RI_REDIS_PASSWORD via secretKeyRef.
     redisDefault:
-      vaultPath: secret/standalone/redis/default
+      vaultPath: redis
       passwordKey: password
 
     # Basic auth do Traefik middleware (proteção do UI). Custodiado em
@@ -82,7 +82,7 @@ redisUi:
     # uma vez e custodia). ESO sintetiza Secret no formato Traefik espera
     # (key `users` com linhas no formato htpasswd).
     basicAuth:
-      vaultPath: secret/standalone/redis-ui/basic-auth
+      vaultPath: redis-ui/basic-auth
       # Nome da key no Vault contendo o htpasswd completo
       # (formato: "user:$2y$05$<bcrypt_hash>" — uma linha por usuário).
       htpasswdKey: htpasswd

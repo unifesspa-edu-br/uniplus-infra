@@ -14,7 +14,7 @@ Browser (admin Uni+)
        https://kafka-ui.standalone.portaluni.com.br
             └── AKHQ pod (apps/kafka-ui chart, namespace uniplus)
                  ├── OIDC client `kafka-ui` no realm `uniplus` (confidential)
-                 ├── SCRAM admin via ESO (`secret/standalone/kafka/admin`)
+                 ├── SCRAM admin via ESO (`kafka/admin`)
                  ├── CA cert PEM via projected volume (mesmo Secret ESO)
                  └── conexão SASL_SSL → 10.2.2.11:9092
 ```
@@ -32,8 +32,8 @@ Mapping no `application.yml` renderizado pelo chart:
 ## Pré-requisitos antes do ArgoCD sync
 
 1. **Realm `uniplus` com client `kafka-ui` confidential criado** + mapper `groups` exportando membership em `groups` claim do JWT
-2. **`secret/standalone/kafka/admin` em Vault** com keys `username`, `password`, `ca_cert` (criado no §13.2 do RUNBOOKS pós-hotfix #141)
-3. **`secret/standalone/keycloak/clients/kafka-ui` em Vault** com `client_secret` do client OIDC (custódia manual via `vault kv put`)
+2. **`kafka/admin` em Vault** com keys `username`, `password`, `ca_cert` (criado no §13.2 do RUNBOOKS pós-hotfix #141)
+3. **`keycloak/kafka-ui` em Vault** com `client_secret` do client OIDC (custódia manual via `vault kv put`)
 
 Sem esses 3, ESOs ficam em `SecretNotFound` e o pod entra em `CreateContainerConfigError`.
 

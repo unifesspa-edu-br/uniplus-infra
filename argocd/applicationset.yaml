@@ -34,8 +34,9 @@ spec:
                   uniplus.io/managed: "true"
           # Cada app em apps/. `namespace` é explícito por elemento (não um
           # literal fixo no template) porque nem todo app deste ApplicationSet
-          # compartilha o mesmo namespace — ver bloco seletivo abaixo
-          # (unifesspa-geo-api usa `geo`, não `uniplus`).
+          # compartilha o mesmo namespace: as interfaces de administração e o
+          # Keycloak consomem segredos de plataforma e têm namespace próprio, e
+          # o unifesspa-geo-api usa `geo` (ver bloco seletivo abaixo).
           - list:
               elements:
                 - app: uniplus-web
@@ -45,16 +46,16 @@ spec:
                   namespace: uniplus
                   aplicaMigration: false
                 - app: keycloak-replica
-                  namespace: uniplus
+                  namespace: keycloak-replica
                   aplicaMigration: false
                 - app: kafka-ui
-                  namespace: uniplus
+                  namespace: kafka-ui
                   aplicaMigration: false
                 - app: apicurio-registry
-                  namespace: uniplus
+                  namespace: apicurio-registry
                   aplicaMigration: false
                 - app: redis-ui
-                  namespace: uniplus
+                  namespace: redis-ui
                   aplicaMigration: false
     # Apps habilitados só em ambientes específicos — mecanismo genérico de
     # habilitação por-ambiente (ver argocd/README.md § Habilitação por-ambiente).

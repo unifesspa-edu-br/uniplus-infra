@@ -7,7 +7,7 @@
 #
 # Storage backend: S3-compatible. Em standalone aponta para MinIO local
 # (data-host 10.2.2.11:9000) com credenciais escopadas (user `loki-svc`,
-# policy `loki-rw`) custodiadas no Vault `secret/standalone/minio/loki`
+# policy `loki-rw`) custodiadas no Vault `minio/loki`
 # e injetadas via ExternalSecret + envFrom.
 #
 # Acesso pelo Grafana: ClusterIP do Loki (sem gateway) — datasource
@@ -240,7 +240,7 @@ loki:
 
 lokiWrapper:
   # Sintese do Secret K8s com credenciais MinIO via External Secrets Operator.
-  # Precisa de ESO instalado e ClusterSecretStore `vault-default` apontando
+  # Precisa de ESO instalado e ClusterSecretStore `plataforma` apontando
   # para o Vault standalone.
   externalSecrets:
     # Default off para o helm template standalone funcionar fora do cluster
@@ -249,7 +249,7 @@ lokiWrapper:
     refreshInterval: "1h"
     secretStoreRef:
       kind: ClusterSecretStore
-      name: vault-default
+      name: plataforma
     # Nome explícito do Secret K8s sintetizado. Vazio = derivar automaticamente
     # via helper uniplus-loki.s3SecretName ("<chart-name>-s3-creds" = "loki-s3-creds").
     # Sobrescrever apenas quando precisar de 2+ releases Loki no mesmo namespace
@@ -257,7 +257,7 @@ lokiWrapper:
     s3SecretName: ""
     s3:
       # Path no Vault (KV v2). Override por environment.
-      vaultPath: "secret/standalone/minio/loki"
+      vaultPath: "minio/loki"
       # Nomes dos campos no Vault (alinhado com o spike Fase 1).
       accessKeyIdKey: "accesskey"
       secretAccessKeyKey: "secretkey"

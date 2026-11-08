@@ -11,7 +11,7 @@ em modo `SingleBinary` com storage S3-compatible (MinIO em standalone).
   single-cluster com baixa volumetria (standalone POC, lab).
 - **Storage**: S3-compatible. Em standalone aponta para MinIO local
   (`10.2.2.11:9000`, bucket `loki-chunks`, credencial dedicada `loki-svc`
-  custodiada em Vault `secret/standalone/minio/loki`).
+  custodiada em Vault `minio/loki`).
 - **Schema**: TSDB v13 com índice `loki_index_` período 24h.
 - **Retention**: 168h (7 dias) em standalone, ativada via compactor.
 - **Acesso**: Service ClusterIP — Grafana datasource consome

@@ -149,7 +149,7 @@ otelCollector:
         error_mode: ignore
         logs:
           log_record:
-            - 'resource.attributes["service.name"] == "apicurio-registry-uniplus-standalone" and IsMatch(body, "system/info")'
+            - 'resource.attributes["service.name"] == "apicurio-registry-apicurio-registry" and IsMatch(body, "system/info")'
       # k8sattributes é injetado pelo preset kubernetesAttributes.
 
     exporters:

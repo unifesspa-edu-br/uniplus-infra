@@ -6,7 +6,7 @@ description: |
   Certificate cert-manager — sem workload K8s.
 
   MinIO Console tem login próprio (root user/pwd custodiado no Vault em
-  `secret/standalone/minio/root`); este chart só expõe o proxy HTTPS público.
+  `minio/root`); este chart só expõe o proxy HTTPS público.
   Para hml/prod considerar OIDC SSO via OpenID provider config no MinIO server
   ao invés deste login local.
 

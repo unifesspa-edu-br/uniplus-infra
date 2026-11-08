@@ -6,7 +6,7 @@
 #
 #   - Transit `transit/` e a chave `uniplus-kes-kek` (cifra as chaves do KES);
 #   - política `kes` e role Kubernetes auth `kes` (ServiceAccount kes/kes);
-#   - certificado do servidor KES (secret/standalone/kes/server);
+#   - certificado do servidor KES (plataforma/kes/server);
 #   - identidades do KES: `minio` (generate/decrypt) e `provisioner` (cria a chave);
 #   - senhas do RabbitMQ (admin, API, verificador);
 #   - credenciais do MinIO para a API e para o verificador.
@@ -83,17 +83,17 @@ elif [[ "$VAULT_HTTP_STATUS" != 200 ]]; then
 fi
 
 # --- Política e role do KES --------------------------------------------------
-# O KES só toca o próprio prefixo no KV e cifra/decifra com a própria chave Transit.
+# O KES só toca o próprio prefixo no KV de plataforma e cifra/decifra com a própria chave Transit.
 politica=$(python3 -c '
 import json, sys
-t = sys.argv[1]
+t, kv = sys.argv[1], sys.argv[2]
 print(json.dumps({"policy": "\n".join([
-    "path \"secret/data/kes/*\" { capabilities = [\"create\", \"read\", \"delete\"] }",
-    "path \"secret/metadata/kes/*\" { capabilities = [\"list\", \"delete\"] }",
-    "path \"secret/metadata/kes\" { capabilities = [\"list\"] }",
+    "path \"%s/data/kes/*\" { capabilities = [\"create\", \"read\", \"delete\"] }" % kv,
+    "path \"%s/metadata/kes/*\" { capabilities = [\"list\", \"delete\"] }" % kv,
+    "path \"%s/metadata/kes\" { capabilities = [\"list\"] }" % kv,
     "path \"transit/encrypt/%s\" { capabilities = [\"update\"] }" % t,
     "path \"transit/decrypt/%s\" { capabilities = [\"update\"] }" % t,
-]) + "\n"}), end="")' "$TRANSIT_KEY")
+]) + "\n"}), end="")' "$TRANSIT_KEY" "plataforma-$AMBIENTE")
 log "Escrevendo a política kes"
 vault_api PUT sys/policies/acl/kes "$politica"
 [[ "$VAULT_HTTP_STATUS" =~ ^20[04]$ ]] || { echo "Falha ao escrever a política kes (HTTP $VAULT_HTTP_STATUS)." >&2; exit 1; }
@@ -116,21 +116,21 @@ print(json.dumps({
 # --- Certificado do servidor KES --------------------------------------------
 # Autoassinado, quando não há par do domínio, e válido por 1 ano. A SAN inclui o IP
 # do host, porque o MinIO chega pelo hostPort. Rotação: apagar
-# secret/standalone/kes/server no Vault e rodar este script e o seguinte de novo.
-if vault_existe standalone/kes/server; then
+# plataforma/kes/server no Vault e rodar este script e o seguinte de novo.
+if vault_existe plataforma/kes/server; then
     log "Certificado do KES já existe no Vault — preservado."
 elif [[ -n "$KES_CERT_FILE" ]]; then
     # A chave do domínio é de root (0600): lida com sudo, nunca copiada para fora do Vault.
     sudo test -r "$KES_CERT_FILE" && sudo test -r "$KES_KEY_FILE" || { echo "KES_CERT_FILE e KES_KEY_FILE devem ser legíveis." >&2; exit 1; }
     log "Gravando o certificado do domínio como certificado do servidor KES"
-    vault_put standalone/kes/server "cert=$(sudo cat "$KES_CERT_FILE")" "key=$(sudo cat "$KES_KEY_FILE")"
+    vault_put plataforma/kes/server "cert=$(sudo cat "$KES_CERT_FILE")" "key=$(sudo cat "$KES_KEY_FILE")"
 else
     log "Gerando o certificado do servidor KES"
     openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes \
         -keyout "$tmpdir/kes.key" -out "$tmpdir/kes.crt" -days 365 -subj "/CN=kes" \
         -addext "subjectAltName=DNS:kes,DNS:kes.${KES_NAMESPACE}.svc,DNS:kes.${KES_NAMESPACE}.svc.cluster.local,DNS:localhost,IP:${HOST_IP},IP:127.0.0.1" \
         2>/dev/null
-    vault_put standalone/kes/server "cert=$(cat "$tmpdir/kes.crt")" "key=$(cat "$tmpdir/kes.key")"
+    vault_put plataforma/kes/server "cert=$(cat "$tmpdir/kes.crt")" "key=$(cat "$tmpdir/kes.key")"
     shred -u "$tmpdir/kes.key" 2>/dev/null || rm -f "$tmpdir/kes.key"
 fi
 
@@ -139,12 +139,12 @@ fi
 # As duas chaves ficam em custódia no Vault; só a do MinIO sai de lá, para o host.
 tem_identidades=false
 tem_chaves=false
-vault_existe standalone/kes/identities && tem_identidades=true
-vault_existe standalone/kes/api-keys && tem_chaves=true
+vault_existe plataforma/kes/identities && tem_identidades=true
+vault_existe plataforma/kes/api-keys && tem_chaves=true
 if [[ "$tem_identidades" != "$tem_chaves" ]]; then
     # Regerar as duas desalinharia o que já usa a que sobrou (a política do KES
     # lista a identidade; o MinIO guarda a chave de API). Decisão do operador.
-    echo "Estado inconsistente: só um entre standalone/kes/identities e standalone/kes/api-keys existe no Vault." >&2
+    echo "Estado inconsistente: só um entre plataforma/kes/identities e plataforma/kes/api-keys existe no Vault." >&2
     echo "Restaure o que falta ou apague o que sobrou (e reaplique o KES e o MinIO) antes de rodar de novo." >&2
     exit 1
 fi
@@ -169,14 +169,14 @@ else
         echo "Falha ao derivar as identidades do KES." >&2
         exit 1
     }
-    vault_put standalone/kes/api-keys "minio=$chave_minio" "provisioner=$chave_provisioner"
-    vault_put standalone/kes/identities "minio=$id_minio" "provisioner=$id_provisioner"
+    vault_put plataforma/kes/api-keys "minio=$chave_minio" "provisioner=$chave_provisioner"
+    vault_put plataforma/kes/identities "minio=$id_minio" "provisioner=$id_provisioner"
     unset chave_minio chave_provisioner id_minio id_provisioner par_minio par_provisioner
 fi
 
 # --- Senhas do RabbitMQ ------------------------------------------------------
 # Os nomes de usuário têm de bater com rabbitmq.users no chart platform/rabbitmq.
-garantir_credencial() {
+garantir_senha_rabbitmq() {
     local caminho="$1" usuario="$2"
     if vault_existe "$caminho"; then
         log "Credencial $caminho já existe no Vault — preservada."
@@ -185,9 +185,9 @@ garantir_credencial() {
         vault_put "$caminho" "username=$usuario" "password=$(openssl rand -hex 24)"
     fi
 }
-garantir_credencial standalone/rabbitmq/admin rabbitmq-admin
-garantir_credencial standalone/rabbitmq/api uniplus-api
-garantir_credencial standalone/rabbitmq/verificador uniplus-verificador
+garantir_senha_rabbitmq plataforma/rabbitmq/admin rabbitmq-admin
+garantir_senha_rabbitmq uniplus/rabbitmq/api uniplus-api
+garantir_senha_rabbitmq uniplus/rabbitmq/verificador uniplus-verificador
 
 # --- Credenciais do MinIO para a API e para o verificador ---------------------
 # O provisionar-arquivos-candidato.sh cria os usuários no MinIO a partir daqui.
@@ -200,7 +200,7 @@ garantir_minio() {
         vault_put "$caminho" "access_key=$usuario" "secret_key=$(openssl rand -hex 24)"
     fi
 }
-garantir_minio standalone/minio/arquivos-candidato-api uniplus-api-arquivos
-garantir_minio standalone/minio/arquivos-candidato-verificador uniplus-verificador-arquivos
+garantir_minio uniplus/minio/arquivos-candidato-api uniplus-api-arquivos
+garantir_minio uniplus/minio/arquivos-candidato-verificador uniplus-verificador-arquivos
 
 echo "Pré-requisitos da verificação provisionados no Vault. Próximo: sincronizar o KES e o RabbitMQ no ArgoCD e rodar provisionar-arquivos-candidato.sh."

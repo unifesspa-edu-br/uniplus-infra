@@ -12,7 +12,8 @@ MinIO (host, systemd) ──mTLS :7373 (hostPort)──▶ KES (pod) ──Kuber
                                                               transit/uniplus-kes-kek (cifra cada chave)
 ```
 
-- A chave mestra `uniplus-arquivos-candidato` fica no KV do Vault, cifrada pela
+- A chave mestra `uniplus-arquivos-candidato` fica no KV de plataforma do ambiente
+  (`plataforma-<amb>`, prefixo `kes`), cifrada pela
   chave Transit `uniplus-kes-kek`. Cada objeto recebe uma chave de dados própria.
 - O KES autentica no Vault pela ServiceAccount `kes` (namespace `kes`), na role
   `kes`, com política mínima.
@@ -28,8 +29,8 @@ MinIO (host, systemd) ──mTLS :7373 (hostPort)──▶ KES (pod) ──Kuber
 Escrever no Vault. A chave Transit, a política, a role, o certificado do servidor
 e as identidades são criados por
 `scripts/hml-standalone-single/provision-verificacao-prerequisites.sh`; o ExternalSecret
-do chart lê o resultado em `secret/standalone/kes/server` e
-`secret/standalone/kes/identities`.
+do chart lê o resultado em `kes/server` e
+`kes/identities`.
 
 ## Valores principais
 

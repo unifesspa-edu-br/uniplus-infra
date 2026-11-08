@@ -90,25 +90,28 @@ print(pendentes)')
     exit 1
 }
 
-# Regrava no Vault o que carrega o certificado: o do servidor KES e o CA do Kafka
-# (secret/standalone/kafka/ca e o ca_cert do administrador). No KV v2 cada gravação
-# troca o conteúdo inteiro, então o usuário e a senha do administrador são relidos.
+# Regrava no Vault o que carrega o certificado: o do servidor KES (plataforma), o CA
+# do Kafka (uniplus) e o ca_cert do administrador do Kafka, que existe no KV do
+# Uni+ e no de plataforma. No KV v2 cada gravação troca o conteúdo inteiro, então
+# o usuário e a senha do administrador são relidos de cada KV.
 atualizar_vault() {
-    local usuario senha
-    usuario=$(vault_get standalone/kafka/admin username) \
-        || { log_error "Não foi possível ler o usuário de secret/standalone/kafka/admin."; exit 1; }
-    senha=$(vault_get standalone/kafka/admin password) \
-        || { log_error "Não foi possível ler a senha de secret/standalone/kafka/admin."; exit 1; }
-    vault_put standalone/kes/server "cert=$(cat "$TLS_BUNDLE")" "key=$(sudo cat "$TLS_KEY")"
-    vault_put standalone/kafka/ca "ca_cert=$(cat "$TLS_BUNDLE")"
-    vault_put standalone/kafka/admin "username=$usuario" "password=$senha" "ca_cert=$(cat "$TLS_BUNDLE")"
+    local sistema usuario senha
+    vault_put plataforma/kes/server "cert=$(cat "$TLS_BUNDLE")" "key=$(sudo cat "$TLS_KEY")"
+    vault_put uniplus/kafka/ca "ca_cert=$(cat "$TLS_BUNDLE")"
+    for sistema in uniplus plataforma; do
+        usuario=$(vault_get "$sistema/kafka/admin" username) \
+            || { log_error "Não foi possível ler o usuário de $sistema/kafka/admin."; exit 1; }
+        senha=$(vault_get "$sistema/kafka/admin" password) \
+            || { log_error "Não foi possível ler a senha de $sistema/kafka/admin."; exit 1; }
+        vault_put "$sistema/kafka/admin" "username=$usuario" "password=$senha" "ca_cert=$(cat "$TLS_BUNDLE")"
+    done
 }
 
 renovar_app() {
     export KUBECONFIG="$HOME/.kube/config"
     publicar_segredo_tls
     if $DRY_RUN; then
-        echo "[DRY-RUN] regravaria no Vault (port-forward local) secret/standalone/kes/server, kafka/ca e kafka/admin"
+        echo "[DRY-RUN] regravaria no Vault (port-forward local) plataforma/kes/server, uniplus/kafka/ca e kafka/admin (uniplus e plataforma)"
         echo "[DRY-RUN] esperaria os ExternalSecrets do KES sincronizarem e reiniciaria o KES"
         return 0
     fi

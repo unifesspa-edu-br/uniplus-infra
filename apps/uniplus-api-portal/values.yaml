@@ -144,24 +144,24 @@ uniplusApiPortal:
     refreshInterval: "1h"
     secretStoreRef:
       kind: ClusterSecretStore
-      name: vault-default
+      name: uniplus
 
     postgresApp:
-      vaultPath: secret/standalone/postgres/portal
+      vaultPath: postgres-portal
       passwordKey: password
 
     redisDefault:
-      vaultPath: secret/standalone/redis/default
+      vaultPath: redis
       passwordKey: password
 
     kafkaAdmin:
-      vaultPath: secret/standalone/kafka/admin
+      vaultPath: kafka/admin
       usernameKey: username
       passwordKey: password
       caCertKey: ca_cert
 
     minioRoot:
-      vaultPath: secret/standalone/minio/root
+      vaultPath: minio/root
       usernameKey: username
       passwordKey: password
 
@@ -172,7 +172,7 @@ uniplusApiPortal:
     # render.
     oidcClient:
       enabled: true
-      vaultPath: secret/standalone/keycloak/clients/uniplus-api-portal
+      vaultPath: keycloak/uniplus-api-portal
       clientSecretKey: client_secret
 
   # === Exposição externa via Traefik IngressRoute ===
@@ -212,8 +212,8 @@ uniplusApiPortal:
     traefikNamespace: traefik
     monitoringNamespace: observability-prometheus
     dataHostCIDR: ""            # ex.: 10.0.2.0/24
-    keycloakService: keycloak-replica-uniplus-standalone
-    keycloakNamespace: uniplus
+    keycloakService: keycloak-replica
+    keycloakNamespace: keycloak-replica
     keycloakPort: 8080
     oidcIssuerCIDR: ""          # ex.: 164.152.53.29/32
     oidcIssuerPort: 443

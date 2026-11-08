@@ -11,7 +11,7 @@ Ative apenas em ambientes que precisam de schema/API artifact registry para vali
 | Recurso | De onde vem |
 |---|---|
 | Database `apicurio` + role `apicurio` no Postgres | `step_data_setup_apicurio_db` do `scripts/bootstrap-standalone.sh` |
-| Senha do role no Vault | Custódia manual em `secret/standalone/postgres/apicurio` (RUNBOOKS §15.2) |
+| Senha do role no Vault | Custódia manual em `postgres/apicurio` (RUNBOOKS §15.2) |
 | Client OIDC `apicurio-registry` no realm uniplus | Import do realm pelo chart `keycloak-replica` |
 | `client_secret` no Vault | Recuperado via `kcadm.sh` pós-import (RUNBOOKS §15.1) |
 | Cert Let's Encrypt prod | cert-manager via `ingress.tls.certManager.clusterIssuer: letsencrypt-prod` |

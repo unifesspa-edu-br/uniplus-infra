@@ -25,7 +25,7 @@ anterior (uma imagem por módulo), abandonada pelo ADR-0097.
 | Recurso | De onde vem |
 |---|---|
 | Role + database Postgres únicos (`uniplus`/`uniplus`) | Custódia manual — ver `environments/lab-standalone-single/README.md` |
-| Senha do role no Vault | `secret/standalone/postgres/uniplus` |
+| Senha do role no Vault | `postgres` |
 | Vault + External Secrets Operator | `platform/vault/` + `platform/external-secrets/` |
 | `UniPlus__Encryption__LocalKey` (quando `encryption.provider=local`) | Secret K8s manual, não versionado — ver `extraEnv` no values.yaml do environment |
 

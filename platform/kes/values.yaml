@@ -33,8 +33,9 @@ kes:
   vault:
     # Sem default utilizável: cada ambiente informa o Service do Vault.
     address: ""
-    # Mount KV v2 e prefixo onde o KES guarda as chaves mestras (cifradas).
-    kvEngine: secret
+    # KV v2 e prefixo onde o KES guarda as chaves mestras (cifradas). O KV é o de
+    # plataforma do ambiente (plataforma-<amb>); sem default utilizável.
+    kvEngine: ""
     kvPrefix: kes
     # Chave Transit que cifra cada chave mestra antes de ir ao KV.
     transitEngine: transit
@@ -54,17 +55,17 @@ kes:
 
   # Segredos materializados do Vault pelo External Secrets Operator.
   externalSecret:
-    secretStoreName: vault-default
+    secretStoreName: plataforma
     secretStoreKind: ClusterSecretStore
     refreshInterval: 1h
     # Certificado e chave TLS do servidor KES.
     tls:
-      vaultPath: standalone/kes/server
+      vaultPath: kes/server
       certProperty: cert
       keyProperty: key
     # Hash das identidades (não é segredo; a chave de API é que é).
     identities:
-      vaultPath: standalone/kes/identities
+      vaultPath: kes/identities
       minioProperty: minio
       provisionerProperty: provisioner
 

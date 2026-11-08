@@ -17,10 +17,10 @@ source "$SCRIPT_DIR/lib-provisionar.sh"
 # que já traz as extensões do PostGIS: o role da aplicação não é superusuário e
 # não conseguiria instalá-las.
 BANCOS=(
-    "uniplus:uniplus:standalone/postgres/uniplus"
-    "portal:uniplus_portal:standalone/postgres/portal"
-    "uniplus_geo_app:uniplus_geo:standalone/postgres/geo:template_postgis"
-    "apicurio:apicurio:standalone/postgres/apicurio"
+    "uniplus:uniplus:uniplus/postgres"
+    "portal:uniplus_portal:uniplus/postgres-portal"
+    "uniplus_geo_app:uniplus_geo:geo/postgres:template_postgis"
+    "apicurio:apicurio:plataforma/postgres/apicurio"
 )
 
 mostrar_uso() {
@@ -63,7 +63,7 @@ exigir_usuario_comum
 if $DRY_RUN; then
     for item in "${BANCOS[@]}"; do
         IFS=: read -r role banco caminho template <<<"$item"
-        echo "[DRY-RUN] role $role, banco $banco${template:+ (de $template)}, senha em secret/$caminho"
+        echo "[DRY-RUN] role $role, banco $banco${template:+ (de $template)}, senha em $caminho"
     done
     exit 0
 fi

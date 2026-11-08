@@ -5,7 +5,7 @@
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 NOME_DO_AMBIENTE="uniplus-$AMBIENTE"
 # Namespaces que servem rotas com o certificado do domínio.
-NAMESPACES_TLS=(uniplus geo traefik vault minio-console-proxy argocd)
+NAMESPACES_TLS=(uniplus geo traefik vault minio-console-proxy argocd kafka-ui redis-ui apicurio-registry)
 TLS_SECRET_NAME="uniplus-unifesspa-tls"
 
 # Confere que a revisão é uma tag existente deste repositório e que o checkout

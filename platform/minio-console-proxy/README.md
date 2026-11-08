@@ -17,7 +17,7 @@ Ative em ambientes que precisam expor o MinIO Console publicamente (UI admin do 
 
 ## Auth
 
-MinIO Console tem login próprio com root user/pwd custodiado em Vault `secret/standalone/minio/root`. Não há OIDC SSO configurado neste chart — para hml/prod considerar OpenID provider config nativo do MinIO server (`MINIO_IDENTITY_OPENID_*`).
+MinIO Console tem login próprio com root user/pwd custodiado em Vault `minio/root`. Não há OIDC SSO configurado neste chart — para hml/prod considerar OpenID provider config nativo do MinIO server (`MINIO_IDENTITY_OPENID_*`).
 
 ## Acervo público (`acervoPublicoProxy`)
 

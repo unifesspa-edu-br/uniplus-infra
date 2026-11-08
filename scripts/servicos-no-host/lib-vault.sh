@@ -11,7 +11,11 @@
 #                                        não existe e com 2 em qualquer outro erro
 #   vault_existe <caminho>               0 se o segredo existe, 1 se não; aborta o
 #                                        script em qualquer outro erro
-#   vault_put <caminho> <chave=valor>... grava (KV v2); caminho sem o mount `secret`
+#   vault_put <caminho> <chave=valor>... grava (KV v2)
+#
+# O caminho é `<sistema>/<caminho interno>`, com sistema uniplus, geo ou plataforma:
+# `uniplus/postgres` é o segredo `postgres` do KV `uniplus-<ambiente>` (AMBIENTE,
+# prd por padrão). O mapa completo está em docs/vault-caminhos.md.
 #   vault_api <método> <caminho> [json]  chamada crua em /v1/<caminho> (ver abaixo)
 #
 # Com VAULT_URL (ex.: https://uniplus-vault.unifesspa.edu.br), usa esse endereço
@@ -22,6 +26,7 @@
 # Não faz `set -e`/`trap` próprios: o script que o carrega cria o tmpdir e chama
 # `vault_desconectar` no seu trap de saída.
 
+AMBIENTE="${AMBIENTE:-prd}"
 VAULT_NAMESPACE="${VAULT_NAMESPACE:-vault}"
 VAULT_POD="${VAULT_POD:-platform-vault-0}"
 VAULT_LOCAL_PORT="${VAULT_LOCAL_PORT:-18200}"
@@ -109,8 +114,21 @@ vault_api() {
     fi
 }
 
+# vault_caminho_dados <sistema>/<caminho> imprime <sistema>-<ambiente>/data/<caminho>.
+vault_caminho_dados() {
+    local sistema="${1%%/*}" interno="${1#*/}"
+    case "$sistema" in
+        uniplus|geo|plataforma) ;;
+        *) echo "Caminho do Vault sem sistema válido (uniplus, geo ou plataforma): $1" >&2; return 1 ;;
+    esac
+    [[ "$interno" != "$1" && -n "$interno" ]] || { echo "Caminho do Vault sem parte interna: $1" >&2; return 1; }
+    printf '%s-%s/data/%s' "$sistema" "$AMBIENTE" "$interno"
+}
+
 vault_existe() {
-    vault_api GET "secret/data/$1"
+    local caminho
+    caminho=$(vault_caminho_dados "$1") || exit 1
+    vault_api GET "$caminho"
     case "$VAULT_HTTP_STATUS" in
         200) return 0 ;;
         404) return 1 ;;
@@ -120,7 +138,9 @@ vault_existe() {
 }
 
 vault_get() {
-    vault_api GET "secret/data/$1"
+    local caminho
+    caminho=$(vault_caminho_dados "$1") || return 2
+    vault_api GET "$caminho"
     case "$VAULT_HTTP_STATUS" in
         200) python3 -c '
 import json, sys
@@ -151,7 +171,9 @@ for item in sys.stdin.buffer.read().split(b"\0"):
         dados[chave] = valor
 print(json.dumps({"data": dados}), end="")'
     )
-    vault_api POST "secret/data/$path" "$payload"
+    local destino
+    destino=$(vault_caminho_dados "$path") || return 1
+    vault_api POST "$destino" "$payload"
     [[ "$VAULT_HTTP_STATUS" == 200 ]] || {
         echo "Vault respondeu HTTP $VAULT_HTTP_STATUS ao gravar $path." >&2
         return 1

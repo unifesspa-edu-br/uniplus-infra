@@ -99,21 +99,21 @@ apicurioRegistry:
     refreshInterval: "1h"
     secretStoreRef:
       kind: ClusterSecretStore
-      name: vault-default
+      name: plataforma
 
     # Senha do role `apicurio` no Postgres. Gerada pelo
     # step_data_setup_apicurio_db do bootstrap-standalone.sh em
     # .bootstrap-creds-apicurio; operador custodia em Vault path abaixo
     # via §15.2 do RUNBOOKS após primeira execução.
     dbCreds:
-      vaultPath: secret/standalone/postgres/apicurio
+      vaultPath: postgres/apicurio
       passwordKey: password
 
     # client_secret OIDC do confidential client `apicurio-registry` no realm
     # uniplus. Gerado pelo Keycloak no import inicial; operador recupera via
     # kcadm.sh e custodia em Vault (RUNBOOKS §15.1).
     oidcClient:
-      vaultPath: secret/standalone/keycloak/clients/apicurio-registry
+      vaultPath: keycloak/apicurio-registry
       clientSecretKey: client_secret
 
   # === Exposição externa via Traefik IngressRoute ===
@@ -141,8 +141,8 @@ apicurioRegistry:
     dataHostPort: 5432
     # Service do Keycloak local (in-cluster). Default casa com release name
     # padrão do chart keycloak-replica em standalone.
-    keycloakService: keycloak-replica-uniplus-standalone
-    keycloakNamespace: uniplus
+    keycloakService: keycloak-replica
+    keycloakNamespace: keycloak-replica
     keycloakPort: 8080
     # CIDR do endpoint público do OIDC issuer. Apicurio chama
     # `.well-known/openid-configuration`, `/token`, `/userinfo` em HTTPS
