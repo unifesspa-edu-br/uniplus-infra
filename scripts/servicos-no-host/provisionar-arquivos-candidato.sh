@@ -47,7 +47,8 @@ fi
 definir_url_do_vault
 HOST_IP="$INFRA_IP"
 ORIGEM_WEB="${ORIGEM_WEB:-https://uniplus.unifesspa.edu.br}"
-KES_HOST="${KES_HOST:-uniplus-prod-app.unifesspa.edu.br}"
+exigir_app_fqdn
+KES_HOST="${KES_HOST:-$APP_FQDN}"
 MINIO_HOST="$INFRA_FQDN"
 MINIO_SCHEME=https
 MINIO_TLS_DIR="${MINIO_TLS_DIR:-$DATA_BASE/minio/tls}"
