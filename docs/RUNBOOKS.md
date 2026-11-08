@@ -75,17 +75,19 @@ falham ao ler a cadeia (sintoma: `curl` com erro 77).
 As imagens `quay.io/minio/minio`, `quay.io/minio/mc` e `quay.io/minio/kes` exigem autenticação no
 registro. Copiá-las de uma origem que já as tenha, para o runtime de cada VM:
 
-- **`uniplus-prod-infra`** (MinIO e `mc` rodam no Docker, pelo `instalar-minio.sh`):
+- **`uniplus-prod-infra`** (MinIO e `mc` rodam no Docker, pelo `instalar-minio.sh`; a CLI do KES gera
+  as identidades e cria a chave dos arquivos). As tags são as que os scripts usam:
 
   ```bash
-  docker save quay.io/minio/minio quay.io/minio/mc -o minio-docker.tar   # na origem
+  docker save quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z quay.io/minio/mc:latest \
+    quay.io/minio/kes:2025-03-12T09-35-18Z -o minio-docker.tar           # na origem
   docker load -i minio-docker.tar                                        # na VM de infraestrutura
   ```
 
 - **`uniplus-prod-app`** (o KES roda no K3s):
 
   ```bash
-  docker save quay.io/minio/kes -o kes.tar                               # na origem
+  docker save quay.io/minio/kes:2025-03-12T09-35-18Z -o kes.tar          # na origem
   sudo k3s ctr images import --platform linux/amd64 kes.tar              # na VM de aplicação
   ```
 
