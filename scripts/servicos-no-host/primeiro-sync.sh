@@ -68,12 +68,13 @@ parametros.append({"name": sys.argv[1], "value": "false"})
 helm["parameters"] = parametros
 print(json.dumps({"operation": {
     "initiatedBy": {"username": "primeiro-sync"},
+    "info": [{"name": "primeiro-sync", "value": sys.argv[2]}],
     "sync": {
         "sources": fontes,
         "revisions": [f["targetRevision"] for f in fontes],
         "syncOptions": spec.get("syncPolicy", {}).get("syncOptions") or [],
     },
-}}))' "$PARAMETRO_DO_JOB"
+}}))' "$PARAMETRO_DO_JOB" "$IDENTIFICADOR"
 }
 
 # Os ExternalSecrets que a Application declara (do estado dela no ArgoCD).
@@ -86,19 +87,16 @@ for r in json.load(sys.stdin).get("status", {}).get("resources", []):
 }
 
 # O patch só registra a operação. Um `Succeeded` que já estava no status é de uma
-# operação anterior: só conta o estado da operação iniciada depois do patch.
+# operação anterior: só conta o estado da operação que leva o identificador desta.
 esperar_operacao() {
-    local inicio=$1 limite=$((SECONDS + ESPERA_SEGUNDOS)) estado
+    local limite=$((SECONDS + ESPERA_SEGUNDOS)) estado
     while ((SECONDS < limite)); do
         estado=$(kubectl -n argocd get application "$APPLICATION" -o json | python3 -c '
 import json, sys
-from datetime import datetime
 op = json.load(sys.stdin).get("status", {}).get("operationState") or {}
-iniciada = op.get("startedAt")
-if not iniciada or datetime.fromisoformat(iniciada.replace("Z", "+00:00")).timestamp() < float(sys.argv[1]):
-    print("Aguardando")
-else:
-    print(op.get("phase", "Aguardando"))' "$inicio")
+info = op.get("operation", {}).get("info") or []
+desta = any(i.get("name") == "primeiro-sync" and i.get("value") == sys.argv[1] for i in info)
+print(op.get("phase", "Aguardando") if desta else "Aguardando")' "$IDENTIFICADOR")
         case "$estado" in
             Succeeded) return 0 ;;
             Failed|Error)
@@ -136,11 +134,11 @@ if $DRY_RUN; then
     echo "[DRY-RUN] esperaria os ExternalSecrets de $NAMESPACE ficarem prontos ($ESPERA_SEGUNDOS s)"
     exit 0
 fi
+IDENTIFICADOR=$(python3 -c 'import uuid; print(uuid.uuid4())')
 operacao=$(montar_operacao)
-inicio=$(date +%s)
 kubectl -n argocd patch application "$APPLICATION" --type merge -p "$operacao"
 log_info "Primeiro sync de $APPLICATION iniciado (Job de migration desligado nesta operação)."
-esperar_operacao "$inicio"
+esperar_operacao
 esperar_secrets
 log_success "Primeiro tempo concluído."
 log_info "Faça agora o sync normal de $APPLICATION: o Job de migration roda com a ServiceAccount e os Secrets já criados."
