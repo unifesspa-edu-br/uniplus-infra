@@ -14,17 +14,10 @@ vault:
     # Vault do ambiente, que o CoreDNS do cluster resolve para o Service.
     tlsDisable: false
 
-  # Vault Agent Injector — injeta secrets em Pods de aplicação anotados.
+  # Vault Agent Injector desligado: os segredos chegam pelo External Secrets e
+  # nenhum Pod usa as anotações de injeção.
   injector:
-    enabled: true
-    replicas: 1
-    resources:
-      requests:
-        cpu: 50m
-        memory: 64Mi
-      limits:
-        cpu: 200m
-        memory: 128Mi
+    enabled: false
 
   server:
     enabled: true
@@ -39,10 +32,11 @@ vault:
       - type: secret
         name: uniplus-unifesspa-tls
 
-    # A sonda usa o endpoint de saúde (pronto = aberto, ativo ou standby) em vez do
-    # `vault status` do chart, que pula a validação do certificado.
+    # A sonda usa o endpoint de saúde em vez do `vault status` do chart, que pula a
+    # validação do certificado. Selado ou não inicializado também conta como pronto:
+    # sem isso o Service não alcança o pod e a interface de desbloqueio fica fora.
     readinessProbe:
-      path: "/v1/sys/health?standbyok=true"
+      path: "/v1/sys/health?standbyok=true&sealedcode=204&uninitcode=204"
 
     # HA Raft. Recursos reduzidos por default; o ambiente eleva conforme a carga.
     ha:
