@@ -1,72 +1,29 @@
 # Scripts
 
-Scripts de operação do ambiente `standalone-compact` (1 cluster K3s + 1 data-host externo em OCI GRU).
+Scripts de operação do ambiente `uniplus-prd` (duas VMs: aplicação e infraestrutura).
 
 | Script | Função |
 |--------|--------|
-| `bootstrap-standalone.sh` | Provisiona o ambiente standalone OCI (roles `standalone-k8s` e `standalone-data`); executado manualmente via SSH após o `tofu apply` |
-| `validate-standalone.sh` | Valida saúde do ambiente (k8s-host + data-host) — usado após o bootstrap |
-| `validate-cluster.sh` | Smoke pós-bootstrap focado no K3s (Pods Running, ArgoCD Synced, IngressRoute respondendo) |
-| `resize-standalone-oci.sh` | Hot-resize dos shapes (OCPU + RAM) das 2 VMs OCI; perfis pré-definidos para POC/HML |
-| `sync-tofu-outputs.sh` | Bridge entre `tofu output` (`provisioning/oci/standalone-compact/`) e os charts Helm. Modos: `--diff`, `--apply-configmap`, `--json` |
-| `smoke-dashboards.sh` | Smoke dos dashboards Grafana provisionados |
-| `smoke-encryption-e2e.sh` | Smoke do pipeline Vault → ExternalSecrets → Pod |
-| `smoke-metrics-pipeline.sh` | Smoke do pipeline OTel → Prometheus → Grafana |
 | `validate-rfc1123.py` | Valida nomes RFC 1123 em todos os charts (consumido pelo CI) |
 
-## Standalone OCI (dois hosts Ubuntu)
+## `servicos-no-host/`
 
-Topologia: 1 `k8s-host` (K3s + Helm + ArgoCD) + 1 `data-host` (Docker + volumes LVM para Postgres, Kafka, MinIO, Vault e Redis).
+Rodam nas VMs, todos aceitam `--dry-run` e leem `AMBIENTE` (`prd` por padrão, `hml` também é aceito). Os caminhos no Vault seguem [docs/vault-caminhos.md](../docs/vault-caminhos.md).
 
-Após o `tofu apply` em `provisioning/oci/standalone-compact/`, o
-`bootstrap-standalone.sh` é executado **manualmente via SSH** em cada VM (o
-`compute.tf` ainda não injeta `user_data`/cloud-init — automatizar isso é a
-issue #387). Copie o script para a VM (ou faça `git clone` do repo) e rode:
+| Script | Onde roda | Função |
+|--------|-----------|--------|
+| `bootstrap-infra.sh` | VM de infraestrutura | PostgreSQL, Redis, MinIO, Kafka e RabbitMQ em containers sob systemd, só com TLS |
+| `bootstrap-app.sh` | VM de aplicação | K3s, Helm, ArgoCD, Secret TLS, registro do cluster na revisão e ApplicationSets |
+| `atualizar-producao.sh` | VM de aplicação | Aponta a produção para uma tag e reaplica ApplicationSets e verificador |
+| `primeiro-sync.sh` | VM de aplicação | Primeiro sync, em dois tempos, de uma Application com Job de migration |
+| `renovar-certificado.sh` | As duas VMs | Troca o certificado curinga e reinicia o que o usa |
+| `configurar-vault.sh` | Qualquer máquina com o token raiz | KV por sistema, autenticação Kubernetes, política e role por sistema |
+| `semear-vault.sh` | VM de infraestrutura | Grava no Vault os segredos que nascem na infraestrutura |
+| `provisionar-bancos.sh` | VM de infraestrutura | Roles e bancos das aplicações, com a senha guardada no Vault |
+| `provisionar-kafka.sh` | VM de infraestrutura | Tópico, usuário SCRAM e ACL do registro de acesso |
+| `provisionar-rabbitmq.sh` | VM de infraestrutura | Vhost e usuários da verificação |
+| `provisionar-verificacao.sh` | VM de infraestrutura | Transit, KES e credenciais da cifra dos arquivos do candidato |
+| `provisionar-arquivos-candidato.sh` | VM de infraestrutura | Buckets, SSE-KMS e políticas dos arquivos do candidato no MinIO |
+| `instalar-kafka.sh`, `instalar-minio.sh`, `instalar-redis.sh` | VM de infraestrutura | Instalação de cada serviço, chamada pelo `bootstrap-infra.sh` |
 
-```bash
-# No k8s-host — K3s + Helm + ArgoCD
-./scripts/bootstrap-standalone.sh --role=standalone-k8s
-
-# No data-host — Docker + LVM + mount points + data services
-./scripts/bootstrap-standalone.sh --role=standalone-data
-
-# Dry-run (mostra o que seria feito, sem executar)
-./scripts/bootstrap-standalone.sh --role=standalone-k8s --dry-run
-./scripts/bootstrap-standalone.sh --role=standalone-data --dry-run
-
-# Flags disponíveis
-#   --skip-k3s        Pula instalação do K3s (standalone-k8s)
-#   --skip-docker     Pula instalação do Docker (standalone-data)
-#   --skip-services   Pula bring-up dos services (standalone-data, debug)
-```
-
-O bootstrap do data-host descobre os block volumes OCI automaticamente. Para o standalone-compact a topologia é 1 disco LVM-particionado (4 LVs). Verificar com `lsblk` antes de rodar.
-
-### Validação
-
-```bash
-# Smoke completo (valida os dois hosts a partir do k8s-host)
-./scripts/validate-standalone.sh
-
-# Sobrepor IP do data-host (padrão: 10.2.2.11)
-DATA_HOST_IP=10.2.2.11 ./scripts/validate-standalone.sh
-```
-
-Saída esperada: **`X OK, 0 ERROS, Y AVISOS`**. Avisos são esperados enquanto serviços ainda estão subindo.
-
-## Lab standalone-single (host único)
-
-`lab-standalone-single/` traz scripts para uma topologia de laboratório de
-host único (K3s + Docker na mesma VM), complementar ao `standalone-compact`
-— ver `lab-standalone-single/README.md` e a issue
-[#395](https://github.com/unifesspa-edu-br/uniplus-infra/issues/395).
-
-## Produção (duas VMs)
-
-`prod-standalone/` traz os scripts da produção: `bootstrap-infra.sh` e `bootstrap-app.sh` (uma
-VM cada), `atualizar-producao.sh` (registra uma tag), `primeiro-sync.sh`, `renovar-certificado.sh` e o
-provisionamento do Vault, dos bancos, do Kafka e das filas. Todos aceitam `--dry-run`. Ver a seção 23 do `docs/RUNBOOKS.md`.
-
-## Histórico
-
-Até 2026-05-19 o diretório também trazia `bootstrap-lab.sh` e `teardown-lab.sh` para um laboratório multi-DC (Ryzen 9950X + i7) que nunca foi provisionado. Os scripts foram removidos junto com `environments/lab-*`, `environments/prod-*` e `environments/standalone/` (ver `CHANGELOG.md`).
+As bibliotecas `lib-*.sh` são carregadas por `source`. Ordem e contexto de uso: [docs/RUNBOOKS.md](../docs/RUNBOOKS.md).

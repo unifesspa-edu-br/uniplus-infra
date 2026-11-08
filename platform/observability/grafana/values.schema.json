@@ -13,13 +13,13 @@
       "properties": {
         "enabled": {
           "type": "boolean",
-          "description": "Liga/desliga o subchart. False em PA1 (que hospeda agregação separada)."
+          "description": "Liga/desliga o subchart."
         },
         "replicas": { "type": "integer", "minimum": 1 },
         "adminUser": { "type": "string" },
         "adminPassword": {
           "type": "string",
-          "description": "PLACEHOLDER no chart. Sobrescrever via ESO em prod/standalone."
+          "description": "PLACEHOLDER no chart. Sobrescrever via ESO em produção."
         },
         "commonLabels": {
           "type": "object",

@@ -8,8 +8,8 @@ metadata:
     {{- include "keycloak-replica.labels" . | nindent 4 }}
 spec:
   replicas: {{ $kc.replicas }}
-  # Single-node em standalone — Recreate evita 2 pods escrevendo no mesmo
-  # Postgres durante rolling update. Em multi-DC isso seria substituído
+  # Single-node no ambiente de nó único — Recreate evita 2 pods escrevendo no mesmo
+  # Postgres durante rolling update. Com mais de um nó isso seria substituído
   # por RollingUpdate quando o chart suportar HA (fora do escopo deste PR).
   strategy:
     type: Recreate

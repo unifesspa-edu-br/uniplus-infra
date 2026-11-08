@@ -48,7 +48,7 @@ fullname com sufixo "-sa".
 
 {{/*
 Nome do Secret K8s sintetizado pelo ESO `dbCreds` — JDBC password do role
-`apicurio` no Postgres standalone.
+`apicurio` no Postgres.
 */}}
 {{- define "apicurioRegistry.dbCredsSecretName" -}}
 {{ include "apicurioRegistry.fullname" . }}-db
@@ -63,7 +63,7 @@ client confidential `apicurio-registry` no realm uniplus.
 {{- end -}}
 
 {{/*
-JDBC URL completa para o Postgres standalone. Storage host/port/database
+JDBC URL completa para o Postgres. Storage host/port/database
 vêm de values; postgresql é o único SQL kind suportado em produção
 (H2 fica fora — só para dev local).
 */}}

@@ -1,7 +1,7 @@
 # Defaults do chart platform/minio-console-proxy/.
 # Cada environment (environments/<env>/values.yaml) sobrescreve apenas o
 # necessário. Por padrão o chart fica DESABILITADO — só os ambientes que
-# precisam de Console MinIO público (ex.: standalone) ligam via
+# precisam de Console MinIO público (ex.: produção) ligam via
 # `minioConsoleProxy.enabled: true`.
 
 commonLabels:
@@ -36,7 +36,7 @@ minioConsoleProxy:
     # propósito (apenas o Service ExternalName seria criado, sem rota).
     enabled: true
     entryPoint: websecure
-    host: ""                    # ex.: minio.standalone.portaluni.com.br
+    host: ""                    # ex.: uniplus.unifesspa.edu.br
     tls:
       enabled: true
       secretName: ""            # criado pelo cert-manager se certManager.enabled

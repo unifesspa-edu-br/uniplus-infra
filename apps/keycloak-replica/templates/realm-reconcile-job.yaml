@@ -15,7 +15,7 @@
   mas SEM os 2 protocolMappers (`audience-apicurio-registry` +
   `groups-hardcoded-developer`) — porque foram adicionados no realm.json
   *depois* do realm ter sido criado pela primeira vez. Mitigação manual via
-  `kcadm.sh` (RUNBOOKS §15.6 passo 1) executada durante o smoke; este Job
+  `kcadm.sh` (docs/RUNBOOKS.md) executada durante o smoke; este Job
   automatiza essa reconciliação.
 
   Como funciona:
@@ -105,7 +105,7 @@ spec:
             # Nome do arquivo segue realmImport.realmName (ver
             # configmap-realm.yaml) — hardcoded pra "uniplus-realm.json"
             # quebrava o Job sempre que um ambiente sobrescrevia o nome do
-            # realm (ex. hml-standalone-single usa "unifesspa").
+            # realm (ex.: a homologação usa "unifesspa").
             - name: IMPORT_FILES_LOCATIONS
               value: "/realm/{{ .Values.keycloak.realmImport.realmName }}-realm.json"
             # ${VAR} no realm.json (ex.: ${UNIPLUS_PORTAL_CLIENT_SECRET})

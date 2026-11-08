@@ -6,27 +6,27 @@ Serviço OIDC local do Uni+ baseado em **Keycloak 26.7.x**.
 
 ## Visão geral
 
-Componente da plataforma Uni+ responsável por login OIDC local em cada DC. Persiste em Postgres externo (data-host em standalone; Patroni em SP1/SP2 quando aplicável), expõe-se via Traefik IngressRoute em path `/auth/*` e provisiona o realm `uniplus` declarativamente via `--import-realm`.
+Componente da plataforma Uni+ responsável por login OIDC local. Persiste em Postgres externo (VM de dados), expõe-se via Traefik IngressRoute em path `/auth/*` e provisiona o realm `uniplus` declarativamente via `--import-realm`.
 
-Ver [docs/ARCHITECTURE.md](../../docs/ARCHITECTURE.md) para o contexto arquitetural e [docs/RUNBOOKS.md §10](../../docs/RUNBOOKS.md) para procedimentos operacionais.
+Ver [docs/RUNBOOKS.md](../../docs/RUNBOOKS.md) para procedimentos operacionais.
 
 ## Pré-requisitos
 
 - Kubernetes 1.30+ + Helm 3.x
-- Postgres com database `keycloak` + role `keycloak` provisionados (em standalone, codificado em `scripts/bootstrap-standalone.sh::step_data_setup_postgres`)
+- Postgres com database `keycloak` + role `keycloak` provisionados na VM de dados
 - Vault de aplicação inicializado, ESO `ClusterSecretStore` `plataforma` com STATUS=Valid+Ready
 - Secrets no Vault:
   - `postgres/keycloak` (fields: `host`, `port`, `database`, `username`, `password`)
   - `keycloak/admin` (fields: `username`, `password`) — bootstrap admin do master realm
   - O client `uniplus-portal` é **public client** (SPA + PKCE) — não há `client_secret` para custodiar.
 - cert-manager + ClusterIssuer `letsencrypt-staging` ou `letsencrypt-prod` Ready
-- Traefik Running com hostPort 80/443 (single-host) ou Service LoadBalancer (multi-DC)
+- Traefik Running com hostPort 80/443 (single-host) ou Service LoadBalancer
 
 ## Como o chart é aplicado
 
 `apps/keycloak-replica/` é referenciado pelo ApplicationSet `uniplus-apps` em `argocd/applicationset.yaml`. Cada cluster registrado (label `uniplus.io/managed=true`) recebe uma `Application` chamada `keycloak-replica-<release>` que aterrissa no namespace `uniplus`.
 
-Por padrão o chart fica **desabilitado** (`keycloak.enabled: false`). Apenas environments que explicitamente ligam (ex.: `environments/standalone-compact/values.yaml`) sobem os recursos.
+Por padrão o chart fica **desabilitado** (`keycloak.enabled: false`). Apenas environments que explicitamente ligam (ex.: `environments/uniplus-prd/values.yaml`) sobem os recursos.
 
 ## Templates entregues
 
@@ -60,7 +60,7 @@ O chart codifica estas opções de configuração runtime do Keycloak 26.x:
 
 ## Decisões de design
 
-- **Imagem composta `uniplus-keycloak` + `start --import-realm`** (sem rebuild custom): a imagem `ghcr.io/unifesspa-edu-br/uniplus-keycloak:26.7.2-0` é Keycloak 26.7.2 upstream + JAR `cpf-matcher` (SPI institucional), com health/metrics built-in. `start` (sem `--optimized`) deixa o Keycloak fazer auto-build na primeira inicialização — `startupProbe.failureThreshold: 60` (×10s = 10min) absorve a janela. Standalone usa a mesma imagem que vai pra HML/PROD para garantir production parity.
+- **Imagem composta `uniplus-keycloak` + `start --import-realm`** (sem rebuild custom): a imagem `ghcr.io/unifesspa-edu-br/uniplus-keycloak:26.7.2-0` é Keycloak 26.7.2 upstream + JAR `cpf-matcher` (SPI institucional), com health/metrics built-in. `start` (sem `--optimized`) deixa o Keycloak fazer auto-build na primeira inicialização — `startupProbe.failureThreshold: 60` (×10s = 10min) absorve a janela. O ambiente de nó único usa a mesma imagem de homologação e produção, para garantir paridade.
 - **Realm import idempotente**: `--import-realm` em 26.x **não re-importa** se o realm já existir, preservando mudanças via Admin UI. Para forçar reimport: `kc.sh import` explícito (não automático).
 - **`uniplus-portal` é public client (SPA + PKCE)**: realm JSON declara `"publicClient": true` sem `client_secret`. Browsers não podem custodiar segredo; PKCE substitui o secret em fluxos de Authorization Code (`code_verifier` gerado pelo SPA garante a posse do code). Para futuros clients confidenciais (ex.: backend BFF, Vault UI integration #34), criar entradas separadas no realm com seus próprios secrets via Vault.
 - **Sem PV**: estado durável vive todo no Postgres. `/tmp` em emptyDir.
@@ -68,9 +68,9 @@ O chart codifica estas opções de configuração runtime do Keycloak 26.x:
 
 ## Limitações conhecidas
 
-- **Single-replica only neste chart**: standalone single-node = 1 réplica (correto). Para multi-DC ativo-ativo (lab/prod-{sp1,sp2}) o approach será diferente — issue separada.
+- **Réplica única neste chart**: um nó só, 1 réplica. Alta disponibilidade ativo-ativo exigiria outra abordagem, em issue separada.
 - **Federação Gov.br não implementada**: `keycloak.govbr.enabled: false` é flag inerte hoje. ADR-018 cobre o roadmap; depende deste chart estar de pé.
-- **Sem rotação automática do admin password**: procedimento manual em `docs/RUNBOOKS.md §10.4` (atualiza Vault → ESO refresh → `kcadm.sh set-password` → restart do Pod para refletir env do processo).
+- **Sem rotação automática do admin password**: procedimento manual em `docs/RUNBOOKS.md` (atualiza Vault → ESO refresh → `kcadm.sh set-password` → restart do Pod para refletir env do processo).
 
 ## Validação
 
@@ -78,9 +78,9 @@ O chart codifica estas opções de configuração runtime do Keycloak 26.x:
 # Lint local
 helm lint apps/keycloak-replica/
 
-# Render contra standalone (envs reais)
+# Render contra o ambiente de produção
 helm template keycloak-replica apps/keycloak-replica/ \
-  -f environments/standalone-compact/values.yaml | kubectl apply --dry-run=client -f -
+  -f environments/uniplus-prd/values.yaml | kubectl apply --dry-run=client -f -
 
 # Schema
 make schema-validate

@@ -171,7 +171,7 @@ indentação do include e produziria itens fora da lista.
 # uniplus-api/docker/docker-compose.monolito.yml e já replicada em
 # apps/uniplus-api-portal/templates/deployment.yaml (issue #423).
 # Omitir a env var por completo (como ainda fazem os charts legados
-# uniplus-api-{selecao,ingresso}, mantidos só para standalone-compact)
+# uniplus-api-{selecao,ingresso}, mantidos só para uniplus-prd)
 # NÃO é equivalente aqui: description completa no values.yaml.
 - name: Kafka__BootstrapServers
   value: {{ if .Values.uniplusApiHost.kafka.enabled }}{{ .Values.uniplusApiHost.kafka.bootstrapServers | quote }}{{ else }}" "{{ end }}

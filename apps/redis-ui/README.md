@@ -1,10 +1,10 @@
 # redis-ui
 
-RedisInsight 2.x (Redis Inc., Apache 2.0) como UI de admin/inspect para o Redis 8.6.3 standalone (`10.0.2.87:6379`).
+RedisInsight 2.x (Redis Inc., Apache 2.0) como UI de admin/inspect para o Redis 8.6.3 (`10.0.2.87:6379`).
 
 ## Quando usar
 
-Ative apenas em ambientes que precisam de UI Redis (debug operacional, ver keys/TTL/memory). Em standalone roda 1 réplica conectando ao Redis systemd no data-host via subnet privada VCN.
+Ative apenas em ambientes que precisam de UI Redis (debug operacional, ver keys/TTL/memory). No ambiente de nó único roda 1 réplica conectando ao Redis systemd no data-host via subnet privada VCN.
 
 ## Auth
 
@@ -21,7 +21,7 @@ Para SSO via Keycloak no futuro, considerar Traefik `forwardAuth` middleware + o
 
 ## Connection pré-setup
 
-Backend Redis pré-cadastrado via env vars `RI_REDIS_*`. Aparece automaticamente no UI no primeiro acesso. Em standalone:
+Backend Redis pré-cadastrado via env vars `RI_REDIS_*`. Aparece automaticamente no UI no primeiro acesso. No ambiente de nó único:
 
 | Env | Valor |
 |---|---|
@@ -32,4 +32,4 @@ Backend Redis pré-cadastrado via env vars `RI_REDIS_*`. Aparece automaticamente
 
 ## Operação
 
-Procedimentos detalhados em `docs/RUNBOOKS.md` §16.
+Procedimentos detalhados em `docs/RUNBOOKS.md`

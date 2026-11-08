@@ -28,7 +28,7 @@ MinIO (host, systemd) ──mTLS :7373 (hostPort)──▶ KES (pod) ──Kuber
 
 Escrever no Vault. A chave Transit, a política, a role, o certificado do servidor
 e as identidades são criados por
-`scripts/hml-standalone-single/provision-verificacao-prerequisites.sh`; o ExternalSecret
+`scripts/servicos-no-host/provisionar-verificacao.sh`; o ExternalSecret
 do chart lê o resultado em `kes/server` e
 `kes/identities`.
 
@@ -43,4 +43,4 @@ do chart lê o resultado em `kes/server` e
 | `kes.cache.*` | Expiração do cache (disponibilidade x revogação). |
 | `kes.networkPolicy.hostCidrs` | Origens do host autorizadas no hostPort. |
 
-Operação e provisionamento: `docs/RUNBOOKS.md` §21.10.
+Operação e provisionamento: `docs/RUNBOOKS.md`

@@ -1,12 +1,12 @@
 # KES do MinIO — SSE-KMS dos arquivos do candidato (ADR-0146 do uniplus-api).
 #
-# O MinIO roda FORA do cluster (systemd no host, ver docs/RUNBOOKS.md §21.8) e
+# O MinIO roda FORA do cluster (systemd no host, ver docs/RUNBOOKS.md) e
 # fala com o KES por mTLS no hostPort abaixo. Cada ambiente liga o chart em
 # environments/<env>/values.yaml; o default é desligado.
 #
 # O que este chart NÃO faz, por ser escrita no Vault: criar a chave Transit, a
 # política, a role Kubernetes auth, o certificado do servidor e as identidades.
-# Isso é feito por scripts/hml-standalone-single/provision-verificacao-prerequisites.sh.
+# Isso é feito por scripts/servicos-no-host/provisionar-verificacao.sh.
 
 kes:
   enabled: false

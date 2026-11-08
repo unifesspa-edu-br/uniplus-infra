@@ -73,7 +73,7 @@ spec:
           securityContext:
             {{- toYaml $.Values.uniplusWeb.containerSecurityContext | nindent 12 }}
           # A imagem Nginx substitui a tag <base> a partir desta variável.
-          # `pathPrefix` vazio mantém standalone/lab na raiz; um prefixo é
+          # `pathPrefix` vazio mantém nó único na raiz; um prefixo é
           # normalizado com barra final para resolver assets e deep links.
           env:
             - name: APP_BASE_HREF

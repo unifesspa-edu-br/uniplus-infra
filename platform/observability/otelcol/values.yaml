@@ -1,15 +1,15 @@
 # Defaults para o OpenTelemetry Collector no cluster Uni+.
 #
-# Topologia (ADR-013): single DaemonSet em standalone — atua simultaneamente
+# Topologia (ADR-013): single DaemonSet no ambiente de nó único — atua simultaneamente
 # como agent (filelog receiver coleta logs do containerd em cada nó) E como
 # gateway (apps no mesmo nó enviam OTLP gRPC/HTTP para o collector local).
-# Em prod, separar em DaemonSet+Deployment é desejável; em standalone
+# Em prod, separar em DaemonSet+Deployment é desejável; no ambiente de nó único
 # single-node, 1 deployment evita complexidade.
 #
 # Pipelines:
 # - logs: filelog (containers do nó) + otlp (apps push direto) → loki
 # - traces: otlp (apps push) → tempo
-# - metrics: otlp (apps .NET push OTLP) → prometheusremotewrite (Prometheus standalone)
+# - metrics: otlp (apps .NET push OTLP) → prometheusremotewrite (Prometheus)
 #
 # IMPORTANTE — chart upstream tem alias `otelCollector` (definido em
 # Chart.yaml). Diferente do Loki/Tempo, aqui usamos alias para distinguir
@@ -27,7 +27,7 @@ otelCollector:
 
   # fullnameOverride: força nome dos recursos do subchart como `otelcol-...`
   # em vez de `<release>-otelCollector-...`. Necessário porque:
-  # 1. release-name `platform-observability-otelcol-uniplus-standalone` (49) +
+  # 1. release-name `platform-observability-otelcol` (49) +
   #    `-otelCollector-agent` (19) excede 63 chars (limite RFC 1123 para
   #    nomes de recursos K8s).
   # 2. `otelCollector` em camelCase (do alias do Chart.yaml) viola DNS-1035
@@ -40,7 +40,7 @@ otelCollector:
   # Mode + image
   # ============================================================================
   # DaemonSet: 1 pod por nó, usa hostPath para tail dos /var/log/containers.
-  # Em standalone (1 nó) é equivalente a Deployment, mas pattern correto
+  # No ambiente de nó único (1 nó) é equivalente a Deployment, mas pattern correto
   # para presets logsCollection.
   mode: daemonset
 
@@ -48,8 +48,7 @@ otelCollector:
     # Distribution contrib — necessária para o exporter `prometheusremotewrite`
     # (pipeline metrics → Prometheus). A distribuição `k8s` não inclui esse
     # exporter; a `contrib` inclui tudo da k8s + todos os contrib components.
-    # Diferença de tamanho: ~80 MB (k8s) → ~450 MB (contrib); aceitável em
-    # standalone onde o DaemonSet roda em 1 nó apenas.
+    # Diferença de tamanho: ~80 MB (k8s) → ~450 MB (contrib); aceitável onde o DaemonSet roda em 1 nó apenas.
     repository: otel/opentelemetry-collector-contrib
 
   # ============================================================================
@@ -114,10 +113,10 @@ otelCollector:
       resource:
         attributes:
           - key: cluster
-            value: standalone
+            value: uniplus
             action: upsert
           - key: dc
-            value: standalone
+            value: uniplus
             action: upsert
       # Extrai severidade dos logs Serilog (formato bracket) para alimentar
       # o Loki detected_level. Sem isso, logs do stdout das APIs (coletados
@@ -158,13 +157,13 @@ otelCollector:
       # OTLP do Loki — Loki 3.x suporta OTLP nativo em /otlp/v1/logs).
       #
       # Endpoint via env var `${env:LOKI_OTLP_ENDPOINT}` — populado pelo
-      # `extraEnvs` do environment (ver `environments/standalone-compact/values.yaml`).
+      # `extraEnvs` do environment (ver `environments/uniplus-prd/values.yaml`).
       # Não usa `{{ }}` Helm template aqui porque `alternateConfig` é renderizado
       # com `tpl` no scope do subchart, sem visibilidade de `.Values` do parent
       # wrapper. Env var injection no DaemonSet contorna esse limite e ainda
       # permite hot-reload do endpoint via Secret/ConfigMap se necessário.
       # Codex P1 PR #224: release-name dos backends varia por cluster
-      # (`...uniplus-standalone`, `...lab-sp1`, etc.) — env var por
+      # (varia por ambiente) — env var por
       # environment é a solução robusta.
       otlphttp/loki:
         endpoint: ${env:LOKI_OTLP_ENDPOINT}
@@ -176,7 +175,7 @@ otelCollector:
         tls:
           insecure: true
       # Prometheus remote write — recebe métricas OTLP dos apps .NET e encaminha
-      # para o Prometheus standalone via /api/v1/write.
+      # para o Prometheus via /api/v1/write.
       # Endpoint via env var `${env:PROMETHEUS_REMOTE_WRITE_ENDPOINT}` —
       # mesmo padrão do Loki/Tempo: valor real injetado por environment.
       prometheusremotewrite:
@@ -221,7 +220,7 @@ otelCollector:
           exporters: [prometheusremotewrite]
 
   # ============================================================================
-  # Resources — DaemonSet pequeno em standalone
+  # Resources — DaemonSet pequeno no ambiente de nó único
   # ============================================================================
   resources:
     requests:
@@ -246,9 +245,9 @@ otelCollector:
 
   # ============================================================================
   # Service — em mode=daemonset o chart upstream desativa Service por default
-  # (presume que apps usam hostPort). Em standalone queremos Service ClusterIP
+  # (presume que apps usam hostPort). No ambiente de nó único queremos Service ClusterIP
   # como fallback consistente — apps podem usar
-  # http://platform-observability-otel-collector-uniplus-standalone.observability-otel-collector.svc:4317.
+  # http://platform-observability-otel-collector.observability-otel-collector.svc:4317.
   # ============================================================================
   service:
     enabled: true

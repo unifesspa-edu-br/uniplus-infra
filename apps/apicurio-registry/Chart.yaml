@@ -2,12 +2,12 @@ apiVersion: v2
 name: apicurio-registry
 description: |
   Apicurio Registry — schema/API artifact registry compatível com a Confluent
-  Schema Registry API. Storage SQL no Postgres standalone (DB `apicurio`,
+  Schema Registry API. Storage SQL no Postgres (DB `apicurio`,
   custodiado em Vault); autenticação via OIDC do realm `uniplus` no Keycloak
   local com role-based authorization (sr-admin/sr-developer/sr-readonly
   mapeados a partir de groups do JWT).
 
-  Reuso completo da stack standalone — sem Keycloak/DB/issuer próprios.
+  Reuso completo da stack do ambiente — sem Keycloak/DB/issuer próprios.
 type: application
 
 version: 0.1.0

@@ -1,10 +1,8 @@
 # Defaults para o Traefik IngressController no cluster Uni+.
 #
-# Topologia: roda em cada cluster (lab-{sp1,sp2}, prod-{sp1,sp2}, standalone).
-# Em PA1 pode ficar desligado (sem ingress público lá). Em standalone usa
-# NodePort 80/443 no único host com IP público; em prod 3-DC usa
-# LoadBalancer (típico dos providers OCI/EKS/etc.) — override por
-# environments/<env>/values.yaml.
+# Roda em cada cluster.
+# NodePort 80/443 no único host com IP público; com LoadBalancer
+# em outros provedores — override por environments/<env>/values.yaml.
 #
 # IngressClass: `traefik` — referenciado pelos ClusterIssuers do
 # platform/cert-manager/ no `solvers.http01.ingress.ingressClassName` e
@@ -20,20 +18,19 @@ traefik:
   commonLabels:
     app.kubernetes.io/part-of: uniplus
 
-  # 1 réplica em standalone/lab; prod-{sp1,sp2} elevam para 2+ via
+  # 1 réplica no ambiente de nó único; produção elevam para 2+ via
   # environments/prod-*/values.yaml conforme Tabela 10.1.
   deployment:
     replicas: 1
 
   # updateStrategy: `Recreate` em vez de RollingUpdate (default do subchart).
   # Razão: o Pod do Traefik usa hostPort (80/443) bind direto na VM em
-  # standalone (single-node K3s) — RollingUpdate tenta criar Pod novo
+  # K3s de nó único — RollingUpdate tenta criar Pod novo
   # antes de remover o antigo, e o port conflict bloqueia o scheduling
   # do Pod novo permanentemente (FailedScheduling: didn't have free
-  # ports for the requested pod ports). Em standalone aceitamos ~10s de
+  # ports for the requested pod ports). No ambiente de nó único aceitamos ~10s de
   # downtime por update em troca de releases que não travam (#180).
-  # Prod 3-DC com replicas≥2 + LoadBalancer override para RollingUpdate
-  # via environments/prod-*/values.yaml.
+  # Com replicas≥2 + LoadBalancer, o override do environment volta a RollingUpdate.
   #
   # Caminho de values do subchart: `updateStrategy.type` (NÃO
   # `deployment.strategy.type` — pegadinha do upstream traefik/charts).
@@ -41,7 +38,7 @@ traefik:
     type: Recreate
     rollingUpdate: null
 
-  # Recursos lab — Tabela 10.1 (200m→1000m / 256MB→512MB).
+  # Recursos — Tabela 10.1 (200m→1000m / 256MB→512MB).
   resources:
     requests:
       cpu: 200m
@@ -85,17 +82,17 @@ traefik:
 
   # Service: defaults seguros (ClusterIP, sem hostPort). Cada environment
   # sobrescreve para o que faz sentido na sua topologia:
-  #  - standalone (single-host com IP público): NodePort + hostPort 80/443
+  #  - host único com IP público: NodePort + hostPort 80/443
   #    (binda direto na VM, sem precisar NodePort range > 30000)
-  #  - prod 3-DC: LoadBalancer + annotations do provider (OCI shape, etc.)
+  #  - LoadBalancer + annotations do provedor
   service:
     type: ClusterIP
     annotations: {}
 
   # Ports: 80 (HTTP, redireciona para HTTPS) + 443 (HTTPS).
   # hostPort fica null por default — environments adicionam quando precisam
-  # bindar diretamente na VM (caso standalone) ou deixam vazio quando o
-  # tráfego entra via LoadBalancer (caso prod 3-DC).
+  # bindar diretamente na VM (host único) ou deixam vazio quando o
+  # tráfego entra via LoadBalancer (LoadBalancer).
   ports:
     web:
       port: 8000

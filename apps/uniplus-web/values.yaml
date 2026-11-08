@@ -69,9 +69,9 @@ uniplusWeb:
       # https://github.com/unifesspa-edu-br/packages.
       image: uniplus-portal
       tag: v0.2.1  # tag publicada em GHCR (override per-app possível)
-      host: ""  # ex.: portal.standalone.portaluni.com.br
-      # Subpath opcional (Host + PathPrefix, sem StripPrefix) — RUNBOOKS §21.3.
-      # Vazio/ausente → rota `Host()` pura (preserva standalone-compact/lab).
+      host: ""  # ex.: uniplus.unifesspa.edu.br
+      # Subpath opcional (Host + PathPrefix, sem StripPrefix) — docs/RUNBOOKS.md
+      # Vazio/ausente → rota `Host()` pura (preserva os ambientes de nó único).
       # O chart propaga o valor normalizado como APP_BASE_HREF (<prefixo>/)
       # para a imagem uniplus-web. Ex. HML: /portal
       pathPrefix: ""
@@ -79,17 +79,17 @@ uniplusWeb:
       # Schema é a interface AppConfig em libs/shared-data/lib/config/
       # app-config.model.ts do uniplus-web (ADR-0021).
       runtimeConfig:
-        apiUrl: ""  # ex.: https://api-portal.standalone.portaluni.com.br
+        apiUrl: ""  # ex.: https://uniplus.unifesspa.edu.br
         # Contrato neutro (uniplus-web commit 9884c64): oidc.issuerUrl já
         # inclui o path do realm. keycloak.{url,realm} mantido em paralelo
-        # (template renderiza os dois) enquanto standalone-compact/lab
+        # (template renderiza os dois) enquanto os ambientes de nó único
         # rodam v0.2.1, publicada antes da mudança de contrato — ver
         # comentário em templates/configmap-runtime.yaml.
         oidc:
-          issuerUrl: ""  # ex.: https://standalone.portaluni.com.br/auth/realms/uniplus
+          issuerUrl: ""  # ex.: https://uniplus.unifesspa.edu.br/auth/realms/uniplus
           clientId: uniplus-portal
         keycloak:
-          url: ""  # ex.: https://standalone.portaluni.com.br/auth
+          url: ""  # ex.: https://uniplus.unifesspa.edu.br/auth
           realm: uniplus
       resources:
         requests:
@@ -185,9 +185,9 @@ uniplusWeb:
 
     # Redirect opcional da raiz nua do host (Host() sem PathPrefix — sem rota
     # própria por design quando múltiplos apps dividem o mesmo FQDN via
-    # subpath, RUNBOOKS §21.3; sem isso, a raiz cai no 404 do Traefik). Só
+    # subpath, docs/RUNBOOKS.md; sem isso, a raiz cai no 404 do Traefik). Só
     # tem efeito com `enabled: true` — default desligado, não muda nada em
-    # ambientes com host próprio por app (standalone-compact). `to` precisa
+    # ambientes com host próprio por app (uniplus-prd). `to` precisa
     # apontar pro pathPrefix de um app habilitado, com barra final.
     rootRedirect:
       enabled: false
@@ -203,7 +203,7 @@ uniplusWeb:
     monitoringNamespace: monitoring
 
   # ServiceMonitor opt-in (Prometheus auto-discovery). nginx-unprivileged
-  # serve métricas em formato Prometheus se enabled — fora de escopo standalone.
+  # serve métricas em formato Prometheus se enabled — fora de escopo.
   serviceMonitor:
     enabled: false
     interval: 30s

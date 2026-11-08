@@ -55,7 +55,7 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.kafkaUi.networkPolicy.dataHostPort }}
-    # Keycloak in-cluster (path interno se issuerUri usa Service DNS;
+    # Keycloak do cluster (path interno se issuerUri usa Service DNS;
     # mantido como fallback útil — apps na cluster mesh podem chamar
     # diretamente em vez de via IngressRoute).
     - to:
@@ -69,8 +69,8 @@ spec:
         - protocol: TCP
           port: {{ .Values.kafkaUi.networkPolicy.keycloakPort }}
     {{- if .Values.kafkaUi.oidc.enabled }}
-    # OIDC issuer público (HTTPS). Em standalone, AKHQ usa
-    # `https://standalone.portaluni.com.br/auth/realms/uniplus` que
+    # OIDC issuer público (HTTPS). No ambiente de nó único, AKHQ usa
+    # `https://uniplus.unifesspa.edu.br/auth/realms/uniplus` que
     # resolve via DNS para o public IP do k8s-host (164.152.53.29) e
     # entra via Traefik IngressRoute do Keycloak. Sem este egress, o
     # OIDC discovery e token exchange falham silenciosamente em

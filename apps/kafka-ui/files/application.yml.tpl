@@ -1,5 +1,5 @@
 akhq:
-  # Conexões a clusters Kafka. Em standalone só temos 1; o `bootstrap-servers`
+  # Conexões a clusters Kafka. No ambiente de nó único só temos 1; o `bootstrap-servers`
   # vem do values; SCRAM credentials são injetadas via env (envFrom do Secret
   # sintetizado pelo ESO `kafka-admin`). CA cert PEM montado em /etc/akhq/certs/ca.crt
   # via projected volume — também sintetizado pelo ESO.

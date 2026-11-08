@@ -13,7 +13,7 @@
       "properties": {
         "enabled": {
           "type": "boolean",
-          "description": "Liga/desliga o subchart. False em PA1 (que hospeda agregação separada)."
+          "description": "Liga/desliga o subchart."
         },
         "nameOverride": {
           "type": "string",

@@ -4,14 +4,14 @@ Helm chart wrapper Uni+ para [AKHQ](https://github.com/tchiotludo/akhq) — Web 
 
 ## Status
 
-Provisionado em **standalone** (issue #139, sub-issue de #40 Epic standalone). Bloqueado por #138 (Kafka SASL_SSL hardening, mergeado em PR #140 + hotfix #141 — ADR-009).
+Provisionado no ambiente de produção (issue #139, sub-issue de #40). Bloqueado por #138 (Kafka SASL_SSL hardening, mergeado em PR #140 + hotfix #141 — ADR-009).
 
 ## Arquitetura
 
 ```
 Browser (admin Uni+)
   └── HTTPS via Traefik IngressRoute
-       https://kafka-ui.standalone.portaluni.com.br
+       https://uniplus.unifesspa.edu.br
             └── AKHQ pod (apps/kafka-ui chart, namespace uniplus)
                  ├── OIDC client `kafka-ui` no realm `uniplus` (confidential)
                  ├── SCRAM admin via ESO (`kafka/admin`)
@@ -32,14 +32,14 @@ Mapping no `application.yml` renderizado pelo chart:
 ## Pré-requisitos antes do ArgoCD sync
 
 1. **Realm `uniplus` com client `kafka-ui` confidential criado** + mapper `groups` exportando membership em `groups` claim do JWT
-2. **`kafka/admin` em Vault** com keys `username`, `password`, `ca_cert` (criado no §13.2 do RUNBOOKS pós-hotfix #141)
+2. **`kafka/admin` em Vault** com keys `username`, `password`, `ca_cert`
 3. **`keycloak/kafka-ui` em Vault** com `client_secret` do client OIDC (custódia manual via `vault kv put`)
 
 Sem esses 3, ESOs ficam em `SecretNotFound` e o pod entra em `CreateContainerConfigError`.
 
 ## Configuração mínima para habilitar
 
-Em `environments/standalone-compact/values.yaml`:
+Em `environments/uniplus-prd/values.yaml`:
 
 ```yaml
 kafkaUi:
@@ -47,10 +47,10 @@ kafkaUi:
   kafka:
     bootstrapServers: 10.0.2.87:9092
   oidc:
-    issuerUri: https://standalone.portaluni.com.br/auth/realms/uniplus
+    issuerUri: https://uniplus.unifesspa.edu.br/auth/realms/uniplus
   ingress:
     enabled: true
-    host: kafka-ui.standalone.portaluni.com.br
+    host: uniplus.unifesspa.edu.br
     tls:
       certManager:
         enabled: true
@@ -61,7 +61,7 @@ kafkaUi:
 
 ## Operações comuns
 
-Ver `docs/RUNBOOKS.md` §14 para procedimentos:
+Ver `docs/RUNBOOKS.md` para procedimentos:
 
 - §14.1 Pré-flight: secrets em Vault + client OIDC no realm
 - §14.2 Smoke test (login admin → criar tópico → produzir/consumir → ver no UI)
@@ -73,7 +73,7 @@ Ver `docs/RUNBOOKS.md` §14 para procedimentos:
 - **AKHQ é stateless** — perda de pod sem impacto em state (estado vive no Kafka).
 - **OIDC PKCE não suportado em provider customizado em 0.27.x** — usamos confidential client com `client_secret` em Vault. AKHQ é backend (não SPA), então confidential é correto arquiteturalmente.
 - **Audit log de operações no AKHQ → SIEM** ainda não integrado (futuro hardening).
-- **Multi-cluster** desligado — só `standalone-kafka` por enquanto. SP1/SP2/PA1 entram quando charts data/* aterrissarem (gap pré-existente, fora do escopo).
+- **Multi-cluster** desligado — só o Kafka do ambiente.
 
 ## Referências
 

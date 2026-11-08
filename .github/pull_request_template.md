@@ -41,10 +41,7 @@ Closes #
 
 ## Ambientes afetados
 
-- [ ] standalone-compact
-
-<!-- Único ambiente operacional. Os environments do modelo 3-DC (lab-*, prod-*)
-     serão adicionados aqui quando esse modelo for revivido. -->
+- [ ] uniplus-prd
 
 ## Notas para revisores
 

@@ -13,7 +13,7 @@
       "properties": {
         "enabled": {
           "type": "boolean",
-          "description": "Liga/desliga o subchart. False em PA1."
+          "description": "Liga/desliga o subchart."
         },
         "deployment": {
           "type": "object",

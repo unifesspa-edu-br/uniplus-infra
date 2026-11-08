@@ -2,10 +2,10 @@ apiVersion: v2
 name: loki
 description: |
   Loki — agregador de logs estruturados. Empacotado como chart wrapper sobre
-  grafana/loki em modo SingleBinary com storage S3 (MinIO em standalone,
+  grafana/loki em modo SingleBinary com storage S3 (MinIO no ambiente de nó único,
   futuramente per-DC em prod).
 
-  Decisão arquitetural: ver docs/adrs/ADR-011-loki-singlebinary-s3-standalone.md
+  Decisão arquitetural: ver docs/adrs (ADR-011)
 type: application
 
 # Versão do chart wrapper Uni+.

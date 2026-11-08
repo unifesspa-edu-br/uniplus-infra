@@ -96,7 +96,7 @@ spec:
     # Principal (HTTP GET no link-local IMDS) e chama o KMS endpoint público
     # (HTTPS) com as credenciais. Sem isso, o seal do provider entra em
     # `getRequestMetadata.func1` panic — signer fica nil quando IMDS não
-    # responde. Validado empiricamente em 2026-05-10 com OCI KMS standalone.
+    # responde.
     {{- if .Values.networkPolicy.cloudKmsEgressEnabled }}
     - to:
         - ipBlock:

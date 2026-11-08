@@ -1,7 +1,7 @@
 apiVersion: v2
 name: redis-ui
 description: |
-  Web UI para o Redis standalone — RedisInsight (Redis Inc., Apache 2.0).
+  Web UI para o Redis — RedisInsight (Redis Inc., Apache 2.0).
   Inspeção/admin de keys, TTL, memory usage, RESP commands. Conecta ao
   Redis 8.6.3 systemd no data-host (10.0.2.87:6379).
 

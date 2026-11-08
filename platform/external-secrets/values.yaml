@@ -1,9 +1,6 @@
 # Defaults para o External Secrets Operator (ESO) no cluster Uni+.
 #
-# Topologia: ESO roda em cada cluster (lab-{sp1,sp2}, prod-{sp1,sp2},
-# standalone) e consome Secrets do Vault de aplicação local (chart
-# `platform/vault/`). Nos clusters PA1, ESO pode permanecer desligado
-# (PA1 só hospeda Vault Transit).
+# O ESO roda no cluster e consome Secrets do Vault local (chart
 #
 # IMPORTANTE: o ClusterSecretStore não é habilitado por default — o Vault
 # precisa estar inicializado e o role `external-secrets` configurado antes

@@ -1,7 +1,7 @@
 {{- if and .Values.grafana.enabled .Values.grafana.ingressRoute.enabled -}}
 {{- $ing := .Values.grafana.ingressRoute -}}
 {{- if not $ing.host -}}
-{{- fail "grafana.ingressRoute.enabled=true exige grafana.ingressRoute.host não vazio. Sobrescrever em environments/<env>/values.yaml com o FQDN público (ex.: standalone.portaluni.com.br quando subpath, ou grafana.<env>.portaluni.com.br quando subdomain)." -}}
+{{- fail "grafana.ingressRoute.enabled=true exige grafana.ingressRoute.host não vazio. Sobrescrever em environments/<env>/values.yaml com o FQDN público (ex.: uniplus.unifesspa.edu.br quando subpath, ou grafana.<env>.portaluni.com.br quando subdomain)." -}}
 {{- end -}}
 {{- $svcName := default (printf "%s-grafana" .Release.Name) $ing.serviceName -}}
 {{- $svcPort := default 80 $ing.servicePort -}}
@@ -9,7 +9,7 @@
   Grafana IngressRoute Traefik. Suporta dois patterns:
 
   1) Subpath (host raiz com PathPrefix):
-     standalone.portaluni.com.br/grafana/* — exige `serve_from_sub_path: true`
+     uniplus.unifesspa.edu.br/grafana/* — exige `serve_from_sub_path: true`
      no `grafana.ini.server` e `root_url` terminando em `/grafana/`.
      Traefik NÃO faz StripPrefix — Grafana com `serve_from_sub_path=true`
      espera receber URLs com o sub-path preservado (caso contrário emite
@@ -17,7 +17,7 @@
      Ver issue uniplus-infra#261 e https://grafana.com/docs/grafana/latest/setup-grafana/configure-grafana/#root_url.
 
   2) Subdomain (host dedicado):
-     grafana.standalone.portaluni.com.br/* — `root_url` sem subpath,
+     uniplus.unifesspa.edu.br/* — `root_url` sem subpath,
      `serve_from_sub_path: false`. Pattern de outros admin UIs Uni+
      (kafka-ui, schema-registry, redis-ui).
 
@@ -66,7 +66,7 @@ spec:
     aqui — o Traefik CRD rejeita `spec.tls: null` (precisa ser objeto válido
     ou ausente). Como o entryPoint websecure já termina TLS com o default cert
     quando há um, omitir o bloco produz o mesmo efeito sem violar o schema.
-    Padrão validado em standalone após erro:
+    Padrão validado no ambiente de nó único após erro:
       "IngressRoute ... is invalid: spec.tls: Invalid value: \"null\": ..."
   */}}
 {{- end }}

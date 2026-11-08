@@ -1,25 +1,20 @@
 # Diretrizes do Repositório
 
-> Arquivo lido por Codex/agentes genéricos. As mesmas regras aparecem em `CLAUDE.md` (Claude Code) e `GEMINI.md` (Gemini CLI). A visão de produto vem do monorepo:
-
-@docs/visao-do-projeto.md
+> Arquivo lido por Codex/agentes genéricos. As mesmas regras aparecem em `CLAUDE.md` (Claude Code) e `GEMINI.md` (Gemini CLI).
 
 ## Estrutura do Projeto e Organização de Módulos
 
-Repositório de IaC declarativa para o Uni+. Charts Helm de aplicação em `apps/` (`uniplus-web`, `uniplus-api-*`, `clamav-espelho`, `keycloak-replica`, `apicurio-registry`, `kafka-ui`, `redis-ui`). Plataforma em `platform/` (Argo CD, Vault, External Secrets, Traefik, cert-manager, observabilidade). Stateful no host (Postgres, Kafka, MinIO, Redis) documentado em `data/`. Overrides do único ambiente vivo em `environments/standalone-compact/`. Bootstrap GitOps em `argocd/`. Provisionamento OpenTofu em `provisioning/oci/standalone-compact/`. Scripts em `scripts/`. Docs em `docs/`.
-
-O modelo aspiracional dos 3 DCs (SP1+SP2+PA1) está em `docs/ARCHITECTURE.md §5.5` como referência futura — ADRs 001/007 estão marcados como Superseded.
+Repositório de IaC declarativa para o Uni+. Charts Helm de aplicação em `apps/`. Plataforma em `platform/` (Argo CD, Vault, External Secrets, KES, Traefik, observabilidade). Overrides do ambiente `uniplus-prd` em `environments/uniplus-prd/`. Bootstrap GitOps em `argocd/`. Scripts das VMs (serviços de dados fora do K8s) em `scripts/servicos-no-host/`. Docs em `docs/`.
 
 ## Comandos de Build, Teste e Desenvolvimento
 
 - `make validate` — roda tudo (yaml/helm/markdown/shellcheck/schema-validate); mesmo que o CI executa.
 - `make yaml-lint` — yamllint nos manifestos e values.
 - `make helm-lint` — `helm lint` em `apps/*/` e `platform/*/`.
-- `make shellcheck` — shellcheck em `scripts/*.sh`.
+- `make shellcheck` — shellcheck nos scripts.
 - `make markdown-lint` — markdownlint-cli2 nos `.md`.
-- `make schema-validate` — valida `environments/standalone-compact/values.yaml` contra os schemas dos charts.
-- `./scripts/bootstrap-standalone.sh --role=standalone-{k8s,data} --dry-run` — preview do bootstrap antes de aplicar.
-- `./scripts/validate-standalone.sh` — smoke pós-bootstrap do k8s-host + data-host.
+- `make schema-validate` — valida `environments/uniplus-prd/values.yaml` contra os schemas dos charts.
+- `./scripts/servicos-no-host/<script>.sh --dry-run` — preview antes de aplicar nas VMs.
 
 ## Estilo de Codificação e Convenções de Nomenclatura
 
@@ -27,7 +22,7 @@ YAML com indentação de 2 espaços. Nomes de recursos, branches, labels e chart
 
 ## Diretrizes de Teste
 
-Sem suíte de unit tests de aplicação. Antes de abrir PR, rodar `make validate` localmente. Mudanças no `bootstrap-standalone.sh` exigem `--dry-run` revisado. Após apply real, executar `validate-standalone.sh` e os `smoke-*.sh` pertinentes.
+Sem suíte de unit tests de aplicação. Antes de abrir PR, rodar `make validate` localmente. Mudanças nos scripts de `servicos-no-host/` exigem `--dry-run` revisado e shellcheck limpo.
 
 ## Diretrizes de Commit e Pull Request
 

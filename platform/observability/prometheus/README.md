@@ -4,7 +4,7 @@ Stack Prometheus + Operator (CRDs ServiceMonitor/PodMonitor) + Alertmanager + no
 
 ## Visão geral
 
-Wrapper do chart oficial [prometheus-community/kube-prometheus-stack](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack). Roda no cluster do ambiente operacional (`standalone-compact`); o design multi-cluster permanece válido para o modelo 3-DC quando revivido. Em PA1 fica desligado por default — PA1 hospeda agregação separada com retenção longa.
+Wrapper do chart oficial [prometheus-community/kube-prometheus-stack](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack). Roda no cluster do ambiente operacional (`uniplus-prd`).
 
 Grafana NÃO faz parte deste chart (vai para `platform/observability/grafana/`, sub-issue #27). O subchart upstream vem com Grafana habilitado por default — desligamos explicitamente aqui.
 
@@ -37,8 +37,8 @@ Após o ApplicationSet sincronizar:
 |---|---|---|
 | `kubePrometheusStack.enabled` | `true` | Liga o subchart |
 | `kubePrometheusStack.grafana.enabled` | `false` | Grafana fica em chart separado (#27) |
-| `kubePrometheusStack.prometheus.prometheusSpec.replicas` | `1` | 1 em standalone/lab, 2+ em prod (override) |
-| `kubePrometheusStack.prometheus.prometheusSpec.retention` | `7d` | Standalone alinha com `environments/standalone-compact/values.yaml` |
+| `kubePrometheusStack.prometheus.prometheusSpec.replicas` | `1` | 1 no ambiente de nó único, 2+ em prod (override) |
+| `kubePrometheusStack.prometheus.prometheusSpec.retention` | `7d` | Alinhado com `environments/uniplus-prd/values.yaml` |
 | `kubePrometheusStack.prometheus.prometheusSpec.retentionSize` | `8GiB` | Storage 10Gi com folga pra WAL |
 | `kubePrometheusStack.prometheus.ingress.enabled` | `false` | Habilitar atrás de OIDC + IP allowlist |
 | `kubePrometheusStack.alertmanager.enabled` | `true` | Receiver placeholder "null" (apenas log) |
@@ -54,7 +54,7 @@ Após o ApplicationSet sincronizar:
 Após este chart estar Synced/Healthy, outros charts da plataforma podem habilitar seus ServiceMonitors via override no environment:
 
 ```yaml
-# environments/standalone-compact/values.yaml
+# environments/uniplus-prd/values.yaml
 externalSecrets:
   serviceMonitor:
     enabled: true       # ESO scrapeado pelo Prometheus
@@ -81,7 +81,7 @@ A flag `serviceMonitorSelectorNilUsesHelmValues: false` no `prometheusSpec` faz 
 
 ## Storage
 
-O stack precisa de PVCs para Prometheus (10Gi default) e Alertmanager (2Gi). Em standalone, `storageClassName` herda da `standalone-local-nvme` (chart `platform/storage/`). Cada environment pode override via:
+O stack precisa de PVCs para Prometheus (10Gi default) e Alertmanager (2Gi). No ambiente de nó único, `storageClassName` herda da `local-nvme` (chart `platform/storage/`). Cada environment pode override via:
 
 ```yaml
 # environments/<env>/values.yaml
@@ -102,7 +102,7 @@ Por default o subchart upstream tenta scrape kube-controller-manager, kube-sched
 
 O subchart upstream tem suas próprias NetworkPolicies (gateadas por `kubePrometheusStack.prometheus.networkPolicy.enabled` etc.). O wrapper Uni+ não duplica — habilitar via env values quando necessário.
 
-Em standalone (single-host, default-allow no K3s sem CNI mais restritivo), as NPs do subchart podem ficar desligadas. Em prod 3-DC (Calico ou Cilium com default-deny), habilitar no env override.
+No ambiente de nó único (single-host, default-allow no K3s sem CNI mais restritivo), as NPs do subchart podem ficar desligadas. Com CNI de default-deny (Calico ou Cilium), habilitar no env override.
 
 ## Segurança
 
@@ -118,4 +118,4 @@ Em standalone (single-host, default-allow no K3s sem CNI mais restritivo), as NP
 - [#28](https://github.com/unifesspa-edu-br/uniplus-infra/issues/28) — Loki (logs)
 - [#29](https://github.com/unifesspa-edu-br/uniplus-infra/issues/29) — Tempo (traces)
 - [#30](https://github.com/unifesspa-edu-br/uniplus-infra/issues/30) — OpenTelemetry Collector (pipeline)
-- ADR-008 (topologia standalone) — retenção curta justificada
+- ADR-008 — retenção curta justificada

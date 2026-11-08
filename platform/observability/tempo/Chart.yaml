@@ -3,9 +3,9 @@ name: tempo
 description: |
   Tempo — armazenamento de traces distribuídos. Empacotado como chart wrapper
   sobre grafana/tempo (single-binary) com receivers OTLP e storage S3
-  (MinIO em standalone, futuramente per-DC em prod).
+  (MinIO no ambiente de nó único, futuramente per-DC em prod).
 
-  Decisão arquitetural: ver docs/adrs/ADR-012-tempo-singlebinary-s3-standalone.md
+  Decisão arquitetural: ver docs/adrs (ADR-012)
 type: application
 
 # Versão do chart wrapper Uni+.

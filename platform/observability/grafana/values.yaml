@@ -1,7 +1,6 @@
 # Defaults para o Grafana no cluster Uni+.
 #
-# Topologia: roda em cada cluster (lab-{sp1,sp2}, prod-{sp1,sp2}, standalone).
-# Em PA1 fica desligado por default (PA1 hospeda agregação separada).
+# Roda em cada cluster.
 #
 # Datasources:
 # - Prometheus: pré-configurado, aponta pro Service do chart
@@ -11,7 +10,7 @@
 # - Tempo: gateado por `datasources.tempo.enabled` (false até #29 mergear).
 #
 # Admin password: placeholder no chart wrapper (default `admin/uniplus`).
-# Em prod/standalone, sobrescrever via External Secret (#24 ESO já mergeado;
+# Em produção, sobrescrever via External Secret (#24 ESO já mergeado;
 # requer Vault inicializado #64). Não commitar senha real no values.
 
 grafana:
@@ -24,10 +23,10 @@ grafana:
   extraLabels:
     app.kubernetes.io/part-of: uniplus
 
-  # 1 réplica em standalone/lab; prod-{sp1,sp2} elevam para 2.
+  # 1 réplica no ambiente de nó único; produção elevam para 2.
   replicas: 1
 
-  # Recursos lab — Tabela 10.1 (Grafana é leve em uso normal).
+  # Recursos — Tabela 10.1 (Grafana é leve em uso normal).
   resources:
     requests:
       cpu: 100m
@@ -50,7 +49,7 @@ grafana:
     size: 5Gi
     # storageClassName: <definido por environment>
 
-  # Admin: senha placeholder. Em prod/standalone sobrescrever via ESO
+  # Admin: senha placeholder. Em produção sobrescrever via ESO
   # apontando para Secret no Vault (path secret/grafana/admin).
   admin:
     existingSecret: ""              # default vazio — usa adminPassword abaixo
@@ -72,11 +71,11 @@ grafana:
   # IngressRoute Traefik (template wrapper Uni+ — platform/observability/grafana/
   # templates/ingressroute.yaml). Suporta dois patterns:
   #
-  # 1) Subpath: host raiz + pathPrefix (ex.: standalone.portaluni.com.br/grafana/*).
+  # 1) Subpath: host raiz + pathPrefix (ex.: uniplus.unifesspa.edu.br/grafana/*).
   #    Exige serve_from_sub_path: true em grafana.ini.server e root_url terminando
   #    em /grafana/. Wrapper emite um Middleware StripPrefix automaticamente.
   #
-  # 2) Subdomain: host dedicado (ex.: grafana.standalone.portaluni.com.br) com
+  # 2) Subdomain: host dedicado (ex.: uniplus.unifesspa.edu.br) com
   #    pathPrefix vazio. Pattern dos outros admin UIs Uni+ (kafka-ui,
   #    schema-registry, redis-ui).
   #
@@ -84,7 +83,7 @@ grafana:
   ingressRoute:
     enabled: false
     entryPoint: websecure
-    host: ""              # ex.: standalone.portaluni.com.br
+    host: ""              # ex.: uniplus.unifesspa.edu.br
     pathPrefix: ""        # subpath (ex.: /grafana) ou vazio (subdomain)
     serviceName: ""       # default: <Release.Name>-grafana (Service do subchart)
     servicePort: 80       # porta do Service do subchart Grafana
@@ -138,7 +137,7 @@ grafana:
       searchNamespace: ALL
 
   # SSO via OIDC (Keycloak — ADR-003). Em environments com Keycloak local
-  # (ex.: standalone) habilitar setando `oidc.enabled: true` + URLs reais
+  # (ex.: produção) habilitar setando `oidc.enabled: true` + URLs reais
   # + ExternalSecret materializando client_secret no Secret K8s referenciado.
   # O bloco grafana.grafana.ini.auth.generic_oauth abaixo só deve ser ativado
   # quando oidc.enabled=true. Login local admin/* permanece como fallback.
@@ -148,7 +147,7 @@ grafana:
     providerName: "Uni+ Keycloak"
     clientId: grafana
     # URLs Keycloak realm `uniplus`. Override em environments/<env>/values.yaml.
-    issuerBaseUrl: ""  # ex.: https://standalone.portaluni.com.br/auth/realms/uniplus
+    issuerBaseUrl: ""  # ex.: https://uniplus.unifesspa.edu.br/auth/realms/uniplus
     # JMESPath para mapear claim `groups` → role Grafana. Default canônico
     # alinhado com pattern AKHQ (grupos /admins/<app> + /editors/<app>).
     roleAttributePath: |
@@ -177,7 +176,7 @@ grafana:
 
   grafana.ini:
     server:
-      root_url: ""  # override por env (ex.: https://standalone.portaluni.com.br/grafana/)
+      root_url: ""  # override por env (ex.: https://uniplus.unifesspa.edu.br/grafana/)
       # Habilita Grafana servir corretamente quando atrás de PathPrefix.
       # Quando root_url contém subpath (ex.: /grafana/), Grafana reescreve
       # URLs internas com o prefix. Sem isso, login redireciona para /login

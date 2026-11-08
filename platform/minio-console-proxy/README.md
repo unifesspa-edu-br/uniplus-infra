@@ -31,7 +31,7 @@ Rota da borda para o bucket público do MinIO ([ADR-0132](https://github.com/uni
 | Condição de origem avaliável | O mesmo middleware descarta `X-Forwarded-For`, `X-Real-Ip` e `Forwarded`: o MinIO avalia `aws:SourceIp` por esses cabeçalhos antes do endereço da conexão |
 | Listagem recusada | `GET /acervo/` vira `ListObjects` anônimo, negado pela política (só `s3:GetObject`) |
 
-Pré-requisitos: o bucket e a política criados por `scripts/lab-standalone-single/setup-minio.sh` (em HML, pelo wrapper `scripts/hml-standalone-single/setup-minio.sh`), e a porta 9000 do host em `networkPolicy.externalBackends` do `platform/traefik/`. Esta é a rota provisória; o nome próprio da borda, com cache e limite de taxa, é trabalho à parte. Roteiro de aplicação e smoke em `docs/RUNBOOKS.md` §21.8.
+Pré-requisitos: o bucket e a política criados por `scripts/servicos-no-host/instalar-minio.sh`, e a porta 9000 do host em `networkPolicy.externalBackends` do `platform/traefik/`. Esta é a rota provisória; o nome próprio da borda, com cache e limite de taxa, é trabalho à parte. Roteiro de aplicação e smoke em `docs/RUNBOOKS.md`
 
 ## Porta de dados para URL assinada (`portaDeDadosProxy`)
 
@@ -45,8 +45,8 @@ Nome próprio para a porta de dados (9000), pelo qual o navegador usa as URLs as
 | Acervo fora | Listar o bucket do acervo falha na renderização: a leitura pública do acervo só chega pela rota do acervo |
 | Métodos de URL assinada | Objeto: GET, HEAD e OPTIONS; PUT só nos buckets com `envio: true`. DELETE e POST recebem 404 do Traefik. A API declara a região (`uniplusApiHost.storage.region`, `us-east-1`, a do MinIO do projeto) e por isso não consulta `?location`; a raiz do bucket não tem rota |
 
-Pré-requisitos: a porta 9000 do host em `networkPolicy.externalBackends` do `platform/traefik/` e o CORS do MinIO liberado para a origem do portal. Roteiro e smoke em `docs/RUNBOOKS.md` §21.11.
+Pré-requisitos: a porta 9000 do host em `networkPolicy.externalBackends` do `platform/traefik/` e o CORS do MinIO liberado para a origem do portal. Roteiro e smoke em `docs/RUNBOOKS.md`
 
 ## Operação
 
-Procedimentos detalhados em `docs/RUNBOOKS.md` §12.7 (acesso público via Console).
+Procedimentos detalhados em `docs/RUNBOOKS.md` (acesso público via Console).

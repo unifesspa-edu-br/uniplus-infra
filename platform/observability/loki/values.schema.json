@@ -11,7 +11,7 @@
         "deploymentMode": {
           "type": "string",
           "enum": ["SingleBinary", "SimpleScalable", "Distributed"],
-          "description": "Modo de deploy do Loki. SingleBinary obrigatório em standalone (1 réplica)."
+          "description": "Modo de deploy do Loki. SingleBinary obrigatório no ambiente de nó único (1 réplica)."
         },
         "loki": {
           "type": "object",

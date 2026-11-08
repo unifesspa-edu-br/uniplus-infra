@@ -4,9 +4,9 @@ UI para visualização de métricas (Prometheus), logs (Loki) e traces (Tempo).
 
 ## Visão geral
 
-Wrapper do chart oficial [grafana/grafana](https://github.com/grafana/helm-charts/tree/main/charts/grafana). Roda no cluster do ambiente operacional (`standalone-compact`); o design multi-cluster permanece válido para o modelo 3-DC quando revivido. Em PA1 fica desligado por default — PA1 hospeda agregação separada.
+Wrapper do chart oficial [grafana/grafana](https://github.com/grafana/helm-charts/tree/main/charts/grafana). Roda no cluster do ambiente operacional (`uniplus-prd`).
 
-Vem como chart separado (não bundled no `kube-prometheus-stack`) para facilitar versionamento independente e desligar Grafana em envs sem UI (PA1, ou qualquer cluster onde apenas a coleta importe).
+Vem como chart separado (não bundled no `kube-prometheus-stack`) para facilitar versionamento independente e desligar Grafana em envs sem UI (qualquer cluster onde apenas a coleta importe).
 
 **Upstream:** https://github.com/grafana/helm-charts
 **Versão upstream empacotada:** grafana 10.5.15 (Grafana v12.3.1)
@@ -26,21 +26,21 @@ platform/observability/grafana/
 
 Após o ApplicationSet sincronizar:
 
-1. Pod do Grafana sobe (1 réplica em standalone/lab; 2+ em prod via override)
+1. Pod do Grafana sobe (1 réplica no ambiente de nó único; 2+ em prod via override)
 2. PVC `grafana` (5Gi default) é provisionado para o sqlite interno
 3. Datasource Prometheus pré-configurado via ConfigMap (sidecar carrega no boot)
 4. Loki/Tempo datasources gateados — habilitar em env quando charts (#28/#29) aterrissarem
 5. Sidecar `grafana_dashboard=1` carrega dashboards de qualquer ConfigMap labelado dessa forma em qualquer namespace (search-namespace=ALL)
-6. Login default `admin` / `uniplus` (PLACEHOLDER) — sobrescrever via ESO + Vault em prod/standalone
+6. Login default `admin` / `uniplus` (PLACEHOLDER) — sobrescrever via ESO + Vault em produção
 
 ## Variáveis principais
 
 | Variável | Default | Notas |
 |---|---|---|
 | `grafana.enabled` | `true` | Liga o subchart |
-| `grafana.replicas` | `1` | 1 em standalone/lab, 2+ em prod (override) |
+| `grafana.replicas` | `1` | 1 no ambiente de nó único, 2+ em prod (override) |
 | `grafana.persistence.size` | `5Gi` | PVC para o sqlite interno |
-| `grafana.adminPassword` | `uniplus` | PLACEHOLDER — sobrescrever via ESO + Vault em prod/standalone |
+| `grafana.adminPassword` | `uniplus` | PLACEHOLDER — sobrescrever via ESO + Vault em produção |
 | `grafana.serviceMonitor.enabled` | `false` | Ligar quando Prometheus (#26) consumidor estiver pronto e Grafana scrapeado |
 | `grafana.ingress.enabled` | `false` | Wrapper usa IngressRoute do Traefik (futuro template gated) |
 | `grafana.sidecar.dashboards.enabled` | `true` | Auto-carrega dashboards de ConfigMaps labelados |
@@ -57,7 +57,7 @@ url: http://platform-observability-prometheus-CLUSTER-prometheus.observability-p
 Isso porque o ApplicationSet usa o cluster name no release (`{{.name}}` em `argocd/applicationset.yaml`) e o Service do Prometheus leva esse nome. Cada environment DEVE sobrescrever:
 
 ```yaml
-# environments/standalone-compact/values.yaml
+# environments/uniplus-prd/values.yaml
 grafana:
   datasources:
     datasources.yaml:
@@ -67,15 +67,15 @@ grafana:
           type: prometheus
           uid: prometheus
           access: proxy
-          url: http://platform-observability-prometheus-uniplus-standalone-prometheus.observability-prometheus.svc.cluster.local:9090
+          url: http://platform-observability-prometheus-prometheus.observability-prometheus.svc.cluster.local:9090
           isDefault: true
           jsonData:
             timeInterval: 30s
 ```
 
-Pattern por env (atual: apenas standalone-compact):
+Pattern por env (atual: apenas uniplus-prd):
 
-- `standalone-compact`: `platform-observability-prometheus-in-cluster-prometheus.observability-prometheus.svc...`
+- `uniplus-prd`: `platform-observability-prometheus-do cluster-prometheus.observability-prometheus.svc...`
 
 (Quando `platform/observability/prometheus/` ganhar `fullnameOverride`, esse pattern simplifica — issue separada se valer a pena.)
 
@@ -105,7 +105,7 @@ Os ConfigMaps podem viver em qualquer namespace (sidecar usa `searchNamespace: A
 grafana:
   grafana.ini:
     server:
-      root_url: https://grafana.standalone.portaluni.com.br
+      root_url: https://uniplus.unifesspa.edu.br
     auth.generic_oauth:
       enabled: true
       name: Keycloak
@@ -113,22 +113,22 @@ grafana:
       client_id: grafana
       client_secret: $__file{/etc/secrets/oidc-client-secret}  # via ESO
       scopes: openid email profile
-      auth_url: https://standalone.portaluni.com.br/auth/realms/uniplus/protocol/openid-connect/auth
-      token_url: http://platform-keycloak-replica-uniplus-standalone-keycloakx-http.keycloak.svc.cluster.local:8080/realms/uniplus/protocol/openid-connect/token
-      api_url: http://platform-keycloak-replica-uniplus-standalone-keycloakx-http.keycloak.svc.cluster.local:8080/realms/uniplus/protocol/openid-connect/userinfo
+      auth_url: https://uniplus.unifesspa.edu.br/auth/realms/uniplus/protocol/openid-connect/auth
+      token_url: http://platform-keycloak-replica-keycloakx-http.keycloak.svc.cluster.local:8080/realms/uniplus/protocol/openid-connect/token
+      api_url: http://platform-keycloak-replica-keycloakx-http.keycloak.svc.cluster.local:8080/realms/uniplus/protocol/openid-connect/userinfo
 ```
 
 (URLs exatas dependem do chart Keycloak quando aterrissar.)
 
 ## Storage
 
-PVC default 5Gi (sqlite interno do Grafana). Em standalone, `storageClassName` herda da `standalone-local-nvme` quando configurado em env values:
+PVC default 5Gi (sqlite interno do Grafana). No ambiente de nó único, `storageClassName` herda da `local-nvme` quando configurado em env values:
 
 ```yaml
-# environments/standalone-compact/values.yaml
+# environments/uniplus-prd/values.yaml
 grafana:
   persistence:
-    storageClassName: standalone-local-nvme
+    storageClassName: local-nvme
 ```
 
 Mesmo override para os demais envs (lab/prod-local-nvme).
