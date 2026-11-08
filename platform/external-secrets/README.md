@@ -46,7 +46,7 @@ Após o ApplicationSet sincronizar e os Pods do operator subirem, as stores perm
    # environments/uniplus-prd/values.yaml
    clusterSecretStore:
      enabled: true
-     vaultServer: http://platform-vault.vault.svc.cluster.local:8200
+     vaultServer: https://uniplus-vault.unifesspa.edu.br:8200
      stores:
        - name: uniplus
          vaultPath: uniplus-prd
@@ -68,7 +68,7 @@ Após o ApplicationSet sincronizar e os Pods do operator subirem, as stores perm
 | `external-secrets.replicaCount` | `1` | 1 num nó só, 2+ para alta disponibilidade |
 | `external-secrets.serviceMonitor.enabled` | `false` | Ligar quando houver Prometheus |
 | `clusterSecretStore.enabled` | `false` | Habilitar APÓS Vault init + `configurar-vault.sh` |
-| `clusterSecretStore.vaultServer` | _(vazio)_ | Service do chart `platform/vault/` |
+| `clusterSecretStore.vaultServer` | _(vazio)_ | `https://<nome público do Vault>:8200`, resolvido para o Service pelo CoreDNS |
 | `clusterSecretStore.stores[]` | `[]` | `name`, `vaultPath`, `namespaces` (obrigatórios); `role` e `serviceAccount` (default `external-secrets-<name>`) |
 | `networkPolicy.enabled` | `true` | Egress restrito a Vault + DNS + K8s API |
 

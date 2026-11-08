@@ -26,10 +26,16 @@ vault:
   enabled: true
 
   global:
-    tlsDisable: true # TLS terminado no Traefik; o tráfego fica dentro do K3s
+    tlsDisable: false
 
   server:
+    # O Vault anuncia o nome público (certificado do domínio), e a CLI dentro do
+    # pod valida o certificado por ele.
+    extraEnvironmentVars:
+      VAULT_TLS_SERVER_NAME: uniplus-vault.unifesspa.edu.br
+
     ha:
+      apiAddr: https://uniplus-vault.unifesspa.edu.br:8200
       enabled: true
       replicas: 1
 
@@ -43,9 +49,11 @@ vault:
           ui = true
 
           listener "tcp" {
-            tls_disable     = 1
+            tls_disable     = 0
             address         = "0.0.0.0:8200"
             cluster_address = "0.0.0.0:8201"
+            tls_cert_file   = "/vault/userconfig/uniplus-unifesspa-tls/tls.crt"
+            tls_key_file    = "/vault/userconfig/uniplus-unifesspa-tls/tls.key"
           }
 
           storage "raft" {
@@ -100,7 +108,7 @@ serviceMonitor:
 # namespaces do dono (docs/vault-caminhos.md).
 clusterSecretStore:
   enabled: true
-  vaultServer: "http://platform-vault.vault.svc.cluster.local:8200"
+  vaultServer: "https://uniplus-vault.unifesspa.edu.br:8200"
   stores:
     - name: uniplus
       vaultPath: uniplus-prd
@@ -541,7 +549,7 @@ kes:
   enabled: true
 
   vault:
-    address: http://platform-vault.vault.svc.cluster.local:8200
+    address: https://uniplus-vault.unifesspa.edu.br:8200
     kvEngine: plataforma-prd
 
   networkPolicy:

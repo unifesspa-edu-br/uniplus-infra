@@ -21,4 +21,20 @@ spec:
       services:
         - name: {{ include "vault-wrapper.serviceName" . }}
           port: 8200
+          scheme: https
+          serversTransport: {{ .Release.Name }}-vault-ui
+---
+# O certificado do Vault é o do domínio: o Traefik o valida pelo nome público, não
+# pelo IP do pod, e usa as CAs do sistema (sem pular a verificação).
+apiVersion: traefik.io/v1alpha1
+kind: ServersTransport
+metadata:
+  name: {{ .Release.Name }}-vault-ui
+  labels:
+    app.kubernetes.io/name: vault
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: uniplus
+spec:
+  serverName: {{ .Values.ingress.host | quote }}
 {{- end }}

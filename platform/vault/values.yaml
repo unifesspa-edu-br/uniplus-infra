@@ -8,8 +8,11 @@ vault:
 
   global:
     enabled: true
-    # TLS no listener interno do Vault. O TLS é terminado no Traefik.
-    tlsDisable: true
+    # O listener serve TLS com o certificado do domínio (Secret TLS montado em
+    # server.extraVolumes). Cliente nenhum fala com o Vault em texto claro: o Traefik,
+    # o External Secrets, o KES e as APIs validam a cadeia pública pelo nome do
+    # Vault do ambiente, que o CoreDNS do cluster resolve para o Service.
+    tlsDisable: false
 
   # Vault Agent Injector — injeta secrets em Pods de aplicação anotados.
   injector:
@@ -30,6 +33,17 @@ vault:
       repository: hashicorp/vault
       tag: "1.21.2"
 
+    # Certificado do domínio (cadeia completa em tls.crt), copiado para o namespace
+    # pelos scripts de bootstrap e de renovação. O Vault o relê com SIGHUP.
+    extraVolumes:
+      - type: secret
+        name: uniplus-unifesspa-tls
+
+    # A sonda usa o endpoint de saúde (pronto = aberto, ativo ou standby) em vez do
+    # `vault status` do chart, que pula a validação do certificado.
+    readinessProbe:
+      path: "/v1/sys/health?standbyok=true"
+
     # HA Raft. Recursos reduzidos por default; o ambiente eleva conforme a carga.
     ha:
       enabled: true
@@ -44,9 +58,11 @@ vault:
           ui = true
 
           listener "tcp" {
-            tls_disable = 1
+            tls_disable = 0
             address = "[::]:8200"
             cluster_address = "[::]:8201"
+            tls_cert_file = "/vault/userconfig/uniplus-unifesspa-tls/tls.crt"
+            tls_key_file = "/vault/userconfig/uniplus-unifesspa-tls/tls.key"
           }
 
           storage "raft" {
@@ -145,7 +161,7 @@ networkPolicy:
   # Namespace do Traefik no mesmo cluster (acesso UI/API).
   traefikNamespace: traefik
   # Namespaces de aplicações consumidoras do Vault (auth/kubernetes/login +
-  # transit/{encrypt,decrypt}). Cada entrada gera uma regra de ingress 8200.
+  # <mount>-transit/{encrypt,decrypt,hmac}). Cada entrada gera uma regra de ingress 8200.
   # Vazio = sem regra; aplicações em namespaces fora desta lista não
   # alcançarão o Vault server (mesmo com NetworkPolicy de egress permissiva
   # do lado do consumidor).
@@ -172,13 +188,15 @@ serviceMonitor:
   enabled: false
   interval: 30s
   # O endpoint de métricas fica no listener da API (8200), não no listener
-  # interno de cluster/Raft (8201). Com tlsDisable=true, o chart upstream nomeia
-  # a porta como `http`; em prod, sobrescrever para `https`.
-  port: http
-  scheme: http
+  # interno de cluster/Raft (8201). Com TLS no listener o chart upstream nomeia a
+  # porta `https`. O Prometheus valida a cadeia pelo nome do Vault do ambiente:
+  # o ambiente informa tlsConfig.serverName.
+  port: https
+  scheme: https
   tlsConfig: {}
 
-# IngressRoute (Traefik) para acesso administrativo ao UI.
+# IngressRoute (Traefik) para acesso administrativo ao UI. O backend é HTTPS e o
+# Traefik valida o certificado do Vault pelo nome `ingress.host` (ServersTransport).
 # Desligado por default — ligar quando integração OIDC com Keycloak estiver
 # pronta (sub-issue futura). Acesso restrito via VPN institucional.
 ingress:

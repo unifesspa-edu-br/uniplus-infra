@@ -25,6 +25,9 @@ ARGOCD_VERSION="v2.14.3"
 REVISAO=""
 APP_FQDN="${APP_FQDN:-uniplus-prod-app.unifesspa.edu.br}"
 PORTA_KES=7373
+# Service do Vault (nome da release do chart platform/vault) e seu namespace.
+VAULT_SERVICE="${VAULT_SERVICE:-platform-vault}"
+VAULT_NAMESPACE="${VAULT_NAMESPACE:-vault}"
 
 mostrar_uso() {
     echo "Uso: $0 --revisao=vX.Y.Z [--dry-run]"
@@ -84,6 +87,46 @@ step_argocd() {
     run "kubectl -n argocd rollout status statefulset/argocd-application-controller --timeout=180s"
 }
 
+# O Vault serve o certificado do domínio, que não cobre *.svc.cluster.local. Os
+# consumidores dentro do cluster (External Secrets, KES, APIs) chamam o nome público
+# do Vault, e o CoreDNS o reescreve para o Service, sem sair do cluster. A reescrita
+# fica no ConfigMap `coredns-custom` (importado pelo CoreDNS do K3s como
+# *.override), que o K3s não gerencia: `kubectl apply` é idempotente e sobrevive a
+# atualizações do K3s. O CoreDNS só relê o arquivo ao reiniciar, então reinicia
+# quando o ConfigMap muda.
+step_coredns() {
+    [[ -n "$NOME_DO_VAULT" ]] || {
+        log_error "Informe NOME_DO_VAULT (nome público do Vault de AMBIENTE=$AMBIENTE)."
+        exit 2
+    }
+    local externo="$NOME_DO_VAULT" interno="$VAULT_SERVICE.$VAULT_NAMESPACE.svc.cluster.local" manifesto saida
+    manifesto=$(cat <<YAML
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns-custom
+  namespace: kube-system
+data:
+  vault.override: |
+    rewrite stop {
+      name regex ^${externo//./\\.}\\.\$ $interno.
+      answer name ^${interno//./\\.}\\.\$ $externo.
+    }
+YAML
+)
+    if $DRY_RUN; then
+        echo "[DRY-RUN] kubectl apply do ConfigMap coredns-custom ($externo -> $interno) e reinício do CoreDNS se mudar"
+        return 0
+    fi
+    kubectl -n kube-system wait --for=condition=available --timeout=180s deployment/coredns
+    saida=$(printf '%s\n' "$manifesto" | kubectl apply -f -)
+    echo "$saida"
+    if [[ "$saida" != *unchanged* ]]; then
+        kubectl -n kube-system rollout restart deployment/coredns
+        kubectl -n kube-system rollout status deployment/coredns --timeout=120s
+    fi
+}
+
 step_firewall() {
     if ! $DRY_RUN && ! sudo ufw status | grep -q '^Status: active'; then
         log_warn "ufw inativo: ligue-o, liberando antes SSH, 80 e 443, e rode de novo."
@@ -97,7 +140,8 @@ resumo() {
     cat <<RESUMO
 
 Aplicação preparada na revisão $REVISAO. Próximos passos (ver docs/RUNBOOKS.md):
-  1. Sincronizar, na ordem, storage, traefik, external-secrets e vault pelo ArgoCD.
+  1. Sincronizar, na ordem, storage, traefik, external-secrets e vault pelo ArgoCD. Dentro do
+     cluster, $NOME_DO_VAULT resolve para o Service do Vault (CoreDNS, coredns-custom).
   2. Inicializar e abrir o Vault (Shamir 5/3), fora dos scripts.
   3. configurar-vault.sh (mount, auth e role do External Secrets).
   4. Na VM de infraestrutura: semear-vault.sh, provisionar-bancos.sh, provisionar-kafka.sh,
@@ -117,6 +161,7 @@ validar_revisao "$REVISAO"
 step_k3s
 step_helm
 step_argocd
+step_coredns
 publicar_segredo_tls
 registrar_cluster "$REVISAO"
 aplicar_argocd "$REVISAO"

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Funções de acesso ao Vault de HML por port-forward, para os scripts de
-# provisionamento. É carregado com `source`, nunca executado.
+# Funções de acesso ao Vault, pelo endereço público ou por port-forward, para os
+# scripts de provisionamento. É carregado com `source`, nunca executado.
 #
 # O ROOT_TOKEN só existe em memória: vem do ambiente ou de ~/.bashrc, e passa ao
 # curl por arquivo de configuração 0600 no tmpdir, nunca por argv.
@@ -18,10 +18,13 @@
 # prd por padrão). O mapa completo está em docs/vault-caminhos.md.
 #   vault_api <método> <caminho> [json]  chamada crua em /v1/<caminho> (ver abaixo)
 #
-# Com VAULT_URL (ex.: https://uniplus-vault.unifesspa.edu.br), usa esse endereço
-# em vez do port-forward — para quem roda fora do host do cluster, como a VM de
-# dados da produção. O token vem de ROOT_TOKEN, do ~/.bashrc (só sem VAULT_URL) ou
-# é pedido sem eco no terminal.
+# O Vault serve TLS com o certificado do domínio, e toda chamada valida a cadeia
+# pública pelo nome do Vault (NOME_DO_VAULT, de lib-comum.sh). Com VAULT_URL
+# (ex.: https://uniplus-vault.unifesspa.edu.br), usa esse endereço — para quem roda
+# fora do host do cluster, como a VM de dados da produção. Sem VAULT_URL, abre um
+# port-forward para o pod e o curl resolve NOME_DO_VAULT para 127.0.0.1 só nessa
+# porta, de modo que o certificado continua sendo validado pelo nome. O token vem
+# de ROOT_TOKEN, do ~/.bashrc (só sem VAULT_URL) ou é pedido sem eco no terminal.
 #
 # Não faz `set -e`/`trap` próprios: o script que o carrega cria o tmpdir e chama
 # `vault_desconectar` no seu trap de saída.
@@ -31,7 +34,8 @@ VAULT_NAMESPACE="${VAULT_NAMESPACE:-vault}"
 VAULT_POD="${VAULT_POD:-platform-vault-0}"
 VAULT_LOCAL_PORT="${VAULT_LOCAL_PORT:-18200}"
 VAULT_URL="${VAULT_URL:-}"
-VAULT_ADDR="${VAULT_URL:-http://127.0.0.1:${VAULT_LOCAL_PORT}}"
+NOME_DO_VAULT="${NOME_DO_VAULT:-}"
+VAULT_ADDR=""
 KUBECONFIG_PATH="${KUBECONFIG_PATH:-/etc/rancher/k3s/k3s.yaml}"
 _vault_pf_pid=""
 _vault_tmp=""
@@ -46,6 +50,22 @@ vault_conectar() {
             return 1
         }
     done
+
+    if [[ -z "$VAULT_URL" && -z "$NOME_DO_VAULT" ]]; then
+        echo "Sem VAULT_URL, o port-forward exige NOME_DO_VAULT (o nome do certificado do Vault)." >&2
+        return 1
+    fi
+
+    # Configuração do curl: o token entra depois, e nunca passa por argv.
+    VAULT_CURL_CONFIG="$_vault_tmp/vault.curl"
+    : >"$VAULT_CURL_CONFIG"
+    chmod 600 "$VAULT_CURL_CONFIG"
+    if [[ -n "$VAULT_URL" ]]; then
+        VAULT_ADDR="$VAULT_URL"
+    else
+        VAULT_ADDR="https://$NOME_DO_VAULT:$VAULT_LOCAL_PORT"
+        printf 'resolve = "%s:%s:127.0.0.1"\n' "$NOME_DO_VAULT" "$VAULT_LOCAL_PORT" >>"$VAULT_CURL_CONFIG"
+    fi
 
     if [[ -z "${ROOT_TOKEN:-}" && -z "$VAULT_URL" ]]; then
         # SSH não abre shell interativo e o ~/.bashrc retorna cedo nesse caso.
@@ -70,17 +90,15 @@ vault_conectar() {
 
     local _
     for _ in $(seq 1 30); do
-        curl -fsS "$VAULT_ADDR/v1/sys/health" >/dev/null 2>&1 && break
+        curl -fsS --config "$VAULT_CURL_CONFIG" "$VAULT_ADDR/v1/sys/health" >/dev/null 2>&1 && break
         sleep 1
     done
-    curl -fsS "$VAULT_ADDR/v1/sys/health" >/dev/null || {
+    curl -fsS --config "$VAULT_CURL_CONFIG" "$VAULT_ADDR/v1/sys/health" >/dev/null || {
         echo "Vault inalcançável (selado ou sem port-forward). Ver $_vault_tmp/vault-port-forward.log." >&2
         return 1
     }
 
-    VAULT_CURL_CONFIG="$_vault_tmp/vault.curl"
-    printf 'header = "X-Vault-Token: %s"\n' "$ROOT_TOKEN" >"$VAULT_CURL_CONFIG"
-    chmod 600 "$VAULT_CURL_CONFIG"
+    printf 'header = "X-Vault-Token: %s"\n' "$ROOT_TOKEN" >>"$VAULT_CURL_CONFIG"
 }
 
 vault_desconectar() {
