@@ -126,9 +126,6 @@ apicurioRegistry:
     tls:
       enabled: true
       secretName: ""             # criado pelo cert-manager se certManager.enabled
-      certManager:
-        enabled: false
-        clusterIssuer: ""        # ex.: letsencrypt-staging | letsencrypt-prod
 
   # === NetworkPolicy ===
   # Egress: Postgres data-host (10.0.2.87:5432) + DNS + Keycloak in-cluster

@@ -182,9 +182,6 @@ uniplusWeb:
       # único Secret pré-existente (ex.: certificado wildcard autoassinado
       # de lab, sem cert-manager).
       secretName: ""
-      certManager:
-        enabled: true
-        clusterIssuer: letsencrypt-prod
 
     # Redirect opcional da raiz nua do host (Host() sem PathPrefix — sem rota
     # própria por design quando múltiplos apps dividem o mesmo FQDN via

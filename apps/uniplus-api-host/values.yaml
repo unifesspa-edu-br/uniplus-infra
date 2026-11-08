@@ -428,9 +428,6 @@ uniplusApiHost:
     tls:
       enabled: true
       secretName: ""
-      certManager:
-        enabled: false
-        clusterIssuer: ""       # ex.: letsencrypt-prod
 
   # === OpenTelemetry (ADR-0018 uniplus-api + ADR-013 uniplus-infra) ===
   otel:

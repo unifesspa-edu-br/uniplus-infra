@@ -207,11 +207,6 @@ keycloak:
       # Secret já exista (ex.: cert manualmente emitido ou Certificate
       # criado fora deste chart).
       secretName: ""
-      certManager:
-        # Quando true, o chart emite um `Certificate` cert-manager.io/v1
-        # com `dnsNames: [ingress.host]` apontando para `secretName`.
-        enabled: false
-        clusterIssuer: ""
 
   # NetworkPolicy. Egress liberado para data-host (Postgres) + DNS.
   # Ingress permitido a partir de Traefik (HTTP) e Prometheus (management).

@@ -97,9 +97,6 @@ redisUi:
     tls:
       enabled: true
       secretName: ""            # criado pelo cert-manager se certManager.enabled
-      certManager:
-        enabled: false
-        clusterIssuer: ""       # ex.: letsencrypt-prod | letsencrypt-staging
 
   # === NetworkPolicy ===
   # Egress: Redis data-host (10.0.2.87:6379) + DNS.
