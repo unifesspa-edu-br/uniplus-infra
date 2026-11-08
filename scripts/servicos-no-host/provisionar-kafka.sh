@@ -49,6 +49,8 @@ CA_CRT="/etc/uniplus-kafka/certs/ca.crt"
 
 log() { echo "[$(date -u +%H:%M:%S)] $*"; }
 falha() { echo "ERRO: $*" >&2; exit 1; }
+# Só ASCII: letras, dígitos e ._~- (bytes fora disso não casam com LC_ALL=C).
+senha_no_alfabeto() { [[ "$1" =~ ^[0-9A-Za-z._~-]+$ ]]; }
 
 mostrar_uso() {
     echo "Uso: $0 [--dry-run] [provisionar|ca|verificar]"
@@ -152,12 +154,18 @@ provisionar() {
         [[ "$(senha_do_vault)" == "$senha" ]] || falha "a senha lida do Vault difere da gravada"
     fi
 
-    # 2) Usuário SCRAM (o upsert é idempotente). O Kafka 4.x exige a senha no
-    # argumento do kafka-configs; ela fica só dentro do contêiner descartável.
+    # 2) Usuário SCRAM (o upsert é idempotente). A credencial vai num arquivo 0600 do
+    # /tmp do contêiner descartável, lido por --add-config-file: argumento de processo
+    # aparece no `ps` do host, arquivo dentro do contêiner não. O arquivo é lido como
+    # Java properties, que interpreta escapes e bytes não ASCII; uma senha fora do
+    # alfabeto que este script gera chegaria alterada ao broker, então é recusada.
+    LC_ALL=C senha_no_alfabeto "$senha" \
+        || falha "a senha de $USUARIO no Vault tem caractere fora de [0-9A-Za-z._~-]; gerar outra"
     log "Aplicando o usuário SCRAM $USUARIO"
     # shellcheck disable=SC2016  # expansão deliberada dentro do contêiner
     printf '%s\n' "$senha" | kafka_sh_com_senha \
-        'read -r APP_PW; exec /opt/kafka/bin/kafka-configs.sh --bootstrap-server "$BOOTSTRAP" --command-config /tmp/admin.properties --alter --add-config "SCRAM-SHA-512=[password=$APP_PW]" --entity-type users --entity-name "$USUARIO"' admin
+        'umask 077; read -r APP_PW; printf "SCRAM-SHA-512=password=%s\n" "$APP_PW" > /tmp/scram.properties; unset APP_PW
+/opt/kafka/bin/kafka-configs.sh --bootstrap-server "$BOOTSTRAP" --command-config /tmp/admin.properties --alter --add-config-file /tmp/scram.properties --entity-type users --entity-name "$USUARIO"; s=$?; rm -f /tmp/scram.properties; exit $s' admin
     unset senha
 
     # 3) Tópico. Existente com outro número de partições é divergência a resolver

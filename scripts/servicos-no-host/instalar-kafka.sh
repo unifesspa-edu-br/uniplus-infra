@@ -187,17 +187,11 @@ fi
 # na 1ª execução, em container ad-hoc; runs subsequentes veem storage já
 # formatado (meta.properties presente) e pulam este passo.
 #
-# `kafka-storage.sh format --add-scram` só aceita a senha como argumento
-# posicional — não há alternativa via arquivo/env na própria ferramenta
-# (kafka-storage.sh do Kafka 4.2 não lê SCRAM de stdin nem de config file).
-# Passar `--add-scram "...password=$admin_pw_init"` direto no `docker run`
-# exporia a senha no argv do processo HOST (visível via ps/`/proc/<pid>/
-# cmdline` a qualquer usuário local enquanto o comando roda). Mitigado
-# montando a senha como arquivo (mode 400, só root) e construindo o
-# argumento --add-scram DENTRO do container via `sh -c` com script FIXO
-# (sem a senha interpolada na string do script — só o comando `cat` que a
-# lê em runtime): o argv do `docker run` visível no host mostra o texto
-# fixo do script, nunca o valor da senha.
+# `kafka-storage.sh format --add-scram` só recebe a credencial como argumento, e
+# argumento de processo de contêiner aparece no `ps` do host. A senha chega ao
+# contêiner num arquivo montado só leitura (mode 400); o roteiro fixo do `sh -c`
+# grava a credencial num arquivo e passa `@arquivo`: o parser de argumentos do
+# kafka-storage lê o valor do arquivo, então o argv mostra só o caminho, nunca a senha.
 if ! $DRY_RUN && ! $already_initialized && sudo test -f "$CREDS_FILE"; then
     log_info "Format do storage com --add-scram (admin SCRAM-SHA-512 embarcada)..."
     cluster_id_init=$(sudo grep '^cluster_id=' "$CREDS_FILE" | cut -d= -f2)
@@ -236,7 +230,8 @@ EOF
         -v "$admin_pw_file:/run/secrets/admin_pw:ro" \
         --entrypoint /bin/sh \
         "$KAFKA_IMAGE" \
-        -c 'exec /opt/kafka/bin/kafka-storage.sh format --config /opt/kafka/config/format.properties --cluster-id "$1" --add-scram "SCRAM-SHA-512=[name=admin,password=$(cat /run/secrets/admin_pw)]" --ignore-formatted' \
+        -c 'umask 077; printf "SCRAM-SHA-512=[name=admin,password=%s]\n" "$(cat /run/secrets/admin_pw)" > /tmp/scram.arg
+/opt/kafka/bin/kafka-storage.sh format --config /opt/kafka/config/format.properties --cluster-id "$1" --add-scram @/tmp/scram.arg --ignore-formatted; s=$?; rm -f /tmp/scram.arg; exit $s' \
         -- "$cluster_id_init" >/dev/null 2>&1; then
         log_error "Format do storage falhou. Re-rode manualmente em verbose para diagnosticar."
         sudo rm -f "$fmt_props" "$admin_pw_file"
