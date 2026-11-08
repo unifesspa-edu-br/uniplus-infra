@@ -42,7 +42,7 @@ done
 analisar_argumentos "${resto[@]}"
 exigir_usuario_comum
 export KUBECONFIG="${KUBECONFIG:-$HOME/.kube/config}"
-APPLICATION="$APP-$NOME_DO_CLUSTER"
+APPLICATION="$APP"
 
 # Monta o patch de operação com a ServiceAccount e os ExternalSecrets da Application.
 montar_operacao() {

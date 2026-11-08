@@ -23,7 +23,7 @@
 # `vault_desconectar` no seu trap de saída.
 
 VAULT_NAMESPACE="${VAULT_NAMESPACE:-vault}"
-VAULT_POD="${VAULT_POD:-platform-vault-in-cluster-0}"
+VAULT_POD="${VAULT_POD:-platform-vault-0}"
 VAULT_LOCAL_PORT="${VAULT_LOCAL_PORT:-18200}"
 VAULT_URL="${VAULT_URL:-}"
 VAULT_ADDR="${VAULT_URL:-http://127.0.0.1:${VAULT_LOCAL_PORT}}"
