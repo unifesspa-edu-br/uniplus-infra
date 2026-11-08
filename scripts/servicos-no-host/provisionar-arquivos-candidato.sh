@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Provisiona o armazenamento dos arquivos do candidato no MinIO de HML
+# Provisiona o armazenamento dos arquivos do candidato no MinIO
 # (ADR-0146 do uniplus-api, uniplus-infra#682):
 #
 #   - cria a chave mestra `uniplus-arquivos-candidato` no KES (identidade
@@ -9,37 +9,52 @@
 #     SSE-KMS como cifra padrão;
 #   - expiração de 1 dia no bucket de envio, OBRIGATÓRIA: se a regra não puder ser
 #     criada ou conferida, o script falha (sem `|| true`);
-#   - CORS do MinIO para a origem do web de HML, expondo o ETag;
+#   - CORS do MinIO para a origem do web, expondo o ETag;
 #   - políticas e usuários da API e do verificador, conforme a tabela da ADR;
 #   - audit webhook, quando AUDIT_WEBHOOK_ENDPOINT é informado.
 #
-# Ordem: (1) provision-verificacao-prerequisites.sh; (2) o ArgoCD sincroniza o KES
-# (Application platform-kes-in-cluster saudável); (3) este script, na VM de HML.
+# Ordem: (1) provisionar-verificacao.sh; (2) o ArgoCD sincroniza o KES
+# (Application platform-kes saudável); (3) este script, na VM de infraestrutura.
+# O MinIO fica nesta VM e o KES no cluster da VM de aplicação: a ligação usa TLS
+# com validação do certificado, pelo nome KES_HOST, na porta 7373.
 # Idempotente. Reinicia o MinIO só quando a configuração do KES/CORS/audit muda.
 #
-# Variáveis:
-#   HOST_IP                 IP do host (default 192.168.21.134)
-#   DATA_BASE               default /var/lib/uniplus
-#   KES_HOST                nome ou IP do KES (default HOST_IP)
-#   MINIO_HOST              nome ou IP do MinIO nas chamadas (default HOST_IP)
-#   MINIO_SCHEME            http (default) ou https; https valida o certificado
-#   KES_CA_FILE             bundle de CAs confiáveis que valida o certificado do
-#                           KES. Vazio (default): o certificado do KES guardado
-#                           no Vault, autoassinado.
+# Variáveis (as de lib-comum.sh valem aqui):
+#   KES_HOST                nome do KES (default: FQDN da VM de aplicação)
+#   MINIO_TLS_DIR           diretório do certificado do MinIO (default $DATA_BASE/minio/tls)
 #   VAULT_URL               ver lib-vault.sh
-#   ORIGEM_WEB              origem do web para o CORS (default https://uniplus-hml.unifesspa.edu.br)
+#   ORIGEM_WEB              origem do web para o CORS (default https://uniplus.unifesspa.edu.br)
 #   AUDIT_WEBHOOK_ENDPOINT  URL do coletor de logs que recebe o audit do MinIO.
 #                           Vazio = audit NÃO configurado (o script avisa no fim).
 #   AUDIT_WEBHOOK_TOKEN     token de autenticação do coletor (opcional)
 set -euo pipefail
 
-HOST_IP="${HOST_IP:-192.168.21.134}"
-DATA_BASE="${DATA_BASE:-/var/lib/uniplus}"
-ORIGEM_WEB="${ORIGEM_WEB:-https://uniplus-hml.unifesspa.edu.br}"
-KES_HOST="${KES_HOST:-$HOST_IP}"
-MINIO_HOST="${MINIO_HOST:-$HOST_IP}"
-MINIO_SCHEME="${MINIO_SCHEME:-http}"
-KES_CA_FILE="${KES_CA_FILE:-}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib-comum.sh
+source "$SCRIPT_DIR/lib-comum.sh"
+
+mostrar_uso() {
+    echo "Uso: $0 [--dry-run]"
+}
+
+analisar_argumentos "$@"
+exigir_usuario_comum
+if $DRY_RUN; then
+    echo "[DRY-RUN] provisionaria o KES, os buckets e os usuários do MinIO"
+    exit 0
+fi
+
+export VAULT_URL="${VAULT_URL:-https://uniplus-vault.unifesspa.edu.br}"
+HOST_IP="$INFRA_IP"
+ORIGEM_WEB="${ORIGEM_WEB:-https://uniplus.unifesspa.edu.br}"
+KES_HOST="${KES_HOST:-uniplus-prod-app.unifesspa.edu.br}"
+MINIO_HOST="$INFRA_FQDN"
+MINIO_SCHEME=https
+MINIO_TLS_DIR="${MINIO_TLS_DIR:-$DATA_BASE/minio/tls}"
+MINIO_PUBLIC_HOST="$INFRA_FQDN"
+KES_CA_FILE="$TLS_BUNDLE"
+ACERVO_PUBLICO_POLICY_FILE="$SCRIPT_DIR/minio/acervo-publico.policy.json"
+export MINIO_TLS_DIR MINIO_PUBLIC_HOST ACERVO_PUBLICO_POLICY_FILE
 AUDIT_WEBHOOK_ENDPOINT="${AUDIT_WEBHOOK_ENDPOINT:-}"
 AUDIT_WEBHOOK_TOKEN="${AUDIT_WEBHOOK_TOKEN:-}"
 
@@ -52,17 +67,10 @@ BUCKET_DEFINITIVO="uniplus-candidato-definitivo"
 KES_ENV_FILE="/etc/uniplus-minio-kes.env"
 KES_DIR="/etc/uniplus-minio-kes"
 APPLIED_MARKER="$DATA_BASE/minio/.kes-applied.sha256"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 POLICY_DIR="$SCRIPT_DIR/minio"
 
 log() { echo "[$(date -u +%H:%M:%S)] $*"; }
 falha() { echo "ERRO: $*" >&2; exit 1; }
-
-# Com HTTPS, o setup do MinIO reescreve a unit: sem o diretório do certificado ele a
-# reescreveria em HTTP e derrubaria a validação que este script usa em seguida.
-if [[ "$MINIO_SCHEME" == https && ( -z "${MINIO_TLS_DIR:-}" || -z "${MINIO_PUBLIC_HOST:-}" ) ]]; then
-    falha "MINIO_SCHEME=https exige MINIO_TLS_DIR e MINIO_PUBLIC_HOST."
-fi
 
 tmpdir=$(mktemp -d)
 chmod 700 "$tmpdir"
@@ -84,7 +92,7 @@ vault_conectar "$tmpdir"
 if [[ -n "$KES_CA_FILE" ]]; then
     kes_cert=$(cat "$KES_CA_FILE")
 else
-    kes_cert=$(vault_get standalone/kes/server cert) || falha "certificado do KES ausente no Vault (rodar provision-verificacao-prerequisites.sh)"
+    kes_cert=$(vault_get standalone/kes/server cert) || falha "certificado do KES ausente no Vault (rodar provisionar-verificacao.sh)"
 fi
 kes_key_minio=$(vault_get standalone/kes/api-keys minio) || falha "chave de API do MinIO no KES ausente no Vault"
 kes_key_provisioner=$(vault_get standalone/kes/api-keys provisioner) || falha "chave de API do provisioner no KES ausente no Vault"
@@ -99,7 +107,7 @@ log "Aguardando o KES em https://$KES_HOST:$KES_PORT"
 tentativa=0
 until curl -fsS --max-time 5 --cacert "$tmpdir/kes.crt" "https://$KES_HOST:$KES_PORT/v1/ready" >/dev/null 2>&1; do
     tentativa=$((tentativa + 1))
-    [[ "$tentativa" -lt 60 ]] || falha "KES não respondeu em 5 min (Application platform-kes-in-cluster sincronizada? NetworkPolicy do hostPort?)"
+    [[ "$tentativa" -lt 60 ]] || falha "KES não respondeu em 5 min (Application platform-kes sincronizada? NetworkPolicy do hostPort?)"
     sleep 5
 done
 
@@ -145,8 +153,8 @@ sudo install -m 644 "$tmpdir/kes.crt" "$KES_DIR/kes.crt"
 sudo install -m 600 -o root -g root "$tmpdir/minio-kes.env" "$KES_ENV_FILE"
 unset kes_key_minio
 
-# O wrapper de HML reescreve a unit entregando o ambiente acima ao container.
-DATA_HOST_IP="$HOST_IP" "$SCRIPT_DIR/setup-minio.sh" --skip-buckets
+# A instalação do MinIO reescreve a unit entregando o ambiente acima ao container.
+DATA_HOST_IP="$HOST_IP" "$SCRIPT_DIR/instalar-minio.sh" --skip-buckets
 estado=$(sudo sha256sum "$KES_ENV_FILE" "$KES_DIR/kes.crt" /etc/systemd/system/uniplus-minio.service | awk '{print $1}' | sha256sum | awk '{print $1}')
 if [[ "$(sudo cat "$APPLIED_MARKER" 2>/dev/null || true)" != "$estado" ]]; then
     log "Configuração do KES/CORS/audit mudou — reiniciando o MinIO"

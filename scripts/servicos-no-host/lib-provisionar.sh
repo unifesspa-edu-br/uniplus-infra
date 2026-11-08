@@ -12,8 +12,8 @@ VAULT_URL="${VAULT_URL-https://uniplus-vault.unifesspa.edu.br}"
 export VAULT_URL
 PROVISIONAR_TMP=""
 
-# shellcheck source=../hml-standalone-single/lib-vault.sh
-source "$(dirname "${BASH_SOURCE[0]}")/../hml-standalone-single/lib-vault.sh"
+# shellcheck source=lib-vault.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib-vault.sh"
 
 limpar_provisionamento() {
     if [[ -n "$PROVISIONAR_TMP" && -d "$PROVISIONAR_TMP" ]]; then

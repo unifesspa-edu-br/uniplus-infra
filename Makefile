@@ -110,7 +110,7 @@ shellcheck:  ## Roda shellcheck em scripts/*.sh (skip gracefully se não instala
 # binário instalado leva reprovação por achado que ninguém precisa corrigir.
 	@printf "$(BLUE)→ shellcheck$(RESET)\n"
 	@if command -v shellcheck >/dev/null 2>&1; then \
-	    shellcheck --severity=warning scripts/*.sh scripts/prod-standalone/*.sh; \
+	    shellcheck --severity=warning scripts/*.sh scripts/servicos-no-host/*.sh; \
 	else \
 	    printf "$(YELLOW)⚠ shellcheck não instalado — esta verificação NÃO foi executada$(RESET)\n"; \
 	    printf "  O CI a executa no PR; localmente, instale para exercer o gate antes de abrir:\n"; \

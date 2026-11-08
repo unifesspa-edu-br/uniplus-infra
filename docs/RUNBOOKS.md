@@ -4844,7 +4844,7 @@ e o envio respondem 200 no Chrome e no Firefox.
 ## 23. Produção em duas VMs (`prod-standalone`)
 
 Decisão em [ADR-015](adrs/ADR-015-producao-em-duas-vms-com-tls-e-atualizacao-manual.md). Os scripts
-ficam em `scripts/prod-standalone/` e todos aceitam `--dry-run`. Valores em
+ficam em `scripts/servicos-no-host/` e todos aceitam `--dry-run`. Valores em
 `environments/prod-standalone/values.yaml`.
 
 | VM | IP | Papel |
@@ -4899,10 +4899,10 @@ O `--platform linux/amd64` evita um import truncado no containerd.
 
 ### 23.3 Bootstrap (ordem)
 
-1. **Infra:** `scripts/prod-standalone/bootstrap-infra.sh` na `uniplus-prod-infra`. Sobe os cinco
+1. **Infra:** `scripts/servicos-no-host/bootstrap-infra.sh` na `uniplus-prod-infra`. Sobe os cinco
    serviços só com TLS (portas sem TLS desligadas) e libera as portas para a VM de aplicação.
 2. **App:** com o repositório na tag de produção (`git checkout vX.Y.Z`),
-   `scripts/prod-standalone/bootstrap-app.sh --revisao=vX.Y.Z` na `uniplus-prod-app`. Instala K3s,
+   `scripts/servicos-no-host/bootstrap-app.sh --revisao=vX.Y.Z` na `uniplus-prod-app`. Instala K3s,
    Helm e ArgoCD, publica o Secret `uniplus-unifesspa-tls`, registra o cluster com o label
    `uniplus.io/revision=vX.Y.Z` e aplica o projeto e os ApplicationSets. Nada é sincronizado.
 3. **Plataforma:** no ArgoCD, sincronizar à mão, nesta ordem, `storage` (a StorageClass que o Vault
@@ -4943,7 +4943,7 @@ revisão dos charts e dos valores é uma tag deste repositório, **validada ante
 
 1. Criar e publicar a tag (`vX.Y.Z`) a partir do commit já validado em homologação.
 2. Na `uniplus-prod-app`: `git fetch --tags && git checkout vX.Y.Z`.
-3. `scripts/prod-standalone/atualizar-producao.sh --revisao=vX.Y.Z`. Confere que o checkout está
+3. `scripts/servicos-no-host/atualizar-producao.sh --revisao=vX.Y.Z`. Confere que o checkout está
    na tag, grava `uniplus.io/revision` no cluster e reaplica o projeto, os ApplicationSets e o
    verificador. As Applications passam a apontar para a tag.
 4. No ArgoCD, revisar o diff de cada Application e sincronizar à mão. Nas APIs, o sync do
@@ -4958,8 +4958,8 @@ Sem o label `uniplus.io/revision` no cluster, o ApplicationSet falha de propósi
 Nas duas VMs, uma de cada vez, com o mesmo par novo:
 
 ```bash
-./scripts/prod-standalone/renovar-certificado.sh --vm=infra --cert=novo-bundle.crt --key=nova.key
-./scripts/prod-standalone/renovar-certificado.sh --vm=app   --cert=novo-bundle.crt --key=nova.key
+./scripts/servicos-no-host/renovar-certificado.sh --vm=infra --cert=novo-bundle.crt --key=nova.key
+./scripts/servicos-no-host/renovar-certificado.sh --vm=app   --cert=novo-bundle.crt --key=nova.key
 ```
 
 O script confere chave, validade e nome, guarda o par anterior em `/etc/uniplus/tls/anterior`,
@@ -4986,7 +4986,7 @@ chave vai a um custodiante diferente.
 ### 23.7 Política do acervo público
 
 A leitura anônima do bucket `uniplus-acervo-publico` só vale para quem chega pelo Traefik. A condição
-`aws:SourceIp` em `scripts/prod-standalone/minio/acervo-publico.policy.json` é `200.139.48.121/32`
+`aws:SourceIp` em `scripts/servicos-no-host/minio/acervo-publico.policy.json` é `200.139.48.121/32`
 (IP da VM de aplicação), no lugar de `10.42.0.0/16` de homologação, porque em produção o Traefik
 alcança o MinIO por outra máquina e a origem da conexão é o IP público dela. Um `GET` anônimo
 direto em `uniplus-prod-infra.unifesspa.edu.br:9000` a partir de outro IP é recusado.

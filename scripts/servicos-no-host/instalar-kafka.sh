@@ -1,31 +1,18 @@
 #!/usr/bin/env bash
-# scripts/hml-standalone-single/setup-kafka.sh
+# Instala o Apache Kafka 4.2.0 (KRaft, nó único com broker e controller) como
+# container Docker gerenciado por systemd, com SASL_SSL + SCRAM-SHA-512 e
+# StandardAuthorizer (ADR-009).
 #
-# Fork de scripts/lab-standalone-single/setup-kafka.sh (já validado no lab e
-# no spike de PathPrefix na própria VM real — ver
-# docs/validacao/spike-pathprefix-hml-2026-07-12.md) para o host combinado
-# real do HML (K3s + data services na mesma VM dedicada UNIFESSPA), sem
-# mudança de lógica — só identificação (CN do cert, Description do systemd
-# unit). Replica fielmente o padrão do data-host real
-# (scripts/bootstrap-standalone.sh, step_data_setup_kafka) — já é single-node
-# combined (process.roles=broker,controller), SASL_SSL + SCRAM-SHA-512 +
-# StandardAuthorizer conforme ADR-009.
-#
-# UID/GID: 1000:1000 (appuser, default user da imagem apache/kafka:4.2.0).
-#
-# Encryption: TLS via cert PEM self-signed estático (10 anos), SAN cobrindo
-# DATA_HOST_IP + localhost. Authentication: SCRAM-SHA-512 exclusivo, admin
-# embarcada via `kafka-storage.sh format --add-scram` no bootstrap inicial
-# (--add-scram só é honrado no format inicial — daí o passo explícito antes
-# do primeiro systemctl start). Authorization: StandardAuthorizer,
-# fail-closed (allow.everyone.if.no.acl.found=false), super.users=User:admin.
-#
-# server.properties é gerado como arquivo (não via env KAFKA_*) porque o
-# KafkaDockerWrapper da imagem não preserva hyphens em nomes de listener
-# (ex.: SCRAM-SHA-512), inviabilizando via env.
+# Container 1000:1000 (appuser da imagem). TLS com PEM estático (10 anos) ou o
+# certificado informado. Autenticação SCRAM-SHA-512 exclusiva, com o admin
+# embarcado por `kafka-storage.sh format --add-scram` (só vale no format
+# inicial, por isso vem antes do primeiro start). Autorização fail-closed
+# (allow.everyone.if.no.acl.found=false), super.users=User:admin.
+# O server.properties é arquivo, não variáveis KAFKA_*: o KafkaDockerWrapper
+# não preserva hífens em nomes de listener (SCRAM-SHA-512).
 #
 # Uso:
-#   ./setup-kafka.sh [--dry-run]
+#   ./instalar-kafka.sh [--dry-run]
 #
 # Variáveis de ambiente:
 #   DATA_HOST_IP   IPv4 privado a bindar (default: auto-detectado via `ip route get`)
@@ -42,28 +29,18 @@
 # Pré-requisitos: Docker instalado, usuário com sudo sem senha (ou rodar via sudo).
 set -euo pipefail
 
-DRY_RUN=false
-for arg in "$@"; do
-    case "$arg" in
-        --dry-run) DRY_RUN=true ;;
-        -h|--help)
-            echo "Uso: $0 [--dry-run]"
-            exit 0
-            ;;
-        *) echo "Opção inválida: $arg" >&2; exit 2 ;;
-    esac
-done
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib-comum.sh
+source "$SCRIPT_DIR/lib-comum.sh"
 
-# `ip route get` resolve pela rota default — sempre a interface real de
-# saída, imune a bridges locais (docker0, cni0/flannel) que também têm IP
-# em range privado (diferente do antigo `hostname -I | grep <range
-# privado> | head -1`, que listaria as bridges também, com risco real de
-# pegar a interface errada se Docker/K3s já estiverem instalados no
-# momento da chamada — ex.: execução direta deste script, fora de
-# bootstrap.sh, que já passa DATA_HOST_IP explícito). Sem fallback pro
-# método antigo: `ip` (pacote iproute2) é parte da instalação base de
-# qualquer Ubuntu Server, incluindo 24.04 — exigir DATA_HOST_IP explícito
-# na ausência de `ip` é mais seguro que arriscar detectar a bridge errada.
+mostrar_uso() {
+    echo "Uso: $0 [--dry-run]"
+}
+
+analisar_argumentos "$@"
+
+# `ip route get` resolve pela rota default: sempre a interface real de saída,
+# imune às bridges locais (docker0, cni0) que também têm IP privado.
 if [[ -z "${DATA_HOST_IP:-}" ]] && command -v ip &>/dev/null; then
     DATA_HOST_IP=$(ip route get 8.8.8.8 2>/dev/null | awk '{for(i=1;i<=NF;i++) if ($i=="src") print $(i+1); exit}')
 fi
@@ -72,7 +49,6 @@ if [[ -z "${DATA_HOST_IP:-}" ]]; then
     exit 1
 fi
 
-DATA_BASE="${DATA_BASE:-/var/lib/uniplus}"
 CREDS_FILE="$DATA_BASE/kafka/.bootstrap-creds"
 CERTS_DIR="/etc/uniplus-kafka/certs"
 CONFIG_DIR="/etc/uniplus-kafka/config"
@@ -81,19 +57,6 @@ ADMIN_PROPS="$DATA_BASE/kafka/admin.properties"
 ENV_FILE="/etc/uniplus-kafka.env"
 UNIT_FILE="/etc/systemd/system/uniplus-kafka.service"
 KAFKA_IMAGE="apache/kafka:4.2.0"
-
-log_info()    { echo "[INFO] $*"; }
-log_success() { echo "[ OK ] $*"; }
-log_warn()    { echo "[WARN] $*" >&2; }
-log_error()   { echo "[ERROR] $*" >&2; }
-
-run() {
-    if $DRY_RUN; then
-        echo "[DRY-RUN] $*"
-    else
-        bash -c "$*"
-    fi
-}
 
 KAFKA_PUBLIC_HOST="${KAFKA_PUBLIC_HOST:-$DATA_HOST_IP}"
 KAFKA_TLS_CERT="${KAFKA_TLS_CERT:-}"
@@ -109,15 +72,11 @@ if [[ -n "$KAFKA_TLS_CERT" ]]; then
 fi
 
 log_info "DATA_HOST_IP=$DATA_HOST_IP KAFKA_PUBLIC_HOST=$KAFKA_PUBLIC_HOST DATA_BASE=$DATA_BASE DRY_RUN=$DRY_RUN"
-
-# data dir 1000:1000 (appuser do container); certs_dir/config_dir 755
-# root:root — uid 1000 precisa traverse para abrir os PEMs e o
-# server.properties (arquivos individuais têm mode próprio mais restrito).
+# Dados em 1000:1000; certs e config em 755 root:root (o uid 1000 precisa
+# atravessá-los; cada arquivo tem modo próprio, mais restrito).
 run "sudo mkdir -p $DATA_BASE/kafka/data $CERTS_DIR $CONFIG_DIR"
-run "sudo chown 1000:1000 $DATA_BASE/kafka/data"
-run "sudo chmod 750 $DATA_BASE/kafka/data"
-run "sudo chown root:root $CERTS_DIR $CONFIG_DIR"
-run "sudo chmod 755 $CERTS_DIR $CONFIG_DIR"
+run "sudo chown 1000:1000 $DATA_BASE/kafka/data && sudo chmod 750 $DATA_BASE/kafka/data"
+run "sudo chown root:root $CERTS_DIR $CONFIG_DIR && sudo chmod 755 $CERTS_DIR $CONFIG_DIR"
 
 already_initialized=false
 if ! $DRY_RUN && sudo test -f "$DATA_BASE/kafka/data/meta.properties" 2>/dev/null; then
@@ -191,7 +150,7 @@ prompt = no
 req_extensions = v3_req
 
 [req_distinguished_name]
-CN = uniplus-kafka.hml
+CN = uniplus-kafka
 
 [v3_req]
 basicConstraints = CA:TRUE
@@ -200,7 +159,7 @@ extendedKeyUsage = serverAuth, clientAuth
 subjectAltName = @alt_names
 
 [alt_names]
-DNS.1 = uniplus-kafka.hml
+DNS.1 = uniplus-kafka
 DNS.2 = localhost
 IP.1 = $DATA_HOST_IP
 IP.2 = 127.0.0.1
@@ -382,7 +341,7 @@ if $DRY_RUN; then
 else
     sudo tee "$UNIT_FILE" >/dev/null <<UNIT
 [Unit]
-Description=Uni+ Apache Kafka 4.2.0 KRaft (SASL_SSL + SCRAM-SHA-512, hml standalone-single)
+Description=Uni+ Apache Kafka 4.2.0 KRaft (SASL_SSL + SCRAM-SHA-512)
 After=docker.service network-online.target
 Requires=docker.service
 Wants=network-online.target

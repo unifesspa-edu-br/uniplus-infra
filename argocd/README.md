@@ -125,7 +125,7 @@ Em produção não há sincronização automática: nenhuma Application tem `syn
 cada atualização é um sync manual. O ApplicationSet gera as Applications de produção com as quatro
 fontes na revisão do label `uniplus.io/revision` do cluster (uma tag deste repositório validada em
 homologação); sem o label, a geração falha de propósito. O cluster é registrado e a revisão trocada
-por `scripts/prod-standalone/bootstrap-app.sh` e `atualizar-producao.sh`. O verificador tem
+por `scripts/servicos-no-host/bootstrap-app.sh` e `atualizar-producao.sh`. O verificador tem
 Application própria (`applications/verificador-prod.yaml`). Procedimento completo em
 [docs/RUNBOOKS.md](../docs/RUNBOOKS.md#234-atualização-manual-por-tag).
 
