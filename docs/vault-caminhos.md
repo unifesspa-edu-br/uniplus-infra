@@ -61,7 +61,7 @@ O caminho antigo ficava no mount `secret/`, sob um prefixo único do ambiente (`
 | `kes/server` | `plataforma-<amb>` | `kes/server` |
 | `kes/identities` | `plataforma-<amb>` | `kes/identities` |
 | `kes/api-keys` | `plataforma-<amb>` | `kes/api-keys` |
-| keystore do KES (chaves mestras cifradas) | `plataforma-<amb>` | `kes-keystore/*` (prefixo exclusivo, em `kes.vault.kvPrefix`; KV em `kes.vault.kvEngine`) |
+| keystore do KES (chaves mestras cifradas): cada chave em `secret/kes/<chave>`, fora do prefixo do ambiente | `plataforma-<amb>` | `kes-keystore/<chave>` (prefixo exclusivo, em `kes.vault.kvPrefix`; KV em `kes.vault.kvEngine`) |
 | `vault/root`, `vault-transit-bootstrap/token` | — | descartados (desenho antigo) |
 
 ## Transit (cifra)
@@ -77,7 +77,9 @@ Um mount Transit por sistema e ambiente. O mount genérico `transit/` deixa de e
 
 Todas as operações são `update` sobre `<mount>/<operação>/<chave>`. O `uniplus-api-portal` não cifra (o `Program.cs` dele não registra a cifragem), então não tem role nem política. A `uniplus-kes-kek` mantém o nome porque protege arquivos já cifrados; onde ela já existe no mount `transit/`, move-se com `vault secrets move transit/ plataforma-<amb>-transit/` **antes** de rodar `configurar-vault.sh`, que recusa seguir enquanto ela estiver lá.
 
-Um ambiente que gravou dados com `encryption.provider: local` só descarta a chave local depois de recifrá-los pelo Transit: o que estiver cifrado com ela fica ilegível para a API com o provider `vault`. Na migração de HML, a recifra foi feita com a API parada, numa única transação, e os caches de idempotência foram apagados (são transitórios).
+As chaves mestras do keystore só servem com a KEK que as cifrou: copiam-se os valores de `secret/kes/<chave>` para `plataforma-<amb>/kes-keystore/<chave>` sem alterá-los, junto com o `secrets move` do Transit e antes de o KES novo subir. Depois do corte, baixar um arquivo já existente confirma que o MinIO ainda o decifra.
+
+O ambiente `uniplus-prd` nasce com `encryption.provider: vault` e não tem dado cifrado com a chave local. Um ambiente que já gravou dados com o provider `local` não troca de provider só por configuração: o que foi cifrado com a chave local fica ilegível para a API com o provider `vault`, e a chave só é descartada depois de recifrar esses dados pelo Transit, com a API parada.
 
 ## Roles e políticas no Vault
 
