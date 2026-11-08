@@ -108,8 +108,22 @@ criar_politica_e_role_de_api() {
     log_success "Política e role $nome aplicadas ao Transit $mount."
 }
 
+# Uma KEK do KES deixada no mount genérico transit/ faria nascer outra, vazia, em
+# plataforma-<amb>-transit, e os arquivos já cifrados ficariam ilegíveis. Ela tem
+# de ser movida antes (vault secrets move transit/ plataforma-<amb>-transit/).
+recusar_kek_no_transit_antigo() {
+    vault_api GET sys/mounts
+    grep -q '"transit/"' "$VAULT_BODY_FILE" || return 0
+    vault_api GET "transit/keys/${CHAVES_PLATAFORMA[0]}"
+    [[ "$VAULT_HTTP_STATUS" == 404 ]] && return 0
+    log_error "O mount transit/ ainda guarda ${CHAVES_PLATAFORMA[0]} (HTTP $VAULT_HTTP_STATUS)."
+    log_error "Mova-o antes: vault secrets move transit/ $MOUNT_PLATAFORMA/"
+    exit 1
+}
+
 configurar_transit() {
     local chave
+    recusar_kek_no_transit_antigo
     montar_transit "$MOUNT_UNIPLUS"
     montar_transit "$MOUNT_GEO"
     montar_transit "$MOUNT_PLATAFORMA"

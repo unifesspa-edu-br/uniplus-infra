@@ -31,7 +31,7 @@ O caminho antigo ficava no mount `secret/`, sob um prefixo único do ambiente (`
 |---|---|---|
 | `postgres/uniplus` | `uniplus-<amb>` | `postgres` |
 | `postgres/portal` | `uniplus-<amb>` | `postgres-portal` |
-| `uniplus-api-host/encryption` | — | descartado: a API cifra pelo Transit (abaixo) |
+| `uniplus-api-host/encryption` | — | descartado só depois de recifrar pelo Transit (abaixo) os dados gravados com ela |
 | `keycloak/clients/uniplus-api-host` | `uniplus-<amb>` | `keycloak/uniplus-api-host` |
 | `keycloak/clients/uniplus-api-portal` | `uniplus-<amb>` | `keycloak/uniplus-api-portal` |
 | `keycloak/clients/uniplus-api-selecao` (client OAuth do Geo) | `uniplus-<amb>` | `keycloak/uniplus-api-selecao` |
@@ -75,7 +75,9 @@ Um mount Transit por sistema e ambiente. O mount genérico `transit/` deixa de e
 | `geo-<amb>-transit` | `geo-idempotency-aesgcm` | `unifesspa-geo-api` (namespace `geo`) | `encrypt`, `decrypt` |
 | `plataforma-<amb>-transit` | `uniplus-kes-kek` | KES (namespace `kes`) | `encrypt`, `decrypt` |
 
-Todas as operações são `update` sobre `<mount>/<operação>/<chave>`. O `uniplus-api-portal` não cifra (o `Program.cs` dele não registra a cifragem), então não tem role nem política. A `uniplus-kes-kek` mantém o nome porque protege arquivos já cifrados; onde ela já existe em outro mount, move-se com `vault secrets move transit plataforma-<amb>-transit`.
+Todas as operações são `update` sobre `<mount>/<operação>/<chave>`. O `uniplus-api-portal` não cifra (o `Program.cs` dele não registra a cifragem), então não tem role nem política. A `uniplus-kes-kek` mantém o nome porque protege arquivos já cifrados; onde ela já existe no mount `transit/`, move-se com `vault secrets move transit/ plataforma-<amb>-transit/` **antes** de rodar `configurar-vault.sh`, que recusa seguir enquanto ela estiver lá.
+
+Um ambiente que gravou dados com `encryption.provider: local` só descarta a chave local depois de recifrá-los pelo Transit: o que estiver cifrado com ela fica ilegível para a API com o provider `vault`. Na migração de HML, a recifra foi feita com a API parada, numa única transação, e os caches de idempotência foram apagados (são transitórios).
 
 ## Roles e políticas no Vault
 
