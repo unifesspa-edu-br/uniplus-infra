@@ -216,6 +216,19 @@ keycloak:
     enabled: true
     traefikNamespace: traefik
     monitoringNamespace: observability-prometheus
+    # Aplicações do cluster, em outros namespaces, que chamam o Keycloak pelo
+    # Service. Cada uma é {namespace, appName} (label app.kubernetes.io/name).
+    clientesInternos:
+      - namespace: kafka-ui
+        appName: kafka-ui
+      - namespace: apicurio-registry
+        appName: apicurio-registry
+      - namespace: uniplus
+        appName: uniplus-api-host
+      - namespace: uniplus
+        appName: uniplus-api-portal
+      - namespace: geo
+        appName: unifesspa-geo-api
     dataHostCIDR: ""
     dataHostPort: 5432
     # Egress até o relay SMTP institucional. Vazio = sem regra (padrão).

@@ -199,6 +199,18 @@
             "enabled": { "type": "boolean" },
             "traefikNamespace": { "type": "string" },
             "monitoringNamespace": { "type": "string" },
+            "clientesInternos": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["namespace", "appName"],
+                "properties": {
+                  "namespace": { "type": "string", "minLength": 1 },
+                  "appName": { "type": "string", "minLength": 1 }
+                }
+              }
+            },
             "dataHostCIDR": { "type": "string" },
             "dataHostPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
             "smtpCIDR": { "type": "string" },

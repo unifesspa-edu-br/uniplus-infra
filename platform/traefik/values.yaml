@@ -192,7 +192,7 @@ networkPolicy:
   appNamespaces:
     - uniplus
     - vault
-    - keycloak
+    - keycloak-replica
 
   # CIDRs autorizados para egress ao Kubernetes API server.
   kubeApiCidrs:
