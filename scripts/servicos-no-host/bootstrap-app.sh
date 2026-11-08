@@ -104,7 +104,7 @@ Aplicação preparada na revisão $REVISAO. Próximos passos (ver docs/RUNBOOKS.
      provisionar-verificacao.sh e provisionar-rabbitmq.sh.
   5. Gravar no Vault o que vem de fora: SMTP e os clients do Keycloak.
   6. primeiro-sync.sh e, em seguida, o sync normal da API.
-  7. Aplicar a rota do ArgoCD: kubectl apply -f environments/prod-standalone/argocd-ingressroute.yaml
+  7. Aplicar a rota do ArgoCD: kubectl apply -f environments/uniplus-prd/argocd-ingressroute.yaml
   8. Sincronizar as demais Applications.
 Porta $PORTA_KES liberada para $INFRA_IP (KES, usada pelo MinIO).
 RESUMO

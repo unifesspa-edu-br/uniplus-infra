@@ -4,8 +4,9 @@
 # - Cada cluster registrado no ArgoCD
 # - Cada chart em apps/ e platform/
 #
-# Pré-requisito: clusters lab-sp1, lab-sp2, prod-sp1, prod-sp2 registrados no ArgoCD
-# (via `argocd cluster add`)
+# Pré-requisito: o cluster do ambiente registrado no ArgoCD com os labels
+# `uniplus.io/managed=true` e `environment` (scripts/servicos-no-host/lib-app.sh).
+# O nome da Application é só o componente: um ambiente, um cluster.
 
 ---
 apiVersion: argoproj.io/v1alpha1
@@ -74,7 +75,7 @@ spec:
                 # context de portal/selecao/ingresso — namespace `uniplus`.
                 - app: uniplus-api-host
                   namespace: uniplus
-                  targetEnvironment: prod-standalone
+                  targetEnvironment: uniplus-prd
                   # O único com hook `PreSync` que aplica migrations. Isso muda o
                   # significado de "sincronizar de novo": todo sync automático
                   # reexecuta o hook, e o `before-hook-creation` descarta o Job
@@ -91,19 +92,19 @@ spec:
                 - app: unifesspa-geo-api
                   namespace: geo
                   aplicaMigration: false
-                  targetEnvironment: prod-standalone
+                  targetEnvironment: uniplus-prd
                 # Espelho interno da base do ClamAV (ADR-0147 do uniplus-api):
                 # abastece o freshclam dos sidecars do verificador.
                 - app: clamav-espelho
                   namespace: uniplus
                   aplicaMigration: false
-                  targetEnvironment: prod-standalone
+                  targetEnvironment: uniplus-prd
                 # Isolamento de rede do verificador de arquivos do candidato
                 # (ADR-0146). O verificador em si usa o chart do uniplus-api.
                 - app: verificador-rede
                   namespace: uniplus
                   aplicaMigration: false
-                  targetEnvironment: prod-standalone
+                  targetEnvironment: uniplus-prd
           - clusters:
               selector:
                 matchLabels:
@@ -112,7 +113,7 @@ spec:
 
   template:
     metadata:
-      name: '{{.app}}-{{.name}}'
+      name: '{{.app}}'
       labels:
         app.kubernetes.io/part-of: uniplus
         environment: '{{.metadata.labels.environment}}'
@@ -126,7 +127,7 @@ spec:
       # uniplus-platform AppSet para evitar drift.
       sources:
         - repoURL: https://github.com/unifesspa-edu-br/uniplus-infra
-          targetRevision: '{{ if eq .metadata.labels.environment "prod-standalone" }}{{ if not (index .metadata.labels "uniplus.io/revision") }}{{
+          targetRevision: '{{ if eq .metadata.labels.environment "uniplus-prd" }}{{ if not (index .metadata.labels "uniplus.io/revision") }}{{
             fail "producao sem o label uniplus.io/revision" }}{{ end }}{{ index .metadata.labels "uniplus.io/revision" }}{{ else }}main{{ end }}'
           path: 'apps/{{.app}}'
           helm:
@@ -134,7 +135,7 @@ spec:
               - values.yaml
               - '$values/environments/{{.metadata.labels.environment}}/values.yaml'
         - repoURL: https://github.com/unifesspa-edu-br/uniplus-infra
-          targetRevision: '{{ if eq .metadata.labels.environment "prod-standalone" }}{{ if not (index .metadata.labels "uniplus.io/revision") }}{{
+          targetRevision: '{{ if eq .metadata.labels.environment "uniplus-prd" }}{{ if not (index .metadata.labels "uniplus.io/revision") }}{{
             fail "producao sem o label uniplus.io/revision" }}{{ end }}{{ index .metadata.labels "uniplus.io/revision" }}{{ else }}main{{ end }}'
           ref: values
       destination:
@@ -201,14 +202,14 @@ spec:
   # `limit: 0` deixaria um `retry` contendo só `backoff` — um bloco que não governa
   # nada e confunde quem inspeciona.
   #
-  # Produção (environment `prod-standalone`): nenhuma Application sincroniza
+  # Produção (environment `uniplus-prd`): nenhuma Application sincroniza
   # sozinha. O patch não traz `automated` nem `retry`; só marca a Application, e
   # cada sync é uma ação manual sobre a revisão fixada no label
   # `uniplus.io/revision` do cluster (docs/RUNBOOKS.md, seção de produção). O
   # patch nunca pode renderizar vazio nem deixar `syncPolicy:` sem corpo, o que
   # apagaria o `syncOptions` do template.
   templatePatch: |
-    {{- if eq .metadata.labels.environment "prod-standalone" }}
+    {{- if eq .metadata.labels.environment "uniplus-prd" }}
     metadata:
       annotations:
         uniplus.io/atualizacao: manual
@@ -263,13 +264,12 @@ spec:
                 - component: observability/loki
                 - component: observability/tempo
                 # Nome curto `otelcol` (em vez de `otel-collector`) — evita
-                # release name > 53 chars (limite Helm) quando combinado com
-                # `platform-` prefix + `-uniplus-standalone` suffix.
+                # release name > 53 chars (limite Helm) com o prefixo `platform-`.
                 - component: observability/otelcol
 
   template:
     metadata:
-      name: 'platform-{{.component | replace "/" "-"}}-{{.name}}'
+      name: 'platform-{{.component | replace "/" "-"}}'
       labels:
         app.kubernetes.io/part-of: uniplus-platform
         environment: '{{.metadata.labels.environment}}'
@@ -283,7 +283,7 @@ spec:
       # path absoluto pra consistência.
       sources:
         - repoURL: https://github.com/unifesspa-edu-br/uniplus-infra
-          targetRevision: '{{ if eq .metadata.labels.environment "prod-standalone" }}{{ if not (index .metadata.labels "uniplus.io/revision") }}{{
+          targetRevision: '{{ if eq .metadata.labels.environment "uniplus-prd" }}{{ if not (index .metadata.labels "uniplus.io/revision") }}{{
             fail "producao sem o label uniplus.io/revision" }}{{ end }}{{ index .metadata.labels "uniplus.io/revision" }}{{ else }}main{{ end }}'
           path: 'platform/{{.component}}'
           helm:
@@ -291,7 +291,7 @@ spec:
               - values.yaml
               - '$values/environments/{{.metadata.labels.environment}}/values.yaml'
         - repoURL: https://github.com/unifesspa-edu-br/uniplus-infra
-          targetRevision: '{{ if eq .metadata.labels.environment "prod-standalone" }}{{ if not (index .metadata.labels "uniplus.io/revision") }}{{
+          targetRevision: '{{ if eq .metadata.labels.environment "uniplus-prd" }}{{ if not (index .metadata.labels "uniplus.io/revision") }}{{
             fail "producao sem o label uniplus.io/revision" }}{{ end }}{{ index .metadata.labels "uniplus.io/revision" }}{{ else }}main{{ end }}'
           ref: values
       destination:
@@ -318,7 +318,7 @@ spec:
             - '.spec.target.template.mergePolicy'
 
   templatePatch: |
-    {{- if eq .metadata.labels.environment "prod-standalone" }}
+    {{- if eq .metadata.labels.environment "uniplus-prd" }}
     metadata:
       annotations:
         uniplus.io/atualizacao: manual

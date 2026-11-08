@@ -1,4 +1,4 @@
-# Ambiente: prod-standalone
+# Ambiente: uniplus-prd
 #
 # Produção em duas VMs (ADR-015). `uniplus-prod-app` (200.139.48.121) roda
 # K3s, Traefik, ArgoCD, Vault, as APIs e os frontends. `uniplus-prod-infra`
@@ -14,9 +14,9 @@
 # (observabilidade, Keycloak próprio).
 
 cluster:
-  name: prod-standalone
+  name: uniplus-prd
   region: unifesspa
-  dc: prod-standalone
+  dc: uniplus-prd
 
 # ----------------------------------------------------------------------------
 # Plataforma
@@ -95,7 +95,7 @@ serviceMonitor:
 
 clusterSecretStore:
   enabled: true
-  vaultServer: "http://platform-vault-in-cluster.vault.svc.cluster.local:8200"
+  vaultServer: "http://platform-vault.vault.svc.cluster.local:8200"
 
 storage:
   enabled: true
@@ -206,7 +206,7 @@ uniplusApiHost:
     provider: local
 
   geo:
-    baseUrl: http://unifesspa-geo-api-in-cluster-unifesspa-geo-api.geo.svc.cluster.local:8080
+    baseUrl: http://unifesspa-geo-api-unifesspa-geo-api.geo.svc.cluster.local:8080
     oauth:
       tokenEndpoint: https://keycloak.unifesspa.edu.br/realms/unifesspa/protocol/openid-connect/token
       clientId: uniplus-api-selecao
@@ -317,9 +317,9 @@ uniplusApiPortal:
 
   extraEnv:
     - name: Origens__SelecaoBaseUrl
-      value: http://uniplus-api-host-in-cluster-uniplus-api-host.uniplus.svc.cluster.local:8080
+      value: http://uniplus-api-host-uniplus-api-host.uniplus.svc.cluster.local:8080
     - name: Origens__PublicacoesBaseUrl
-      value: http://uniplus-api-host-in-cluster-uniplus-api-host.uniplus.svc.cluster.local:8080
+      value: http://uniplus-api-host-uniplus-api-host.uniplus.svc.cluster.local:8080
 
   ingress:
     enabled: true
@@ -519,7 +519,7 @@ kes:
   enabled: true
 
   vault:
-    address: http://platform-vault-in-cluster.vault.svc.cluster.local:8200
+    address: http://platform-vault.vault.svc.cluster.local:8200
 
   networkPolicy:
     hostCidrs:

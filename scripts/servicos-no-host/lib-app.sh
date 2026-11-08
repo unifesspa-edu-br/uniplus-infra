@@ -3,9 +3,7 @@
 # atualizar-producao.sh. Carregado com `source`, depois de lib-comum.sh.
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-AMBIENTE="prod-standalone"
-# Nome do cluster no ArgoCD; o ApplicationSet o usa como sufixo das Applications.
-NOME_DO_CLUSTER="in-cluster"
+NOME_DO_AMBIENTE="uniplus-$AMBIENTE"
 # Namespaces que servem rotas com o certificado do domínio.
 NAMESPACES_TLS=(uniplus geo traefik vault minio-console-proxy argocd)
 TLS_SECRET_NAME="uniplus-unifesspa-tls"
@@ -49,22 +47,22 @@ registrar_cluster() {
 apiVersion: v1
 kind: Secret
 metadata:
-  name: cluster-$NOME_DO_CLUSTER
+  name: cluster-$NOME_DO_AMBIENTE
   namespace: argocd
   labels:
     argocd.argoproj.io/secret-type: cluster
-    environment: $AMBIENTE
+    environment: $NOME_DO_AMBIENTE
     uniplus.io/managed: "true"
     uniplus.io/revision: $revisao
 type: Opaque
 stringData:
-  name: $NOME_DO_CLUSTER
+  name: $NOME_DO_AMBIENTE
   server: https://kubernetes.default.svc
   config: '{"tlsClientConfig":{"insecure":false}}'
 YAML
 )
     if $DRY_RUN; then
-        echo "[DRY-RUN] kubectl apply do Secret de cluster (environment=$AMBIENTE, uniplus.io/revision=$revisao)"
+        echo "[DRY-RUN] kubectl apply do Secret de cluster (environment=$NOME_DO_AMBIENTE, uniplus.io/revision=$revisao)"
     else
         printf '%s\n' "$manifesto" | kubectl apply -f -
     fi
@@ -77,9 +75,9 @@ aplicar_argocd() {
     run "kubectl apply -f $REPO_ROOT/argocd/project.yaml"
     run "kubectl apply -f $REPO_ROOT/argocd/applicationset.yaml"
     if $DRY_RUN; then
-        echo "[DRY-RUN] kubectl apply de argocd/applications/verificador-prod.yaml com REVISAO_UNIPLUS_INFRA=$revisao"
+        echo "[DRY-RUN] kubectl apply de argocd/applications/verificador.yaml com REVISAO_UNIPLUS_INFRA=$revisao"
     else
-        sed "s/REVISAO_UNIPLUS_INFRA/$revisao/" "$REPO_ROOT/argocd/applications/verificador-prod.yaml" \
+        sed "s/REVISAO_UNIPLUS_INFRA/$revisao/" "$REPO_ROOT/argocd/applications/verificador.yaml" \
             | kubectl apply -f -
     fi
 }

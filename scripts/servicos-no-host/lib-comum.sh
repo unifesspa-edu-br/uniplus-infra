@@ -3,6 +3,9 @@
 # com `source`, nunca executado. Cada script que o carrega define DRY_RUN antes
 # de chamar `run`, e analisa os argumentos com `analisar_argumentos`.
 
+# Ambiente: prd (padrão) ou hml. Nomeia o cluster no ArgoCD (uniplus-<ambiente>) e
+# os KVs do Vault (<sistema>-<ambiente>). Os endereços das VMs vêm das variáveis abaixo.
+AMBIENTE="${AMBIENTE:-prd}"
 APP_IP="${APP_IP:-200.139.48.121}"
 INFRA_IP="${INFRA_IP:-200.139.48.122}"
 INFRA_FQDN="${INFRA_FQDN:-uniplus-prod-infra.unifesspa.edu.br}"
@@ -19,6 +22,11 @@ log_info()    { echo "[INFO] $*"; }
 log_success() { echo "[ OK ] $*"; }
 log_warn()    { echo "[WARN] $*"; }
 log_error()   { echo "[ERRO] $*" >&2; }
+
+case "$AMBIENTE" in
+    prd|hml) ;;
+    *) log_error "AMBIENTE inválido: '$AMBIENTE' (use prd ou hml)."; exit 2 ;;
+esac
 
 # Executa o comando, ou só o mostra em --dry-run.
 run() {
