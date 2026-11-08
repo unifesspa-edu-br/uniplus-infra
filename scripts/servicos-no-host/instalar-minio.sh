@@ -1,17 +1,11 @@
 #!/usr/bin/env bash
-# scripts/lab-standalone-single/setup-minio.sh
-#
-# Configura MinIO como container Docker gerenciado por systemd num host
-# combinado de laboratório (K3s + data services na mesma VM), replicando o
-# padrão do data-host real (scripts/bootstrap-standalone.sh,
-# step_data_setup_minio + step_data_bootstrap_minio_buckets) — já é
-# single-node single-drive (SNSD), sem adaptação de topologia necessária.
-# Sem erasure coding (precisa ≥4 drives) — zero proteção contra corrupção do
-# drive; backup externo é responsabilidade do operador (mesmo trade-off do
-# script real).
+# Instala o MinIO como container Docker gerenciado por systemd, single-node
+# single-drive (SNSD). Sem erasure coding (exige 4 drives ou mais): não há
+# proteção contra corrupção do drive, e o backup externo é responsabilidade de
+# quem opera.
 #
 # Uso:
-#   ./setup-minio.sh [--dry-run] [--skip-buckets]
+#   ./instalar-minio.sh [--dry-run] [--skip-buckets]
 #
 # Variáveis de ambiente:
 #   DATA_HOST_IP   IPv4 privado a bindar (default: auto-detectado via `hostname -I`)
@@ -19,16 +13,16 @@
 #   ACERVO_PUBLICO_POLICY_FILE
 #                  Política anônima do bucket do acervo público, versionada no
 #                  repositório (default: minio/acervo-publico.policy.json ao lado
-#                  deste script — leitura de objeto sem condição de origem). O
-#                  wrapper de HML aponta para a variante com condição de origem.
+#                  deste script).
 #
 #   MINIO_EXTRA_ENV_FILE
 #                  Arquivo de ambiente adicional entregue ao container (docker
-#                  --env-file; root:root 0600). Usado em HML para o KES (SSE-KMS),
-#                  o CORS e o audit webhook. Vazio no lab: nada muda.
+#                  --env-file; root:root 0600). Usado para o KES (SSE-KMS), o CORS
+#                  e o audit webhook. Default: /etc/uniplus-minio-kes.env, se
+#                  existir (escrito por provisionar-arquivos-candidato.sh).
 #   MINIO_EXTRA_MOUNT_DIR
 #                  Diretório do host montado somente leitura em /etc/minio/extra
-#                  (certificado do KES). Vazio no lab.
+#                  (certificado do KES). Default: /etc/uniplus-minio-kes.
 #
 #   MINIO_TLS_DIR  Diretório com public.crt e private.key legíveis pelo uid 1000.
 #                  Preenchido, o MinIO serve HTTPS (--certs-dir) e a verificação
@@ -72,6 +66,10 @@ MINIO_IMAGE="quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z"
 MC_IMAGE="quay.io/minio/mc:latest"
 MINIO_EXTRA_ENV_FILE="${MINIO_EXTRA_ENV_FILE:-}"
 MINIO_EXTRA_MOUNT_DIR="${MINIO_EXTRA_MOUNT_DIR:-}"
+if [[ -z "$MINIO_EXTRA_ENV_FILE" ]] && sudo test -f /etc/uniplus-minio-kes.env; then
+    MINIO_EXTRA_ENV_FILE=/etc/uniplus-minio-kes.env
+    MINIO_EXTRA_MOUNT_DIR=/etc/uniplus-minio-kes
+fi
 MINIO_TLS_DIR="${MINIO_TLS_DIR:-}"
 MINIO_PUBLIC_HOST="${MINIO_PUBLIC_HOST:-}"
 
@@ -216,7 +214,7 @@ if $DRY_RUN; then
 else
     sudo tee "$UNIT_FILE" >/dev/null <<UNIT
 [Unit]
-Description=Uni+ MinIO (lab standalone-single, SNSD)
+Description=Uni+ MinIO (SNSD)
 After=docker.service network-online.target
 Requires=docker.service
 Wants=network-online.target

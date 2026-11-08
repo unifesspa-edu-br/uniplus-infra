@@ -1,15 +1,10 @@
 #!/usr/bin/env bash
-# scripts/lab-standalone-single/setup-redis.sh
-#
-# Configura Redis 8.6.3 como container Docker gerenciado por systemd num host
-# combinado de laboratório (K3s + data services na mesma VM), replicando o
-# padrão do data-host real (scripts/bootstrap-standalone.sh, step_data_setup_redis)
-# — mesma geração de ACL/credenciais, mesmo layout de systemd unit. A única
-# diferença estrutural é DATA_HOST_IP: aqui é o IP da própria VM (host único),
-# não de um data-host externo dedicado.
+# Instala o Redis 8.6.3 como container Docker gerenciado por systemd, com ACL e
+# credenciais geradas no primeiro uso. DATA_HOST_IP é o IP em que o serviço
+# escuta.
 #
 # Uso:
-#   ./setup-redis.sh [--dry-run]
+#   ./instalar-redis.sh [--dry-run]
 #
 # Variáveis de ambiente:
 #   DATA_HOST_IP   IPv4 privado a bindar (default: auto-detectado via `hostname -I`)
@@ -34,9 +29,8 @@ for arg in "$@"; do
     esac
 done
 
-# Auto-detecta o IPv4 privado (RFC 1918) do host, mesmo filtro usado em
-# bootstrap-standalone.sh — evita bindar Redis na interface errada quando
-# `hostname -I` lista múltiplos endereços.
+# Auto-detecta o IPv4 privado (RFC 1918) do host — evita bindar o Redis na
+# interface errada quando `hostname -I` lista múltiplos endereços.
 if [[ -z "${DATA_HOST_IP:-}" ]] && command -v hostname &>/dev/null; then
     DATA_HOST_IP=$(hostname -I 2>/dev/null | tr ' ' '\n' \
         | grep -E '^(10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)' \
@@ -142,7 +136,7 @@ EOF
 fi
 
 # redis.conf: bind explícito (protected-mode exige bind+auth), persistência
-# híbrida AOF+RDB, memory cap conservador para VM de lab.
+# híbrida AOF+RDB, memory cap conservador.
 if $DRY_RUN; then
     log_warn "Dry-run: redis.conf seria escrito em $REDIS_CONF"
 else
@@ -176,7 +170,7 @@ if $DRY_RUN; then
 else
     sudo tee "$UNIT_FILE" >/dev/null <<UNIT
 [Unit]
-Description=Uni+ Redis 8.6.3 (lab standalone-single)
+Description=Uni+ Redis 8.6.3 
 After=docker.service network-online.target
 Requires=docker.service
 Wants=network-online.target

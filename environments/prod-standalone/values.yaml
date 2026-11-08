@@ -112,7 +112,7 @@ cert-manager:
   enabled: false
 
 # O Secret uniplus-unifesspa-tls (certificado do domínio) é criado pelo
-# bootstrap e renovado por scripts/prod-standalone/renovar-certificado.sh.
+# bootstrap e renovado por scripts/servicos-no-host/renovar-certificado.sh.
 tlsStore:
   enabled: true
   defaultSecretName: uniplus-unifesspa-tls
@@ -159,7 +159,7 @@ uniplusApiHost:
     tag: v0.50.0
 
   # O Job de migration (PreSync) consome a ServiceAccount e os Secrets que o sync
-  # comum cria: o primeiro sync é em dois tempos (scripts/prod-standalone/primeiro-sync.sh).
+  # comum cria: o primeiro sync é em dois tempos (scripts/servicos-no-host/primeiro-sync.sh).
   migrationJob:
     enabled: true
 

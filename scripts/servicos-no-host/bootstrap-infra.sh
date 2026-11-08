@@ -11,9 +11,9 @@
 # unifesspa.edu.br-bundle.crt), instalado por quem opera a VM. Os serviços são
 # acessados pelo nome INFRA_FQDN, que o certificado precisa cobrir.
 #
-# Idempotente. Cada serviço é configurado pelos scripts de laboratório e de
-# homologação, com os parâmetros de TLS; o que muda em produção está só nas
-# variáveis passadas a eles.
+# Idempotente. Cada serviço é instalado pelo respectivo instalar-*.sh, com os
+# parâmetros de TLS passados por variável. O ambiente (AMBIENTE=prd, o padrão, ou
+# hml) vem de lib-comum.sh.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -26,8 +26,6 @@ source "$SCRIPT_DIR/lib-infra-rabbitmq.sh"
 # shellcheck source=lib-infra-firewall.sh
 source "$SCRIPT_DIR/lib-infra-firewall.sh"
 
-LAB_DIR="$SCRIPT_DIR/../lab-standalone-single"
-HML_DIR="$SCRIPT_DIR/../hml-standalone-single"
 REDIS_UID=999
 MINIO_UID=1000
 KAFKA_UID=1000
@@ -50,20 +48,16 @@ chamar() {
 step_redis() {
     instalar_par_tls "$DATA_BASE/redis/tls" "$REDIS_UID"
     DATA_HOST_IP="$INFRA_IP" REDIS_TLS_DIR="$DATA_BASE/redis/tls" REDIS_TLS_HOST="$INFRA_FQDN" \
-        chamar "$LAB_DIR/setup-redis.sh"
+        chamar "$SCRIPT_DIR/instalar-redis.sh"
 }
 
 step_minio() {
-    # Escrito por provisionar-arquivos-candidato.sh depois que o KES existe; o
-    # MinIO só o recebe nas execuções seguintes deste bootstrap.
-    if ! $DRY_RUN && sudo test -f /etc/uniplus-minio-kes.env; then
-        export MINIO_EXTRA_ENV_FILE=/etc/uniplus-minio-kes.env
-        export MINIO_EXTRA_MOUNT_DIR=/etc/uniplus-minio-kes
-    fi
+    # O ambiente do KES, escrito por provisionar-arquivos-candidato.sh depois que
+    # o KES existe, é incluído por instalar-minio.sh nas execuções seguintes.
     instalar_par_tls "$DATA_BASE/minio/tls" "$MINIO_UID"
     DATA_HOST_IP="$INFRA_IP" MINIO_TLS_DIR="$DATA_BASE/minio/tls" MINIO_PUBLIC_HOST="$INFRA_FQDN" \
         ACERVO_PUBLICO_POLICY_FILE="$SCRIPT_DIR/minio/acervo-publico.policy.json" \
-        chamar "$LAB_DIR/setup-minio.sh"
+        chamar "$SCRIPT_DIR/instalar-minio.sh"
 }
 
 step_kafka() {
@@ -71,7 +65,7 @@ step_kafka() {
     DATA_HOST_IP="$INFRA_IP" KAFKA_PUBLIC_HOST="$INFRA_FQDN" \
         KAFKA_TLS_CERT="$DATA_BASE/kafka/tls/server.crt" KAFKA_TLS_KEY="$DATA_BASE/kafka/tls/server.key" \
         KAFKA_TLS_CA="$DATA_BASE/kafka/tls/server.crt" \
-        chamar "$HML_DIR/setup-kafka.sh"
+        chamar "$SCRIPT_DIR/instalar-kafka.sh"
 }
 
 resumo() {

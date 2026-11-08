@@ -7,7 +7,7 @@
 #   - a do chart (uniplus-api) é a mesma validada em HML;
 #   - a dos valores (uniplus-infra) é a tag de produção, em REVISAO_UNIPLUS_INFRA.
 # O marcador REVISAO_UNIPLUS_INFRA é trocado pela tag no momento de aplicar
-# (scripts/prod-standalone/bootstrap-app.sh e docs/RUNBOOKS.md, seção de
+# (scripts/servicos-no-host/bootstrap-app.sh e docs/RUNBOOKS.md, seção de
 # produção); o arquivo no Git nunca aponta para uma branch.
 apiVersion: argoproj.io/v1alpha1
 kind: Application

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Provisiona no Vault de HML o que o KES, o RabbitMQ e o MinIO precisam para a
+# Provisiona no Vault o que o KES, o RabbitMQ e o MinIO precisam para a
 # cifra e a verificação dos arquivos do candidato (ADR-0146 do uniplus-api,
 # uniplus-infra#682). É a parte "escrita no Vault" que os charts platform/kes e
 # platform/rabbitmq não fazem:
@@ -12,31 +12,42 @@
 #   - credenciais do MinIO para a API e para o verificador.
 #
 # Idempotente: o que já existe no Vault é preservado, nunca regerado (regerar uma
-# identidade ou uma senha desalinharia quem já a usa). Rodar na VM de HML, com o
-# Vault inicializado e aberto, ANTES de o ArgoCD sincronizar o KES e o RabbitMQ.
-# Em seguida, rodar provision-arquivos-candidato.sh.
+# identidade ou uma senha desalinharia quem já a usa). Rodar na VM de infraestrutura,
+# com o Vault inicializado e aberto, ANTES de o ArgoCD sincronizar o KES. Em
+# seguida, rodar provisionar-arquivos-candidato.sh.
 #
-# Uso: ./provision-verificacao-prerequisites.sh
+# Uso: ./provisionar-verificacao.sh [--dry-run]
 #
-# Variáveis:
-#   HOST_IP     IP do host (entra na SAN do certificado do KES). Default 192.168.21.134.
+# Variáveis (as de lib-comum.sh valem aqui):
 #   KES_IMAGE   Imagem do KES usada para gerar as identidades.
-#   KES_CERT_FILE, KES_KEY_FILE
-#               Certificado (com cadeia) e chave do domínio, em PEM. Preenchidos,
-#               viram o certificado do servidor KES em vez de um autoassinado.
-#   VAULT_URL   Endereço HTTPS do Vault, para rodar fora do host do cluster
-#               (ver lib-vault.sh).
+#   VAULT_URL   Endereço HTTPS do Vault (ver lib-vault.sh).
+# O certificado do domínio (TLS_BUNDLE e TLS_KEY) é o certificado do servidor KES.
 set -euo pipefail
 
-HOST_IP="${HOST_IP:-192.168.21.134}"
-KES_CERT_FILE="${KES_CERT_FILE:-}"
-KES_KEY_FILE="${KES_KEY_FILE:-}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib-comum.sh
+source "$SCRIPT_DIR/lib-comum.sh"
+
+mostrar_uso() {
+    echo "Uso: $0 [--dry-run]"
+}
+
+analisar_argumentos "$@"
+exigir_usuario_comum
+if $DRY_RUN; then
+    echo "[DRY-RUN] provisionaria no Vault a cifra, a política, a role e as identidades do KES, as senhas do RabbitMQ e as do MinIO"
+    exit 0
+fi
+
+export VAULT_URL="${VAULT_URL:-https://uniplus-vault.unifesspa.edu.br}"
+HOST_IP="$APP_IP"
+KES_CERT_FILE="$TLS_BUNDLE"
+KES_KEY_FILE="$TLS_KEY"
+
 KES_IMAGE="${KES_IMAGE:-quay.io/minio/kes:2025-03-12T09-35-18Z}"
 KES_NAMESPACE="kes"
 KES_SERVICE_ACCOUNT="kes"
 TRANSIT_KEY="uniplus-kes-kek"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
 tmpdir=$(mktemp -d)
 chmod 700 "$tmpdir"
 cleanup() {
@@ -103,7 +114,7 @@ print(json.dumps({
 }
 
 # --- Certificado do servidor KES --------------------------------------------
-# Autoassinado (não há cert-manager em HML) e válido por 1 ano. A SAN inclui o IP
+# Autoassinado, quando não há par do domínio, e válido por 1 ano. A SAN inclui o IP
 # do host, porque o MinIO chega pelo hostPort. Rotação: apagar
 # secret/standalone/kes/server no Vault e rodar este script e o seguinte de novo.
 if vault_existe standalone/kes/server; then
@@ -179,7 +190,7 @@ garantir_credencial standalone/rabbitmq/api uniplus-api
 garantir_credencial standalone/rabbitmq/verificador uniplus-verificador
 
 # --- Credenciais do MinIO para a API e para o verificador ---------------------
-# O provision-arquivos-candidato.sh cria os usuários no MinIO a partir daqui.
+# O provisionar-arquivos-candidato.sh cria os usuários no MinIO a partir daqui.
 garantir_minio() {
     local caminho="$1" usuario="$2"
     if vault_existe "$caminho"; then
@@ -192,4 +203,4 @@ garantir_minio() {
 garantir_minio standalone/minio/arquivos-candidato-api uniplus-api-arquivos
 garantir_minio standalone/minio/arquivos-candidato-verificador uniplus-verificador-arquivos
 
-echo "Pré-requisitos da verificação provisionados no Vault. Próximo: sincronizar o KES e o RabbitMQ no ArgoCD e rodar provision-arquivos-candidato.sh."
+echo "Pré-requisitos da verificação provisionados no Vault. Próximo: sincronizar o KES e o RabbitMQ no ArgoCD e rodar provisionar-arquivos-candidato.sh."

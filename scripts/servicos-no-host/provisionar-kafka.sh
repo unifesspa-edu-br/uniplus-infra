@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Provisiona, no Kafka de HML, a trilha do registro de acesso a dado protegido
+# Provisiona, no Kafka, a trilha do registro de acesso a dado protegido
 # (ADR-0153 do uniplus-api, uniplus-infra#752):
 #
 #   - tópico `autorizacao_registros_de_acesso`: 3 partições, fator de replicação 1
@@ -13,10 +13,10 @@
 #     `Alter` nem `Read`; o atalho `--producer` concede `Create` e por isso não
 #     é usado.
 #
-# Uso (na VM de HML, com o ROOT_TOKEN do Vault no ambiente ou no ~/.bashrc):
-#   provision-registro-de-acesso-kafka.sh [provisionar]   cria o que falta
-#   provision-registro-de-acesso-kafka.sh ca             grava só o CA do broker no Vault
-#   provision-registro-de-acesso-kafka.sh verificar       prova o que a ACL permite e recusa
+# Uso (na VM de infraestrutura, com o ROOT_TOKEN do Vault no ambiente ou pedido no terminal):
+#   provisionar-kafka.sh [--dry-run] [provisionar]   cria o que falta
+#   provisionar-kafka.sh ca                          grava só o CA do broker no Vault
+#   provisionar-kafka.sh verificar                   prova o que a ACL permite e recusa
 #
 # `provisionar` é idempotente: a senha existente no Vault é reaproveitada, o
 # usuário e as configurações do tópico são reaplicados. `verificar` usa um
@@ -27,16 +27,18 @@
 # senha entra nos contêineres por stdin: não aparece em argv do `docker run`,
 # em arquivo nem na saída.
 #
-# Variáveis:
-#   HOST_IP       IP do broker (default 192.168.21.134)
-#   DATA_BASE     default /var/lib/uniplus
+# Variáveis (as de lib-comum.sh valem aqui):
+#   INFRA_FQDN    nome do broker, validado pelo certificado
 #   KAFKA_IMAGE   default apache/kafka:4.2.0
+#   VAULT_URL     ver lib-vault.sh
 set -euo pipefail
 
-HOST_IP="${HOST_IP:-192.168.21.134}"
-DATA_BASE="${DATA_BASE:-/var/lib/uniplus}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib-comum.sh
+source "$SCRIPT_DIR/lib-comum.sh"
+
 KAFKA_IMAGE="${KAFKA_IMAGE:-apache/kafka:4.2.0}"
-BOOTSTRAP="$HOST_IP:9092"
+BOOTSTRAP="$INFRA_FQDN:9092"
 USUARIO="uniplus-api-registro-acesso-svc"
 TOPICO="autorizacao_registros_de_acesso"
 PARTICOES=3
@@ -44,10 +46,29 @@ VAULT_CAMINHO="standalone/kafka/$USUARIO"
 VAULT_CAMINHO_CA="standalone/kafka/ca"
 ADMIN_PROPERTIES="$DATA_BASE/kafka/admin.properties"
 CA_CRT="/etc/uniplus-kafka/certs/ca.crt"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 log() { echo "[$(date -u +%H:%M:%S)] $*"; }
 falha() { echo "ERRO: $*" >&2; exit 1; }
+
+mostrar_uso() {
+    echo "Uso: $0 [--dry-run] [provisionar|ca|verificar]"
+}
+
+acao=provisionar
+resto=()
+for arg in "$@"; do
+    case "$arg" in
+        provisionar|ca|verificar) acao="$arg" ;;
+        *) resto+=("$arg") ;;
+    esac
+done
+analisar_argumentos "${resto[@]}"
+exigir_usuario_comum
+if $DRY_RUN; then
+    echo "[DRY-RUN] $acao o tópico, o usuário SCRAM e o CA no Vault, com bootstrap $BOOTSTRAP"
+    exit 0
+fi
+export VAULT_URL="${VAULT_URL:-https://uniplus-vault.unifesspa.edu.br}"
 
 tmpdir=$(mktemp -d)
 chmod 700 "$tmpdir"
@@ -370,7 +391,7 @@ recusado "criar outro tópico (Create)" /tmp/o_cri
     log "Verificação concluída: a credencial só escreve (e descreve) no tópico."
 }
 
-case "${1:-provisionar}" in
+case "$acao" in
     provisionar) provisionar ;;
     ca) vault_conectar "$tmpdir"; gravar_ca ;;
     verificar) verificar ;;
