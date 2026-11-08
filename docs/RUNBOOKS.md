@@ -240,6 +240,7 @@ direto em `uniplus-prod-infra.unifesspa.edu.br:9000` a partir de outro IP é rec
 ## 7. Diagnóstico
 
 - **ExternalSecret sem sincronizar:** `kubectl describe externalsecret <nome> -n <namespace>`. Causas comuns: Vault selado, caminho inexistente no KV do sistema, ou a store não atende o namespace (`spec.conditions` da `ClusterSecretStore`).
+- **Sync do `external-secrets` recusado com `failed calling webhook ... no endpoints available`:** a validação prévia do ArgoCD chama o webhook antes de qualquer onda; numa instalação do zero ele ainda não existe e a store espera a onda 1, mas se o webhook já está registrado e o pod dele está fora do ar a validação falha. Esperar o `external-secrets-webhook` ficar pronto (`kubectl get pods -n external-secrets`) e sincronizar de novo.
 - **Application `OutOfSync` depois de atualizar a tag:** esperado; revisar o diff e sincronizar à mão.
 - **Pod sem subir por imagem:** conferir `imagePullSecrets` e, para as imagens do MinIO, a [seção 2.3](#23-imagens-do-minio).
 - **Cliente recusa o certificado das VMs:** conferir permissões de `/etc/uniplus/tls` ([seção 2.2](#22-certificado)) e a validade com `openssl x509 -noout -dates`.
