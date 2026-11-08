@@ -116,13 +116,15 @@ O `--platform linux/amd64` evita um import truncado no containerd.
    `keycloak/uniplus-api-selecao`) e em `plataforma-prd` (`keycloak/kafka-ui`, `keycloak/apicurio-registry`). Os
    clients são criados à parte no `keycloak.unifesspa.edu.br`.
 8. **Primeiro sync da API em dois tempos:** `primeiro-sync.sh` (na VM de aplicação). O Job de
-   migration (`PreSync`) roda antes dos demais recursos e precisa da ServiceAccount e dos Secrets
-   (banco, Redis, chave de cifra, OAuth do Geo, RabbitMQ, e-mail), que só nascem no sync comum. O
-   script sincroniza só a ServiceAccount e os ExternalSecrets, espera os Secrets ficarem prontos e
-   lista o que faltar no Vault. Esse sync seletivo também executa o hook `PreSync` (observado em
-   produção), então o Job pode rodar já no primeiro tempo; se falhar por falta de Secret, o sync
-   normal da Application `uniplus-api-host` o executa de novo. É preciso só no primeiro
-   sync; as atualizações seguintes já encontram tudo.
+   migration (`PreSync`) roda antes da fase Sync e precisa da ServiceAccount e dos Secrets (banco,
+   Redis, OAuth do Geo, RabbitMQ, e-mail) que só nascem nela; num ambiente vazio ele falharia e o
+   ArgoCD abortaria o sync sem criar nada. No primeiro tempo o script faz um sync completo com o
+   Job desligado só naquela operação (`uniplusApiHost.migrationJob.enabled=false` em
+   `operation.sync.sources`; o `spec` e os values não mudam). Sem o hook, a fase Sync cria a
+   ServiceAccount e os ExternalSecrets, e o schema é aplicado no boot do pod, correto num banco vazio.
+   O script espera os Secrets e lista o que faltar no Vault. No segundo tempo, o sync normal da
+   Application `uniplus-api-host` executa o Job com tudo já criado. Só o primeiro sync precisa dos
+   dois tempos.
 9. **Rota do ArgoCD:** `kubectl apply -f environments/uniplus-prd/argocd-ingressroute.yaml`
    (depois de o Traefik registrar os CRDs). Hosts de administração respondem só à rede institucional
    e à VPN (`middlewares.adminInterno.sourceRange`: `200.139.48.0/25` e `192.168.90.0/24`).

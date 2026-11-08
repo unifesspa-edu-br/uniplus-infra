@@ -15,7 +15,7 @@ Rodam nas VMs, todos aceitam `--dry-run` e leem `AMBIENTE` (`prd` por padrão, `
 | `bootstrap-infra.sh` | VM de infraestrutura | PostgreSQL, Redis, MinIO, Kafka e RabbitMQ em containers sob systemd, só com TLS |
 | `bootstrap-app.sh` | VM de aplicação | K3s, Helm, ArgoCD, Secret TLS, registro do cluster na revisão e ApplicationSets |
 | `atualizar-producao.sh` | VM de aplicação | Aponta a produção para uma tag e reaplica ApplicationSets e verificador |
-| `primeiro-sync.sh` | VM de aplicação | Primeiro sync, em dois tempos, de uma Application com Job de migration |
+| `primeiro-sync.sh` | VM de aplicação | Primeiro sync, em dois tempos (Job de migration desligado na primeira operação) |
 | `renovar-certificado.sh` | As duas VMs | Troca o certificado curinga e reinicia o que o usa |
 | `configurar-vault.sh` | Qualquer máquina com o token raiz | KV por sistema, autenticação Kubernetes, política e role por sistema |
 | `semear-vault.sh` | VM de infraestrutura | Grava no Vault os segredos que nascem na infraestrutura |
