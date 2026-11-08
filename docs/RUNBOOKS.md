@@ -110,7 +110,9 @@ O `--platform linux/amd64` evita um import truncado no containerd.
 3. **Plataforma:** no ArgoCD, sincronizar à mão, nesta ordem, `platform-storage` (a StorageClass que
    o Vault usa), `platform-traefik`, `platform-external-secrets` e `platform-vault`.
 4. **Vault:** inicializar e abrir (Shamir 5/3, ver [seção 5](#5-reinício-das-vms-e-abertura-do-vault)), fora dos scripts.
-5. **Preparar o Vault:** `configurar-vault.sh` monta um KV v2 por sistema (`uniplus-prd`, `geo-prd` e
+5. **Preparar o Vault:** `configurar-vault.sh` habilita primeiro a auditoria em dois destinos, `stdout/`
+   (saída do pod) e `file/` (`/vault/audit/audit.log`, rotacionado pelo sidecar `audit-rotate`), e
+   confere-se com `vault audit list`. Depois monta um KV v2 por sistema (`uniplus-prd`, `geo-prd` e
    `plataforma-prd`), habilita `auth/kubernetes` e cria, para cada sistema, uma política de leitura só no
    próprio KV e a role `external-secrets-<sistema>`. Monta também um Transit por sistema
    (`uniplus-prd-transit`, `geo-prd-transit`, `plataforma-prd-transit`), cria as chaves de cifra e, para
