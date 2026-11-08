@@ -107,12 +107,9 @@ grafana:
           type: prometheus
           uid: prometheus
           access: proxy
-          # URL do Service do Prometheus em outro namespace. ApplicationSet
-          # cria release `platform-observability-prometheus-<cluster>` no
-          # namespace `observability-prometheus`. O Service do Prometheus
-          # leva o release name + sufixo do subchart kube-prometheus-stack.
-          # Override por environment (cluster name varia).
-          url: http://platform-observability-prometheus-CLUSTER-prometheus.observability-prometheus.svc.cluster.local:9090
+          # Service do Prometheus da release platform-observability-prometheus:
+          # o kube-prometheus-stack trunca o prefixo para caber no limite de nome.
+          url: http://platform-observability-pro-prometheus.observability-prometheus.svc.cluster.local:9090
           isDefault: true
           jsonData:
             timeInterval: 30s

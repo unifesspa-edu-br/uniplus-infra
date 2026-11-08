@@ -46,38 +46,16 @@ Após o ApplicationSet sincronizar:
 | `grafana.sidecar.dashboards.enabled` | `true` | Auto-carrega dashboards de ConfigMaps labelados |
 | `networkPolicy.enabled` | `false` | Subchart tem NPs próprias — habilitar em env se necessário |
 
-## Datasource Prometheus — URL por environment
+## Datasource Prometheus
 
-O default em `values.yaml` usa um placeholder `CLUSTER` no FQDN do Service Prometheus:
-
-```yaml
-url: http://platform-observability-prometheus-CLUSTER-prometheus.observability-prometheus.svc.cluster.local:9090
-```
-
-Isso porque o ApplicationSet usa o cluster name no release (`{{.name}}` em `argocd/applicationset.yaml`) e o Service do Prometheus leva esse nome. Cada environment DEVE sobrescrever:
+O default em `values.yaml` aponta para o Service que o kube-prometheus-stack cria na release
+`platform-observability-prometheus` (o prefixo é truncado para caber no limite de nome):
 
 ```yaml
-# environments/uniplus-prd/values.yaml
-grafana:
-  datasources:
-    datasources.yaml:
-      apiVersion: 1
-      datasources:
-        - name: Prometheus
-          type: prometheus
-          uid: prometheus
-          access: proxy
-          url: http://platform-observability-prometheus-prometheus.observability-prometheus.svc.cluster.local:9090
-          isDefault: true
-          jsonData:
-            timeInterval: 30s
+url: http://platform-observability-pro-prometheus.observability-prometheus.svc.cluster.local:9090
 ```
 
-Pattern por env (atual: apenas uniplus-prd):
-
-- `uniplus-prd`: `platform-observability-prometheus-do cluster-prometheus.observability-prometheus.svc...`
-
-(Quando `platform/observability/prometheus/` ganhar `fullnameOverride`, esse pattern simplifica — issue separada se valer a pena.)
+O ambiente só sobrescreve se o Prometheus estiver em outro lugar.
 
 ## Provisionar dashboards Uni+
 
