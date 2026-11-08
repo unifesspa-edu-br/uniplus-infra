@@ -41,7 +41,7 @@ argocd/
    - A verificação de antivírus dos arquivos do candidato é do verificador (uniplus-api#2054), com clamd sidecar. O `clamav-espelho` abastece a base de assinaturas desses sidecars.
 
 2. **uniplus-platform** — gera Applications para componentes de plataforma:
-   - storage, minio-console-proxy, traefik, cert-manager, external-secrets, vault, vault-transit, vault-transit-bootstrap, kes, rabbitmq
+   - storage, minio-console-proxy, traefik, external-secrets, vault, kes
    - observability (prometheus, grafana, loki, tempo, otel-collector)
 
 Cada ApplicationSet usa um ou mais **matrix generators** combinando:

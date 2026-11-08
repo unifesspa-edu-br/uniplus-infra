@@ -98,7 +98,7 @@ Pelo menos 1 aprovação do time CTIC é obrigatória. Mudanças no ambiente ope
 - Cada chart deve ter `Chart.yaml`, `values.yaml` (defaults), `README.md`
 - Templates em `templates/` seguem [boas práticas oficiais](https://helm.sh/docs/chart_best_practices/)
 - Use `helm-docs` para gerar README a partir dos values (`make helm-docs`). Configuração em `.helm-docs.yaml`. Charts ainda não migrados mantêm README hand-written; migração é gradual.
-- **`values.schema.json` obrigatório** para charts em `platform/` (validação automática pelo Helm em `helm template`/`install`/`upgrade`). Chart wrapper `platform/vault/` e `platform/vault-transit/` servem de referência. Use `additionalProperties: true` em blocos compartilhados entre múltiplos charts (`networkPolicy`, `serviceMonitor`, `ingress`).
+- **`values.schema.json` obrigatório** para charts em `platform/` (validação automática pelo Helm em `helm template`/`install`/`upgrade`). Chart wrapper `platform/vault/` serve de referência. Use `additionalProperties: true` em blocos compartilhados entre múltiplos charts (`networkPolicy`, `serviceMonitor`, `ingress`).
 
 ### YAML
 
