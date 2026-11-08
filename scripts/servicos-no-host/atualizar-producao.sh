@@ -15,6 +15,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib-comum.sh"
 # shellcheck source=lib-app.sh
 source "$SCRIPT_DIR/lib-app.sh"
+exigir_producao
 
 REVISAO=""
 
