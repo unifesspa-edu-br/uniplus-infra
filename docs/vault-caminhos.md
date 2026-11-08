@@ -46,7 +46,7 @@ O caminho antigo ficava no mount `secret/`, sob um prefixo único do ambiente (`
 | `redis/default` | `uniplus-<amb>`, `geo-<amb>` e `plataforma-<amb>` | `redis` |
 | `smtp/uniplus` | `uniplus-<amb>` e `plataforma-<amb>` | `smtp` |
 | `postgres/geo` | `geo-<amb>` | `postgres` |
-| `geo/encryption` | — | descartado: o Geo cifra pelo Transit (abaixo) |
+| `geo/encryption` | — | descartado sem recifra: o Geo só cifra dados transitórios (respostas de idempotência por 24 h e cursores por 15 min) e passa ao Transit (abaixo) |
 | `postgres/apicurio` | `plataforma-<amb>` | `postgres/apicurio` |
 | `postgres/keycloak` | `plataforma-<amb>` | `postgres/keycloak` |
 | `keycloak/admin` | `plataforma-<amb>` | `keycloak/admin` |
