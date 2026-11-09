@@ -1,38 +1,18 @@
 #!/usr/bin/env bash
-# Rotinas da VM de aplicação de produção compartilhadas por bootstrap-app.sh e
-# atualizar-producao.sh. Carregado com `source`, depois de lib-comum.sh.
+# Rotinas da VM de aplicação de produção compartilhadas por bootstrap-app.sh,
+# primeiro-sync.sh e renovar-certificado.sh. Carregado com `source`, depois de
+# lib-comum.sh.
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 NOME_DO_AMBIENTE="uniplus-$AMBIENTE"
 # Namespaces que servem rotas com o certificado do domínio.
 NAMESPACES_TLS=(uniplus geo traefik vault minio-console-proxy argocd kafka-ui redis-ui apicurio-registry)
 TLS_SECRET_NAME="uniplus-unifesspa-tls"
 
-# Registrar o cluster e aplicar os ApplicationSets deste repositório só serve à
-# produção: os outros ambientes trazem os próprios, com os próprios values.
+# O bootstrap da VM de aplicação só serve à produção: a homologação tem o próprio.
 exigir_producao() {
     [[ "$AMBIENTE" == prd ]] && return 0
-    log_error "$(basename "$0") só instala e atualiza a produção (AMBIENTE=prd); recebido: '$AMBIENTE'."
+    log_error "$(basename "$0") só instala a produção (AMBIENTE=prd); recebido: '$AMBIENTE'."
     exit 2
-}
-
-# Confere que a revisão é uma tag existente deste repositório e que o checkout
-# local está exatamente nela: o que se aplica é o que a tag contém.
-validar_revisao() {
-    local revisao="$1"
-    [[ "$revisao" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || {
-        log_error "Revisão inválida: use uma tag no formato vX.Y.Z (recebido: '$revisao')."
-        exit 2
-    }
-    $DRY_RUN && return 0
-    git -C "$REPO_ROOT" rev-parse -q --verify "refs/tags/$revisao" >/dev/null || {
-        log_error "A tag $revisao não existe neste checkout; rode 'git fetch --tags'."
-        exit 1
-    }
-    [[ "$(git -C "$REPO_ROOT" rev-parse "refs/tags/$revisao^{commit}")" == "$(git -C "$REPO_ROOT" rev-parse HEAD)" ]] || {
-        log_error "O checkout não está na tag $revisao; faça 'git checkout $revisao' antes."
-        exit 1
-    }
 }
 
 # Cria os namespaces e copia o Secret TLS do domínio para cada um (mesma
@@ -46,10 +26,9 @@ publicar_segredo_tls() {
     done
 }
 
-# O cluster é declarado em Secret, com o label da revisão que o ApplicationSet
-# lê (sem ele a geração das Applications de produção falha de propósito).
+# O cluster é declarado em Secret, com os labels de ambiente que os
+# ApplicationSets do repositório de implantação usam para gerar as Applications.
 registrar_cluster() {
-    local revisao="$1"
     local manifesto
     manifesto=$(cat <<YAML
 apiVersion: v1
@@ -61,7 +40,6 @@ metadata:
     argocd.argoproj.io/secret-type: cluster
     environment: $NOME_DO_AMBIENTE
     uniplus.io/managed: "true"
-    uniplus.io/revision: $revisao
 type: Opaque
 stringData:
   name: $NOME_DO_AMBIENTE
@@ -70,22 +48,8 @@ stringData:
 YAML
 )
     if $DRY_RUN; then
-        echo "[DRY-RUN] kubectl apply do Secret de cluster (environment=$NOME_DO_AMBIENTE, uniplus.io/revision=$revisao)"
+        echo "[DRY-RUN] kubectl apply do Secret de cluster (environment=$NOME_DO_AMBIENTE)"
     else
         printf '%s\n' "$manifesto" | kubectl apply -f -
-    fi
-}
-
-# Aplica o projeto, os ApplicationSets e o verificador na revisão dada. Nada é
-# sincronizado: as Applications nascem à espera do sync manual.
-aplicar_argocd() {
-    local revisao="$1"
-    run "kubectl apply -f $REPO_ROOT/argocd/project.yaml"
-    run "kubectl apply -f $REPO_ROOT/argocd/applicationset.yaml"
-    if $DRY_RUN; then
-        echo "[DRY-RUN] kubectl apply de argocd/applications/verificador.yaml com REVISAO_UNIPLUS_INFRA=$revisao"
-    else
-        sed "s/REVISAO_UNIPLUS_INFRA/$revisao/" "$REPO_ROOT/argocd/applications/verificador.yaml" \
-            | kubectl apply -f -
     fi
 }

@@ -4,7 +4,7 @@
 
 ## Estrutura do Projeto e Organização de Módulos
 
-Repositório de IaC declarativa para o Uni+. Charts Helm de aplicação em `apps/`. Plataforma em `platform/` (Argo CD, Vault, External Secrets, KES, Traefik, observabilidade). Overrides do ambiente `uniplus-prd` em `environments/uniplus-prd/`. Bootstrap GitOps em `argocd/`. Scripts das VMs (serviços de dados fora do K8s) em `scripts/servicos-no-host/`. Docs em `docs/`.
+Repositório de IaC declarativa para o Uni+. Charts Helm de aplicação em `apps/`. Plataforma em `platform/` (Argo CD, Vault, External Secrets, KES, Traefik, observabilidade). Values de validação dos charts no CI em `environments/uniplus-prd/`; os values e as versões de produção vivem no repositório de implantação (GitLab institucional). Scripts das VMs (serviços de dados fora do K8s) em `scripts/servicos-no-host/`. Docs em `docs/`.
 
 ## Comandos de Build, Teste e Desenvolvimento
 

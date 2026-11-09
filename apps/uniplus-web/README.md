@@ -21,7 +21,7 @@ Cada app é servida por Nginx, com configuração de cache e compressão otimiza
 
 ## Instalação
 
-Este chart **não é instalado manualmente**. O ArgoCD aplica via `ApplicationSet` definido em `argocd/applicationset.yaml`.
+Este chart **não é instalado manualmente**. O ArgoCD aplica via `ApplicationSet` do repositório de implantação (GitLab institucional).
 
 Para teste local apenas:
 

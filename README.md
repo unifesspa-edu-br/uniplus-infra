@@ -21,8 +21,7 @@ uniplus-infra/
 ├── apps/                       # Charts Helm das aplicações
 ├── platform/                   # Componentes de plataforma (Traefik, Vault, External Secrets, KES, observabilidade...)
 ├── environments/
-│   └── uniplus-prd/            # Overrides do ambiente de produção
-├── argocd/                     # Bootstrap GitOps (ApplicationSets)
+│   └── uniplus-prd/            # Values de validação dos charts no CI
 ├── docs/                       # RUNBOOKS, caminhos do Vault, reprodutibilidade, ADRs
 ├── scripts/
 │   └── servicos-no-host/       # Scripts das duas VMs (infraestrutura e aplicação)
@@ -39,7 +38,7 @@ uniplus-infra/
 
 **4. Segredos nunca em código.** Toda credencial reside no Vault, com um KV por sistema e ambiente, e é injetada nos pods pelo External Secrets Operator. Os manifests contêm apenas referências (`ExternalSecret`).
 
-**5. Atualização manual por tag.** A produção só muda quando alguém aponta o cluster para uma tag validada em homologação.
+**5. Atualização manual.** A produção só recebe a versão que já roda em homologação, gravada no repositório de implantação, e só muda quando um Maintainer sincroniza no ArgoCD.
 
 ## Documentação
 

@@ -1,5 +1,8 @@
 # Ambiente: uniplus-prd
 #
+# Estes values validam os charts no CI (make validate). Os values que o ArgoCD
+# aplica em produção vivem no repositório de implantação (GitLab institucional).
+#
 # Produção em duas VMs (ADR-015). `uniplus-prod-app` (200.139.48.121) roda
 # K3s, Traefik, ArgoCD, Vault, as APIs e os frontends. `uniplus-prod-infra`
 # (200.139.48.122) roda PostgreSQL, MinIO, Redis, Kafka e RabbitMQ em systemd.
@@ -7,8 +10,7 @@
 # Todo tráfego entre as VMs usa TLS com o certificado *.unifesspa.edu.br
 # validado pelo cliente, por isso os serviços de dados são acessados pelo nome
 # uniplus-prod-infra.unifesspa.edu.br e nunca por IP. Nenhuma Application
-# sincroniza sozinha: a revisão é a tag do label uniplus.io/revision do cluster
-# (argocd/applicationset.yaml).
+# sincroniza sozinha.
 #
 # Desligado explicitamente o que o chart liga por padrão e esta produção não usa
 # (observabilidade, Keycloak próprio).

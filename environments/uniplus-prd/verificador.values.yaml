@@ -1,5 +1,7 @@
-# Valores de produção do chart infra/helm/verificador (uniplus-api), lidos pela
-# Application argocd/applications/verificador.yaml.
+# Valores de produção do chart infra/helm/verificador (uniplus-api).
+#
+# Estes values validam os charts no CI; os values que o ArgoCD aplica em produção
+# vivem no repositório de implantação (GitLab institucional).
 #
 # Contrato de integração:
 #   RabbitMQ   Secret `rabbitmq-verificador` (namespace uniplus), criado pela
