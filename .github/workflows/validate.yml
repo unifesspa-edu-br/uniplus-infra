@@ -19,7 +19,7 @@ jobs:
       - name: Run yamllint
         run: |
           yamllint -c .yamllint.yaml \
-            apps/ platform/ environments/ argocd/
+            apps/ platform/ environments/
 
   helm-lint:
     name: Helm Lint

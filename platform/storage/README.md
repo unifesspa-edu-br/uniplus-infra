@@ -45,7 +45,7 @@ Nomes alinhados ao tier (`<tier>-local-nvme`) deixam claro de longe qual SC espe
 
 ## Como o ApplicationSet aplica
 
-O segundo `ApplicationSet` em `argocd/applicationset.yaml` (`uniplus-platform`) inclui `- component: storage`. Cada cluster registrado no ArgoCD gera uma Application correspondente que cria a StorageClass naquele cluster usando o nome do environment.
+O segundo `ApplicationSet` do repositório de implantação (`uniplus-platform`) inclui `- component: storage`. Cada cluster registrado no ArgoCD gera uma Application correspondente que cria a StorageClass naquele cluster usando o nome do environment.
 
 Como StorageClass é um recurso cluster-scoped, cada cluster tem **sua própria** SC, mesmo que o nome seja idêntico em clusters do mesmo tier.
 

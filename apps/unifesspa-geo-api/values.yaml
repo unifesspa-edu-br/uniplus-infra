@@ -4,11 +4,9 @@
 # estiver publicada e os pré-requisitos atendidos (DB, secrets, OIDC) ligam
 # via `unifesspaGeoApi.enabled: true`.
 #
-# NOTA: registrado em argocd/applicationset.yaml só para `uniplus-prd`
-# (mecanismo de habilitação por-ambiente, story #457/task #458 — ver
-# argocd/README.md § Habilitação por-ambiente). Continua fora do
-# `uniplus-prd` — não faz parte deste chart nem do valueFiles
-# desse ambiente. Ligar de fato (`unifesspaGeoApi.enabled: true`) em
+# NOTA: só `uniplus-prd` registra este chart (no repositório de implantação,
+# GitLab institucional). Continua fora do `uniplus-prd` — não faz parte deste
+# chart nem do valueFiles desse ambiente. Ligar de fato (`unifesspaGeoApi.enabled: true`) em
 # qualquer ambiente é follow-up separado, condicionado ao provisionamento
 # dos secrets do Vault (postgres/geo, redis já compartilhado, geo/encryption)
 # e à decisão do hostname de ingress.

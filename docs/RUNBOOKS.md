@@ -1,12 +1,12 @@
 # Runbooks operacionais
 
-Procedimentos do ambiente `uniplus-prd`. A decisão da topologia está na [ADR-015](adrs/ADR-015-producao-em-duas-vms-com-tls-e-atualizacao-manual.md). Os scripts ficam em `scripts/servicos-no-host/`, todos aceitam `--dry-run` e usam `AMBIENTE=prd` por padrão (`hml` também é aceito, exceto em `bootstrap-app.sh` e `atualizar-producao.sh`: homologação traz os próprios ApplicationSets e values). Os caminhos dos segredos no Vault estão em [vault-caminhos.md](vault-caminhos.md).
+Procedimentos do ambiente `uniplus-prd`. A decisão da topologia está na [ADR-015](adrs/ADR-015-producao-em-duas-vms-com-tls-e-atualizacao-manual.md). Os scripts ficam em `scripts/servicos-no-host/`, todos aceitam `--dry-run` e usam `AMBIENTE=prd` por padrão (`hml` também é aceito, exceto em `bootstrap-app.sh`: a homologação tem o próprio bootstrap). Os caminhos dos segredos no Vault estão em [vault-caminhos.md](vault-caminhos.md).
 
 ## Sumário
 
 1. [Rotina](#1-rotina)
 2. [Produção em duas VMs](#2-produção-em-duas-vms)
-3. [Atualização manual por tag](#3-atualização-manual-por-tag)
+3. [Atualização manual de versão](#3-atualização-manual-de-versão)
 4. [Renovação do certificado](#4-renovação-do-certificado)
 5. [Reinício das VMs e abertura do Vault](#5-reinício-das-vms-e-abertura-do-vault)
 6. [Política do acervo público](#6-política-do-acervo-público)
@@ -27,7 +27,7 @@ cifrados do banco e os arquivos do MinIO ficam ilegíveis.
 
 ### 1.2 Deploy de mudança via GitOps
 
-A produção lê os charts da tag publicada, nunca de `main` (ver [seção 3](#3-atualização-manual-por-tag)). O fluxo de uma mudança é: PR aprovado e mesclado em `main`, validação em homologação, tag, atualização da produção.
+A produção lê os charts deste repositório num commit fixado em `prd/versao.yaml` do repositório de implantação, nunca de `main` (ver [seção 3](#3-atualização-manual-de-versão)). O fluxo de uma mudança é: PR aprovado e mesclado em `main`, validação em homologação, merge request no repositório de implantação que fixa o commit em `prd/`, sync manual em produção.
 
 ### 1.3 Adicionar um segredo no Vault
 
@@ -42,7 +42,7 @@ A produção lê os charts da tag publicada, nunca de `main` (ver [seção 3](#3
 
 ### 1.4 Rollback
 
-Repetir o procedimento da [seção 3](#3-atualização-manual-por-tag) com a tag anterior. Em emergência, `kubectl rollout undo deployment/<nome> -n <namespace>`; como não há sync automático, o ArgoCD apenas mostra o desvio até o próximo sync manual.
+Voltar a versão em `prd/` por merge request no repositório de implantação e sincronizar de novo ([seção 3](#3-atualização-manual-de-versão)). Em emergência, `kubectl rollout undo deployment/<nome> -n <namespace>`; como não há sync automático, o ArgoCD apenas mostra o desvio até o próximo sync manual.
 
 ## 2. Produção em duas VMs
 
@@ -101,12 +101,38 @@ O `--platform linux/amd64` evita um import truncado no containerd.
 
 1. **Infra:** `scripts/servicos-no-host/bootstrap-infra.sh` na `uniplus-prod-infra`. Sobe os cinco
    serviços só com TLS (portas sem TLS desligadas) e libera as portas para a VM de aplicação.
-2. **App:** com o repositório na tag de produção (`git checkout vX.Y.Z`),
-   `scripts/servicos-no-host/bootstrap-app.sh --revisao=vX.Y.Z` na `uniplus-prod-app`. Instala K3s,
+2. **App:** `scripts/servicos-no-host/bootstrap-app.sh` na `uniplus-prod-app`. Instala K3s,
    Helm e ArgoCD, grava a reescrita do CoreDNS que leva o nome do Vault ao Service dele
    (ConfigMap `coredns-custom`, ver [2.5](#25-tls-do-vault)), publica o Secret `uniplus-unifesspa-tls`
-   (inclusive no namespace `vault`), registra o cluster com o label
-   `uniplus.io/revision=vX.Y.Z` e aplica o projeto e os ApplicationSets. Nada é sincronizado.
+   (inclusive no namespace `vault`) e registra o cluster com os labels de ambiente. Nada é sincronizado.
+   Em seguida, à mão: criar o Secret `repositorio-uniplus-deploy` com um token de leitura do
+   repositório de implantação. No bootstrap o Vault ainda não está aberto, então o token é sempre
+   um novo, criado no GitLab por um Maintainer (Configurações > Repositório > Tokens de implantação,
+   escopo `read_repository`); o anterior é revogado. Depois do passo 5 ele é guardado no Vault de
+   produção (KV `plataforma-prd`, caminho `gitlab/uniplus-deploy`). O token vai por stdin, sem
+   quebra de linha final:
+
+   ```bash
+   printf '%s' "$TOKEN" | kubectl -n argocd create secret generic repositorio-uniplus-deploy \
+     --from-literal=type=git --from-literal=url=<URL do repositório de implantação> \
+     --from-literal=username="$USUARIO_DO_TOKEN" --from-file=password=/dev/stdin \
+     --dry-run=client -o yaml | kubectl apply -f -
+   kubectl -n argocd label secret repositorio-uniplus-deploy --overwrite \
+     argocd.argoproj.io/secret-type=repository
+   ```
+
+   O `apply` cria o Secret ou troca o token num cluster que já o tenha.
+
+   Depois, aplicar
+   `prd/raiz.yaml` de um checkout da `main` do repositório de implantação (GitLab institucional),
+   sincronizando a raiz **sem prune**. Ela gera o projeto, os ApplicationSets e o verificador.
+   Até a rota do ArgoCD existir (passo 9 do resumo do bootstrap), o acesso é por port-forward a partir
+   da VM, com o usuário `admin` e a senha inicial:
+
+   ```bash
+   kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d
+   kubectl -n argocd port-forward svc/argocd-server 8080:80    # http://localhost:8080 por túnel SSH (server.insecure)
+   ```
 3. **Plataforma:** no ArgoCD, sincronizar à mão, nesta ordem, `platform-storage` (a StorageClass que
    o Vault usa), `platform-traefik`, `platform-external-secrets` e `platform-vault`.
 4. **Vault:** inicializar e abrir (Shamir 5/3, ver [seção 5](#5-reinício-das-vms-e-abertura-do-vault)), fora dos scripts.
@@ -181,22 +207,29 @@ conferência na primeira execução real: a imagem `postgis/postgis:18-3.6` acei
 100), o nome DNS `uniplus-prod-app` para o KES, a ordem de sync no ArgoCD e a sintaxe da reescrita do
 CoreDNS (conferir com o `nslookup` da seção 2.5 antes de abrir o Vault).
 
-## 3. Atualização manual por tag
+## 3. Atualização manual de versão
 
 Nenhuma Application de produção tem `syncPolicy.automated`: o ArgoCD só mostra o que mudou. A
-revisão dos charts e dos valores é uma tag deste repositório, **validada antes em homologação**.
+versão dos charts e os values de produção vêm do repositório de implantação (GitLab institucional),
+pasta `prd/`, e só chega lá o que já roda em homologação ([ADR-016](adrs/ADR-016-producao-le-o-repositorio-de-implantacao.md)).
 
-1. Criar e publicar a tag (`vX.Y.Z`) a partir do commit já validado em homologação.
-2. Na `uniplus-prod-app`: `git fetch --tags && git checkout vX.Y.Z`.
-3. `scripts/servicos-no-host/atualizar-producao.sh --revisao=vX.Y.Z`. Confere que o checkout está
-   na tag, grava `uniplus.io/revision` no cluster e reaplica o projeto, os ApplicationSets e o
-   verificador. As Applications passam a apontar para a tag.
-4. No ArgoCD, revisar o diff de cada Application e sincronizar à mão. Nas APIs, o sync do
-   `uniplus-api-host` roda a migração (`PreSync`); sincronizá-lo antes dos demais consumidores.
-5. Reverter é repetir o procedimento com a tag anterior.
+1. **Backup**: dump do PostgreSQL e snapshot do Vault, guardados fora das VMs.
+2. **Promover**: no pipeline do GitLab, o botão `prd:preparar:<componente>` confere a versão que
+   roda em homologação e a grava em `prd/`.
+3. **Hooks presos**: antes de sincronizar uma Application com hook, conferir que nenhum Job ou Pod
+   ficou com o finalizer `argocd.argoproj.io/hook-finalizer` de um sync anterior. Um Job de migration
+   antigo preso assim trava o sync em `Running` até o finalizer ser retirado.
 
-Sem o label `uniplus.io/revision` no cluster, o ApplicationSet falha de propósito em vez de seguir
-`main`. O verificador usa o mesmo mecanismo (marcador `REVISAO_UNIPLUS_INFRA` trocado na aplicação).
+   ```bash
+   kubectl get jobs,pods -A -o json | jq -r '.items[] | select((.metadata.finalizers // []) | index("argocd.argoproj.io/hook-finalizer")) | [.kind, .metadata.namespace, .metadata.name] | @tsv'
+   ```
+
+4. **Sincronizar**: no ArgoCD de produção, revisar o diff de cada Application (só imagem e versão
+   devem mudar) e sincronizar à mão, **sem prune**, nesta ordem: `uniplus-api-host` primeiro (a
+   migration roda em `PreSync`; se falhar, não repetir), depois portal, geo, verificador e web.
+5. **Fumaça**: conferir os endereços de fumaça, que estão na saída do botão.
+6. **Reverter**: voltar a versão em `prd/` por merge request no repositório de implantação e
+   sincronizar de novo. Mudança de charts ou de values de produção também é por merge request lá.
 
 ## 4. Renovação do certificado
 

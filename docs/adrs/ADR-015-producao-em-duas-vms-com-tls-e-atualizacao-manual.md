@@ -2,6 +2,7 @@
 
 - **Status:** ✅ Aceito
 - **Data:** 2026-11-07
+- **Emendada:** o item 3 pela [ADR-016](ADR-016-producao-le-o-repositorio-de-implantacao.md).
 - **Relacionado:** [Issue #757](https://github.com/unifesspa-edu-br/uniplus-infra/issues/757) · [ADR-002](ADR-002-componentes-stateful-pesados-fora-do-kubernetes.md) · [ADR-005](ADR-005-stateful-em-containers-via-systemd.md) · [ADR-014](ADR-014-vault-shamir-hml-standalone-single.md)
 
 ## Contexto

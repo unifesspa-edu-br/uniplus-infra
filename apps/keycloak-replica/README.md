@@ -24,7 +24,7 @@ Ver [docs/RUNBOOKS.md](../../docs/RUNBOOKS.md) para procedimentos operacionais.
 
 ## Como o chart é aplicado
 
-`apps/keycloak-replica/` é referenciado pelo ApplicationSet `uniplus-apps` em `argocd/applicationset.yaml`. Cada cluster registrado (label `uniplus.io/managed=true`) recebe uma `Application` chamada `keycloak-replica-<release>` que aterrissa no namespace `uniplus`.
+`apps/keycloak-replica/` é referenciado pelo ApplicationSet `uniplus-apps` do repositório de implantação (GitLab institucional). Cada cluster registrado (label `uniplus.io/managed=true`) recebe uma `Application` chamada `keycloak-replica-<release>` que aterrissa no namespace `uniplus`.
 
 Por padrão o chart fica **desabilitado** (`keycloak.enabled: false`). Apenas environments que explicitamente ligam (ex.: `environments/uniplus-prd/values.yaml`) sobem os recursos.
 

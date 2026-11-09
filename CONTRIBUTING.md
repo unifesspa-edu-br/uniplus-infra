@@ -89,7 +89,7 @@ Descrição do PR deve incluir:
 
 ### 6. Aguarde revisão
 
-Pelo menos 1 aprovação do time CTIC é obrigatória. Mudanças no ambiente operacional (`environments/uniplus-prd/`) ou no bootstrap exigem atenção redobrada do revisor e plano de rollback no PR.
+Pelo menos 1 aprovação do time CTIC é obrigatória. Mudanças nos charts, nos values de validação (`environments/uniplus-prd/`) ou no bootstrap exigem atenção redobrada do revisor e plano de rollback no PR.
 
 ## Padrões de código
 

@@ -67,7 +67,7 @@ só leem `.Values.tempoWrapper.{externalSecrets,networkPolicy}`.
 
 ## Deploy
 
-Via ArgoCD ApplicationSet `uniplus-platform` (em `argocd/applicationset.yaml`).
+Via ArgoCD ApplicationSet `uniplus-platform` (no repositório de implantação, GitLab institucional).
 Sync automático para clusters com label `uniplus.io/managed: true`. Namespace
 gerado pelo AppSet: `observability-tempo`.
 

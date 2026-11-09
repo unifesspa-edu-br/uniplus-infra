@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # Bootstrap da VM de aplicação de produção (uniplus-prod-app): K3s, Helm e ArgoCD,
-# o Secret TLS do domínio nos namespaces, o registro do cluster na revisão
-# informada e a aplicação dos ApplicationSets. Traefik, Vault, External Secrets,
-# KES e as aplicações são instalados pelo ArgoCD, por sync manual.
+# o Secret TLS do domínio nos namespaces e o registro do cluster. Traefik, Vault,
+# External Secrets, KES e as aplicações são instalados pelo ArgoCD, por sync manual,
+# a partir da Application raiz do repositório de implantação (GitLab institucional),
+# cuja credencial e aplicação são manuais (ver os próximos passos ao final).
 #
 # Uso:
-#   ./bootstrap-app.sh --revisao=vX.Y.Z [--dry-run]
+#   ./bootstrap-app.sh [--dry-run]
 #
-# A revisão é uma tag deste repositório já validada em homologação, e o checkout
-# precisa estar nela. Pré-requisitos: Ubuntu 24.04, usuário com sudo sem senha
-# (não root) e o par do certificado curinga em /etc/uniplus/tls. Sem Docker: o
-# K3s usa containerd. Inicializar o Vault (Shamir 5/3) é manual, fora do script.
+# Pré-requisitos: Ubuntu 24.04, usuário com sudo sem senha (não root) e o par do
+# certificado curinga em /etc/uniplus/tls. Sem Docker: o K3s usa containerd.
+# Inicializar o Vault (Shamir 5/3) é manual, fora do script.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -23,7 +23,6 @@ exigir_producao
 K3S_VERSION="v1.36.2+k3s1"
 HELM_VERSION="v3.21.2"
 ARGOCD_VERSION="v2.14.3"
-REVISAO=""
 exigir_app_fqdn
 PORTA_KES=7373
 # Service do Vault (nome da release do chart platform/vault) e seu namespace.
@@ -31,19 +30,7 @@ VAULT_SERVICE="${VAULT_SERVICE:-platform-vault}"
 VAULT_NAMESPACE="${VAULT_NAMESPACE:-vault}"
 
 mostrar_uso() {
-    echo "Uso: $0 --revisao=vX.Y.Z [--dry-run]"
-}
-
-analisar_revisao() {
-    local resto=() arg
-    for arg in "$@"; do
-        case "$arg" in
-            --revisao=*) REVISAO="${arg#--revisao=}" ;;
-            *) resto+=("$arg") ;;
-        esac
-    done
-    analisar_argumentos "${resto[@]}"
-    [[ -n "$REVISAO" ]] || { mostrar_uso >&2; exit 2; }
+    echo "Uso: $0 [--dry-run]"
 }
 
 step_k3s() {
@@ -140,31 +127,38 @@ step_firewall() {
 resumo() {
     cat <<RESUMO
 
-Aplicação preparada na revisão $REVISAO. Próximos passos (ver docs/RUNBOOKS.md):
-  1. Sincronizar, na ordem, storage, traefik, external-secrets e vault pelo ArgoCD. Dentro do
+Aplicação preparada. Próximos passos (ver docs/RUNBOOKS.md):
+  1. Criar o Secret repositorio-uniplus-deploy no namespace argocd, com o rótulo
+     argocd.argoproj.io/secret-type=repository e um token de implantação novo, de leitura,
+     criado no GitLab por um Maintainer (o Vault ainda não está aberto; o token anterior é
+     revogado). O token vai por stdin, sem quebra de linha final (docs/RUNBOOKS.md, seção 2.4).
+  2. Em um checkout da main do repositório de implantação, aplicar a Application raiz:
+     kubectl apply -f prd/raiz.yaml
+     e sincronizá-la SEM prune. Ela gera o projeto, os ApplicationSets e o verificador.
+     Até a rota do passo 9, o ArgoCD é acessado por port-forward (docs/RUNBOOKS.md, seção 2.4).
+  3. Sincronizar, na ordem, storage, traefik, external-secrets e vault pelo ArgoCD. Dentro do
      cluster, $NOME_DO_VAULT resolve para o Service do Vault (CoreDNS, coredns-custom).
-  2. Inicializar e abrir o Vault (Shamir 5/3), fora dos scripts.
-  3. configurar-vault.sh (mount, auth e role do External Secrets).
-  4. Na VM de infraestrutura: semear-vault.sh, provisionar-bancos.sh, provisionar-kafka.sh,
+  4. Inicializar e abrir o Vault (Shamir 5/3), fora dos scripts.
+  5. configurar-vault.sh (mount, auth e role do External Secrets). Guardar o token do passo 1
+     em plataforma-prd/gitlab/uniplus-deploy.
+  6. Na VM de infraestrutura: semear-vault.sh, provisionar-bancos.sh, provisionar-kafka.sh,
      provisionar-verificacao.sh e provisionar-rabbitmq.sh.
-  5. Gravar no Vault o que vem de fora: SMTP e os clients do Keycloak.
-  6. primeiro-sync.sh e, em seguida, o sync normal da API.
-  7. Aplicar a rota do ArgoCD: kubectl apply -f environments/uniplus-prd/argocd-ingressroute.yaml
-  8. Sincronizar as demais Applications.
+  7. Gravar no Vault o que vem de fora: SMTP e os clients do Keycloak.
+  8. primeiro-sync.sh e, em seguida, o sync normal da API.
+  9. Aplicar a rota do ArgoCD: kubectl apply -f environments/uniplus-prd/argocd-ingressroute.yaml
+  10. Sincronizar as demais Applications.
 Porta $PORTA_KES liberada para $INFRA_IP (KES, usada pelo MinIO).
 RESUMO
 }
 
-analisar_revisao "$@"
+analisar_argumentos "$@"
 exigir_usuario_comum
 desligar_swap
-validar_revisao "$REVISAO"
 step_k3s
 step_helm
 step_argocd
 step_coredns
 publicar_segredo_tls
-registrar_cluster "$REVISAO"
-aplicar_argocd "$REVISAO"
+registrar_cluster
 step_firewall
 resumo

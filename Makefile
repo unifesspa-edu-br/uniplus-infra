@@ -24,7 +24,7 @@ CHARTS_ALL      := $(CHARTS_APPS) $(CHARTS_PLATFORM)
 CHART_DIRS      := $(dir $(CHARTS_ALL))
 
 # Diretórios validados pelo yamllint (mesma lista do CI).
-YAML_DIRS := apps/ platform/ environments/ argocd/
+YAML_DIRS := apps/ platform/ environments/
 
 # Ambientes existentes.
 ENVS := uniplus-prd
