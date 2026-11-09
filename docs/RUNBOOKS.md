@@ -215,7 +215,8 @@ pasta `prd/`, e só chega lá o que já roda em homologação ([ADR-016](adrs/AD
 
 1. **Backup**: dump do PostgreSQL e snapshot do Vault, guardados fora das VMs.
 2. **Promover**: no pipeline do GitLab, o botão `prd:preparar:<componente>` confere a versão que
-   roda em homologação e a grava em `prd/`.
+   roda em homologação e grava em `prd/` a versão e o digest da imagem conferida. Produção passa a
+   referenciar a imagem como `tag@sha256:…`, a mesma que rodou em homologação.
 3. **Hooks presos**: antes de sincronizar uma Application com hook, conferir que nenhum Job ou Pod
    ficou com o finalizer `argocd.argoproj.io/hook-finalizer` de um sync anterior. Um Job de migration
    antigo preso assim trava o sync em `Running` até o finalizer ser retirado.
@@ -224,12 +225,16 @@ pasta `prd/`, e só chega lá o que já roda em homologação ([ADR-016](adrs/AD
    kubectl get jobs,pods -A -o json | jq -r '.items[] | select((.metadata.finalizers // []) | index("argocd.argoproj.io/hook-finalizer")) | [.kind, .metadata.namespace, .metadata.name] | @tsv'
    ```
 
-4. **Sincronizar**: no ArgoCD de produção, revisar o diff de cada Application (só imagem e versão
-   devem mudar) e sincronizar à mão, **sem prune**, nesta ordem: `uniplus-api-host` primeiro (a
-   migration roda em `PreSync`; se falhar, não repetir), depois portal, geo, verificador e web.
+4. **Sincronizar**: no ArgoCD de produção, revisar o diff de cada Application (só a imagem, com
+   tag e digest, e os labels de versão devem mudar) e sincronizar à mão, **sem prune**, nesta
+   ordem: `uniplus-api-host` primeiro (a migration roda em `PreSync`; se falhar, não repetir),
+   depois portal, geo, verificador e web.
 5. **Fumaça**: conferir os endereços de fumaça, que estão na saída do botão.
-6. **Reverter**: voltar a versão em `prd/` por merge request no repositório de implantação e
-   sincronizar de novo. Mudança de charts ou de values de produção também é por merge request lá.
+6. **Reverter**: voltar em `prd/`, por merge request no repositório de implantação, a versão e o
+   digest que produção executava antes. No histórico de sync da Application (o ArgoCD só registra
+   syncs bem-sucedidos), pegar a última entrada **anterior à atualização que se quer desfazer** e,
+   nela, a revisão da source do repositório de implantação; o `prd/` dessa revisão traz o par.
+   Depois, sincronizar de novo. Mudança de charts ou de values de produção também é por merge request lá.
 
 ## 4. Renovação do certificado
 
