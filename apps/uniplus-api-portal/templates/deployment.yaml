@@ -87,7 +87,7 @@ spec:
       # comentário completo em values.yaml uniplusApiPortal.customCA).
       initContainers:
         - name: install-custom-ca
-          image: "{{ .Values.uniplusApiPortal.image.registry }}/{{ .Values.uniplusApiPortal.image.repository }}:{{ .Values.uniplusApiPortal.image.tag }}"
+          image: {{ include "uniplusApiPortal.imagem" . | quote }}
           imagePullPolicy: {{ .Values.uniplusApiPortal.image.pullPolicy }}
           securityContext:
             runAsNonRoot: false
@@ -108,7 +108,7 @@ spec:
       {{- end }}
       containers:
         - name: api
-          image: "{{ .Values.uniplusApiPortal.image.registry }}/{{ .Values.uniplusApiPortal.image.repository }}:{{ .Values.uniplusApiPortal.image.tag }}"
+          image: {{ include "uniplusApiPortal.imagem" . | quote }}
           imagePullPolicy: {{ .Values.uniplusApiPortal.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.uniplusApiPortal.containerSecurityContext | nindent 12 }}
@@ -322,7 +322,7 @@ spec:
         # a substituição de ca-certificates.crt é atômica para que novas
         # conexões TLS da Portal usem a CA atual sem rollout manual.
         - name: refresh-custom-ca
-          image: "{{ .Values.uniplusApiPortal.image.registry }}/{{ .Values.uniplusApiPortal.image.repository }}:{{ .Values.uniplusApiPortal.image.tag }}"
+          image: {{ include "uniplusApiPortal.imagem" . | quote }}
           imagePullPolicy: {{ .Values.uniplusApiPortal.image.pullPolicy }}
           securityContext:
             runAsNonRoot: false

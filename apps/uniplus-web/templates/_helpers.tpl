@@ -56,11 +56,21 @@ helm.sh/chart: {{ printf "%s-%s" .ctx.Chart.Name .ctx.Chart.Version | replace "+
 {{/*
   Image fully-qualified: registry/repository/<image>:<tag>.
   Resolve tag com fallback `apps.<name>.tag` → `image.tag` → `Chart.AppVersion`.
+  Com `apps.<name>.digest` preenchido, a imagem é puxada por tag@digest: uma tag
+  movida no registro não troca o que roda.
 */}}
 {{- define "uniplusWeb.image" -}}
 {{- $img := .appCfg.image -}}
 {{- $tag := .appCfg.tag | default .ctx.Values.uniplusWeb.image.tag | default .ctx.Chart.AppVersion -}}
-{{- printf "%s/%s/%s:%s" .ctx.Values.uniplusWeb.image.registry .ctx.Values.uniplusWeb.image.repository $img $tag -}}
+{{- $ref := printf "%s/%s/%s:%s" .ctx.Values.uniplusWeb.image.registry .ctx.Values.uniplusWeb.image.repository $img $tag -}}
+{{- $digest := .appCfg.digest -}}
+{{- if not (or (kindIs "invalid" $digest) (eq (toString $digest) "")) -}}
+{{- if not (and (kindIs "string" $digest) (regexMatch "^sha256:[0-9a-f]{64}$" $digest)) -}}
+{{- fail (printf "uniplusWeb.apps.<app>.digest=%q não é um digest sha256 completo" (toString $digest)) -}}
+{{- end -}}
+{{- $ref = printf "%s@%s" $ref $digest -}}
+{{- end -}}
+{{- $ref -}}
 {{- end -}}
 
 {{/*

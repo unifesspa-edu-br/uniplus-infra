@@ -51,3 +51,21 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" }}
 {{- define "uniplusApiPortal.oidcSecretName" -}}
 {{ include "uniplusApiPortal.fullname" . }}-oidc-client
 {{- end -}}
+
+{{/*
+  Referência da imagem. Com image.digest preenchido, a imagem é puxada pelo
+  digest e a tag só identifica a versão: uma tag movida no registro não troca o
+  que roda. O digest precisa ser sha256 completo.
+*/}}
+{{- define "uniplusApiPortal.imagem" -}}
+{{- $img := .Values.uniplusApiPortal.image -}}
+{{- $ref := printf "%s/%s:%s" $img.registry $img.repository $img.tag -}}
+{{- $digest := $img.digest -}}
+{{- if not (or (kindIs "invalid" $digest) (eq (toString $digest) "")) -}}
+{{- if not (and (kindIs "string" $digest) (regexMatch "^sha256:[0-9a-f]{64}$" $digest)) -}}
+{{- fail (printf "uniplusApiPortal.image.digest=%q não é um digest sha256 completo" (toString $digest)) -}}
+{{- end -}}
+{{- $ref = printf "%s@%s" $ref $digest -}}
+{{- end -}}
+{{- $ref -}}
+{{- end -}}

@@ -67,7 +67,7 @@ spec:
       # comentário completo em values.yaml unifesspaGeoApi.customCA).
       initContainers:
         - name: install-custom-ca
-          image: "{{ .Values.unifesspaGeoApi.image.registry }}/{{ .Values.unifesspaGeoApi.image.repository }}:{{ .Values.unifesspaGeoApi.image.tag }}"
+          image: {{ include "unifesspaGeoApi.imagem" . | quote }}
           imagePullPolicy: {{ .Values.unifesspaGeoApi.image.pullPolicy }}
           securityContext:
             runAsNonRoot: false
@@ -88,7 +88,7 @@ spec:
       {{- end }}
       containers:
         - name: geo-api
-          image: "{{ .Values.unifesspaGeoApi.image.registry }}/{{ .Values.unifesspaGeoApi.image.repository }}:{{ .Values.unifesspaGeoApi.image.tag }}"
+          image: {{ include "unifesspaGeoApi.imagem" . | quote }}
           imagePullPolicy: {{ .Values.unifesspaGeoApi.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.unifesspaGeoApi.containerSecurityContext | nindent 12 }}
@@ -221,7 +221,7 @@ spec:
         # a substituição de ca-certificates.crt é atômica para que novas
         # conexões TLS da API usem a CA atual sem rollout manual.
         - name: refresh-custom-ca
-          image: "{{ .Values.unifesspaGeoApi.image.registry }}/{{ .Values.unifesspaGeoApi.image.repository }}:{{ .Values.unifesspaGeoApi.image.tag }}"
+          image: {{ include "unifesspaGeoApi.imagem" . | quote }}
           imagePullPolicy: {{ .Values.unifesspaGeoApi.image.pullPolicy }}
           securityContext:
             runAsNonRoot: false

@@ -118,7 +118,7 @@ spec:
       # non-root (999), consumindo o bundle já pronto via volume compartilhado.
       initContainers:
         - name: install-custom-ca
-          image: "{{ .Values.uniplusApiHost.image.registry }}/{{ .Values.uniplusApiHost.image.repository }}:{{ .Values.uniplusApiHost.image.tag }}"
+          image: {{ include "uniplusApiHost.imagem" . | quote }}
           imagePullPolicy: {{ .Values.uniplusApiHost.image.pullPolicy }}
           securityContext:
             runAsNonRoot: false
@@ -139,7 +139,7 @@ spec:
       {{- end }}
       containers:
         - name: api
-          image: "{{ .Values.uniplusApiHost.image.registry }}/{{ .Values.uniplusApiHost.image.repository }}:{{ .Values.uniplusApiHost.image.tag }}"
+          image: {{ include "uniplusApiHost.imagem" . | quote }}
           imagePullPolicy: {{ .Values.uniplusApiHost.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.uniplusApiHost.containerSecurityContext | nindent 12 }}
@@ -229,7 +229,7 @@ spec:
         # a substituição de ca-certificates.crt é atômica para que novas
         # conexões TLS do Host usem a CA atual sem rollout manual.
         - name: refresh-custom-ca
-          image: "{{ .Values.uniplusApiHost.image.registry }}/{{ .Values.uniplusApiHost.image.repository }}:{{ .Values.uniplusApiHost.image.tag }}"
+          image: {{ include "uniplusApiHost.imagem" . | quote }}
           imagePullPolicy: {{ .Values.uniplusApiHost.image.pullPolicy }}
           securityContext:
             runAsNonRoot: false

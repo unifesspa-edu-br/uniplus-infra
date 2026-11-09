@@ -8,7 +8,7 @@ description: |
 type: application
 
 # Versão do chart — bumped quando templates mudam (uniplus-infra#162).
-version: 0.2.0
+version: 0.3.0
 
 # Versão da aplicação Uni+ Web (release inicial GHCR — uniplus-web#216).
 # Tag override por app em values.yaml (apps.<name>.tag).
