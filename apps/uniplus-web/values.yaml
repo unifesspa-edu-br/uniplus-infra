@@ -69,6 +69,7 @@ uniplusWeb:
       # https://github.com/unifesspa-edu-br/packages.
       image: uniplus-portal
       tag: v0.2.1  # tag publicada em GHCR (override per-app possível)
+      digest: ""  # sha256:...; preenchido, a imagem é puxada por tag@digest
       host: ""  # ex.: uniplus.unifesspa.edu.br
       # Subpath opcional (Host + PathPrefix, sem StripPrefix) — docs/RUNBOOKS.md
       # Vazio/ausente → rota `Host()` pura (preserva os ambientes de nó único).
@@ -104,6 +105,7 @@ uniplusWeb:
       replicas: 2
       image: uniplus-web-selecao
       tag: v0.2.1
+      digest: ""  # sha256:...; preenchido, a imagem é puxada por tag@digest
       host: ""
       pathPrefix: ""  # subpath opcional — ver nota em apps.portal.pathPrefix. Ex. HML: /selecao
       runtimeConfig:
@@ -127,6 +129,7 @@ uniplusWeb:
       replicas: 2
       image: uniplus-web-ingresso
       tag: v0.2.1
+      digest: ""  # sha256:...; preenchido, a imagem é puxada por tag@digest
       host: ""
       pathPrefix: ""  # subpath opcional — ver nota em apps.portal.pathPrefix. Ex. HML: /ingresso
       runtimeConfig:
@@ -153,6 +156,7 @@ uniplusWeb:
       # publicada com uniplus-web-configuracao é v0.2.3.
       image: uniplus-web-configuracao
       tag: v0.2.3
+      digest: ""  # sha256:...; preenchido, a imagem é puxada por tag@digest
       host: ""
       pathPrefix: ""  # subpath opcional — ver nota em apps.portal.pathPrefix. Ex. HML: /configuracao
       runtimeConfig:

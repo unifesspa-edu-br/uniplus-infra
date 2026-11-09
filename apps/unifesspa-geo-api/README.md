@@ -60,6 +60,7 @@ Transit). Health: /health (readiness agregado), /health/live (liveness),
 | unifesspaGeoApi.externalSecrets.secretStoreRef.kind | string | `"ClusterSecretStore"` |  |
 | unifesspaGeoApi.externalSecrets.secretStoreRef.name | string | `"geo"` |  |
 | unifesspaGeoApi.extraEnv | list | `[]` |  |
+| unifesspaGeoApi.image.digest | string | `""` | Digest da imagem (sha256:...). Preenchido, a imagem é puxada por tag@digest: o que roda não muda se a tag for movida no registro. |
 | unifesspaGeoApi.image.pullPolicy | string | `"IfNotPresent"` |  |
 | unifesspaGeoApi.image.registry | string | `"ghcr.io"` |  |
 | unifesspaGeoApi.image.repository | string | `"unifesspa-edu-br/unifesspa-geo-api"` |  |

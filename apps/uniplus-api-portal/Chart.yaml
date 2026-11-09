@@ -7,7 +7,7 @@ description: |
   /health/live (liveness).
 type: application
 
-version: 0.1.0
+version: 0.2.0
 
 # Sincronizar com tag publicada em ghcr.io/unifesspa-edu-br/uniplus-api-portal.
 appVersion: "0.1.1"

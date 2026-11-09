@@ -27,6 +27,9 @@ uniplusApiHost:
     # — hoje inclui host + portal). Até lá, environments de lab usam uma
     # imagem buildada localmente (ver README.md deste chart).
     tag: "v0.1.0"
+    # Digest da imagem (sha256:...). Preenchido, a imagem é puxada por
+    # tag@digest: o que roda não muda se a tag for movida no registro.
+    digest: ""
     pullPolicy: IfNotPresent
 
   imagePullSecrets: []

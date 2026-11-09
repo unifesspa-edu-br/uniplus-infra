@@ -25,6 +25,9 @@ unifesspaGeoApi:
     repository: unifesspa-edu-br/unifesspa-geo-api
     # Sincronizar com tag publicada em GHCR.
     tag: "v1.1.0"
+    # Digest da imagem (sha256:...). Preenchido, a imagem é puxada por
+    # tag@digest: o que roda não muda se a tag for movida no registro.
+    digest: ""
     pullPolicy: IfNotPresent
 
   imagePullSecrets: []
