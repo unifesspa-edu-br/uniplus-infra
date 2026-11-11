@@ -119,6 +119,15 @@ keycloak:
       webOrigins:
         - https://uniplus.unifesspa.edu.br
 
+    # Client OIDC do Grafana. Cada ambiente que liga o login do Grafana pelo
+    # Keycloak informa o próprio host; o secret vem de oidcClientSecrets
+    # (GRAFANA_CLIENT_SECRET).
+    grafanaClient:
+      redirectUris:
+        - https://uniplus.unifesspa.edu.br/grafana/login/generic_oauth
+      webOrigins:
+        - https://uniplus.unifesspa.edu.br
+
   # Realm reconcile — Job Helm hook (post-install,post-upgrade) que
   # executa keycloak-config-cli (adorsys) para reconciliar o realm
   # declarativamente em runtime, depois do --import-realm já ter sido

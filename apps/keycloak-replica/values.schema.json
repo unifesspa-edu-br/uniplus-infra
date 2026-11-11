@@ -111,6 +111,20 @@
                 }
               }
             },
+            "grafanaClient": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "redirectUris": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                },
+                "webOrigins": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                }
+              }
+            },
             "apicurioClient": {
               "type": "object",
               "additionalProperties": false,

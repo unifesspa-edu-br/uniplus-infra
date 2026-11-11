@@ -131,7 +131,7 @@
     {
       "clientId": "grafana",
       "name": "Grafana — Observability Dashboards (admin/editor/viewer)",
-      "description": "Cliente OIDC do Grafana. Confidential — secret gerado no import, custodiado no Vault (keycloak/grafana). Roles via groupsClaim: /admins/grafana=Admin, /editors/grafana=Editor. Detalhes: docs/RUNBOOKS.md",
+      "description": "Cliente OIDC do Grafana. Confidential, secret no Vault (keycloak/grafana). Papel pelo grupo: /admins/grafana=Admin, /editors/grafana=Editor, /viewers/grafana=Viewer; fora deles o login é recusado.",
       "secret": "${GRAFANA_CLIENT_SECRET}",
       "enabled": true,
       "protocol": "openid-connect",
@@ -141,8 +141,8 @@
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": false,
       "frontchannelLogout": true,
-      "redirectUris": ["https://uniplus.unifesspa.edu.br/grafana/login/generic_oauth"],
-      "webOrigins": ["https://uniplus.unifesspa.edu.br"],
+      "redirectUris": {{ .Values.keycloak.realmImport.grafanaClient.redirectUris | toJson }},
+      "webOrigins": {{ .Values.keycloak.realmImport.grafanaClient.webOrigins | toJson }},
       "attributes": {
         "post.logout.redirect.uris": "+"
       },
@@ -463,6 +463,12 @@
       "name": "editors",
       "subGroups": [
         { "name": "grafana", "path": "/editors/grafana" }
+      ]
+    },
+    {
+      "name": "viewers",
+      "subGroups": [
+        { "name": "grafana", "path": "/viewers/grafana" }
       ]
     },
     {
