@@ -1,88 +1,81 @@
 # observability/otelcol
 
-OpenTelemetry Collector para Uni+ — agente unificado que:
-- Coleta logs dos containers do nó (filelog receiver) → Loki
-- Recebe traces OTLP dos apps → Tempo
-- Enriquece com metadata K8s (k8sattributes processor)
+OpenTelemetry Collector, agente e gateway em um DaemonSet. Lê os logs dos contêineres do nó
+(`filelog`), recebe OTLP das aplicações e enriquece com metadados do Kubernetes. Decisão:
+[ADR-013](../../../docs/adrs/ADR-013-otel-collector-daemonset.md).
 
-> Decisão arquitetural: ver ADR-013.
->
-> ⚠️ **Pasta renomeada de `otel-collector` para `otelcol`** — release name >53 chars (limite Helm) com nome longo. Diretório, AppSet `component` e Chart `name` foram atualizados em conjunto.
+**Versão empacotada:** opentelemetry-collector 0.153.0 (collector 0.151.0), com alias `otelCollector`.
 
 ## Visão geral
 
-- **Modo**: DaemonSet único (agent + gateway combinados no ambiente de nó único). Em prod, separar.
-- **Imagem**: `otel/opentelemetry-collector-k8s` (distribuição K8s — inclui contrib receivers/exporters).
-- **Receivers**: APENAS OTLP gRPC (`:4317`) + HTTP (`:4318`). Jaeger/Zipkin desligados.
-- **Exporters**: `otlphttp/loki` (Loki 3.x suporta OTLP nativo em `/otlp`), `otlphttp/tempo` (Tempo OTLP HTTP), `debug` (stdout).
-- **Pipelines**: `logs` e `traces`. **SEM `metrics`** — Prometheus já scrape direto.
-- **Resource attrs**: `cluster=uniplus`, `dc=uniplus` em todos spans/logs.
+- **Modo:** DaemonSet. **Imagem:** `otel/opentelemetry-collector-contrib` (a distribuição `k8s` não
+  traz o exporter `prometheusremotewrite`).
+- **Service:** `otelcol` no namespace `observability-otelcol`, portas 4317 (gRPC) e 4318 (HTTP). O
+  nome vem de `fullnameOverride`, porque o gerado estoura 63 caracteres. Não há `hostPort`: o OTLP
+  não tem autenticação e não pode ficar exposto no IP do nó.
+- **Pipelines:** logs (`filelog` e OTLP) para o Loki; traces (OTLP) para o Tempo; métricas (OTLP)
+  para o Prometheus por remote write.
+- **Atributo `cluster`:** `uniplus`.
 
 ## Estrutura
 
 ```
 platform/observability/otelcol/
-├── Chart.yaml                  # wrapper v2 + dep open-telemetry/opentelemetry-collector 0.153.0 (alias otelCollector)
-├── Chart.lock
-├── values.yaml                 # defaults; usa alternateConfig para override completo
+├── Chart.yaml
+├── values.yaml            # alternateConfig com a configuração completa
 ├── values.schema.json
-├── templates/
-│   ├── _helpers.tpl            # labels, selectors, fullname
-│   └── networkpolicy.yaml      # gateado por otelCollectorWrapper.networkPolicy.enabled
-└── charts/                     # gitignored — gerado por `helm dependency update`
-    └── opentelemetry-collector-0.153.0.tgz
+└── templates/
+    ├── _helpers.tpl
+    └── networkpolicy.yaml # otelCollectorWrapper.networkPolicy
 ```
 
 ## Por que `alternateConfig` e não `config`
 
-O chart upstream tem [bug Helm conhecido (#12879)](https://github.com/helm/helm/pull/12879) onde `null` em sub-keys NÃO remove receivers/exporters do default merge. `alternateConfig` substitui a config inteira, dando controle autoritativo. Trade-off: precisamos manter a config completa (sem benefício de merge), mas isso é o pattern correto pra evitar receivers indesejados expostos no Service.
+`null` em sub-chaves não remove receivers do merge padrão do chart
+([helm/helm#12879](https://github.com/helm/helm/pull/12879)). `alternateConfig` substitui a
+configuração por inteiro; o `filelog` e o `k8sattributes` entram pelos presets.
 
-## Por que `mode: daemonset` no ambiente de nó único
+## O que o ambiente define
 
-Os presets `logsCollection` (filelog receiver com hostPath em `/var/log/containers`) e `kubernetesAttributes` (precisa watch em pods do nó) **assumem mode daemonset**. No ambiente de nó único, é equivalente a Deployment 1-replica para fins de routing OTLP entre apps e collector — mas o pattern segue o esperado pelos presets.
+Os endpoints dos backends vêm de variáveis de ambiente, porque o `alternateConfig` não enxerga os
+values do wrapper. Todas as três precisam ser passadas, pois a lista não faz merge:
 
-## Deploy
+```yaml
+otelCollector:
+  extraEnvs:
+    - name: LOKI_OTLP_ENDPOINT
+      value: http://platform-observability-loki.observability-loki.svc.cluster.local:3100/otlp
+    - name: TEMPO_OTLP_ENDPOINT
+      value: http://platform-observability-tempo.observability-tempo.svc.cluster.local:4318
+    - name: PROMETHEUS_REMOTE_WRITE_ENDPOINT
+      value: http://platform-observability-pro-prometheus.observability-prometheus.svc.cluster.local:9090/api/v1/write
+otelCollectorWrapper:
+  networkPolicy:
+    enabled: true
+    kubeApiCidrs: [<IP do host do cluster>/32]   # obrigatório com a política ligada
+```
 
-Via ArgoCD ApplicationSet `uniplus-platform`. Namespace gerado: `observability-otelcol`.
+`ingressNamespaces` traz `uniplus`, `geo`, `traefik` e `keycloak-replica`; um namespace novo que
+envie OTLP entra nessa lista.
+
+## Como as aplicações enviam
+
+`http://otelcol.observability-otelcol.svc.cluster.local:4317` (gRPC) ou `:4318` (HTTP). A
+NetworkPolicy de cada aplicação precisa liberar o egress para `observability-otelcol`.
 
 ## Validação
 
 ```bash
 helm dependency update platform/observability/otelcol
-helm lint platform/observability/otelcol
-helm template platform-observability-otelcol \
-  platform/observability/otelcol \
-  -f environments/uniplus-prd/values.yaml \
-  --namespace observability-otelcol
+helm template platform-observability-otelcol platform/observability/otelcol \
+  -f environments/uniplus-prd/values.yaml --namespace observability-otelcol
 ```
 
-Esperado: 7 recursos (ServiceAccount, ConfigMap, ClusterRole, ClusterRoleBinding, DaemonSet, Service, NetworkPolicy).
-
-## Smoke pós-sync
-
-```bash
-ssh ubuntu@137.131.131.6
-sudo k3s kubectl -n observability-otelcol get pods                 # 1/1 Running
-
-# Push de log via OTLP HTTP (de outro pod no NS uniplus)
-sudo k3s kubectl -n uniplus run otel-smoke --rm -i --restart=Never \
-  --image=curlimages/curl -- \
-  curl -X POST http://platform-observability-otelcol.observability-otelcol:4318/v1/logs \
-  -H 'Content-Type: application/json' -d '{...}'
-
-# Validar log no Loki (datasource Grafana ou via port-forward Loki)
-```
-
-## Pendências (próximos PRs)
-
-- **Datasources Loki + Tempo no Grafana** — habilitar via override em `environments/uniplus-prd/values.yaml` no bloco `grafana.datasources` (Fase 3 do plano).
-- **MetricsGenerator + ServiceMonitor** — quando o Prometheus consumidor estiver pronto.
-- **Pipeline `metrics`** — se algum app passar a expor métricas só via OTLP.
+Nenhum contêiner do render declara `hostPort`.
 
 ## Referências
 
-- [OpenTelemetry Collector docs](https://opentelemetry.io/docs/collector/)
-- [OpenTelemetry Helm chart](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector)
-- [Loki OTLP endpoint](https://grafana.com/docs/loki/latest/send-data/otel/)
-- ADR-013 — decisão arquitetural completa
-- ADR-011 + ADR-012 — Loki + Tempo (consumidores)
+- [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/)
+- [Helm chart](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector)
+- [Endpoint OTLP do Loki](https://grafana.com/docs/loki/latest/send-data/otel/)
+- [ADR-013](../../../docs/adrs/ADR-013-otel-collector-daemonset.md)

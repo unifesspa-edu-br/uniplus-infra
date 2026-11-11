@@ -1,7 +1,7 @@
 # Defaults do stack Prometheus. Os valores de cada ambiente vivem no
 # repositório de implantação; aqui ficam só os defaults seguros.
 #
-# Topologia (ADR-008 e ADR-013): um Prometheus com retenção de 7 dias,
+# Topologia (ADR-013 define o fluxo de métricas): um Prometheus com retenção de 7 dias,
 # uma réplica. O Grafana tem chart próprio (platform/observability/grafana/);
 # o do subchart fica desligado.
 #
