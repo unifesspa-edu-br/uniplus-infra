@@ -21,11 +21,12 @@ O realm é reconciliado por um **Job Helm hook `post-install,post-upgrade`** que
 - **Opt-in por ambiente:** `keycloak.realmReconcile.enabled`, desligado por padrão no chart. Quem
   liga em `uniplus-hml` e `uniplus-prd` são os values do ambiente (em produção, os do repositório de
   implantação, ADR-016).
-- **Só cria e atualiza, não apaga:** clients e seus recursos de autorização em `full`; usuários,
-  grupos, roles, escopos, componentes, fluxos de autenticação e ações obrigatórias em `no-delete`.
-  Usuários, sessões e senhas criados fora do arquivo sobrevivem.
-- **Segredos por variável de ambiente:** o arquivo referencia o segredo no formato `$(env:VAR)` e o
-  Job o recebe do Vault pelo External Secrets.
+- **Reconcilia clients por completo e preserva o resto:** clients e seus recursos de autorização
+  em `full` (o Git manda, inclusive removendo o que não está no arquivo); usuários, grupos, roles,
+  escopos, componentes, fluxos de autenticação e ações obrigatórias em `no-delete`, de modo que o
+  que foi criado fora do arquivo sobrevive.
+- **Segredos por variável de ambiente:** o arquivo referencia os segredos por variável, que o Job
+  recebe dos Secrets do chart, preenchidos pelo External Secrets a partir do Vault.
 - **Espera o Keycloak** antes de reconciliar e falha visível no ArgoCD se não conseguir.
 - **Imagem do CLI** fixada em `keycloak.realmReconcile.image.tag`, escolhida entre as publicadas
   pelo adorsys e validada contra o Keycloak em uso.
