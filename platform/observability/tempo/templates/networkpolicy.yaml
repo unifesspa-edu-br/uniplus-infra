@@ -1,13 +1,15 @@
 {{- if and .Values.tempo.enabled .Values.tempoWrapper.networkPolicy.enabled -}}
 {{- $np := .Values.tempoWrapper.networkPolicy -}}
+{{- if not $np.minioCIDR -}}
+{{- fail "tempoWrapper.networkPolicy.enabled=true exige tempoWrapper.networkPolicy.minioCIDR (IP do host de dados, ex.: 192.0.2.10/32)." -}}
+{{- end -}}
 # NetworkPolicy do Tempo single-binary.
 #
-# Princípio:
-# - Ingress: apenas namespaces declarados em ingressNamespaces (default cobre
-#   observability-grafana para query e observability-otel-collector para push
-#   de traces — futuro #30) + tráfego intra-NS.
-# - Egress: MinIO/S3 (CIDR + porta) + DNS K8s + kube-apiserver (futuro,
-#   service-discovery se virar tempo-distributed).
+# Ingress: só os namespaces de ingressNamespaces (Grafana consulta, OTel
+# Collector envia traces) e os pods do próprio Tempo.
+# Egress: memberlist entre os pods do Tempo, MinIO (minioCIDR:minioPort),
+# DNS, kube-apiserver (se kubeApiCidrs estiver preenchido) e Prometheus
+# (se egressPrometheusNamespace estiver preenchido).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -28,28 +30,24 @@ spec:
             matchLabels:
               kubernetes.io/metadata.name: {{ . | quote }}
         {{- end }}
-        # Tráfego intra-NS (probes, gossip futuro).
         - podSelector:
             matchLabels:
               {{- include "uniplus-tempo.selectorLabels" . | nindent 14 }}
       ports:
-        - port: 3200      # HTTP API (query, ready)
+        - port: 3200      # API HTTP
           protocol: TCP
-        - port: 4317      # OTLP gRPC (push de traces)
+        - port: 4317      # OTLP gRPC
           protocol: TCP
-        - port: 4318      # OTLP HTTP (push de traces)
+        - port: 4318      # OTLP HTTP
           protocol: TCP
-        - port: 9095      # gRPC interno (futuro tempo-distributed)
+        - port: 9095      # gRPC interno
           protocol: TCP
-        - port: 7946      # Memberlist (gossip)
+        - port: 7946      # Memberlist
           protocol: TCP
         - port: 7946
           protocol: UDP
   egress:
-    # Memberlist gossip entre pods do próprio Tempo (necessário quando
-    # replicas > 1 ou em tempo-distributed; em single-binary 1 réplica não
-    # tem efeito mas previne ring-join failure ao escalar). Mesmo achado
-    # do Codex P1 reportado no PR #221 / Loki networkpolicy.yaml.
+    # Memberlist entre os pods do Tempo; evita falha de ring-join ao escalar.
     - to:
         - podSelector:
             matchLabels:
@@ -76,7 +74,8 @@ spec:
           protocol: UDP
         - port: 53
           protocol: TCP
-    # kube-apiserver (futuro service-discovery)
+    {{- if $np.kubeApiCidrs }}
+    # kube-apiserver
     - to:
         {{- range $np.kubeApiCidrs }}
         - ipBlock:
@@ -87,8 +86,9 @@ spec:
           protocol: TCP
         - port: 6443
           protocol: TCP
+    {{- end }}
     {{- if $np.egressPrometheusNamespace }}
-    # Prometheus remote_write — necessário quando metricsGenerator.enabled=true
+    # Prometheus (remote_write do metricsGenerator)
     - to:
         - namespaceSelector:
             matchLabels:

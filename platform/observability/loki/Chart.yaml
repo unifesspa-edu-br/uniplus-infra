@@ -1,11 +1,8 @@
 apiVersion: v2
 name: loki
 description: |
-  Loki — agregador de logs estruturados. Empacotado como chart wrapper sobre
-  grafana/loki em modo SingleBinary com storage S3 (MinIO no ambiente de nó único,
-  futuramente per-DC em prod).
-
-  Decisão arquitetural: ver docs/adrs (ADR-011)
+  Loki, agregador de logs. Wrapper sobre grafana/loki em modo SingleBinary
+  com armazenamento S3 no MinIO (ADR-011).
 type: application
 
 # Versão do chart wrapper Uni+.
@@ -30,8 +27,7 @@ keywords:
   - uniplus
 
 # Dependência do chart upstream oficial.
-# Sem alias — `loki` é nome válido como Go identifier; valores acessíveis via
-# .Values.loki.x diretamente. Pinar versão pra reproducibilidade do sync ArgoCD.
+# Sem alias: os valores do subchart ficam em .Values.loki.
 dependencies:
   - name: loki
     version: 7.0.0

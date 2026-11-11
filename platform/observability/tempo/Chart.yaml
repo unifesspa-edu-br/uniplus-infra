@@ -1,11 +1,8 @@
 apiVersion: v2
 name: tempo
 description: |
-  Tempo — armazenamento de traces distribuídos. Empacotado como chart wrapper
-  sobre grafana/tempo (single-binary) com receivers OTLP e storage S3
-  (MinIO no ambiente de nó único, futuramente per-DC em prod).
-
-  Decisão arquitetural: ver docs/adrs (ADR-012)
+  Tempo, armazenamento de traces. Wrapper sobre grafana/tempo
+  (single-binary) com receivers OTLP e armazenamento S3 no MinIO (ADR-012).
 type: application
 
 # Versão do chart wrapper Uni+.
@@ -30,8 +27,7 @@ keywords:
   - opentelemetry
   - uniplus
 
-# Dependência do chart upstream oficial — single-binary mode.
-# Sem alias: valores acessíveis via .Values.x no scope do subchart.
+# Sem alias: os valores do subchart ficam em .Values.tempo.
 dependencies:
   - name: tempo
     version: 1.24.4
