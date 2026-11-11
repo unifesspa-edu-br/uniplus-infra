@@ -5,7 +5,7 @@
 
 NOME_DO_AMBIENTE="uniplus-$AMBIENTE"
 # Namespaces que servem rotas com o certificado do domínio.
-NAMESPACES_TLS=(uniplus geo traefik vault minio-console-proxy argocd kafka-ui redis-ui apicurio-registry)
+NAMESPACES_TLS=(uniplus geo traefik vault minio-console-proxy argocd kafka-ui redis-ui apicurio-registry observability-grafana)
 TLS_SECRET_NAME="uniplus-unifesspa-tls"
 
 # O bootstrap da VM de aplicação só serve à produção: a homologação tem o próprio.

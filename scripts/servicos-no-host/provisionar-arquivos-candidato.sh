@@ -258,7 +258,7 @@ if [[ -n "$AUDIT_WEBHOOK_ENDPOINT" ]]; then
     log "Audit webhook do MinIO apontado para o coletor informado."
 else
     echo "[LACUNA] AUDIT_WEBHOOK_ENDPOINT não informado: o audit do MinIO NÃO está sendo enviado a coletor algum." >&2
-    echo "         Em HML o Loki e o OTel Collector estão desligados; informe o endpoint quando houver coletor e rode de novo." >&2
+    echo "         Informe o endpoint do coletor de logs e rode de novo." >&2
 fi
 
 shred -u "$mc_env" 2>/dev/null || rm -f "$mc_env"
