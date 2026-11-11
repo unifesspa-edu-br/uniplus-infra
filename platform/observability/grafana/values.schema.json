@@ -15,15 +15,92 @@
           "type": "boolean",
           "description": "Liga/desliga o subchart."
         },
-        "replicas": { "type": "integer", "minimum": 1 },
-        "adminUser": { "type": "string" },
-        "adminPassword": {
-          "type": "string",
-          "description": "PLACEHOLDER no chart. Sobrescrever via ESO em produção."
+        "replicas": {
+          "type": "integer",
+          "minimum": 1
         },
-        "commonLabels": {
+        "admin": {
           "type": "object",
-          "additionalProperties": { "type": "string" }
+          "additionalProperties": true,
+          "properties": {
+            "existingSecret": {
+              "type": "string",
+              "description": "Nome do Secret com a conta de administrador."
+            },
+            "userKey": {
+              "type": "string"
+            },
+            "passwordKey": {
+              "type": "string"
+            }
+          }
+        },
+        "externalSecrets": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "refreshInterval": {
+              "type": "string"
+            },
+            "secretStoreRef": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                }
+              }
+            },
+            "admin": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "vaultPath": {
+                  "type": "string",
+                  "description": "Caminho no KV da store (ex.: grafana/admin)."
+                },
+                "secretName": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "userProperty": {
+                  "type": "string"
+                },
+                "passwordProperty": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "ingressRoute": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "host": {
+              "type": "string"
+            },
+            "pathPrefix": {
+              "type": "string"
+            },
+            "serviceName": {
+              "type": "string"
+            },
+            "servicePort": {
+              "type": "integer"
+            },
+            "middlewares": {
+              "type": "array"
+            }
+          }
         }
       }
     },
@@ -31,7 +108,9 @@
       "type": "object",
       "additionalProperties": true,
       "properties": {
-        "enabled": { "type": "boolean" }
+        "enabled": {
+          "type": "boolean"
+        }
       }
     }
   }
