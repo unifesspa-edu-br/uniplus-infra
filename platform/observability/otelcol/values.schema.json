@@ -34,7 +34,7 @@
     },
     "otelCollectorWrapper": {
       "type": "object",
-      "description": "Configs do wrapper Uni+ — chave prefixada por chart name.",
+      "description": "Configurações do wrapper, em chave própria porque o arquivo do ambiente é compartilhado entre os charts.",
       "properties": {
         "networkPolicy": {
           "type": "object",

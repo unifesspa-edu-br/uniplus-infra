@@ -1,91 +1,56 @@
-# Defaults para o OpenTelemetry Collector no cluster Uni+.
+# Defaults do OpenTelemetry Collector. Os valores de cada ambiente vivem no
+# repositório de implantação; aqui ficam só os defaults seguros.
 #
-# Topologia (ADR-013): single DaemonSet no ambiente de nó único — atua simultaneamente
-# como agent (filelog receiver coleta logs do containerd em cada nó) E como
-# gateway (apps no mesmo nó enviam OTLP gRPC/HTTP para o collector local).
-# Em prod, separar em DaemonSet+Deployment é desejável; no ambiente de nó único
-# single-node, 1 deployment evita complexidade.
+# Topologia (ADR-013): um DaemonSet que é agente (filelog lê os logs dos
+# contêineres do nó) e gateway (as aplicações enviam OTLP ao Service
+# `otelcol.observability-otelcol`, portas 4317 gRPC e 4318 HTTP). Não há
+# hostPort: o OTLP não tem autenticação e não pode ficar exposto no IP do nó.
 #
 # Pipelines:
-# - logs: filelog (containers do nó) + otlp (apps push direto) → loki
-# - traces: otlp (apps push) → tempo
-# - metrics: otlp (apps .NET push OTLP) → prometheusremotewrite (Prometheus)
+# - logs: filelog + otlp -> Loki
+# - traces: otlp -> Tempo
+# - metrics: otlp -> Prometheus (remote write)
 #
-# IMPORTANTE — chart upstream tem alias `otelCollector` (definido em
-# Chart.yaml). Diferente do Loki/Tempo, aqui usamos alias para distinguir
-# `.Values.otelCollector.*` (subchart) de eventuais helpers/wrappers.
-#
-# Configs do wrapper Uni+ (NetworkPolicy) ficam em chave única
-# `otelCollectorWrapper:` (mesmo pattern do Loki/Tempo — evitar colisão
-# entre wrappers no environment compartilhado).
-#
-# Vault: NÃO usado — OTel Collector tem só endpoints internos (Loki+Tempo
-# do mesmo cluster); sem credenciais externas, sem ExternalSecret.
+# O subchart entra com o alias `otelCollector`; a NetworkPolicy do wrapper
+# fica em `otelCollectorWrapper`. O collector não usa Vault: só fala com
+# backends internos do cluster, sem credencial.
 
 otelCollector:
   enabled: true
 
-  # fullnameOverride: força nome dos recursos do subchart como `otelcol-...`
-  # em vez de `<release>-otelCollector-...`. Necessário porque:
-  # 1. release-name `platform-observability-otelcol` (49) +
-  #    `-otelCollector-agent` (19) excede 63 chars (limite RFC 1123 para
-  #    nomes de recursos K8s).
-  # 2. `otelCollector` em camelCase (do alias do Chart.yaml) viola DNS-1035
-  #    label que exige lowercase. Helm aceita o alias mas K8s rejeita.
-  #
-  # `otelcol` curto + lowercase satisfaz ambos os limites.
+  # Nome curto e em minúsculas para os recursos: o nome gerado
+  # (`<release>-otelCollector-...`) estoura 63 caracteres e o alias em
+  # camelCase viola o DNS-1035. O Service resultante é `otelcol`.
   fullnameOverride: otelcol
 
-  # ============================================================================
-  # Mode + image
-  # ============================================================================
-  # DaemonSet: 1 pod por nó, usa hostPath para tail dos /var/log/containers.
-  # No ambiente de nó único (1 nó) é equivalente a Deployment, mas pattern correto
-  # para presets logsCollection.
+  # Um pod por nó, com hostPath para ler /var/log/containers.
   mode: daemonset
 
   image:
-    # Distribution contrib — necessária para o exporter `prometheusremotewrite`
-    # (pipeline metrics → Prometheus). A distribuição `k8s` não inclui esse
-    # exporter; a `contrib` inclui tudo da k8s + todos os contrib components.
-    # Diferença de tamanho: ~80 MB (k8s) → ~450 MB (contrib); aceitável onde o DaemonSet roda em 1 nó apenas.
+    # A distribuição contrib traz o exporter `prometheusremotewrite`, que a
+    # distribuição `k8s` não inclui.
     repository: otel/opentelemetry-collector-contrib
 
-  # ============================================================================
-  # Presets — chart configura volumes + RBAC + pipeline injection automaticamente.
-  # ============================================================================
+  # Os presets injetam volumes, RBAC e os componentes nas pipelines.
   presets:
-    # Adiciona filelog receiver + volume mount /var/log/containers + checkpoint
-    # storage. Coleta TODOS os logs de containers do nó.
+    # filelog sobre os logs de todos os contêineres do nó.
     logsCollection:
       enabled: true
-      includeCollectorLogs: false        # evita loop (collector logando próprios eventos)
-      storeCheckpoints: true             # /var/lib/otelcol — resume from last position pós-restart
+      includeCollectorLogs: false        # evita laço com os próprios logs
+      storeCheckpoints: true             # retoma da última posição após restart
       maxRecombineLogSize: 102400
-    # Adiciona k8sattributes processor (enriquece logs/traces com pod/namespace/etc)
-    # + RBAC mínimo (get/list/watch pods).
+    # processor k8sattributes (pod, namespace) e o RBAC de leitura de pods.
     kubernetesAttributes:
       enabled: true
       extractAllPodLabels: false
       extractAllPodAnnotations: false
 
-  # ============================================================================
-  # Configuração do collector — alternateConfig permite OVERRIDE COMPLETO
-  # ============================================================================
-  # IMPORTANTE: o chart upstream tem bug Helm conhecido onde `null` em sub-keys
-  # não remove receivers/exporters/pipelines do default merge (issue helm/helm#12879).
-  # `alternateConfig:` substitui COMPLETAMENTE o default — provê config
-  # autoritativa sem hash merge.
-  #
-  # Decisão: usar alternateConfig para excluir receivers que não usamos
-  # (jaeger, zipkin, prometheus interno) e adicionar exporters Loki+Tempo
-  # com pipelines explícitas.
-  #
-  # Presets continuam funcionando via injeção do chart no momento do render
-  # (filelog para logs pipeline; k8sattributes processor para todas pipelines).
+  # `alternateConfig` substitui a configuração padrão do chart por inteiro:
+  # `null` em sub-chaves não remove receivers do merge (helm/helm#12879).
+  # O filelog e o k8sattributes entram pelos presets.
   alternateConfig:
     extensions:
-      # Healthcheck obrigatório (probes do chart consomem).
+      # Usado pelas probes do chart.
       health_check:
         endpoint: ${env:MY_POD_IP}:13133
 
@@ -96,20 +61,16 @@ otelCollector:
             endpoint: ${env:MY_POD_IP}:4317
           http:
             endpoint: ${env:MY_POD_IP}:4318
-      # filelog é injetado pelo preset logsCollection — não declarar aqui (preset
-      # mescla automaticamente).
 
     processors:
-      # Memory limiter previne OOM kill — sempre primeiro no pipeline.
+      # Sempre o primeiro da pipeline, contra OOM.
       memory_limiter:
         check_interval: 5s
         limit_percentage: 80
         spike_limit_percentage: 25
-      # Batch antes de exportar — economia de RPC/payloads.
       batch:
         timeout: 10s
         send_batch_size: 8192
-      # Resource attrs constantes — env tag para filtragem por DC.
       resource:
         attributes:
           - key: cluster
@@ -118,15 +79,10 @@ otelCollector:
           - key: dc
             value: uniplus
             action: upsert
-      # Extrai severidade dos logs Serilog (formato bracket) para alimentar
-      # o Loki detected_level. Sem isso, logs do stdout das APIs (coletados
-      # via filelog) chegam sem severity_text e o Loki classifica como
-      # 'unknown'. Aplica somente quando severity_text não está preenchido
-      # — logs OTLP das apps já chegam com severity setada pelo SDK .NET.
-      #
-      # Formato Serilog (após fix Issue #513 — {Level} sem :u3):
-      #   [14:59:54 Information] End processing HTTP request...
-      # Regex extrai o nivel e seta severity_text + severity_number.
+      # Logs do stdout das APIs (Serilog, `[14:59:54 Information] ...`) chegam
+      # pelo filelog sem severidade e o Loki os classifica como `unknown`.
+      # Extrai o nível só quando severity_text está vazio; logs OTLP já
+      # trazem a severidade do SDK.
       transform/serilog-severity:
         log_statements:
           - context: log
@@ -137,62 +93,40 @@ otelCollector:
               - 'set(severity_number, SEVERITY_NUMBER_WARN) where severity_text == "Warning"'
               - 'set(severity_number, SEVERITY_NUMBER_ERROR) where severity_text == "Error"'
               - 'set(severity_number, SEVERITY_NUMBER_FATAL) where severity_text == "Fatal"'
-      # Descarta logs de serviços de plataforma que geram ruído sem valor para
-      # monitoração das APIs Uni+. Filtros aplicados antes do batch/exporter
-      # para evitar custo de armazenamento no Loki.
-      #
-      # Apicurio Registry: probe K8s em /apis/registry/v3/system/info a cada ~4s
-      # via JBossLoggingAccessLogReceiver — representava 89% do volume do namespace.
-      # ClamAV: saída de texto não estruturado do scanner, detected_level=unknown.
+      # Descarta, antes do batch, logs de plataforma sem valor de monitoração:
+      # a probe do Apicurio Registry em /system/info (~4s) era 89% do volume
+      # do namespace.
       filter/drop-platform-noise:
         error_mode: ignore
         logs:
           log_record:
             - 'resource.attributes["service.name"] == "apicurio-registry-apicurio-registry" and IsMatch(body, "system/info")'
-      # k8sattributes é injetado pelo preset kubernetesAttributes.
 
     exporters:
-      # Loki via API HTTP nativa (otelcol-contrib `lokiexporter` removido em
-      # 0.108+; recomendação atual é `otlphttp/loki` apontando para o endpoint
-      # OTLP do Loki — Loki 3.x suporta OTLP nativo em /otlp/v1/logs).
-      #
-      # Endpoint via env var `${env:LOKI_OTLP_ENDPOINT}` — populado pelo
-      # `extraEnvs` do environment (ver `environments/uniplus-prd/values.yaml`).
-      # Não usa `{{ }}` Helm template aqui porque `alternateConfig` é renderizado
-      # com `tpl` no scope do subchart, sem visibilidade de `.Values` do parent
-      # wrapper. Env var injection no DaemonSet contorna esse limite e ainda
-      # permite hot-reload do endpoint via Secret/ConfigMap se necessário.
-      # Codex P1 PR #224: release-name dos backends varia por cluster
-      # (varia por ambiente) — env var por
-      # environment é a solução robusta.
+      # Os endpoints vêm de variáveis de ambiente (extraEnvs): o
+      # alternateConfig é renderizado no escopo do subchart e não enxerga
+      # os values do wrapper, e o nome dos Services varia com a release.
+      # O Loki 3.x recebe OTLP nativo em /otlp.
       otlphttp/loki:
         endpoint: ${env:LOKI_OTLP_ENDPOINT}
         tls:
           insecure: true
-      # Tempo via OTLP HTTP — mesma parametrização.
       otlphttp/tempo:
         endpoint: ${env:TEMPO_OTLP_ENDPOINT}
         tls:
           insecure: true
-      # Prometheus remote write — recebe métricas OTLP dos apps .NET e encaminha
-      # para o Prometheus via /api/v1/write.
-      # Endpoint via env var `${env:PROMETHEUS_REMOTE_WRITE_ENDPOINT}` —
-      # mesmo padrão do Loki/Tempo: valor real injetado por environment.
       prometheusremotewrite:
         endpoint: ${env:PROMETHEUS_REMOTE_WRITE_ENDPOINT}
         tls:
           insecure: true
-        # Converte Resource attributes (service.name, service.namespace, etc.) em
-        # labels Prometheus. Sem isso os dashboards que filtram por
-        # service_namespace="uniplus" retornam vazio — o job label é gerado
-        # por default mas os demais resource attrs são descartados.
+        # Sem a conversão dos resource attributes em labels, os dashboards
+        # que filtram por service_namespace ficam vazios.
         resource_to_telemetry_conversion:
           enabled: true
         retry_on_failure:
           enabled: true
           initial_interval: 5s
-          max_elapsed_time: 60s   # fail fast — não acumular por 5 min (default) se Prometheus indisponível
-      # Debug (stdout) — útil em dev; manter para troubleshooting.
+          max_elapsed_time: 60s   # falha rápido em vez de acumular 5 min
       debug:
         verbosity: basic
 
@@ -200,28 +134,21 @@ otelCollector:
       extensions:
         - health_check
       pipelines:
-        # Logs: filelog (preset) + otlp (apps push) → memory_limiter → severity → resource → batch → loki
         logs:
           receivers: [otlp]                  # filelog adicionado pelo preset
           processors: [memory_limiter, filter/drop-platform-noise, transform/serilog-severity, resource, batch]   # k8sattributes adicionado pelo preset
           exporters: [otlphttp/loki, debug]
-        # Traces: otlp → resource → memory_limiter → batch → tempo
         traces:
           receivers: [otlp]
           processors: [memory_limiter, resource, batch]   # k8sattributes adicionado pelo preset
           exporters: [otlphttp/tempo, debug]
-        # Metrics: apps .NET emitem métricas OTLP → OTel Collector → Prometheus
-        # via remote_write. Complementar ao scrape do kube-prometheus-stack
-        # (que cobre K8s/infra); este pipeline cobre métricas de aplicação
-        # empurradas via OpenTelemetryConfiguration.cs (SDK .NET).
+        # Métricas de aplicação empurradas pelo SDK .NET; as de infraestrutura
+        # vêm do scrape do kube-prometheus-stack.
         metrics:
           receivers: [otlp]
           processors: [memory_limiter, resource, batch]   # k8sattributes adicionado pelo preset
           exporters: [prometheusremotewrite]
 
-  # ============================================================================
-  # Resources — DaemonSet pequeno no ambiente de nó único
-  # ============================================================================
   resources:
     requests:
       cpu: 100m
@@ -230,11 +157,13 @@ otelCollector:
       cpu: 1000m
       memory: 1Gi
 
-  # ============================================================================
-  # Env vars do DaemonSet — populam as referências `${env:X}` no alternateConfig.
-  # Defaults vazios (collector falha clean ao iniciar). Environment popula com
-  # os endpoints reais dos backends Loki/Tempo nesse cluster.
-  # ============================================================================
+  # Endpoints dos backends, referenciados como `${env:X}` no alternateConfig.
+  # Vazios por padrão, e o collector não inicia assim; o ambiente define os
+  # três (a lista não faz merge no Helm), com os Services da release
+  # `platform-observability-<componente>`:
+  #   LOKI_OTLP_ENDPOINT                http://platform-observability-loki.observability-loki.svc.cluster.local:3100/otlp
+  #   TEMPO_OTLP_ENDPOINT               http://platform-observability-tempo.observability-tempo.svc.cluster.local:4318
+  #   PROMETHEUS_REMOTE_WRITE_ENDPOINT  http://platform-observability-pro-prometheus.observability-prometheus.svc.cluster.local:9090/api/v1/write
   extraEnvs:
     - name: LOKI_OTLP_ENDPOINT
       value: ""
@@ -243,32 +172,26 @@ otelCollector:
     - name: PROMETHEUS_REMOTE_WRITE_ENDPOINT
       value: ""
 
-  # ============================================================================
-  # Service — em mode=daemonset o chart upstream desativa Service por default
-  # (presume que apps usam hostPort). No ambiente de nó único queremos Service ClusterIP
-  # como fallback consistente — apps podem usar
-  # http://platform-observability-otel-collector.observability-otel-collector.svc:4317.
-  # ============================================================================
+  # Em mode=daemonset o chart não cria Service; este ClusterIP é o endpoint
+  # OTLP das aplicações: http://otelcol.observability-otelcol.svc.cluster.local:4317
   service:
     enabled: true
     type: ClusterIP
 
-  # ============================================================================
-  # Ports — apenas OTLP gRPC + HTTP
-  # ============================================================================
-  # Override do default que expõe jaeger, zipkin, prometheus etc.
+  # Só OTLP. O `hostPort: null` remove o default do subchart (4317/4318), que
+  # exporia o OTLP sem autenticação no IP do nó.
   ports:
     otlp:
       enabled: true
       containerPort: 4317
       servicePort: 4317
-      hostPort: 4317
+      hostPort: null
       protocol: TCP
     otlp-http:
       enabled: true
       containerPort: 4318
       servicePort: 4318
-      hostPort: 4318
+      hostPort: null
       protocol: TCP
     jaeger-compact:
       enabled: false
@@ -279,30 +202,24 @@ otelCollector:
     zipkin:
       enabled: false
     metrics:
-      enabled: false  # collector telemetry interna — não scrape externo por enquanto
+      enabled: false
 
 # ============================================================================
-# Wrapper Uni+ — NetworkPolicy próprio
+# Wrapper Uni+: NetworkPolicy
 # ============================================================================
-# Sem ExternalSecret (collector não consome credenciais externas).
-# Endpoints dos exporters Loki/Tempo são parametrizados via env vars no
-# DaemonSet (`otelCollector.extraEnvs`), NÃO via chave do wrapper aqui — o
-# `tpl` do alternateConfig roda no scope do subchart sem visibilidade de
-# `.Values` do parent.
 otelCollectorWrapper:
   networkPolicy:
     enabled: false
-    # Apps Uni+ que enviam OTLP para o collector. Default cobre o NS principal
-    # da plataforma; environments podem estender.
+    # Namespaces cujas aplicações enviam OTLP.
     ingressNamespaces:
       - uniplus
-      - traefik              # Traefik métricas/traces (futuro)
-      - keycloak
-    # Loki + Tempo destinos dos exporters.
+      - geo
+      - traefik
+      - keycloak-replica
     egressLokiNamespace: observability-loki
     egressTempoNamespace: observability-tempo
     egressPrometheusNamespace: observability-prometheus
-    # Service CIDR do K3s para acesso ao kube-apiserver (k8sattributes precisa
-    # de Watch em pods).
-    kubeApiCidrs:
-      - 10.43.0.0/16
+    # IPs do kube-apiserver, avaliados depois do DNAT (no K3s é o IP do
+    # host da aplicação); o k8sattributes precisa de watch em pods.
+    # Obrigatório com a política ligada.
+    kubeApiCidrs: []
