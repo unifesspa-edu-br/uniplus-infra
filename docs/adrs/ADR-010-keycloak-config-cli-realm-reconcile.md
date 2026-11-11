@@ -1,8 +1,8 @@
 # ADR-010: Reconciliação automática do realm Keycloak via keycloak-config-cli
 
-- **Status:** 🟢 Aceita
-- **Data:** 2026-05-10
-- **Relacionado:** [Issue #177](https://github.com/unifesspa-edu-br/uniplus-infra/issues/177) · [Issue #163 (clients M2M)](https://github.com/unifesspa-edu-br/uniplus-infra/issues/163) · [PR #181 (smoke E2E)](https://github.com/unifesspa-edu-br/uniplus-infra/pull/181) · [Epic #40](https://github.com/unifesspa-edu-br/uniplus-infra/issues/40) · [ADR-008](ADR-008-topologia-standalone.md)
+- **Status:** ✅ Aceito
+- **Data:** 2026-05-10 (ambientes atualizados em 2026-11-11)
+- **Relacionado:** [Issue #177](https://github.com/unifesspa-edu-br/uniplus-infra/issues/177) · [Issue #163 (clients M2M)](https://github.com/unifesspa-edu-br/uniplus-infra/issues/163) · [PR #181 (smoke E2E)](https://github.com/unifesspa-edu-br/uniplus-infra/pull/181) · [Issue #786](https://github.com/unifesspa-edu-br/uniplus-infra/issues/786) · [Epic #40](https://github.com/unifesspa-edu-br/uniplus-infra/issues/40)
 
 ## Contexto
 
@@ -80,12 +80,11 @@ Reescrever a lib em Go, distribuído como container minimal.
 - **`backoffLimit: 3`** + **`activeDeadlineSeconds: 600`** + **`ttlSecondsAfterFinished: 600`** — failure transitória retenta até 3 vezes; falha persistente expira em 10 min; sucesso limpa o Job em 10 min.
 - **`hook-delete-policy: hook-succeeded,before-hook-creation`** — se Job falhar, fica no cluster para inspeção; sucesso remove para não poluir.
 
-### Habilitação por environment
+### Habilitação por ambiente
 
-- **`standalone`:** habilitado (cluster vivo com gap demonstrado em #181).
-- **`lab-{sp1,sp2}`:** habilitado (lab usa o mesmo realm.json; previne drift quando dev itera no realm).
-- **`prod-{sp1,sp2}`:** habilitado (production é o caso onde drift é mais perigoso).
-- **`lab-pa1`:** desabilitado (PA1 não roda Keycloak local — Vault Transit only).
+O Job é opcional no chart (`keycloak.realmReconcile.enabled`, desligado por padrão) e fica ligado em
+`uniplus-hml` e `uniplus-prd`, onde o drift entre o Git e o realm vivo é o problema. Os values que
+ligam o Job vêm do repositório de implantação ([ADR-016](ADR-016-producao-le-o-repositorio-de-implantacao.md)).
 
 ## Consequências
 
@@ -109,11 +108,10 @@ Reescrever a lib em Go, distribuído como container minimal.
 
 ## Confirmação
 
-- ✅ Template `apps/keycloak-replica/templates/realm-reconcile-job.yaml` rendering corretamente em standalone.
-- ✅ Bloco `keycloak.realmReconcile.*` em `apps/keycloak-replica/values.yaml` com defaults (off por padrão).
-- ✅ Override `keycloak.realmReconcile.enabled: true` em `environments/standalone/values.yaml`.
-- ⏳ Validação operacional pós-merge: aplicar mudança no `realm.json` (ex.: novo client) → ArgoCD sync → Job roda → `kcadm.sh get clients` mostra o novo client em <2 min.
-- ⏳ Re-rodar smoke E2E após o Job estar ativo — espera-se que os mappers M2M permaneçam consistentes mesmo após `kubectl rollout restart deploy/keycloak-replica` (cenário que antes perdia os mappers em re-import).
+- Template `apps/keycloak-replica/templates/realm-reconcile-job.yaml` e bloco
+  `keycloak.realmReconcile.*` em `apps/keycloak-replica/values.yaml`.
+- Mudança no `realm.json` (por exemplo, um client novo) aparece no realm vivo depois do sync, sem
+  `kcadm.sh` manual.
 
 ## Notas operacionais
 
@@ -128,4 +126,3 @@ Reescrever a lib em Go, distribuído como container minimal.
 - PR [#169](https://github.com/unifesspa-edu-br/uniplus-infra/pull/169) — clients M2M (Story #163) cujos mappers ficaram drift
 - [adorsys/keycloak-config-cli](https://github.com/adorsys/keycloak-config-cli) — projeto upstream
 - [Keycloak issue: realm import skipped on existing realm](https://github.com/keycloak/keycloak/discussions/13146) — comportamento upstream documentado
-- ADR-008 — topologia standalone (contexto do realm.json)
