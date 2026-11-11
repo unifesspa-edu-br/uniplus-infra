@@ -18,10 +18,9 @@ de nuvem alcançável por elas.
    `vault operator unseal`, no prompt mascarado. O procedimento está em
    [RUNBOOKS](../RUNBOOKS.md#5-reinício-das-vms-e-abertura-do-vault).
 2. **Cinco custodiantes distintos**, uma chave cada, fora do repositório. Ninguém guarda duas.
-3. **Token raiz só para a configuração inicial** (`configurar-vault.sh`). As operações contínuas usam
-   identidades com política própria, e o token raiz é revogado depois. Perder o conjunto de chaves
-   (três ou mais perdidas) torna o Vault irrecuperável, então a troca de chaves (`vault operator
-   rekey`) acontece quando um custodiante sai ou uma chave é comprometida.
+3. **Troca das chaves quando preciso.** Perder três ou mais chaves torna o Vault irrecuperável.
+   Quando um custodiante sai ou uma chave é comprometida, `vault operator rekey` gera um conjunto
+   novo e invalida o anterior.
 4. **O snapshot do Raft é o backup.** O Shamir protege a abertura, não os dados. O snapshot é gerado
    fora das VMs e, em produção, antes de cada migration pelo pipeline de implantação, cifrado
    (ADR-017). Sem ele, a perda do disco perde o Vault e as chaves do Transit.
