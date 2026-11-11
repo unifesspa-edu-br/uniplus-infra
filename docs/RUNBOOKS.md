@@ -400,9 +400,11 @@ O verificador (`apps/verificador-rede`) só emite OTLP depois de ganhar a regra 
 A rota é a IngressRoute do chart, no host definido em `grafana.ingressRoute.host`; em produção, com
 o middleware `uniplus-admin-interno`, só a rede institucional e a VPN chegam. O login é o usuário e a
 senha de `plataforma/grafana/admin` (propriedades `username` e `password`). Para ler:
-`vault kv get -mount=plataforma-<amb> grafana/admin`. Trocar a senha é regravar esse caminho no Vault
-e esperar o refresh do ExternalSecret (1 hora) ou forçá-lo; o Grafana lê a senha na subida, então
-reinicie o Deployment depois.
+`vault kv get -mount=plataforma-<amb> grafana/admin`. O Grafana só aplica essa senha na primeira
+subida; depois ela fica no banco do PVC. Para trocar: regravar o caminho no Vault, forçar o
+ExternalSecret e aplicar a nova senha no Grafana com
+`kubectl -n observability-grafana exec deploy/platform-observability-grafana -- grafana cli admin reset-admin-password --password-from-stdin`,
+passando a senha pela entrada padrão. Sem o último passo, a senha antiga continua valendo.
 
 ### 7.4 Retenção e volume
 

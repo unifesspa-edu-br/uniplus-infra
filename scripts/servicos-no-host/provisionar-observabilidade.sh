@@ -11,8 +11,9 @@
 #     ExternalSecret do Grafana.
 #
 # Idempotente: credencial que já existe no Vault é preservada, nunca regerada,
-# e o usuário do MinIO é reaplicado a partir dela. Nenhum segredo vai a argv,
-# a log ou a arquivo fora de um diretório temporário 0700.
+# e o usuário do MinIO é reaplicado a partir dela. Nenhum segredo vai a log, a
+# arquivo fora de um diretório temporário 0700 nem ao argv do host; dentro do
+# contêiner efêmero do mc, o `admin user add` recebe a senha como argumento.
 #
 # Rodar na VM de dados, com o Vault aberto, antes de ligar os charts de
 # observabilidade (docs/RUNBOOKS.md, seção de observabilidade).
