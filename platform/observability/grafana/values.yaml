@@ -133,8 +133,8 @@ grafana:
       labelValue: "1"
       searchNamespace: ALL
 
-  # ExternalSecret da conta de administrador, lido do Vault pela store
-  # indicada. As propriedades do Vault são `username` e `password`.
+  # ExternalSecrets lidos do Vault pela store indicada: a conta de
+  # administrador (propriedades `username` e `password`) e o client OIDC.
   externalSecrets:
     refreshInterval: "1h"
     secretStoreRef:
@@ -146,6 +146,14 @@ grafana:
       secretName: grafana-admin
       userProperty: username
       passwordProperty: password
+    # Secret do client OIDC `grafana` do realm, o mesmo que o Keycloak lê em
+    # GRAFANA_CLIENT_SECRET. O ambiente que liga o login pelo Keycloak injeta
+    # a chave no pod por `envValueFrom` e a cita no `auth.generic_oauth`.
+    oidcClient:
+      enabled: false
+      vaultPath: keycloak/grafana
+      secretName: grafana-oidc-client
+      property: client_secret
 
   grafana.ini:
     server:
