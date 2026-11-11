@@ -22,6 +22,9 @@ otelCollector:
   # (`<release>-otelCollector-...`) estoura 63 caracteres e o alias em
   # camelCase viola o DNS-1035. O Service resultante é `otelcol`.
   fullnameOverride: otelcol
+  # Sem isso o subchart rotula o pod com o alias (`otelCollector`) e a
+  # NetworkPolicy do wrapper não o seleciona.
+  nameOverride: opentelemetry-collector
 
   # Um pod por nó, com hostPath para ler /var/log/containers.
   mode: daemonset

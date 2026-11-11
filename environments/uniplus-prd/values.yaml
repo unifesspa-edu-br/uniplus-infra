@@ -129,6 +129,9 @@ clusterSecretStore:
         - kafka-ui
         - redis-ui
         - apicurio-registry
+        - observability-grafana
+        - observability-loki
+        - observability-tempo
 
 storage:
   enabled: true
