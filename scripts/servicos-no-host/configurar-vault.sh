@@ -113,6 +113,25 @@ path \"$kv/metadata/*\" { capabilities = [\"read\"] }"
     log_success "Política e role $papel aplicadas ao KV $kv."
 }
 
+# Snapshot do Raft feito pelo pipeline antes de uma migration. A política só lê o
+# snapshot, sem acesso a KV nem a Transit. O pipeline entra pelo AppRole com
+# role_id e secret_id (variáveis protegidas do repositório de implantação, ver
+# RUNBOOKS, seção 3) e recebe um token curto a cada backup: nada vence entre
+# uma implantação e outra.
+POLITICA_SNAPSHOT="uniplus-backup-snapshot"
+
+criar_acesso_de_snapshot() {
+    exigir_sucesso PUT "sys/policies/acl/$POLITICA_SNAPSHOT" \
+        '{"policy":"path \"sys/storage/raft/snapshot\" { capabilities = [\"read\"] }"}'
+    vault_api GET sys/auth
+    if ! grep -q '"approle/"' "$VAULT_BODY_FILE"; then
+        exigir_sucesso POST sys/auth/approle '{"type":"approle"}'
+    fi
+    exigir_sucesso POST "auth/approle/role/$POLITICA_SNAPSHOT" \
+        "{\"token_policies\":\"$POLITICA_SNAPSHOT\",\"token_no_default_policy\":true,\"token_ttl\":\"15m\",\"token_max_ttl\":\"30m\",\"secret_id_ttl\":\"0\",\"token_num_uses\":0}"
+    log_success "Política e AppRole $POLITICA_SNAPSHOT aplicadas."
+}
+
 analisar_argumentos "$@"
 exigir_usuario_comum
 if $DRY_RUN; then
@@ -121,6 +140,7 @@ if $DRY_RUN; then
     done
     echo "[DRY-RUN] habilitaria a auditoria em stdout/ e em file/ (/vault/audit/audit.log)"
     echo "[DRY-RUN] habilitaria auth/kubernetes"
+    echo "[DRY-RUN] aplicaria a política e o AppRole $POLITICA_SNAPSHOT (só lê sys/storage/raft/snapshot)"
     echo "[DRY-RUN] montaria o Transit $MOUNT_UNIPLUS, $MOUNT_GEO e $MOUNT_PLATAFORMA com as chaves e a política e a role de $SA_API_HOST e $SA_GEO"
     exit 0
 fi
@@ -132,3 +152,4 @@ for sistema in "${SISTEMAS[@]}"; do
     criar_politica_e_role "$sistema" "$sistema-$AMBIENTE"
 done
 configurar_transit
+criar_acesso_de_snapshot

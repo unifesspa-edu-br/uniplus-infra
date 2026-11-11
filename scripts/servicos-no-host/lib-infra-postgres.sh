@@ -2,8 +2,9 @@
 # PostgreSQL 18 + PostGIS da VM de infraestrutura de produção. Carregado com
 # `source` por bootstrap-infra.sh, depois de lib-comum.sh.
 #
-# Só aceita conexão TLS vinda da aplicação (hostssl, origem APP_CIDR), com o certificado
-# curinga da instituição; o cliente valida o nome pelo FQDN da VM.
+# Só aceita conexão TLS (hostssl), com o certificado curinga da instituição; o
+# cliente valida o nome pelo FQDN da VM. A aplicação entra de APP_CIDR; o role de
+# backup, somente leitura, só da VM de automação e de nenhuma outra origem.
 
 POSTGRES_IMAGE="postgis/postgis:18-3.6"
 POSTGRES_UID=999
@@ -13,6 +14,8 @@ POSTGRES_CONFIG_DIR="$DATA_BASE/postgres/config"
 hba_postgres() {
     printf '%s\n' \
         'local all all trust' \
+        "hostssl all ${ROLE_BACKUP} ${AUTOMACAO_IP}/32 scram-sha-256" \
+        "host all ${ROLE_BACKUP} all reject" \
         "hostssl all all ${APP_CIDR} scram-sha-256"
 }
 
@@ -86,7 +89,9 @@ step_postgres() {
     if $DRY_RUN; then
         echo "[DRY-RUN] systemctl start uniplus-postgres e esperaria o pg_isready"
     elif sudo systemctl is-active --quiet uniplus-postgres; then
-        log_success "uniplus-postgres já ativo; a configuração nova vale no próximo restart."
+        # O pg_hba vale com reload, sem derrubar conexões; o restante, no próximo restart.
+        sudo docker exec uniplus-postgres psql -U postgres -tAc 'SELECT pg_reload_conf()' >/dev/null
+        log_success "uniplus-postgres já ativo; pg_hba recarregado, o restante vale no próximo restart."
     else
         sudo systemctl start uniplus-postgres
         aguardar_postgres
