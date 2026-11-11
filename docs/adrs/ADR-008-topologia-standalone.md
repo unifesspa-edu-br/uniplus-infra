@@ -1,6 +1,6 @@
 # ADR-008: Topologia `standalone` como modelo paralelo provider-agnostic
 
-- **Status:** 🟡 Proposta
+- **Status:** ⛔ Substituída pela [ADR-015](ADR-015-producao-em-duas-vms-com-tls-e-atualizacao-manual.md). A topologia `standalone` e o provisionamento em OCI foram abandonados; os ambientes são `uniplus-hml` e `uniplus-prd`.
 - **Data:** 2026-05-03
 - **Relacionado:** [Issue #47](https://github.com/unifesspa-edu-br/uniplus-infra/issues/47) · [Epic #40](https://github.com/unifesspa-edu-br/uniplus-infra/issues/40)
 

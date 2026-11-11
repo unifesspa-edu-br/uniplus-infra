@@ -19,12 +19,12 @@ Este diretório contém as decisões arquiteturais da infraestrutura da platafor
 | 005 | [Stateful em containers via systemd](ADR-005-stateful-em-containers-via-systemd.md) | ✅ Aceito | 2026-04-20 | [#21](https://github.com/unifesspa-edu-br/uniplus-infra/issues/21) |
 | 006 | [GitOps com ArgoCD](ADR-006-gitops-com-argocd.md) | ✅ Aceito | 2026-04-20 | [#16](https://github.com/unifesspa-edu-br/uniplus-infra/issues/16) |
 | 007 | [Vault HA com auto-unseal Transit centralizado em PA1](ADR-007-vault-ha-storage-unseal.md) | ⛔ Superseded | 2026-05-03 → 2026-05-19 | [#13](https://github.com/unifesspa-edu-br/uniplus-infra/issues/13) |
-| 008 | [Topologia `standalone` como modelo paralelo provider-agnostic](ADR-008-topologia-standalone.md) | 🟡 Proposta | 2026-05-03 | [#47](https://github.com/unifesspa-edu-br/uniplus-infra/issues/47) |
+| 008 | [Topologia `standalone` como modelo paralelo provider-agnostic](ADR-008-topologia-standalone.md) | ⛔ Substituída pela 015 | 2026-05-03 | [#47](https://github.com/unifesspa-edu-br/uniplus-infra/issues/47) |
 | 009 | [Kafka standalone com SASL_SSL + SCRAM-SHA-512 + StandardAuthorizer](ADR-009-kafka-sasl-ssl-scram-standalone.md) | 🟡 Proposta | 2026-05-07 | [#138](https://github.com/unifesspa-edu-br/uniplus-infra/issues/138) |
 | 010 | [Reconciliação automática do realm Keycloak via keycloak-config-cli](ADR-010-keycloak-config-cli-realm-reconcile.md) | ✅ Aceito | 2026-05-07 | — |
-| 011 | [Loki SingleBinary com storage S3-MinIO em standalone](ADR-011-loki-singlebinary-s3-standalone.md) | ✅ Aceito | 2026-05-08 | — |
-| 012 | [Tempo single-binary com storage S3-MinIO em standalone](ADR-012-tempo-singlebinary-s3-standalone.md) | ✅ Aceito | 2026-05-08 | — |
-| 013 | [OpenTelemetry Collector em DaemonSet único em standalone](ADR-013-otel-collector-daemonset-standalone.md) | ✅ Aceito | 2026-05-08 | — |
+| 011 | [Loki em SingleBinary com armazenamento S3 no MinIO](ADR-011-loki-singlebinary-s3-minio.md) | ✅ Aceito | 2026-05-10 | [#785](https://github.com/unifesspa-edu-br/uniplus-infra/issues/785) |
+| 012 | [Tempo em single-binary com armazenamento S3 no MinIO](ADR-012-tempo-singlebinary-s3-minio.md) | ✅ Aceito | 2026-05-10 | [#785](https://github.com/unifesspa-edu-br/uniplus-infra/issues/785) |
+| 013 | [OpenTelemetry Collector em DaemonSet único, sem porta no nó](ADR-013-otel-collector-daemonset.md) | ✅ Aceito | 2026-05-10 | [#785](https://github.com/unifesspa-edu-br/uniplus-infra/issues/785) |
 | 014 | [Custódia do Vault via Shamir manual no `hml-standalone-single`](ADR-014-vault-shamir-hml-standalone-single.md) | ✅ Aceito | 2026-07-13 | [#439](https://github.com/unifesspa-edu-br/uniplus-infra/issues/439) |
 | 015 | [Produção em duas VMs, TLS entre elas e atualização manual](ADR-015-producao-em-duas-vms-com-tls-e-atualizacao-manual.md) | ✅ Aceito | 2026-11-07 | [#757](https://github.com/unifesspa-edu-br/uniplus-infra/issues/757) |
 | 016 | [Produção lê o repositório de implantação](ADR-016-producao-le-o-repositorio-de-implantacao.md) | ✅ Aceito (sync substituído pela 017) | 2026-11-09 | — |
