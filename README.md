@@ -61,10 +61,10 @@ uniplus-infra/
 | API Gateway / Ingress | Traefik | 3.x |
 | Service mesh (futuro) | — | a definir |
 | Secrets | HashiCorp Vault + ESO | 1.17+ / 0.10+ |
-| Entrada HTTP/TLS | Traefik IngressRoute + cert-manager (Let's Encrypt) | 3.x |
-| Observabilidade — métricas | Prometheus + Grafana | 2.x / 11.x |
-| Observabilidade — logs | Loki + Promtail | 3.x |
-| Observabilidade — traces | Tempo + OpenTelemetry Collector | 2.x |
+| Entrada HTTP/TLS | Traefik IngressRoute com o certificado `*.unifesspa.edu.br` | 3.x |
+| Observabilidade — métricas | Prometheus (kube-prometheus-stack 84.5.0) + Grafana | 3.11 / 12.3 |
+| Observabilidade — logs | Loki | 3.6 |
+| Observabilidade — traces e coleta | Tempo + OpenTelemetry Collector (coleta os logs, traces e métricas) | 2.9 / 0.151 |
 | Banco relacional | PostgreSQL + Patroni + PgBouncer | 16+ |
 | Mensageria | Apache Kafka (KRaft mode) | 3.7+ |
 | Storage de objetos | MinIO (modo distribuído) | latest |

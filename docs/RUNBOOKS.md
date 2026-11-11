@@ -10,13 +10,14 @@ Procedimentos do ambiente `uniplus-prd`. A decisão da topologia está na [ADR-0
 4. [Renovação do certificado](#4-renovação-do-certificado)
 5. [Reinício das VMs e abertura do Vault](#5-reinício-das-vms-e-abertura-do-vault)
 6. [Política do acervo público](#6-política-do-acervo-público)
-7. [Diagnóstico](#7-diagnóstico)
+7. [Observabilidade](#7-observabilidade)
+8. [Diagnóstico](#8-diagnóstico)
 
 ## 1. Rotina
 
 ### 1.1 Verificação diária de saúde
 
-1. No Grafana (`https://grafana.uniplus.unifesspa.edu.br`), conferir pods saudáveis, taxa de erro das APIs e consumer lag do Kafka.
+1. No Grafana (`https://uniplus-grafana.unifesspa.edu.br` em produção; o host de cada ambiente vem dos values do repositório de implantação), conferir pods saudáveis, taxa de erro das APIs e consumer lag do Kafka.
 2. No ArgoCD, conferir que nenhuma Application está `Degraded`.
 3. Nas VMs, `systemctl is-active uniplus-postgres uniplus-redis uniplus-minio uniplus-kafka uniplus-rabbitmq` na infraestrutura.
 
@@ -344,7 +345,80 @@ produção o Traefik alcança o MinIO por outra máquina e a origem da conexão 
 só, é a rede de pods). Quem precisar de outra regra informa `ACERVO_PUBLICO_POLICY_FILE`, que vale como está. Um `GET` anônimo
 direto em `uniplus-prod-infra.unifesspa.edu.br:9000` a partir de outro IP é recusado.
 
-## 7. Diagnóstico
+## 7. Observabilidade
+
+Os cinco charts de `platform/observability/` (Prometheus, Loki, Tempo, OTel Collector e Grafana)
+ficam desligados até o ambiente ligá-los no repositório de implantação, depois dos passos abaixo. As
+decisões estão nas ADR-011, 012 e 013.
+
+### 7.1 Provisionamento (uma vez por ambiente)
+
+Na VM de dados, com o Vault aberto:
+
+```bash
+AMBIENTE=prd ./scripts/servicos-no-host/provisionar-observabilidade.sh --dry-run
+AMBIENTE=prd ./scripts/servicos-no-host/provisionar-observabilidade.sh
+```
+
+Em `AMBIENTE=hml`, informe também `INFRA_FQDN` (nome da VM de dados) e `VAULT_URL` ou
+`NOME_DO_VAULT`. O script cria os buckets `loki-chunks` e `tempo-traces`, os usuários `loki-svc` e
+`tempo-svc` (políticas `loki-rw` e `tempo-rw`, restritas ao próprio bucket) e grava no Vault
+`plataforma/minio/loki`, `plataforma/minio/tempo` e `plataforma/grafana/admin`. É idempotente: o que
+já existe no Vault é preservado e nunca regerado. Antes de ligar o Grafana, o Secret do certificado
+precisa existir em `observability-grafana` (`publicar_segredo_tls` e a renovação já incluem o
+namespace).
+
+O ambiente também informa, nos values do repositório de implantação:
+
+- a store `plataforma` atendendo `observability-grafana`, `observability-loki` e `observability-tempo`;
+- StorageClass de Prometheus, Alertmanager, Grafana, Loki e Tempo (`hml-local-nvme` ou `prod-local-nvme`);
+- `lokiWrapper` e `tempoWrapper`: `networkPolicy.minioCIDR` (IP do host de dados, `/32`) e
+  `kubeApiCidrs` (IP do host do cluster, `/32`);
+- `otelCollectorWrapper.networkPolicy.kubeApiCidrs`;
+- `otelCollector.extraEnvs` com os três endpoints (a lista não faz merge no Helm; passe as três):
+  `LOKI_OTLP_ENDPOINT`, `TEMPO_OTLP_ENDPOINT` e `PROMETHEUS_REMOTE_WRITE_ENDPOINT`, com os Services
+  `platform-observability-loki` (porta 3100, caminho `/otlp`), `platform-observability-tempo`
+  (porta 4318) e `platform-observability-pro-prometheus` (porta 9090, caminho `/api/v1/write`);
+- `grafana.admin.existingSecret: grafana-admin` e `grafana.externalSecrets.admin.enabled: true`.
+
+`environments/uniplus-prd/values.yaml` mostra o conjunto completo e é o que o CI renderiza.
+
+### 7.2 Ordem de ligar
+
+1. `prometheus` (instala os CRDs de ServiceMonitor e PrometheusRule).
+2. `loki` e `tempo`.
+3. `otelcol`.
+4. `grafana`.
+
+Depois, nas APIs, `otel.enabled: true` com
+`exporter.endpoint: http://otelcol.observability-otelcol.svc.cluster.local:4317` e `protocol: grpc`.
+O verificador (`apps/verificador-rede`) só emite OTLP depois de ganhar a regra de egress para o
+`observability-otelcol`.
+
+### 7.3 Acesso ao Grafana
+
+A rota é a IngressRoute do chart, no host definido em `grafana.ingressRoute.host`; em produção, com
+o middleware `uniplus-admin-interno`, só a rede institucional e a VPN chegam. O login é o usuário e a
+senha de `plataforma/grafana/admin` (propriedades `username` e `password`). Para ler:
+`vault kv get -mount=plataforma-<amb> grafana/admin`. Trocar a senha é regravar esse caminho no Vault
+e esperar o refresh do ExternalSecret (1 hora) ou forçá-lo; o Grafana lê a senha na subida, então
+reinicie o Deployment depois.
+
+### 7.4 Retenção e volume
+
+| Sinal | Retenção | Onde fica |
+|---|---|---|
+| Métricas | 7 dias, limite de 8 GiB | PVC do Prometheus (10 GiB) |
+| Logs | 168 horas | bucket `loki-chunks` |
+| Traces | 72 horas | bucket `tempo-traces` |
+
+O remote write das APIs .NET (runtime, HTTP e métricas próprias) soma da ordem de 5 mil séries
+únicas, bem abaixo da capacidade do PVC. Se o PVC encher, o Prometheus descarta o bloco mais antigo
+antes de cumprir os 7 dias: confira `prometheus_tsdb_storage_blocks_bytes` e aumente o PVC ou
+reduza a retenção nos values do ambiente. O Loki e o Tempo só apagam o que passou da retenção; o
+espaço no MinIO é liberado depois do `retention_delete_delay` (2 horas no Loki).
+
+## 8. Diagnóstico
 
 - **ExternalSecret sem sincronizar:** `kubectl describe externalsecret <nome> -n <namespace>`. Causas comuns: Vault selado, caminho inexistente no KV do sistema, ou a store não atende o namespace (`spec.conditions` da `ClusterSecretStore`).
 - **Sync do `external-secrets` recusado com `failed calling webhook ... no endpoints available`:** a validação prévia do ArgoCD chama o webhook antes de qualquer onda; numa instalação do zero ele ainda não existe e a store espera a onda 1, mas se o webhook já está registrado e o pod dele está fora do ar a validação falha. Esperar o `external-secrets-webhook` ficar pronto (`kubectl get pods -n external-secrets`) e sincronizar de novo.
