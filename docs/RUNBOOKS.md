@@ -6,7 +6,7 @@ Procedimentos do ambiente `uniplus-prd`. A decisão da topologia está na [ADR-0
 
 1. [Rotina](#1-rotina)
 2. [Produção em três VMs](#2-produção-em-três-vms)
-3. [Atualização manual de versão](#3-atualização-manual-de-versão)
+3. [Atualização de versão](#3-atualização-de-versão)
 4. [Renovação do certificado](#4-renovação-do-certificado)
 5. [Reinício das VMs e abertura do Vault](#5-reinício-das-vms-e-abertura-do-vault)
 6. [Política do acervo público](#6-política-do-acervo-público)
@@ -27,7 +27,7 @@ cifrados do banco e os arquivos do MinIO ficam ilegíveis.
 
 ### 1.2 Deploy de mudança via GitOps
 
-A produção lê os charts deste repositório num commit fixado em `prd/versao.yaml` do repositório de implantação, nunca de `main` (ver [seção 3](#3-atualização-manual-de-versão)). O fluxo de uma mudança é: PR aprovado e mesclado em `main`, validação em homologação, merge request no repositório de implantação que fixa o commit em `prd/`, sync manual em produção.
+A produção lê os charts deste repositório num commit fixado em `prd/versao.yaml` do repositório de implantação, nunca de `main` (ver [seção 3](#3-atualização-de-versão)). O fluxo de uma mudança é: PR aprovado e mesclado em `main`, validação em homologação, merge request no repositório de implantação que fixa o commit em `prd/` e aplicação pelos botões do pipeline.
 
 ### 1.3 Adicionar um segredo no Vault
 
@@ -42,7 +42,7 @@ A produção lê os charts deste repositório num commit fixado em `prd/versao.y
 
 ### 1.4 Rollback
 
-Voltar a versão em `prd/` por merge request no repositório de implantação e sincronizar de novo ([seção 3](#3-atualização-manual-de-versão)). Em emergência, `kubectl rollout undo deployment/<nome> -n <namespace>`; como não há sync automático, o ArgoCD apenas mostra o desvio até o próximo sync manual.
+Voltar a versão em `prd/` por merge request no repositório de implantação e sincronizar de novo ([seção 3](#3-atualização-de-versão)). Em emergência, `kubectl rollout undo deployment/<nome> -n <namespace>`; como não há sync automático, o ArgoCD apenas mostra o desvio até o próximo sync manual.
 
 ## 2. Produção em três VMs
 
@@ -239,34 +239,69 @@ dispensa backup e alta disponibilidade. Se ela cair, só a implantação em prod
 5. **Trocar a versão do runner:** mudar `RUNNER_VERSAO` no script e reexecutá-lo só sem implantação
    em andamento no pipeline, porque a atualização do pacote reinicia o serviço e interromperia o job.
 
-## 3. Atualização manual de versão
+## 3. Atualização de versão
 
-Nenhuma Application de produção tem `syncPolicy.automated`: o ArgoCD só mostra o que mudou. A
-versão dos charts e os values de produção vêm do repositório de implantação (GitLab institucional),
-pasta `prd/`, e só chega lá o que já roda em homologação ([ADR-016](adrs/ADR-016-producao-le-o-repositorio-de-implantacao.md)).
+Nenhuma Application de produção tem `syncPolicy.automated`. A versão dos charts e os values de
+produção vêm do repositório de implantação (GitLab institucional), pasta `prd/`, e só chega lá o que
+já roda em homologação ([ADR-016](adrs/ADR-016-producao-le-o-repositorio-de-implantacao.md)). Quem
+aplica é o pipeline, no runner `uniplus-prd` da VM de automação
+([ADR-017](adrs/ADR-017-producao-aplicada-pelo-pipeline-na-vm-de-automacao.md)).
 
-1. **Backup**: dump do PostgreSQL e snapshot do Vault, guardados fora das VMs.
-2. **Promover**: no pipeline do GitLab, o botão `prd:preparar:<componente>` confere a versão que
-   roda em homologação e grava em `prd/` a versão e o digest da imagem conferida. Produção passa a
-   referenciar a imagem como `tag@sha256:…`, a mesma que rodou em homologação.
-3. **Hooks presos**: antes de sincronizar uma Application com hook, conferir que nenhum Job ou Pod
-   ficou com o finalizer `argocd.argoproj.io/hook-finalizer` de um sync anterior. Um Job de migration
-   antigo preso assim trava o sync em `Running` até o finalizer ser retirado.
+1. **Preparar:** o botão `prd:preparar:<componente>` confere a versão que roda em homologação e
+   grava em `prd/` a versão e o digest da imagem conferida. Produção passa a referenciar a imagem
+   como `tag@sha256:…`.
+2. **Aplicar:** no mesmo pipeline, o botão `prd:aplicar:<componente>`, com a API host antes dos
+   demais componentes. O botão:
+   - recusa aplicar se `prd/` mudou depois do preparo;
+   - na API host, faz antes o backup cifrado do PostgreSQL e o snapshot do Vault, guardados como
+     artefato do job;
+   - sincroniza sem prune, espera a saúde, confere o digest em execução e roda a fumaça.
+
+   Se a migration falhar, não apertar de novo: seguir o item 4.
+3. **Hooks presos:** se o sync da API host ficar em `Running`, conferir se algum Job ou Pod ficou
+   com o finalizer `argocd.argoproj.io/hook-finalizer` de um sync anterior.
 
    ```bash
    kubectl get jobs,pods -A -o json | jq -r '.items[] | select((.metadata.finalizers // []) | index("argocd.argoproj.io/hook-finalizer")) | [.kind, .metadata.namespace, .metadata.name] | @tsv'
    ```
 
-4. **Sincronizar**: no ArgoCD de produção, revisar o diff de cada Application (só a imagem, com
-   tag e digest, e os labels de versão devem mudar) e sincronizar à mão, **sem prune**, nesta
-   ordem: `uniplus-api-host` primeiro (a migration roda em `PreSync`; se falhar, não repetir),
-   depois portal, geo, verificador e web.
-5. **Fumaça**: conferir os endereços de fumaça, que estão na saída do botão.
-6. **Reverter**: voltar em `prd/`, por merge request no repositório de implantação, a versão e o
+4. **Restaurar o backup:** baixar os artefatos do job de backup (`*.gpg` e `SHA256SUMS`), conferir
+   com `sha256sum -c SHA256SUMS` e decifrar com a chave privada do sistema, guardada fora das VMs
+   (`gpg -d arquivo.gpg > arquivo`). O que for gravado entre o backup e a restauração se perde.
+   - **PostgreSQL**, como superusuário na VM de infraestrutura, só nos bancos que a migration
+     alterou:
+     1. no ArgoCD, escalar para zero todo Deployment que usa esses bancos (a API host usa
+        `uniplus`) e conferir que não há conexão aberta neles (`pg_stat_activity`);
+     2. conferir os roles: se algum dono de banco ou de objeto não existir mais, recriar só ele a
+        partir de `globais.sql` (os existentes ficam como estão, com as senhas do Vault);
+     3. para cada banco, recriá-lo a partir do dump, que traz o próprio `CREATE DATABASE`:
+        `dropdb --force <banco>` e
+        `pg_restore --create --exit-on-error -d postgres <banco>.dump`.
+        Recriar o banco remove também o que a migration criou antes de falhar.
+   - **Vault:** `vault operator raft snapshot restore -force vault.snap`, com o token raiz; as
+     chaves de abertura continuam as mesmas. O comando volta antes de a restauração terminar:
+     esperar no log do Vault a conclusão da restauração e `vault status` com `Sealed false`
+     (se selar, abrir como na seção 5). Depois, forçar o refresh dos ExternalSecrets (anotação
+     `force-sync` com a hora atual) e conferir `status.refreshTime` posterior à restauração antes
+     do item 5.
+5. **Reverter:** voltar em `prd/`, por merge request no repositório de implantação, a versão e o
    digest que produção executava antes. No histórico de sync da Application (o ArgoCD só registra
    syncs bem-sucedidos), pegar a última entrada **anterior à atualização que se quer desfazer** e,
    nela, a revisão da source do repositório de implantação; o `prd/` dessa revisão traz o par.
-   Depois, sincronizar de novo. Mudança de charts ou de values de produção também é por merge request lá.
+   Depois do merge, sincronizar à mão, no ArgoCD de produção, as Applications do componente: os
+   botões não servem para reverter, porque o preparo grava a versão de homologação. O sync
+   recria as réplicas que o item 4 zerou já na versão anterior, compatível com o banco
+   restaurado. Mudança de charts ou de values de produção também é por merge request lá.
+6. **Credenciais do pipeline:** variáveis protegidas e mascaradas do repositório de implantação,
+   cada uma restrita ao ambiente dos jobs que a usam: `ARGOCD_TOKEN_PRD` a `producao/*`, as do
+   backup a `producao-backup/*`. Para trocá-las:
+   - `ARGOCD_TOKEN_PRD`: token da conta `uniplus-pipeline` no ArgoCD de produção;
+   - `PG_BACKUP_PASSWORD`: a senha em `plataforma/postgres/backup` no Vault, do role
+     `uniplus_backup` (`provisionar-bancos.sh`);
+   - `VAULT_SNAPSHOT_ROLE_ID` e `VAULT_SNAPSHOT_SECRET_ID`: do AppRole `uniplus-backup-snapshot`
+     (`configurar-vault.sh`), lidos com `vault read auth/approle/role/uniplus-backup-snapshot/role-id`
+     e criados com `vault write -f auth/approle/role/uniplus-backup-snapshot/secret-id`. O
+     secret_id não vence; o token que o backup recebe dura 15 minutos e só lê o snapshot.
 
 ## 4. Renovação do certificado
 

@@ -25,6 +25,8 @@ Só o ensaio de recriação prova que o repositório sobe um ambiente funcional 
 | Inicialização e abertura do Vault | manual | Shamir 5/3, chaves com custodiantes diferentes |
 | Certificado curinga nas VMs | manual | instalado por quem opera a VM |
 | Segredos que vêm de fora (SMTP, clients do Keycloak institucional) | manual | gravados no Vault por quem opera |
+| Acesso de backup (role `uniplus_backup`, política e AppRole de snapshot do Vault) | codificado; secret_id do AppRole criado à mão | `provisionar-bancos.sh`, `configurar-vault.sh` |
+| Credenciais do pipeline de produção | manual | variáveis protegidas do repositório de implantação (RUNBOOKS, seção 3) |
 
 ## Checklist dos passos manuais
 
@@ -33,6 +35,7 @@ Só o ensaio de recriação prova que o repositório sobe um ambiente funcional 
 - [ ] Rodar `configurar-vault.sh` antes de qualquer semente.
 - [ ] Gravar os segredos que vêm de fora (ver o passo 7 do bootstrap no runbook).
 - [ ] Sincronizar à mão as Applications na ordem do runbook e forçar o refresh dos ExternalSecrets.
+- [ ] Gravar as credenciais do pipeline de produção no repositório de implantação (RUNBOOKS, seção 3).
 
 ## Critérios de sucesso
 

@@ -58,6 +58,34 @@ SQL
     log_success "Role $role e banco $banco prontos."
 }
 
+# Role do backup feito pelo pipeline antes de uma migration: lê todos os bancos
+# (pg_read_all_data) e não tem privilégio de escrita nas tabelas das aplicações;
+# a transação somente leitura por padrão evita escrita por engano. O pg_hba só o
+# aceita da VM de automação.
+CAMINHO_SENHA_BACKUP="plataforma/postgres/backup"
+
+provisionar_role_de_backup() {
+    local senha
+    if vault_existe "$CAMINHO_SENHA_BACKUP"; then
+        senha=$(vault_get "$CAMINHO_SENHA_BACKUP" password)
+    else
+        senha=$(openssl rand -hex 32)
+        vault_put "$CAMINHO_SENHA_BACKUP" "username=$ROLE_BACKUP" "password=$senha"
+    fi
+    APP_PW="$senha" psql_superusuario <<SQL >/dev/null
+\getenv app_pw APP_PW
+SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '$ROLE_BACKUP') AS role_exists \gset
+\if :role_exists
+  ALTER ROLE $ROLE_BACKUP WITH LOGIN PASSWORD :'app_pw' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION;
+\else
+  CREATE ROLE $ROLE_BACKUP WITH LOGIN PASSWORD :'app_pw' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION;
+\endif
+GRANT pg_read_all_data TO $ROLE_BACKUP;
+ALTER ROLE $ROLE_BACKUP SET default_transaction_read_only = on;
+SQL
+    log_success "Role $ROLE_BACKUP (somente leitura) pronto."
+}
+
 analisar_argumentos "$@"
 exigir_usuario_comum
 if $DRY_RUN; then
@@ -65,6 +93,7 @@ if $DRY_RUN; then
         IFS=: read -r role banco caminho template <<<"$item"
         echo "[DRY-RUN] role $role, banco $banco${template:+ (de $template)}, senha em $caminho"
     done
+    echo "[DRY-RUN] role $ROLE_BACKUP (pg_read_all_data, somente leitura), senha em $CAMINHO_SENHA_BACKUP"
     exit 0
 fi
 preparar_provisionamento
@@ -72,3 +101,4 @@ for item in "${BANCOS[@]}"; do
     IFS=: read -r role banco caminho template <<<"$item"
     provisionar_banco "$role" "$banco" "$caminho" "$template"
 done
+provisionar_role_de_backup

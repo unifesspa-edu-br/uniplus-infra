@@ -1,6 +1,6 @@
 # ADR-016: Produção lê o repositório de implantação
 
-- **Status:** ✅ Aceito
+- **Status:** ✅ Aceito (sync manual substituído pela [ADR-017](ADR-017-producao-aplicada-pelo-pipeline-na-vm-de-automacao.md))
 - **Data:** 2026-11-09
 - **Relacionado:** [ADR-015](ADR-015-producao-em-duas-vms-com-tls-e-atualizacao-manual.md) · [ADR-006](ADR-006-gitops-com-argocd.md)
 

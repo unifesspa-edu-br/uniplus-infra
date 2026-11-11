@@ -18,7 +18,7 @@ O ambiente operado é o `uniplus-prd`, em três VMs Ubuntu:
 - **uniplus-prod-infra** (`200.139.48.122`): PostgreSQL com PostGIS, Redis, MinIO, Kafka e RabbitMQ em containers Docker sob systemd, só com TLS.
 - **uniplus-prod-automacao** (`200.139.48.114`): Docker e o GitLab Runner `uniplus-prd`, que executa os jobs de implantação de produção do repositório de implantação. Não hospeda aplicação nem dados.
 - **DNS e TLS:** `*.uniplus.unifesspa.edu.br` e certificado curinga `*.unifesspa.edu.br` instalado nas VMs.
-- **Atualização:** versões e values vêm do repositório de implantação (GitLab institucional), com sync manual no ArgoCD (ADR-016). Os scripts vivos ficam em `scripts/servicos-no-host/`.
+- **Atualização:** versões e values vêm do repositório de implantação (GitLab institucional), aplicados pelos botões do pipeline no runner `uniplus-prd`, com backup cifrado antes da migration (ADR-016 e ADR-017). Os scripts vivos ficam em `scripts/servicos-no-host/`.
 
 ## Comandos de validação
 

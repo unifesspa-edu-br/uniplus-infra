@@ -8,6 +8,9 @@
 AMBIENTE="${AMBIENTE:-prd}"
 APP_IP="${APP_IP:-200.139.48.121}"
 INFRA_IP="${INFRA_IP:-200.139.48.122}"
+# VM de automação: só o role de backup alcança o PostgreSQL a partir dela.
+AUTOMACAO_IP="${AUTOMACAO_IP:-200.139.48.114}"
+ROLE_BACKUP="${ROLE_BACKUP:-uniplus_backup}"
 INFRA_FQDN="${INFRA_FQDN:-uniplus-prod-infra.unifesspa.edu.br}"
 # Origem das conexões da aplicação aos serviços de dados. Com as duas VMs, é o
 # IP da VM de aplicação; num host só, os pods chegam com o IP da rede de pods.
