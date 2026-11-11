@@ -411,8 +411,8 @@ subida; depois ela fica no banco do PVC. Para trocar:
 
 Sem o passo 2, a senha antiga continua valendo.
 
-**Credencial do MinIO do Loki ou do Tempo:** apagar o caminho com `vault kv metadata delete` (`plataforma/minio/loki` ou
-`plataforma/minio/tempo`) no Vault, rodar de novo `provisionar-observabilidade.sh`, que gera a senha
+**Credencial do MinIO do Loki ou do Tempo:** apagar o caminho com `vault kv metadata delete -mount=plataforma-<amb>` (`minio/loki` ou
+`minio/tempo`) no Vault, rodar de novo `provisionar-observabilidade.sh`, que gera a senha
 nova e a reaplica no usuário do MinIO, forçar o ExternalSecret, conferir que o Secret
 (`loki-s3-creds` ou `tempo-s3-creds`) já traz a credencial nova e só então reiniciar o StatefulSet do
 componente, que lê a credencial por variável de ambiente só na subida. Entre o provisionamento e o
