@@ -15,7 +15,13 @@ com o Grafana desligado (tem [chart próprio](../grafana/README.md)).
 - **Retenção:** 7 dias e 8 GiB, em PVC de 10 GiB. O Alertmanager tem PVC de 2 GiB.
 - **Remote write:** `enableRemoteWriteReceiver: true`; o OTel Collector envia as métricas das
   aplicações para `/api/v1/write`.
-- **Alertmanager:** só o receiver `null`, que descarta os alertas, até haver canal de notificação.
+- **Alertmanager:** receptores de e-mail por severidade (`critical` e `warning`) para o grupo de
+  operação do Uni+, pelo relay SMTP institucional. O ExternalSecret `alertasEmail` monta o
+  `alertmanager.yaml` inteiro a partir do segredo `smtp` do Vault (o mesmo da API) e o Operator o
+  lê por `alertmanagerSpec.configSecret`. `Watchdog` e `InfoInhibitor` vão ao receptor `null`.
+  Com `alertasEmail.enabled=false`, o ambiente deve zerar o `configSecret` para voltar ao `null`.
+- **Alertas do Uni+:** `PrometheusRule` `uniplus-email-governanca` (envio de e-mail e governança de
+  perfis da uniplus-api), com as regras em `rules/` e os testes em `tests/`.
 - **Seleção:** aceita ServiceMonitors, PodMonitors e regras de qualquer namespace
   (`*SelectorNilUsesHelmValues: false`).
 
@@ -25,8 +31,35 @@ com o Grafana desligado (tem [chart próprio](../grafana/README.md)).
 platform/observability/prometheus/
 ├── Chart.yaml             # alias kubePrometheusStack
 ├── values.yaml
-└── values.schema.json
+├── values.schema.json
+├── rules/                 # regras de alerta em YAML puro (viram a PrometheusRule)
+├── tests/                 # promtool test rules
+└── templates/             # PrometheusRule e ExternalSecret do Alertmanager
 ```
+
+## Alertas do envio de e-mail e da governança
+
+| Alerta | Severidade | Condição |
+|---|---|---|
+| `UniplusEmailEnvioParado` | critical | última falha posterior ao último envio aceito (máximo em 2 h), por 15 min |
+| `UniplusEmailFilaSemConsumidor` | critical | `max(uniplus_email_fila_atrasadas) > 0` por 10 min |
+| `UniplusEmailMensagemMorta` | critical | `max(uniplus_email_mortas) > 0` |
+| `UniplusEmailAmostraVencida` | warning | idade da amostra acima de 15 min ou série ausente por 15 min |
+| `UniplusAutorizacaoAmostraVencida` | warning | idem, para a governança |
+| `UniplusAutorizacaoDivergenciaDaGovernanca` | warning | `max(uniplus_autorizacao_divergencias_da_governanca) > 0` |
+
+Nomes no Prometheus: pontos viram `_`, contadores ganham `_total` e gauges em segundos ganham
+`_seconds`. Para validar as regras (sem binário local):
+
+```bash
+cd platform/observability/prometheus
+docker run --rm --entrypoint promtool -v "$PWD:/w" -w /w prom/prometheus:v3.11.0 \
+  check rules rules/uniplus-email-governanca.yaml
+docker run --rm --entrypoint promtool -v "$PWD:/w" -w /w prom/prometheus:v3.11.0 \
+  test rules tests/uniplus-email-governanca.test.yaml
+```
+
+O painel de acompanhamento é o `Uni+ — E-mail e governança`, no chart do Grafana.
 
 ## O que o ambiente define
 
