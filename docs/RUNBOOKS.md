@@ -247,14 +247,14 @@ já roda em homologação ([ADR-016](adrs/ADR-016-producao-le-o-repositorio-de-i
 aplica é o pipeline, no runner `uniplus-prd` da VM de automação
 ([ADR-017](adrs/ADR-017-producao-aplicada-pelo-pipeline-na-vm-de-automacao.md)).
 
-1. **Preparar:** o botão `prd:preparar:<componente>` confere a versão que roda em homologação e
-   grava em `prd/` a versão e o digest da imagem conferida. Produção passa a referenciar a imagem
-   como `tag@sha256:…`.
-2. **Aplicar:** no mesmo pipeline, o botão `prd:aplicar:<componente>`, com a API host antes dos
-   demais componentes. O botão:
-   - recusa aplicar se `prd/` mudou depois do preparo;
-   - na API host, faz antes o backup cifrado do PostgreSQL e o snapshot do Vault, guardados como
-     artefato do job;
+1. **Copiar a versão de HML:** o botão `prd:copiar-versao-de-hml:<componente>` confere a versão
+   que roda em homologação e copia para `prd/` a versão e o digest da imagem conferida. Produção
+   passa a referenciar a imagem como `tag@sha256:…`. Não implanta nada.
+2. **Implantar:** no mesmo pipeline, o botão `prd:implantar-versao:<componente>`, com a API host
+   antes dos demais. Na API host, o botão é `prd:backup-antes-de-implantar:uniplus-api-host`: faz o
+   backup cifrado do PostgreSQL e o snapshot do Vault, guardados como artefato do job, e o
+   `prd:implantar-versao:uniplus-api-host` segue sozinho. O implantar:
+   - recusa implantar se `prd/` mudou depois da cópia;
    - sincroniza sem prune, espera a saúde, confere o digest em execução e roda a fumaça.
 
    Se a migration falhar, não apertar de novo: seguir o item 4.
@@ -289,7 +289,7 @@ aplica é o pipeline, no runner `uniplus-prd` da VM de automação
    syncs bem-sucedidos), pegar a última entrada **anterior à atualização que se quer desfazer** e,
    nela, a revisão da source do repositório de implantação; o `prd/` dessa revisão traz o par.
    Depois do merge, sincronizar à mão, no ArgoCD de produção, as Applications do componente: os
-   botões não servem para reverter, porque o preparo grava a versão de homologação. O sync
+   botões não servem para reverter, porque o prd:copiar-versao-de-hml copia a versão de homologação. O sync
    recria as réplicas que o item 4 zerou já na versão anterior, compatível com o banco
    restaurado. Mudança de charts ou de values de produção também é por merge request lá.
 6. **Credenciais do pipeline:** variáveis protegidas e mascaradas do repositório de implantação,
