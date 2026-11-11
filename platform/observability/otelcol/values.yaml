@@ -7,7 +7,7 @@
 # hostPort: o OTLP não tem autenticação e não pode ficar exposto no IP do nó.
 #
 # Pipelines:
-# - logs: filelog + otlp -> Loki
+# - logs: filelog (contêineres que não exportam OTLP) + otlp -> Loki
 # - traces: otlp -> Tempo
 # - metrics: otlp -> Prometheus (remote write)
 #
@@ -64,6 +64,17 @@ otelCollector:
             endpoint: ${env:MY_POD_IP}:4317
           http:
             endpoint: ${env:MY_POD_IP}:4318
+      # O preset logsCollection gera o filelog; aqui só a lista de exclusão,
+      # que substitui a dele. Ficam de fora os contêineres que já mandam os
+      # próprios logs por OTLP (com traceId), para não chegarem duas vezes ao
+      # Loki, e o próprio coletor, que o padrão do preset procura no
+      # namespace default.
+      filelog:
+        exclude:
+          - /var/log/pods/observability-otelcol_otelcol-*/*/*.log
+          - /var/log/pods/uniplus_uniplus-api-host-*/api/*.log
+          - /var/log/pods/uniplus_uniplus-api-portal-*/api/*.log
+          - /var/log/pods/geo_unifesspa-geo-api-*/geo-api/*.log
 
     processors:
       # Sempre o primeiro da pipeline, contra OOM.
