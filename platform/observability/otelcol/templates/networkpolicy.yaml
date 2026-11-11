@@ -1,16 +1,14 @@
 {{- if and .Values.otelCollector.enabled .Values.otelCollectorWrapper.networkPolicy.enabled -}}
 {{- $np := .Values.otelCollectorWrapper.networkPolicy -}}
-# NetworkPolicy do OTel Collector DaemonSet.
+{{- if not $np.kubeApiCidrs -}}
+{{- fail "otelCollectorWrapper.networkPolicy.enabled=true exige otelCollectorWrapper.networkPolicy.kubeApiCidrs (IP do kube-apiserver, ex.: 192.0.2.10/32)." -}}
+{{- end -}}
+# NetworkPolicy do OTel Collector.
 #
-# Princípio:
-# - Ingress: namespaces que mandam OTLP (apps, traefik, keycloak — declarado
-#   em ingressNamespaces) + tráfego intra-NS.
-# - Egress:
-#   - Loki (porta 3100/HTTP no NS observability-loki) — exporter logs
-#   - Tempo (porta 4318/HTTP no NS observability-tempo) — exporter traces
-#   - Prometheus (porta 9090/HTTP no NS observability-prometheus) — remote write metrics
-#   - DNS K8s
-#   - kube-apiserver (k8sattributes processor watcha pods)
+# Ingress: namespaces de ingressNamespaces (aplicações que enviam OTLP) e os
+# pods do próprio collector.
+# Egress: Loki (3100), Tempo (4317 e 4318), Prometheus (9090), DNS e
+# kube-apiserver (o k8sattributes faz watch em pods).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -31,7 +29,6 @@ spec:
             matchLabels:
               kubernetes.io/metadata.name: {{ . | quote }}
         {{- end }}
-        # Tráfego entre pods do próprio collector (gossip futuro).
         - podSelector:
             matchLabels:
               {{- include "uniplus-otel.selectorLabels" . | nindent 14 }}
@@ -40,10 +37,10 @@ spec:
           protocol: TCP
         - port: 4318      # OTLP HTTP
           protocol: TCP
-        - port: 13133     # health_check extension
+        - port: 13133     # health_check
           protocol: TCP
   egress:
-    # Loki (logs)
+    # Loki
     - to:
         - namespaceSelector:
             matchLabels:
@@ -51,7 +48,7 @@ spec:
       ports:
         - port: 3100
           protocol: TCP
-    # Tempo (traces)
+    # Tempo
     - to:
         - namespaceSelector:
             matchLabels:
@@ -61,7 +58,7 @@ spec:
           protocol: TCP
         - port: 4317
           protocol: TCP
-    # Prometheus (metrics remote write)
+    # Prometheus (remote write)
     - to:
         - namespaceSelector:
             matchLabels:
@@ -79,7 +76,7 @@ spec:
           protocol: UDP
         - port: 53
           protocol: TCP
-    # kube-apiserver (k8sattributes precisa watch pods)
+    # kube-apiserver
     - to:
         {{- range $np.kubeApiCidrs }}
         - ipBlock:
