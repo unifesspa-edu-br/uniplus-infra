@@ -5,7 +5,7 @@ Procedimentos do ambiente `uniplus-prd`. A decisão da topologia está na [ADR-0
 ## Sumário
 
 1. [Rotina](#1-rotina)
-2. [Produção em duas VMs](#2-produção-em-duas-vms)
+2. [Produção em três VMs](#2-produção-em-três-vms)
 3. [Atualização manual de versão](#3-atualização-manual-de-versão)
 4. [Renovação do certificado](#4-renovação-do-certificado)
 5. [Reinício das VMs e abertura do Vault](#5-reinício-das-vms-e-abertura-do-vault)
@@ -44,12 +44,13 @@ A produção lê os charts deste repositório num commit fixado em `prd/versao.y
 
 Voltar a versão em `prd/` por merge request no repositório de implantação e sincronizar de novo ([seção 3](#3-atualização-manual-de-versão)). Em emergência, `kubectl rollout undo deployment/<nome> -n <namespace>`; como não há sync automático, o ArgoCD apenas mostra o desvio até o próximo sync manual.
 
-## 2. Produção em duas VMs
+## 2. Produção em três VMs
 
 | VM | IP | Papel |
 |---|---|---|
 | `uniplus-prod-app` | `200.139.48.121` | K3s: Traefik (80/443), ArgoCD, Vault, External Secrets, KES, APIs, web, Apicurio, verificador, ClamAV, observabilidade |
 | `uniplus-prod-infra` | `200.139.48.122` | Docker + systemd: PostgreSQL com PostGIS, MinIO, Redis, Kafka, RabbitMQ; dados em `/var/lib/uniplus` |
+| `uniplus-prod-automacao` | `200.139.48.114` | Docker + GitLab Runner `uniplus-prd`: jobs de implantação de produção do repositório de implantação; sem aplicação e sem dados |
 
 As aplicações alcançam a infraestrutura pelo nome `uniplus-prod-infra.unifesspa.edu.br`, que o certificado curinga `*.unifesspa.edu.br` valida. Não há CA interna.
 
@@ -206,6 +207,37 @@ conferência na primeira execução real: a imagem `postgis/postgis:18-3.6` acei
 `ssl_key_file` nos caminhos montados, o dono do diretório TLS de cada container (uids 999, 1000 e
 100), o nome DNS `uniplus-prod-app` para o KES, a ordem de sync no ArgoCD e a sintaxe da reescrita do
 CoreDNS (conferir com o `nslookup` da seção 2.5 antes de abrir o Vault).
+
+### 2.7 VM de automação
+
+A `uniplus-prod-automacao` executa os jobs de implantação de produção, numa máquina separada das VMs
+de aplicação e de dados: o runner e o Docker dos jobs não rodam nelas. A rede não é isolada: um job
+alcança os serviços de produção visíveis da rede institucional e usa as credenciais que o pipeline lhe
+entrega, por isso o runner só aceita jobs de branch protegida. Não guarda estado, e por isso
+dispensa backup e alta disponibilidade. Se ela cair, só a implantação em produção para.
+
+1. **Token do runner:** um Maintainer cria o runner no projeto de implantação (GitLab, *Settings >
+   CI/CD > Runners > New project runner*) com a tag `uniplus-prd`, sem jobs sem tag e só para branch
+   protegida. O token (`glrt-...`) é mostrado uma vez.
+2. **Bootstrap:** na VM, pela rede institucional ou pela VPN, com o token na entrada padrão (nunca
+   como argumento):
+
+   ```bash
+   ./scripts/servicos-no-host/bootstrap-automacao.sh --dry-run
+   ./scripts/servicos-no-host/bootstrap-automacao.sh < arquivo-com-o-token
+   ```
+
+   No console da VM, sem SSH, a origem não é conhecida: rodar com `CONSOLE=1` antes do comando.
+   O script desliga o swap, troca as chaves SSH de host e o `machine-id` quando forem as do template,
+   liga o ufw com SSH só da rede institucional (`200.139.48.0/25`) e da VPN (`192.168.90.0/24`),
+   removendo qualquer outra regra de entrada, confere as atualizações automáticas, instala Docker e o GitLab Runner na versão do runner de
+   homologação, agenda a limpeza semanal das imagens e registra o runner: executor Docker não
+   privilegiado, um job por vez, sem o socket do Docker nos jobs.
+3. **Depois de trocar as chaves de host:** atualizar o `known_hosts` de quem acessa a VM
+   (`ssh-keygen -R 200.139.48.114`) e conferir a impressão digital que o script mostra no fim.
+4. **Conferir:** o runner aparece *online* no projeto de implantação.
+5. **Trocar a versão do runner:** mudar `RUNNER_VERSAO` no script e reexecutá-lo só sem implantação
+   em andamento no pipeline, porque a atualização do pacote reinicia o serviço e interromperia o job.
 
 ## 3. Atualização manual de versão
 
