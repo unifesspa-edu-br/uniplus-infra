@@ -1,124 +1,84 @@
 # observability/tempo
 
-Backend de traces distribuídos para o Uni+ — chart wrapper sobre `grafana/tempo`
-(single-binary mode) com receivers OTLP e storage S3-compatible
-(MinIO no ambiente de nó único).
+Armazenamento de traces. Wrapper sobre `grafana/tempo` em single-binary, com receivers OTLP e
+armazenamento S3 no MinIO do host de dados. Decisão:
+[ADR-012](../../../docs/adrs/ADR-012-tempo-singlebinary-s3-minio.md).
 
-> Decisão arquitetural: ver ADR-012.
+**Versão empacotada:** tempo 1.24.4 (Tempo 2.9.0).
 
 ## Visão geral
 
-- **Modo**: single-binary (1 réplica) — apropriado para single-cluster com
-  baixa volumetria (baixa volumetria).
-- **Storage**: S3-compatible. No ambiente de nó único aponta para MinIO local
-  (`10.2.2.11:9000`, bucket `tempo-traces`, credencial dedicada `tempo-svc`
-  custodiada em Vault `minio/tempo`).
-- **Receivers**: APENAS OTLP (gRPC `:4317` + HTTP `:4318`). Jaeger e
-  OpenCensus desligados — apps Uni+ usam OpenTelemetry SDK que emite OTLP
-  nativo.
-- **Retention**: 72h (3 dias) no ambiente de nó único, via `compactor.compaction.block_retention`.
-- **Acesso**: Service ClusterIP — Grafana datasource consome
-  `http://platform-observability-tempo.observability-tempo.svc.cluster.local:3200`.
+- **Modo:** single-binary, 1 réplica.
+- **Armazenamento:** bucket `tempo-traces` no MinIO, por TLS (`insecure: false`), com o usuário
+  `tempo-svc` e a política `tempo-rw`. A credencial vem do Vault (`plataforma/minio/tempo`).
+- **Receivers:** só OTLP, gRPC 4317 e HTTP 4318. **Retenção:** 72h.
+- **Acesso:** Service `platform-observability-tempo` no namespace `observability-tempo`: consulta na
+  porta 3200 (Grafana) e OTLP nas portas 4317 e 4318 (OTel Collector).
 
 ## Estrutura
 
 ```
 platform/observability/tempo/
-├── Chart.yaml                  # wrapper v2 + dep grafana/tempo 1.24.4
-├── Chart.lock                  # lock do dep
-├── values.yaml                 # defaults conservadores
-├── values.schema.json          # validação dos campos críticos do wrapper
-├── templates/
-│   ├── _helpers.tpl            # nome do Secret S3, labels, selectors
-│   ├── externalsecret.yaml     # gateado por tempoWrapper.externalSecrets.enabled
-│   └── networkpolicy.yaml      # gateado por tempoWrapper.networkPolicy.enabled
-└── charts/                     # gitignored — gerado por `helm dependency update`
-    └── tempo-1.24.4.tgz
+├── Chart.yaml
+├── values.yaml
+├── values.schema.json
+└── templates/
+    ├── _helpers.tpl
+    ├── externalsecret.yaml   # tempoWrapper.externalSecrets
+    └── networkpolicy.yaml    # tempoWrapper.networkPolicy
 ```
 
-## Como o subchart é configurado
+Os valores do subchart ficam em `tempo:` (sem alias). Os do wrapper ficam em `tempoWrapper:`.
 
-O subchart upstream `tempo` é injetado **sem alias**. Valores top-level
-`tempo:` no `values.yaml` deste wrapper passam diretamente ao subchart.
-Configurações próprias do wrapper Uni+ ficam em chave única **`tempoWrapper:`**
-para isolar de outros wrappers (Loki/OTel) que dividem o mesmo environment
-file.
+## O que o ambiente define
 
-O helper `_helpers.tpl` e os templates `externalsecret.yaml`/`networkpolicy.yaml`
-só leem `.Values.tempoWrapper.{externalSecrets,networkPolicy}`.
+```yaml
+tempo:
+  persistence:
+    storageClassName: <StorageClass>   # este subchart usa storageClassName, não storageClass
+  tempo:
+    extraEnvFrom:
+      - secretRef:
+          name: tempo-s3-creds
+tempoWrapper:
+  externalSecrets:
+    enabled: true
+  networkPolicy:
+    enabled: true
+    minioCIDR: <IP do host de dados>/32   # obrigatório com a política ligada
+    kubeApiCidrs: [<IP do host do cluster>/32]
+```
 
-## Quirks específicas
+Para o service map e as métricas RED, o ambiente também liga `tempo.tempo.metricsGenerator` com
+`remoteWriteUrl`
+(`http://platform-observability-pro-prometheus.observability-prometheus.svc.cluster.local:9090/api/v1/write`),
+os processors `service-graphs` e `span-metrics` em `tempo.tempo.overrides.defaults.metrics_generator`,
+e `tempoWrapper.networkPolicy.egressPrometheusNamespace: observability-prometheus`.
 
-- `tempo.tempo.extraArgs` é **mapa** (não lista). Cada chave vira `-<key>={value}`
-  no command-line do binário. Por isso `extraArgs.config.expand-env: "true"`
-  renderiza como `-config.expand-env=true`. Lista geraria warning
-  `cannot overwrite table with non table`.
-- `forcepathstyle` (não `s3ForcePathStyle` como no Loki) — Tempo segue convenção
-  snake_case do `oci-go-sdk` em parâmetros S3.
-- `tempoQuery` (UI Jaeger-like) está **desligado** — UI fica no Grafana
-  datasource, evitando duplicação de capacidade.
+## Particularidades do subchart
 
-## Componentes desligados no ambiente de nó único
-
-- `tempoQuery` (UI Jaeger): Grafana datasource cobre.
-- `metricsGenerator`: gera métricas a partir de traces; ligar quando o
-  Prometheus consumidor estiver com remote-write configurado.
-- `networkPolicy` upstream: substituído pelo wrapper escopado (`tempoWrapper`).
-
-## Deploy
-
-Via ArgoCD ApplicationSet `uniplus-platform` (no repositório de implantação, GitLab institucional).
-Sync automático para clusters com label `uniplus.io/managed: true`. Namespace
-gerado pelo AppSet: `observability-tempo`.
+- `tempo.tempo.extraArgs` é mapa: `config.expand-env: "true"` vira `-config.expand-env=true`.
+- O parâmetro S3 é `forcepathstyle`, e não `s3ForcePathStyle` como no Loki.
+- `tempoQuery` fica desligado: a consulta é pelo Grafana.
 
 ## Validação
 
 ```bash
 helm dependency update platform/observability/tempo
-helm lint platform/observability/tempo
-helm template platform-observability-tempo \
-  platform/observability/tempo \
-  -f environments/uniplus-prd/values.yaml \
-  --namespace observability-tempo
+helm template platform-observability-tempo platform/observability/tempo \
+  -f environments/uniplus-prd/values.yaml --namespace observability-tempo
 ```
 
-## Smoke pós-sync
+## Conferência depois do sync
 
 ```bash
-ssh ubuntu@137.131.131.6
-sudo k3s kubectl -n observability-tempo get pods           # 1/1 Running
-sudo k3s kubectl -n observability-tempo port-forward \
-  svc/platform-observability-tempo 3200:3200 4318:4318 &
-
-# Push de trace via OTLP/HTTP
-TS=$(date +%s)
-curl -X POST http://127.0.0.1:4318/v1/traces \
-  -H 'Content-Type: application/json' \
-  -d '{"resourceSpans":[{"scopeSpans":[{"spans":[{
-    "traceId":"5b8efff798038103d269b633813fc60c",
-    "spanId":"eee19b7ec3c1b173","name":"smoke","kind":1,
-    "startTimeUnixNano":"'${TS}000000000'",
-    "endTimeUnixNano":"'$((TS+1))000000000'"
-  }]}]}]}'
-
-# Search API (espera 1-2 ciclos de flush antes de aparecer)
-curl -s 'http://127.0.0.1:3200/api/search?tags=service.name=smoke' | jq
+kubectl -n observability-tempo get pods
+kubectl -n observability-tempo port-forward svc/platform-observability-tempo 3200:3200 &
+curl -s http://127.0.0.1:3200/ready
 ```
-
-## Pendências (próximos PRs)
-
-- **#30** — OTel Collector com OTLP receivers + exporter para este Tempo.
-- **Datasource Tempo no Grafana** — habilitar via override em
-  `environments/uniplus-prd/values.yaml` no bloco `grafana.datasources` (PR
-  separado).
-- **MetricsGenerator + ServiceMonitor** — quando o Prometheus consumidor
-  estiver pronto.
 
 ## Referências
 
-- [Tempo chart docs](https://grafana.com/docs/tempo/latest/setup/helm-chart/)
-- [Tempo configuration](https://grafana.com/docs/tempo/latest/configuration/)
-- [Tempo OTLP receivers](https://grafana.com/docs/tempo/latest/configuration/#otlp)
-- ADR-012 — decisão arquitetural completa
-- ADR-011 — pattern análogo do Loki (referência)
-- ADR-008
+- [Tempo Helm chart](https://grafana.com/docs/tempo/latest/setup/helm-chart/)
+- [Configuração do Tempo](https://grafana.com/docs/tempo/latest/configuration/)
+- [ADR-012](../../../docs/adrs/ADR-012-tempo-singlebinary-s3-minio.md) e [ADR-011](../../../docs/adrs/ADR-011-loki-singlebinary-s3-minio.md)

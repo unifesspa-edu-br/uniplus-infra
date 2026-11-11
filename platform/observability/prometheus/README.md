@@ -1,121 +1,72 @@
-# prometheus
+# observability/prometheus
 
-Stack Prometheus + Operator (CRDs ServiceMonitor/PodMonitor) + Alertmanager + node-exporter + kube-state-metrics.
+Prometheus, Prometheus Operator (CRDs de ServiceMonitor e PodMonitor), Alertmanager, node-exporter e
+kube-state-metrics. Wrapper sobre
+[kube-prometheus-stack](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack),
+com o Grafana desligado (tem [chart próprio](../grafana/README.md)).
+
+**Versão empacotada:** kube-prometheus-stack 84.5.0 (Operator 0.90.1, Prometheus 3.11).
 
 ## Visão geral
 
-Wrapper do chart oficial [prometheus-community/kube-prometheus-stack](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack). Roda no cluster do ambiente operacional (`uniplus-prd`).
-
-Grafana NÃO faz parte deste chart (vai para `platform/observability/grafana/`, sub-issue #27). O subchart upstream vem com Grafana habilitado por default — desligamos explicitamente aqui.
-
-**Upstream:** https://github.com/prometheus-community/helm-charts
-**Versão upstream empacotada:** kube-prometheus-stack 84.5.0 (Operator v0.90.1)
+- **Release e Service:** em `platform-observability-prometheus`, o Prometheus é o Service
+  `platform-observability-pro-prometheus` (porta 9090) em `observability-prometheus`: o subchart
+  trunca o nome da release.
+- **Retenção:** 7 dias e 8 GiB, em PVC de 10 GiB. O Alertmanager tem PVC de 2 GiB.
+- **Remote write:** `enableRemoteWriteReceiver: true`; o OTel Collector envia as métricas das
+  aplicações para `/api/v1/write`.
+- **Alertmanager:** só o receiver `null`, que descarta os alertas, até haver canal de notificação.
+- **Seleção:** aceita ServiceMonitors, PodMonitors e regras de qualquer namespace
+  (`*SelectorNilUsesHelmValues: false`).
 
 ## Estrutura
 
 ```
 platform/observability/prometheus/
-├── Chart.yaml                              # subchart umbrella (alias=kubePrometheusStack)
-├── values.yaml                             # defaults Uni+
-├── values.schema.json                      # validação dos overrides
-├── README.md                               # este arquivo
-└── templates/                              # delegado ao subchart (placeholder)
+├── Chart.yaml             # alias kubePrometheusStack
+├── values.yaml
+└── values.schema.json
 ```
 
-## Bootstrap
-
-Após o ApplicationSet sincronizar:
-
-1. Pods sobem: prometheus-operator, prometheus-server, alertmanager, node-exporter (DaemonSet), kube-state-metrics
-2. CRDs `servicemonitors.monitoring.coreos.com`, `podmonitors`, `prometheusrules`, `alertmanagers`, etc. são instaladas
-3. Charts `platform/external-secrets/`, `platform/cert-manager/`, `platform/traefik/`, `platform/vault/` podem habilitar `serviceMonitor.enabled: true` em seus values — Prometheus passa a scrape automaticamente (selector aceita TODOS os SMs do cluster, ver `serviceMonitorSelectorNilUsesHelmValues: false` em values.yaml)
-4. Alertmanager fica ativo mas sem receivers reais (apenas registra no log) — receivers serão adicionados em sub-issue separada
-
-## Variáveis principais
-
-| Variável | Default | Notas |
-|---|---|---|
-| `kubePrometheusStack.enabled` | `true` | Liga o subchart |
-| `kubePrometheusStack.grafana.enabled` | `false` | Grafana fica em chart separado (#27) |
-| `kubePrometheusStack.prometheus.prometheusSpec.replicas` | `1` | 1 no ambiente de nó único, 2+ em prod (override) |
-| `kubePrometheusStack.prometheus.prometheusSpec.retention` | `7d` | Alinhado com `environments/uniplus-prd/values.yaml` |
-| `kubePrometheusStack.prometheus.prometheusSpec.retentionSize` | `8GiB` | Storage 10Gi com folga pra WAL |
-| `kubePrometheusStack.prometheus.ingress.enabled` | `false` | Habilitar atrás de OIDC + IP allowlist |
-| `kubePrometheusStack.alertmanager.enabled` | `true` | Receiver placeholder "null" (apenas log) |
-| `kubePrometheusStack.crds.enabled` | `true` | Instala ServiceMonitor/PodMonitor/etc. |
-| `kubePrometheusStack.crds.upgradeJob.enabled` | `false` | ArgoCD gerencia upgrades |
-| `kubePrometheusStack.kubeControllerManager.enabled` | `false` | K3s embute no kubelet |
-| `kubePrometheusStack.kubeScheduler.enabled` | `false` | Idem |
-| `kubePrometheusStack.kubeProxy.enabled` | `false` | K3s roda kube-proxy mas binda métricas em 127.0.0.1 — SM padrão não scrapeia |
-| `kubePrometheusStack.kubeEtcd.enabled` | `false` | K3s embarca etcd sem endpoint client-cert separado |
-
-## Como expor métricas de outros charts
-
-Após este chart estar Synced/Healthy, outros charts da plataforma podem habilitar seus ServiceMonitors via override no environment:
+## O que o ambiente define
 
 ```yaml
-# environments/uniplus-prd/values.yaml
-externalSecrets:
-  serviceMonitor:
-    enabled: true       # ESO scrapeado pelo Prometheus
-
-certManager:
-  prometheus:
-    servicemonitor:
-      enabled: true     # cert-manager scrapeado
-
-traefik:
-  metrics:
-    prometheus:
-      service:
-        enabled: true
-      serviceMonitor:
-        enabled: true   # Traefik scrapeado
-
-vault:
-  serviceMonitor:
-    enabled: true       # Vault scrapeado
-```
-
-A flag `serviceMonitorSelectorNilUsesHelmValues: false` no `prometheusSpec` faz o Prometheus aceitar SMs de qualquer release/namespace — não há necessidade de label sync entre charts.
-
-## Storage
-
-O stack precisa de PVCs para Prometheus (10Gi default) e Alertmanager (2Gi). No ambiente de nó único, `storageClassName` herda da `local-nvme` (chart `platform/storage/`). Cada environment pode override via:
-
-```yaml
-# environments/<env>/values.yaml
 kubePrometheusStack:
   prometheus:
     prometheusSpec:
+      externalLabels:
+        cluster: <nome do ambiente>
       storageSpec:
         volumeClaimTemplate:
           spec:
-            storageClassName: <env-specific-sc>
+            storageClassName: <StorageClass>
+  alertmanager:
+    alertmanagerSpec:
+      storage:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: <StorageClass>
 ```
 
-## Componentes K3s
+## Componentes do K3s
 
-Por default o subchart upstream tenta scrape kube-controller-manager, kube-scheduler, kube-proxy e etcd. Em K3s controller-manager e scheduler rodam dentro do binário único do K3s (sem endpoint HTTP separado), kube-proxy roda mas binda as métricas em `127.0.0.1` por default (SM padrão não consegue scrape sem mudar `metricsBindAddress: 0.0.0.0`), e etcd está embarcado sem endpoint client-cert separado. Desligamos esses 4 ServiceMonitors no chart wrapper para evitar alertas falsos `*Down` desde a primeira sincronização. Em distribuições K8s upstream (não-K3s) reabilitar via env override.
+No K3s o controller-manager, o scheduler e o etcd rodam dentro do processo do K3s, sem endpoint
+próprio, e o kube-proxy publica métricas só em `127.0.0.1`. Os quatro ServiceMonitors ficam
+desligados para não gerar alertas `*Down` falsos.
 
-## Network
+## Rede
 
-O subchart upstream tem suas próprias NetworkPolicies (gateadas por `kubePrometheusStack.prometheus.networkPolicy.enabled` etc.). O wrapper Uni+ não duplica — habilitar via env values quando necessário.
+As NetworkPolicies são as do subchart (`kubePrometheusStack.prometheus.networkPolicy.enabled`);
+o wrapper não as duplica.
 
-No ambiente de nó único (single-host, default-allow no K3s sem CNI mais restritivo), as NPs do subchart podem ficar desligadas. Com CNI de default-deny (Calico ou Cilium), habilitar no env override.
+## Validação
 
-## Segurança
-
-- Pod security: defaults do upstream (non-root, runAsUser 65534 para Prometheus)
-- IngressRoute desligado por default — habilitar atrás de OIDC + IP allowlist
-- Receivers do Alertmanager começam como placeholder "null" — adicionar receivers reais em sub-issue separada
+```bash
+helm dependency update platform/observability/prometheus
+helm template platform-observability-prometheus platform/observability/prometheus \
+  -f environments/uniplus-prd/values.yaml --namespace observability-prometheus
+```
 
 ## Referências
 
-- [#3](https://github.com/unifesspa-edu-br/uniplus-infra/issues/3) — umbrella platform charts
-- [#26](https://github.com/unifesspa-edu-br/uniplus-infra/issues/26) — esta task
-- [#27](https://github.com/unifesspa-edu-br/uniplus-infra/issues/27) — Grafana (chart separado)
-- [#28](https://github.com/unifesspa-edu-br/uniplus-infra/issues/28) — Loki (logs)
-- [#29](https://github.com/unifesspa-edu-br/uniplus-infra/issues/29) — Tempo (traces)
-- [#30](https://github.com/unifesspa-edu-br/uniplus-infra/issues/30) — OpenTelemetry Collector (pipeline)
-- ADR-008 — retenção curta justificada
+- [ADR-013](../../../docs/adrs/ADR-013-otel-collector-daemonset.md): fluxo das métricas das aplicações.

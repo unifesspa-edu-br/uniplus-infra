@@ -1,114 +1,76 @@
 # observability/loki
 
-Agregação de logs estruturados para o Uni+ — chart wrapper sobre `grafana/loki`
-em modo `SingleBinary` com storage S3-compatible (MinIO no ambiente de nó único).
+Agregação de logs. Wrapper sobre `grafana/loki` em modo `SingleBinary`, com armazenamento S3 no
+MinIO do host de dados. Decisão: [ADR-011](../../../docs/adrs/ADR-011-loki-singlebinary-s3-minio.md).
 
-> Decisão arquitetural: ver ADR-011.
+**Versão empacotada:** loki 7.0.0 (Loki 3.6.7).
 
 ## Visão geral
 
-- **Modo**: `SingleBinary` (1 réplica, replication_factor 1) — apropriado para
-  single-cluster com baixa volumetria (baixa volumetria).
-- **Storage**: S3-compatible. No ambiente de nó único aponta para MinIO local
-  (`10.2.2.11:9000`, bucket `loki-chunks`, credencial dedicada `loki-svc`
-  custodiada em Vault `minio/loki`).
-- **Schema**: TSDB v13 com índice `loki_index_` período 24h.
-- **Retention**: 168h (7 dias) no ambiente de nó único, ativada via compactor.
-- **Acesso**: Service ClusterIP — Grafana datasource consome
-  `http://platform-observability-loki.observability-loki.svc.cluster.local:3100`.
-  Sem gateway (nginx) e sem ingress externo.
+- **Modo:** `SingleBinary`, 1 réplica, `replication_factor: 1`.
+- **Armazenamento:** bucket `loki-chunks` no MinIO, por TLS (`insecure: false`), com o usuário
+  `loki-svc` e a política `loki-rw`. A credencial vem do Vault (`plataforma/minio/loki`).
+- **Schema:** TSDB v13. **Retenção:** 168h, aplicada pelo compactor.
+- **Acesso:** Service `platform-observability-loki` na porta 3100, no namespace `observability-loki`.
+  O OTel Collector envia logs para `/otlp`; o Grafana consulta o mesmo Service.
 
 ## Estrutura
 
 ```
 platform/observability/loki/
-├── Chart.yaml                  # wrapper v2 + dep grafana/loki 7.0.0
-├── Chart.lock                  # lock do dep
-├── values.yaml                 # defaults conservadores
-├── values.schema.json          # validação dos campos críticos do wrapper
-├── templates/
-│   ├── _helpers.tpl            # nome do Secret S3, labels, selectors
-│   ├── externalsecret.yaml     # gateado por uniplusExternalSecrets.enabled
-│   └── networkpolicy.yaml      # gateado por uniplusNetworkPolicy.enabled
-└── charts/                     # gitignored — gerado por `helm dependency update`
-    └── loki-7.0.0.tgz
+├── Chart.yaml
+├── values.yaml
+├── values.schema.json
+└── templates/
+    ├── _helpers.tpl
+    ├── externalsecret.yaml   # lokiWrapper.externalSecrets
+    └── networkpolicy.yaml    # lokiWrapper.networkPolicy
 ```
 
-## Como o subchart é configurado
+Os valores do subchart ficam em `loki:` (sem alias). Os do wrapper ficam em `lokiWrapper:`, porque o
+arquivo de values do ambiente é compartilhado entre os charts.
 
-O subchart upstream `loki` é injetado **sem alias**. Valores top-level `loki:`
-no `values.yaml` deste wrapper passam diretamente ao subchart como
-`.Values.x`. Configurações próprias do wrapper Uni+ (ExternalSecret,
-NetworkPolicy) ficam em chave única **`lokiWrapper:`** para evitar:
+## O que o ambiente define
 
-1. Colisão com chaves homônimas do upstream (`networkPolicy:` upstream gera 5
-   NPs próprias se ativado — desligamos).
-2. Colisão com configs de OUTROS wrappers (Tempo/OTel) que dividem o mesmo
-   environment file (`environments/<env>/values.yaml`). Chave prefixada por
-   chart name garante isolamento absoluto.
+```yaml
+loki:
+  singleBinary:
+    persistence:
+      storageClass: <StorageClass>
+    extraEnvFrom:
+      - secretRef:
+          name: loki-s3-creds
+lokiWrapper:
+  externalSecrets:
+    enabled: true
+  networkPolicy:
+    enabled: true
+    minioCIDR: <IP do host de dados>/32   # obrigatório com a política ligada
+    kubeApiCidrs: [<IP do host do cluster>/32]
+```
 
-O helper `_helpers.tpl` e os templates `externalsecret.yaml`/`networkpolicy.yaml`
-só leem `.Values.lokiWrapper.{externalSecrets,networkPolicy}`.
-
-## Componentes desligados no ambiente de nó único
-
-- `gateway` (nginx): Grafana acessa Service direto.
-- `chunksCache` / `resultsCache` (memcached): overhead em single-node.
-- `monitoring`, `lokiCanary`, `test`: gate por env quando consumidor
-  Prometheus estiver pronto.
-- `read` / `write` / `backend`: componentes do `SimpleScalable`, não usados
-  em `SingleBinary`.
-- `networkPolicy` upstream: substituído pelo wrapper escopado.
-
-## Deploy
-
-Via ArgoCD ApplicationSet `uniplus-platform` (no repositório de implantação, GitLab institucional).
-Sync automático para clusters com label `uniplus.io/managed: true`. Namespace
-gerado pelo AppSet: `observability-loki`.
+O Secret `loki-s3-creds` é fixo porque `extraEnvFrom` do subchart não aceita template. O endpoint e a
+região S3 vêm do Vault (`endpoint` e `region`), não dos values.
 
 ## Validação
 
 ```bash
 helm dependency update platform/observability/loki
-helm lint platform/observability/loki
-helm template platform-observability-loki \
-  platform/observability/loki \
-  -f environments/uniplus-prd/values.yaml \
-  --namespace observability-loki
+helm template platform-observability-loki platform/observability/loki \
+  -f environments/uniplus-prd/values.yaml --namespace observability-loki
 ```
 
-## Smoke pós-sync
+## Conferência depois do sync
 
 ```bash
-ssh ubuntu@137.131.131.6
-sudo k3s kubectl -n observability-loki get pods           # 1/1 Running
-sudo k3s kubectl -n observability-loki port-forward svc/platform-observability-loki 3100:3100 &
-
-# Push de log
-curl -s -X POST http://127.0.0.1:3100/loki/api/v1/push \
-  -H 'Content-Type: application/json' \
-  -d '{"streams":[{"stream":{"app":"smoke"},"values":[["'$(date +%s%N)'","hello-loki"]]}]}'
-
-# Query
-curl -sG http://127.0.0.1:3100/loki/api/v1/query_range \
-  --data-urlencode 'query={app="smoke"}' \
-  --data-urlencode 'start='$(date -d '5 minutes ago' +%s)'000000000' | jq '.data.result'
+kubectl -n observability-loki get pods
+kubectl -n observability-loki port-forward svc/platform-observability-loki 3100:3100 &
+curl -s http://127.0.0.1:3100/ready
+curl -sG http://127.0.0.1:3100/loki/api/v1/labels
 ```
-
-## Pendências (próximos PRs)
-
-- **#30** — OTel Collector com `filelog` receiver para popular Loki com logs
-  do `containerd` automaticamente.
-- **Datasource Loki no Grafana** — habilitar via override em
-  `environments/uniplus-prd/values.yaml` no bloco `grafana.datasources` (PR
-  separado da Fase 3 do plano de observability).
-- **ServiceMonitor + alerts** — quando o Prometheus consumidor estiver pronto
-  para scrape de métricas internas do Loki.
 
 ## Referências
 
-- [Loki Helm chart docs](https://grafana.com/docs/loki/latest/setup/install/helm/)
-- [Loki TSDB schema](https://grafana.com/docs/loki/latest/operations/storage/tsdb/)
-- ADR-011 — decisão arquitetural completa
-- ADR-008
-- ADR-007 — Vault HA storage unseal (consumido pelo ESO)
+- [Loki Helm chart](https://grafana.com/docs/loki/latest/setup/install/helm/)
+- [Esquema TSDB](https://grafana.com/docs/loki/latest/operations/storage/tsdb/)
+- [ADR-011](../../../docs/adrs/ADR-011-loki-singlebinary-s3-minio.md) e [ADR-013](../../../docs/adrs/ADR-013-otel-collector-daemonset.md)
