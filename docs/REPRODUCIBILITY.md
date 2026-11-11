@@ -7,7 +7,7 @@ Como garantir que o `uniplus-prd` pode ser recriado a partir deste repositório,
 | Camada | Comando | Prova |
 |---|---|---|
 | Estática | `make validate` | sintaxe YAML, schema dos charts, render Helm, nomes RFC 1123 |
-| Idempotência | reexecutar `bootstrap-infra.sh` e `bootstrap-app.sh` numa VM já provisionada | o re-run não quebra nem duplica |
+| Idempotência | reexecutar `bootstrap-infra.sh`, `bootstrap-app.sh` e `bootstrap-automacao.sh` numa VM já provisionada | o re-run não quebra nem duplica |
 | Ensaio de recriação | bootstrap completo numa VM de teste | reprodutibilidade ponta a ponta |
 
 Só o ensaio de recriação prova que o repositório sobe um ambiente funcional do zero; as demais camadas pegam regressões baratas antes dele.
@@ -18,6 +18,7 @@ Só o ensaio de recriação prova que o repositório sobe um ambiente funcional 
 |---|---|---|
 | Serviços da VM de infraestrutura | codificado | `scripts/servicos-no-host/bootstrap-infra.sh` |
 | K3s, Helm e ArgoCD | codificado | `scripts/servicos-no-host/bootstrap-app.sh` |
+| VM de automação (firewall, Docker, GitLab Runner) | codificado; token do runner criado à mão no GitLab | `scripts/servicos-no-host/bootstrap-automacao.sh` |
 | Charts de aplicação e plataforma | codificado (GitOps) | `apps/`, `platform/`, `environments/uniplus-prd/` |
 | KV, políticas e roles do Vault | codificado | `configurar-vault.sh` |
 | Segredos que nascem na infraestrutura | codificado | `semear-vault.sh`, `provisionar-*.sh` |
