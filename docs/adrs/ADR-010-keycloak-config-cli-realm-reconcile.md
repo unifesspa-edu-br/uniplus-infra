@@ -18,9 +18,10 @@ O realm é reconciliado por um **Job Helm hook `post-install,post-upgrade`** que
 `keycloak-config-cli` (adorsys), do chart `apps/keycloak-replica/`, a partir do mesmo
 `uniplus-realm.json`. O Git é a fonte do estado do realm.
 
-- **Opt-in por ambiente:** `keycloak.realmReconcile.enabled`, desligado por padrão no chart. Quem
-  liga em `uniplus-hml` e `uniplus-prd` são os values do ambiente (em produção, os do repositório de
-  implantação, ADR-016).
+- **Opt-in onde o chart implanta o Keycloak:** `keycloak.realmReconcile.enabled`, desligado por
+  padrão, só tem efeito com `keycloak.enabled`. `uniplus-prd` usa o Keycloak institucional e não o
+  implanta, então o Job não se aplica ali; quem liga é o ambiente que implanta o chart, pelos
+  próprios values.
 - **Reconcilia clients por completo e preserva o resto:** clients e seus recursos de autorização
   em `full` (o Git manda, inclusive removendo o que não está no arquivo); usuários, grupos, roles,
   escopos, componentes, fluxos de autenticação e ações obrigatórias em `no-delete`, de modo que o
