@@ -141,14 +141,15 @@ schema-validate:  ## Valida values.yaml dos environments contra os schemas dos c
 	fi
 
 .PHONY: prod-render-check
-prod-render-check:  ## Falha se o render de produção citar hml, 192.168.21.134, localhost ou nip.io (fora de comentários)
+prod-render-check:  ## Falha se o render de produção citar hml, 192.168.21.134, localhost ou nip.io (fora de comentários e do loopback interno dos subcharts do Grafana e do Prometheus)
 	@printf "$(BLUE)→ render de produção sem termos de homologação$(RESET)\n"
 	@FAILS=0; \
 	for chart_dir in $(CHART_DIRS); do \
 	    [ -f "$$chart_dir/Chart.yaml" ] || continue; \
 	    chart_name=$$(basename "$$chart_dir"); \
 	    HITS=$$(helm template "$$chart_name" "$$chart_dir" -f environments/uniplus-prd/values.yaml 2>/dev/null \
-	        | grep -v '^[[:space:]]*#' | grep -inE 'hml|192\.168\.21\.134|localhost|nip\.io' || true); \
+	        | grep -v '^[[:space:]]*#' | grep -vE 'localhost:3000/api/admin/provisioning|--localhost=127\.0\.0\.1' \
+	        | grep -inE 'hml|192\.168\.21\.134|localhost|nip\.io' || true); \
 	    if [ -n "$$HITS" ]; then \
 	        echo "  ✗ $$chart_name"; echo "$$HITS" | head -5; FAILS=$$((FAILS+1)); \
 	    fi; \
