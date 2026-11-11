@@ -23,15 +23,15 @@ negar o que não foi liberado.
    as ACLs de que precisa, sobre tópicos literais, nunca curingas globais.
 4. **Custódia no Vault:** a senha de cada usuário e a CA do broker ficam no KV do sistema dono
    (`kafka/<usuário>` e `kafka/ca`), de onde o External Secrets as entrega ao pod. O mapa está em
-   [vault-caminhos.md](../vault-caminhos.md). Os usuários e as ACLs são criados por
-   `provisionar-kafka.sh`.
+   [vault-caminhos.md](../vault-caminhos.md). Os usuários e as ACLs das aplicações são criados por
+   scripts de `scripts/servicos-no-host/` (hoje `provisionar-kafka.sh`, para o registro de acesso).
 
 ## Alternativas consideradas
 
 - **Sem autenticação ou `SASL_PLAINTEXT`:** deixa a mensagem em claro na rede. Rejeitada.
 - **TLS mútuo:** exige emissão e rotação de certificado por aplicação. Rejeitada.
-- **`OAUTHBEARER` com o Keycloak:** exige validação de JWT no broker, que o Kafka não traz pronta.
-  Rejeitada.
+- **`OAUTHBEARER` com o Keycloak:** acrescenta ao broker a dependência do JWKS do Keycloak e um
+  ciclo de token por cliente, sem ganho sobre a senha SCRAM guardada no Vault. Rejeitada.
 
 ## Consequências
 
