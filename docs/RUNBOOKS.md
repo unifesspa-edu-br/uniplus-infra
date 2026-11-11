@@ -401,10 +401,15 @@ A rota é a IngressRoute do chart, no host definido em `grafana.ingressRoute.hos
 o middleware `uniplus-admin-interno`, só a rede institucional e a VPN chegam. O login é o usuário e a
 senha de `plataforma/grafana/admin` (propriedades `username` e `password`). Para ler:
 `vault kv get -mount=plataforma-<amb> grafana/admin`. O Grafana só aplica essa senha na primeira
-subida; depois ela fica no banco do PVC. Para trocar: regravar o caminho no Vault, forçar o
-ExternalSecret e aplicar a nova senha no Grafana com
-`kubectl -n observability-grafana exec deploy/platform-observability-grafana -- grafana cli admin reset-admin-password --password-from-stdin`,
-passando a senha pela entrada padrão. Sem o último passo, a senha antiga continua valendo.
+subida; depois ela fica no banco do PVC. Para trocar:
+
+1. regravar o caminho no Vault e forçar o ExternalSecret, conferindo que o Secret `grafana-admin`
+   mudou;
+2. aplicar a nova senha no banco, passando-a pela entrada padrão:
+   `kubectl -n observability-grafana exec -i deploy/platform-observability-grafana -c grafana -- grafana cli admin reset-admin-password --password-from-stdin`;
+3. reiniciar o Deployment, para os sidecars de dashboards e fontes de dados lerem a senha nova.
+
+Sem o passo 2, a senha antiga continua valendo.
 
 ### 7.4 Retenção e volume
 
