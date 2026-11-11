@@ -1,51 +1,36 @@
-# Defaults para o stack Prometheus no cluster Uni+.
+# Defaults do stack Prometheus. Os valores de cada ambiente vivem no
+# repositório de implantação; aqui ficam só os defaults seguros.
 #
-# Topologia (ADR-007 + ADR-008):
-# - Prometheus local com retenção curta (7-15d)
-# - single-replica, retenção 7d (ver `environments/uniplus-prd/values.yaml`)
+# Topologia (ADR-008 e ADR-013): um Prometheus com retenção de 7 dias,
+# uma réplica. O Grafana tem chart próprio (platform/observability/grafana/);
+# o do subchart fica desligado.
 #
-# IMPORTANTE: este chart wrapper NÃO inclui Grafana (vai pro chart
-# platform/observability/grafana/, sub-issue #27). O subchart upstream
-# kube-prometheus-stack vem com Grafana habilitado por default — desliga
-# explicitamente aqui.
+# O ambiente define: StorageClass do Prometheus e do Alertmanager,
+# `externalLabels.cluster` e, se preciso, tamanho do PVC e retenção.
 
 kubePrometheusStack:
   enabled: true
 
-  # `nameOverride` força kebab-case no Chart.Name (alias=kubePrometheusStack
-  # iria virar `kubePrometheusStack` nos labels). Mesma lição da
-  # platform/external-secrets/ e platform/cert-manager/.
+  # Mantém o Chart.Name em kebab-case nos labels (o alias
+  # `kubePrometheusStack` apareceria em camelCase).
   nameOverride: kube-prometheus-stack
 
-  # Labels Uni+ aplicados em todos os recursos do subchart.
-  # NÃO incluir `app.kubernetes.io/component` aqui (pode quebrar selectors).
-  # NÃO incluir `app.kubernetes.io/part-of: uniplus` aqui — o subchart
-  # kube-prometheus-stack já adiciona `app.kubernetes.io/part-of:
-  # kube-prometheus-stack` em cada recurso. Sobrescrever via commonLabels
-  # produz YAML com chave duplicada (kubeconform falha; K8s API aceita
-  # com last-wins mas é tecnicamente malformado). Para tracking Uni+,
-  # usar `uniplus.io/managed: "true"` (label de domínio próprio, não
-  # colide com convenções de chart).
+  # O subchart já define `app.kubernetes.io/part-of`; repeti-lo aqui geraria
+  # chave duplicada no YAML. O rastreio Uni+ usa um label de domínio próprio.
   commonLabels:
     uniplus.io/managed: "true"
 
-  # Instalar CRDs (ServiceMonitor, PodMonitor, PrometheusRule, etc.)
-  # ArgoCD reconcilia. O subchart upstream já aplica `helm.sh/resource-policy:
-  # keep` nas CRDs, então uninstall preserva — não precisa flag adicional.
+  # CRDs (ServiceMonitor, PodMonitor, PrometheusRule); o subchart as marca
+  # com `helm.sh/resource-policy: keep`.
   crds:
     enabled: true
     upgradeJob:
-      enabled: false  # ArgoCD gerencia upgrades via sync
+      enabled: false  # o ArgoCD gerencia as atualizações
 
-  # ============================================================================
-  # Grafana — DESLIGADO neste chart (vai pro platform/observability/grafana/).
-  # ============================================================================
+  # Grafana tem chart próprio.
   grafana:
     enabled: false
 
-  # ============================================================================
-  # Prometheus Operator (rola os CRDs ServiceMonitor/PodMonitor/etc.).
-  # ============================================================================
   prometheusOperator:
     enabled: true
     resources:
@@ -56,25 +41,17 @@ kubePrometheusStack:
         cpu: 500m
         memory: 512Mi
 
-  # ============================================================================
-  # Prometheus server (TSDB + scrape) + IngressRoute para a UI.
-  # ============================================================================
   prometheus:
     enabled: true
-    # IngressRoute (Traefik) para a UI do Prometheus.
-    # DESLIGADO por default — habilitar atrás de OIDC + IP allowlist via
-    # IngressRoute separada (sub-issue futura, similar ao Vault UI).
+    # UI do Prometheus sem exposição.
     ingress:
       enabled: false
     prometheusSpec:
-      # 1 réplica no ambiente de nó único; produção elevam para 2 via env.
       replicas: 1
 
-      # Retenção 7d (alinha com environments/uniplus-prd/values.yaml:77-79).
       retention: 7d
-      retentionSize: 8GiB  # storage 10Gi com folga pra WAL
+      retentionSize: 8GiB  # PVC de 10Gi, com folga para o WAL
 
-      # Recursos — Tabela 10.1.
       resources:
         requests:
           cpu: 200m
@@ -83,56 +60,33 @@ kubePrometheusStack:
           cpu: 1000m
           memory: 2Gi
 
-      # Storage PVC. StorageClass nomeada pelo environment.
-      # local-nvme no ambiente de nó único (override por env).
       storageSpec:
         volumeClaimTemplate:
           spec:
             accessModes: ["ReadWriteOnce"]
-            # storageClassName: <definido por environment>
+            # storageClassName vem do ambiente
             resources:
               requests:
                 storage: 10Gi
 
-      # Selecionar TODOS os ServiceMonitors do cluster, não só os com
-      # release matching. Permite que charts independentes (vault,
-      # external-secrets, cert-manager, traefik) tenham seus SMs scrapeados
-      # sem precisar sincronizar release labels.
+      # Seleciona todos os ServiceMonitors, PodMonitors, Probes e regras do
+      # cluster, sem exigir o label da release.
       serviceMonitorSelectorNilUsesHelmValues: false
       podMonitorSelectorNilUsesHelmValues: false
       probeSelectorNilUsesHelmValues: false
       ruleSelectorNilUsesHelmValues: false
 
-      # Identificação institucional nos external_labels (carregadas em
-      # alertas e federation). Override por env (cluster name).
       externalLabels:
         institution: unifesspa
         platform: uniplus
-        # cluster: <definido por environment>
+        # cluster vem do ambiente
 
-      # -----------------------------------------------------------------------
-      # Remote write receiver — habilita POST /api/v1/write no Prometheus para
-      # aceitar séries enviadas pelo OTel Collector via exporter
-      # `prometheusremotewrite` (ADR-013 + issue #244).
-      #
-      # Labels OTel preservados: `relabel_configs` do kube-prometheus-stack só
-      # afetam dados coletados via ServiceMonitor/PodMonitor (scrape path).
-      # Dados recebidos via remote_write entram no TSDB com os labels exatos do
-      # payload protobuf — service_name, service_namespace, service_version e
-      # http_route chegam intactos, sem nenhuma regra de relabeling intermediária.
-      #
-      # Impacto de volume: métricas OTLP das 3 apps .NET (runtime + HTTP +
-      # custom) estimado em ≤ 5.000 séries únicas — menos de 10% da capacidade
-      # da TSDB atual. Com retenção 7d / retentionSize 8GiB o impacto é
-      # marginal. Ver estimativa detalhada e comandos de monitoramento em
-      # docs/RUNBOOKS.md
-      # -----------------------------------------------------------------------
+      # Aceita POST /api/v1/write do OTel Collector (exporter
+      # `prometheusremotewrite`, ADR-013). Os labels do payload (service_name,
+      # service_namespace, http_route) entram no TSDB sem relabeling.
       enableRemoteWriteReceiver: true
 
-  # ============================================================================
-  # Alertmanager — placeholder (sem receivers reais).
-  # Receivers de email/Slack/etc. serão adicionados em sub-issue separada.
-  # ============================================================================
+  # Sem receivers reais: o receiver "null" descarta os alertas.
   alertmanager:
     enabled: true
     alertmanagerSpec:
@@ -153,9 +107,6 @@ kubePrometheusStack:
               requests:
                 storage: 2Gi
 
-    # Configuração inicial: receiver "null" que descarta os alertas (apenas
-    # registra no log do Alertmanager). Substituir quando a integração de
-    # notificações for definida.
     config:
       global:
         resolve_timeout: 5m
@@ -169,39 +120,28 @@ kubePrometheusStack:
         - name: "null"
       inhibit_rules: []
 
-  # ============================================================================
-  # Node exporter (DaemonSet — métricas de host) e kube-state-metrics.
-  # ============================================================================
   nodeExporter:
     enabled: true
 
   kube-state-metrics:
     enabled: true
 
-  # ============================================================================
-  # Componentes opcionais — desligar ServiceMonitors duplicados em K3s.
-  # Em K3s control-plane components rodam como processos no host (não como
-  # Pods K8s separados), então os SMs default não conseguem scrape.
-  # ============================================================================
+  # No K3s os componentes do control-plane rodam dentro do processo do K3s,
+  # sem endpoint próprio para os ServiceMonitors padrão; esses ficam desligados.
   kubeApiServer:
     enabled: true
   kubelet:
     enabled: true
   kubeControllerManager:
-    enabled: false  # K3s roda controller-manager via processo único do K3s, sem endpoint HTTP separado
+    enabled: false
   kubeScheduler:
-    enabled: false  # idem (mesmo binário K3s)
+    enabled: false
   kubeProxy:
-    enabled: false  # K3s roda kube-proxy mas binda métricas em 127.0.0.1 por default — SM padrão não scrapeia
+    enabled: false  # métricas só em 127.0.0.1
   kubeEtcd:
-    enabled: false  # K3s embarca etcd sem endpoint client-cert separado pra scrape
+    enabled: false
 
-# ============================================================================
-# NetworkPolicy custom Uni+. O subchart upstream tem suas próprias NPs
-# (gateadas por `prometheus.networkPolicy.enabled`); nosso chart não duplica.
-# Override por env caso seja necessário ajustar.
-# ============================================================================
 networkPolicy:
-  # Wrapper deixa pro subchart gerenciar NetworkPolicies. Habilitar via
-  # `kubePrometheusStack.prometheus.networkPolicy.enabled: true` em env values.
+  # As NetworkPolicies são as do subchart
+  # (`kubePrometheusStack.prometheus.networkPolicy.enabled`).
   enabled: false

@@ -17,12 +17,12 @@
         },
         "nameOverride": {
           "type": "string",
-          "description": "Força kebab-case no Chart.Name (alias=kubePrometheusStack vira camelCase nos labels sem este override)."
+          "description": "Mantém o Chart.Name em kebab-case nos labels (o alias aparece em camelCase)."
         },
         "commonLabels": {
           "type": "object",
           "additionalProperties": { "type": "string" },
-          "description": "Labels Uni+ aplicados em todos recursos. NÃO incluir component (vide platform/cert-manager para a lição)."
+          "description": "Labels Uni+ aplicados em todos recursos. Sem o label component, que quebraria selectors."
         },
         "crds": {
           "type": "object",
@@ -37,7 +37,7 @@
           "properties": {
             "enabled": {
               "type": "boolean",
-              "description": "Default false aqui — Grafana vai pro chart platform/observability/grafana/ (#27)."
+              "description": "Falso aqui: o Grafana tem chart próprio (platform/observability/grafana/)."
             }
           }
         }
