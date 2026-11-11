@@ -18,13 +18,15 @@ spec:
     - match: Host(`{{ .Values.redisUi.ingress.host }}`)
       kind: Rule
       middlewares:
+        # Os do ambiente (allowlist de origem) vêm antes: quem está fora da
+        # rede permitida recebe 403 sem chegar a tentar a senha.
+        {{- with .Values.redisUi.ingress.middlewares }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
         # basicAuth obrigatório — RedisInsight 2.x não tem auth nativa.
         # Middleware vive no mesmo namespace que o IngressRoute (uniplus
         # via ApplicationSet uniplus-apps). Ref: templates/middleware.yaml.
         - name: {{ include "redisUi.basicAuthMiddlewareName" . }}
-        {{- with .Values.redisUi.ingress.middlewares }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
       services:
         - name: {{ include "redisUi.fullname" . }}
           port: 5540
