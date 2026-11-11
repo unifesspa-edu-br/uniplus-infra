@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "platform/observability/loki — wrapper schema",
-  "description": "Validação dos campos críticos do wrapper Uni+ (subchart upstream NÃO validado aqui — schema cresce muito sem ganho).",
+  "description": "Validação dos campos críticos do wrapper Uni+ (o subchart tem schema próprio).",
   "type": "object",
   "properties": {
     "loki": {
@@ -11,7 +11,7 @@
         "deploymentMode": {
           "type": "string",
           "enum": ["SingleBinary", "SimpleScalable", "Distributed"],
-          "description": "Modo de deploy do Loki. SingleBinary obrigatório no ambiente de nó único (1 réplica)."
+          "description": "Modo de deploy do Loki. O chart foi desenhado para SingleBinary (1 réplica)."
         },
         "loki": {
           "type": "object",
@@ -44,7 +44,7 @@
     },
     "lokiWrapper": {
       "type": "object",
-      "description": "Configs do wrapper Uni+ — chave prefixada por chart name para isolamento entre wrappers no environment compartilhado.",
+      "description": "Configurações do wrapper, em chave própria porque o arquivo do ambiente é compartilhado entre os charts.",
       "properties": {
         "externalSecrets": {
           "type": "object",
@@ -84,7 +84,8 @@
             },
             "minioCIDR": {
               "type": "string",
-              "pattern": "^[0-9]{1,3}(\\.[0-9]{1,3}){3}/[0-9]{1,2}$"
+              "pattern": "^([0-9]{1,3}(\\.[0-9]{1,3}){3}/[0-9]{1,2})?$",
+              "description": "IP do host de dados com máscara (ex.: /32). Obrigatório quando a política está ligada."
             },
             "minioPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
             "kubeApiCidrs": {

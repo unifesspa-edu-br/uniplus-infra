@@ -1,7 +1,6 @@
 {{/*
-Helpers do wrapper Tempo Uni+. Mesmo pattern do wrapper Loki: helpers cobrem
-APENAS recursos próprios do wrapper (ExternalSecret, NetworkPolicy). Recursos
-do Tempo upstream usam os helpers internos do subchart.
+Helpers dos recursos do wrapper (ExternalSecret, NetworkPolicy). Os do
+subchart não são acessíveis daqui porque o escopo é o da release pai.
 */}}
 
 {{- define "uniplus-tempo.fullname" -}}
@@ -14,15 +13,10 @@ do Tempo upstream usam os helpers internos do subchart.
 {{- end -}}
 
 {{/*
-Nome FIXO do Secret K8s sintetizado pelo ESO com credenciais MinIO.
-Sem release prefix — independente do AppSet/cluster, o pod consome
-sempre `tempo-s3-creds`.
-
-Por que NÃO incluir release name (mesma análise do wrapper Loki, ADR-011):
-o `tempo.extraEnvFrom` é consumido pelo subchart upstream que aceita apenas
-valor literal — não suporta templating do nome no momento do render do
-StatefulSet. Override possível via uniplusExternalSecrets.s3SecretName quando
-precisar de 2+ releases Tempo no mesmo namespace.
+Nome do Secret com as credenciais do MinIO. É fixo (sem o nome da release)
+porque `tempo.extraEnvFrom` do subchart não aceita template: o ambiente
+repete o mesmo nome ali. Para duas releases no mesmo namespace, defina
+tempoWrapper.externalSecrets.s3SecretName.
 */}}
 {{- define "uniplus-tempo.s3SecretName" -}}
 {{- default (printf "%s-s3-creds" .Chart.Name) .Values.tempoWrapper.externalSecrets.s3SecretName -}}
@@ -39,9 +33,7 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | 
 {{- end -}}
 
 {{/*
-Selector labels do StatefulSet do Tempo (single-binary). Bate com os labels
-emitidos pelo subchart upstream `app.kubernetes.io/name: tempo` no mesmo
-release. Usado pela NetworkPolicy.
+Labels de seleção dos pods do Tempo, iguais aos do subchart.
 */}}
 {{- define "uniplus-tempo.selectorLabels" -}}
 app.kubernetes.io/name: tempo

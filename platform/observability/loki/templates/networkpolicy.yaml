@@ -1,19 +1,14 @@
 {{- if and .Values.loki.enabled .Values.lokiWrapper.networkPolicy.enabled -}}
 {{- $np := .Values.lokiWrapper.networkPolicy -}}
+{{- if not $np.minioCIDR -}}
+{{- fail "lokiWrapper.networkPolicy.enabled=true exige lokiWrapper.networkPolicy.minioCIDR (IP do host de dados, ex.: 192.0.2.10/32)." -}}
+{{- end -}}
 # NetworkPolicy do Loki SingleBinary.
 #
-# Princípio: ingress fechado por default, permitindo apenas:
-# - Push de logs e queries vindas dos namespaces declarados em ingressNamespaces
-#   (default cobre observability-grafana e observability-otel-collector;
-#   environment pode estender)
-# - Tráfego intra-NS (entre pods do próprio Loki, p.ex. probes do Service)
-#
-# Egress fechado por default, permitindo apenas:
-# - MinIO/S3 (CIDR + porta declarados via minioCIDR/minioPort)
-# - DNS K8s (CoreDNS no kube-system, porta 53 udp+tcp)
-# - kube-apiserver (CIDR do service via kubeApiCidrs) — Loki não usa hoje,
-#   mas mantemos disponível para futuro service-discovery e leader election
-#   se virar SimpleScalable.
+# Ingress: só os namespaces de ingressNamespaces (Grafana consulta, OTel
+# Collector envia logs) e os pods do próprio Loki.
+# Egress: memberlist entre os pods do Loki, MinIO (minioCIDR:minioPort),
+# DNS e, se kubeApiCidrs estiver preenchido, o kube-apiserver.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -28,32 +23,27 @@ spec:
     - Ingress
     - Egress
   ingress:
-    # Push (3100/http API) + queries vindas dos NS autorizados.
+    # Push e queries dos namespaces autorizados.
     - from:
         {{- range $np.ingressNamespaces }}
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: {{ . | quote }}
         {{- end }}
-        # Tráfego entre pods do próprio Loki (probes, gRPC interno se aplicável).
         - podSelector:
             matchLabels:
               {{- include "uniplus-loki.selectorLabels" . | nindent 14 }}
       ports:
-        - port: 3100      # HTTP API (push, query, ready)
+        - port: 3100      # API HTTP
           protocol: TCP
-        - port: 9095      # gRPC (interno; futuro SimpleScalable)
+        - port: 9095      # gRPC interno
           protocol: TCP
-        - port: 7946      # Memberlist (gossip; ativo mesmo em SingleBinary)
+        - port: 7946      # Memberlist
           protocol: TCP
         - port: 7946
           protocol: UDP
   egress:
-    # Memberlist gossip entre pods do próprio Loki (necessário quando
-    # replicas > 1 ou em SimpleScalable; em SingleBinary single-replica
-    # não tem efeito mas previne ring-join failure ao escalar). Achado
-    # Codex P1 reportado em PR #221 — mesmo bug que existia no Tempo
-    # antes do PR #29 (este).
+    # Memberlist entre os pods do Loki; evita falha de ring-join ao escalar.
     - to:
         - podSelector:
             matchLabels:
@@ -80,7 +70,8 @@ spec:
           protocol: UDP
         - port: 53
           protocol: TCP
-    # kube-apiserver (futuro — SimpleScalable usa para leader election)
+    {{- if $np.kubeApiCidrs }}
+    # kube-apiserver
     - to:
         {{- range $np.kubeApiCidrs }}
         - ipBlock:
@@ -91,4 +82,5 @@ spec:
           protocol: TCP
         - port: 6443
           protocol: TCP
+    {{- end }}
 {{- end }}

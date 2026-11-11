@@ -1,16 +1,10 @@
 {{/*
-Helpers do wrapper Loki Uni+. Os helpers do chart upstream (loki.fullname,
-loki.labels, etc.) ficam disponíveis via subchart e devem ser preferidos para
-recursos do próprio Loki. Estes helpers cobrem APENAS recursos do wrapper
-(ExternalSecret, NetworkPolicy) onde precisamos de nomes/labels consistentes
-sem depender da resolução interna do subchart (`include "loki.x"` falha em
-templates do wrapper porque o scope é do release pai).
+Helpers dos recursos do wrapper (ExternalSecret, NetworkPolicy). Os do
+subchart não são acessíveis daqui porque o escopo é o da release pai.
 */}}
 
 {{/*
-Nome curto do wrapper. Usado em ExternalSecret + NetworkPolicy.
-Reusa lógica padrão do Helm fullname (release-chart) com truncate em 63 chars
-(limite RFC 1123 para nomes de recursos K8s).
+Nome dos recursos do wrapper: release-chart, truncado em 63 caracteres.
 */}}
 {{- define "uniplus-loki.fullname" -}}
 {{- $name := default .Chart.Name .Values.nameOverride -}}
@@ -22,21 +16,10 @@ Reusa lógica padrão do Helm fullname (release-chart) com truncate em 63 chars
 {{- end -}}
 
 {{/*
-Nome do Secret K8s sintetizado pelo ESO com credenciais MinIO.
-Convenção: <chart-name>-s3-creds (sem release prefix).
-
-Por que NÃO incluir o release name (que muda entre clusters/AppSets):
-o `singleBinary.extraEnvFrom` é consumido pelo subchart upstream, que aceita
-APENAS valor literal — não suporta templating do nome no momento do render
-do StatefulSet. Se o helper retornasse `<release>-s3-creds`, cada environment
-teria que duplicar o release name no override, e qualquer drift entre o nome
-do AppSet e o literal causaria `CreateContainerConfigError` no pod (Codex P2
-no PR #221, achado real durante review).
-
-Solução: nome fixo derivado de `.Chart.Name`. Pattern presume 1 release Loki
-por namespace (padrão do uniplus-platform AppSet — namespace por componente).
-Para 2+ releases no mesmo NS, sobrescrever via uniplusExternalSecrets.s3SecretName
-em values do environment + extraEnvFrom batendo com o mesmo nome.
+Nome do Secret com as credenciais do MinIO. É fixo (sem o nome da release)
+porque `singleBinary.extraEnvFrom` do subchart não aceita template: o
+ambiente repete o mesmo nome ali. Para duas releases no mesmo namespace,
+defina lokiWrapper.externalSecrets.s3SecretName.
 */}}
 {{- define "uniplus-loki.s3SecretName" -}}
 {{- default (printf "%s-s3-creds" .Chart.Name) .Values.lokiWrapper.externalSecrets.s3SecretName -}}
@@ -56,9 +39,7 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | 
 {{- end -}}
 
 {{/*
-Selector labels do StatefulSet do Loki SingleBinary. Bate com os labels
-emitidos pelo subchart upstream em modo SingleBinary, usados pela
-NetworkPolicy ingress para identificar pods do Loki como destino.
+Labels de seleção dos pods do SingleBinary, iguais aos do subchart.
 */}}
 {{- define "uniplus-loki.selectorLabels" -}}
 app.kubernetes.io/name: loki
