@@ -93,10 +93,10 @@ kubePrometheusStack:
       # service_namespace, http_route) entram no TSDB sem relabeling.
       enableRemoteWriteReceiver: true
 
-  # A configuração real (e-mail por severidade) vem do Secret `configSecret`,
-  # criado pelo ExternalSecret deste chart (`alertasEmail`). O bloco `config`
-  # abaixo só vale com `alertasEmail.enabled=false` (e `configSecret` vazio no
-  # ambiente): o receiver "null" descarta os alertas.
+  # A configuração vem sempre do Secret `configSecret`, com o mesmo nome de
+  # `alertasEmail.secretName`: com `alertasEmail.enabled=true`, o ExternalSecret
+  # monta o e-mail por severidade; desligado, o chart cria um Secret que
+  # descarta os alertas (receptor "null").
   alertmanager:
     enabled: true
     alertmanagerSpec:
