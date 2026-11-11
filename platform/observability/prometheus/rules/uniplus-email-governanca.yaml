@@ -66,18 +66,31 @@ groups:
             conforme o runbook de operação da API.
 
       - alert: UniplusEmailAmostraVencida
-        expr: |
-          max(uniplus_email_amostra_idade_seconds) > 900
-            or absent_over_time(uniplus_email_amostra_idade_seconds[15m])
+        expr: max(uniplus_email_amostra_idade_seconds) > 900
         labels:
           severity: warning
           sistema: uniplus
         annotations:
-          summary: A medição da fila de e-mail parou ou não chega ao Prometheus
+          summary: A medição da fila de e-mail parou
           description: >-
-            A última amostragem bem-sucedida da fila tem mais de 15 minutos, ou
-            a série ficou ausente por 15 minutos. Os alertas da fila de e-mail
-            ficam cegos enquanto isso.
+            A última amostragem bem-sucedida da fila tem mais de 15 minutos. Os
+            alertas da fila de e-mail ficam cegos enquanto isso.
+          o_que_fazer: >-
+            Verificar a uniplus-api-host (pods e acesso ao banco) e o caminho
+            das métricas até o Prometheus (OTel Collector e remote write).
+
+      - alert: UniplusEmailAmostraAusente
+        expr: absent(uniplus_email_amostra_idade_seconds)
+        for: 15m
+        labels:
+          severity: warning
+          sistema: uniplus
+        annotations:
+          summary: A medição da fila de e-mail não chega ao Prometheus
+          description: >-
+            A série de idade da amostra ficou ausente por 15 minutos: a
+            uniplus-api-host não está enviando métricas ou o caminho até o
+            Prometheus está interrompido. Os alertas da fila de e-mail ficam cegos.
           o_que_fazer: >-
             Verificar a uniplus-api-host (pods e acesso ao banco) e o caminho
             das métricas até o Prometheus (OTel Collector e remote write).
@@ -85,17 +98,31 @@ groups:
   - name: uniplus-autorizacao
     rules:
       - alert: UniplusAutorizacaoAmostraVencida
-        expr: |
-          max(uniplus_autorizacao_amostra_idade_seconds) > 900
-            or absent_over_time(uniplus_autorizacao_amostra_idade_seconds[15m])
+        expr: max(uniplus_autorizacao_amostra_idade_seconds) > 900
         labels:
           severity: warning
           sistema: uniplus
         annotations:
-          summary: A medição da governança de perfis parou ou não chega ao Prometheus
+          summary: A medição da governança de perfis parou
           description: >-
             A última amostragem bem-sucedida da governança tem mais de 15
-            minutos, ou a série ficou ausente por 15 minutos.
+            minutos.
+          o_que_fazer: >-
+            Verificar a uniplus-api-host (pods e acesso ao banco) e o caminho
+            das métricas até o Prometheus (OTel Collector e remote write).
+
+      - alert: UniplusAutorizacaoAmostraAusente
+        expr: absent(uniplus_autorizacao_amostra_idade_seconds)
+        for: 15m
+        labels:
+          severity: warning
+          sistema: uniplus
+        annotations:
+          summary: A medição da governança de perfis não chega ao Prometheus
+          description: >-
+            A série de idade da amostra ficou ausente por 15 minutos: a
+            uniplus-api-host não está enviando métricas ou o caminho até o
+            Prometheus está interrompido. Os alertas da governança ficam cegos.
           o_que_fazer: >-
             Verificar a uniplus-api-host (pods e acesso ao banco) e o caminho
             das métricas até o Prometheus (OTel Collector e remote write).

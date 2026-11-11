@@ -141,11 +141,11 @@ tests:
         alertname: UniplusEmailMensagemMorta
         exp_alerts: []
 
-  - name: amostra de e-mail vencida dispara e a ausente da serie tambem
+  - name: amostra de e-mail vencida dispara
     interval: 1m
     input_series:
       - series: 'uniplus_email_amostra_idade_seconds{service_name="uniplus-api-host"}'
-        values: '30+0x5 1000x10 _x40'
+        values: '30+0x5 1000x10'
     alert_rule_test:
       - eval_time: 4m
         alertname: UniplusEmailAmostraVencida
@@ -154,21 +154,14 @@ tests:
         alertname: UniplusEmailAmostraVencida
         exp_alerts:
           - exp_labels: {severity: warning, sistema: uniplus}
-            exp_annotations: &amostra
-              summary: A medição da fila de e-mail parou ou não chega ao Prometheus
+            exp_annotations:
+              summary: A medição da fila de e-mail parou
               description: >-
-                A última amostragem bem-sucedida da fila tem mais de 15 minutos, ou
-                a série ficou ausente por 15 minutos. Os alertas da fila de e-mail
-                ficam cegos enquanto isso.
-              o_que_fazer: >-
+                A última amostragem bem-sucedida da fila tem mais de 15 minutos. Os
+                alertas da fila de e-mail ficam cegos enquanto isso.
+              o_que_fazer: &amostra_o_que_fazer >-
                 Verificar a uniplus-api-host (pods e acesso ao banco) e o caminho
                 das métricas até o Prometheus (OTel Collector e remote write).
-      # a série some depois de t=15m; com 15 min sem amostra, o alerta volta
-      - eval_time: 45m
-        alertname: UniplusEmailAmostraVencida
-        exp_alerts:
-          - exp_labels: {severity: warning, sistema: uniplus}
-            exp_annotations: *amostra
 
   - name: amostra da governanca vencida dispara
     interval: 1m
@@ -184,13 +177,79 @@ tests:
         exp_alerts:
           - exp_labels: {severity: warning, sistema: uniplus}
             exp_annotations:
-              summary: A medição da governança de perfis parou ou não chega ao Prometheus
+              summary: A medição da governança de perfis parou
               description: >-
                 A última amostragem bem-sucedida da governança tem mais de 15
-                minutos, ou a série ficou ausente por 15 minutos.
-              o_que_fazer: >-
-                Verificar a uniplus-api-host (pods e acesso ao banco) e o caminho
-                das métricas até o Prometheus (OTel Collector e remote write).
+                minutos.
+              o_que_fazer: *amostra_o_que_fazer
+
+  # Sem nenhuma série desde o início: a primeira avaliação não dispara e o
+  # alerta só aparece depois de 15 minutos de ausência.
+  - name: serie de e-mail ausente desde o inicio so dispara aos 15 minutos
+    interval: 1m
+    input_series: []
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: UniplusEmailAmostraAusente
+        exp_alerts: []
+      - eval_time: 14m
+        alertname: UniplusEmailAmostraAusente
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: UniplusEmailAmostraAusente
+        exp_alerts:
+          - exp_labels: {severity: warning, sistema: uniplus}
+            exp_annotations:
+              summary: A medição da fila de e-mail não chega ao Prometheus
+              description: >-
+                A série de idade da amostra ficou ausente por 15 minutos: a
+                uniplus-api-host não está enviando métricas ou o caminho até o
+                Prometheus está interrompido. Os alertas da fila de e-mail ficam cegos.
+              o_que_fazer: *amostra_o_que_fazer
+
+  - name: serie da governanca ausente so dispara aos 15 minutos
+    interval: 1m
+    input_series: []
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: UniplusAutorizacaoAmostraAusente
+        exp_alerts: []
+      - eval_time: 14m
+        alertname: UniplusAutorizacaoAmostraAusente
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: UniplusAutorizacaoAmostraAusente
+        exp_alerts:
+          - exp_labels: {severity: warning, sistema: uniplus}
+            exp_annotations:
+              summary: A medição da governança de perfis não chega ao Prometheus
+              description: >-
+                A série de idade da amostra ficou ausente por 15 minutos: a
+                uniplus-api-host não está enviando métricas ou o caminho até o
+                Prometheus está interrompido. Os alertas da governança ficam cegos.
+              o_que_fazer: *amostra_o_que_fazer
+
+  # A série existe e depois some: ausente por 15 minutos dispara.
+  - name: serie que some dispara aos 15 minutos de ausencia
+    interval: 1m
+    input_series:
+      - series: 'uniplus_email_amostra_idade_seconds{service_name="uniplus-api-host"}'
+        values: '30+0x5 _x40'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: UniplusEmailAmostraAusente
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: UniplusEmailAmostraAusente
+        exp_alerts:
+          - exp_labels: {severity: warning, sistema: uniplus}
+            exp_annotations:
+              summary: A medição da fila de e-mail não chega ao Prometheus
+              description: >-
+                A série de idade da amostra ficou ausente por 15 minutos: a
+                uniplus-api-host não está enviando métricas ou o caminho até o
+                Prometheus está interrompido. Os alertas da fila de e-mail ficam cegos.
+              o_que_fazer: *amostra_o_que_fazer
 
   - name: divergencia da governanca dispara
     interval: 1m
