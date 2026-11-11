@@ -35,5 +35,5 @@ de nuvem alcançável por elas.
 ## Consequências
 
 - Todo reinício do pod, da VM ou do K3s exige operador com três chaves; sem ele, o External
-  Secrets não renova segredos e nada que dependa do Vault sobe até a abertura.
+  Secrets não renova nem cria segredos até a abertura.
 - A revisão desta decisão só faz sentido se existir um Transit ou KMS alcançável pelas VMs.
