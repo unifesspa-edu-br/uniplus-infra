@@ -93,8 +93,8 @@ kubePrometheusStack:
       # service_namespace, http_route) entram no TSDB sem relabeling.
       enableRemoteWriteReceiver: true
 
-  # A configuração vem sempre do Secret `configSecret`, com o mesmo nome de
-  # `alertasEmail.secretName`: com `alertasEmail.enabled=true`, o ExternalSecret
+  # A configuração vem sempre do Secret `configSecret`, criado pelo chart:
+  # com `alertasEmail.enabled=true`, o ExternalSecret
   # monta o e-mail por severidade; desligado, o chart cria um Secret que
   # descarta os alertas (receptor "null").
   alertmanager:
@@ -156,11 +156,10 @@ kubePrometheusStack:
 # institucional. Host, usuário e senha vêm do segredo `smtp` do Vault (o mesmo
 # da API), via ExternalSecret que monta o alertmanager.yaml. Alertas
 # `critical` e `warning` seguem para receptores distintos, com repetição
-# própria. `secretName` deve coincidir com
+# própria. O Secret criado tem o nome de
 # `kubePrometheusStack.alertmanager.alertmanagerSpec.configSecret`.
 alertasEmail:
   enabled: true
-  secretName: alertmanager-uniplus-config
   refreshInterval: "1h"
   secretStoreRef:
     kind: ClusterSecretStore
