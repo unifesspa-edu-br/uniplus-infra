@@ -301,7 +301,10 @@ uniplusApiHost:
     smtpCIDR: 200.139.48.39/32
 
   otel:
-    enabled: false
+    enabled: true
+    exporter:
+      endpoint: http://otelcol.observability-otelcol.svc.cluster.local:4317
+      protocol: grpc
 
 uniplusApiPortal:
   enabled: true
@@ -374,7 +377,10 @@ uniplusApiPortal:
         port: 8080
 
   otel:
-    enabled: false
+    enabled: true
+    exporter:
+      endpoint: http://otelcol.observability-otelcol.svc.cluster.local:4317
+      protocol: grpc
 
 unifesspaGeoApi:
   enabled: true
@@ -420,6 +426,12 @@ unifesspaGeoApi:
     tls:
       enabled: true
       secretName: uniplus-unifesspa-tls
+
+  otel:
+    enabled: true
+    exporter:
+      endpoint: http://otelcol.observability-otelcol.svc.cluster.local:4317
+      protocol: grpc
 
 # ----------------------------------------------------------------------------
 # Frontends
@@ -773,6 +785,17 @@ tempoWrapper:
 
 otelCollector:
   enabled: true
+
+  # As APIs host, portal e Geo exportam os próprios logs por OTLP (otel.enabled
+  # acima); o filelog não os lê do arquivo, para não duplicar no Loki.
+  alternateConfig:
+    receivers:
+      filelog:
+        exclude:
+          - /var/log/pods/observability-otelcol_otelcol-*/*/*.log
+          - /var/log/pods/uniplus_uniplus-api-host-*/api/*.log
+          - /var/log/pods/uniplus_uniplus-api-portal-*/api/*.log
+          - /var/log/pods/geo_unifesspa-geo-api-*/geo-api/*.log
 
   extraEnvs:
     - name: LOKI_OTLP_ENDPOINT
