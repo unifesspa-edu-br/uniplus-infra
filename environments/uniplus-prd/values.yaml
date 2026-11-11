@@ -132,6 +132,7 @@ clusterSecretStore:
         - observability-grafana
         - observability-loki
         - observability-tempo
+        - observability-prometheus
 
 storage:
   enabled: true
