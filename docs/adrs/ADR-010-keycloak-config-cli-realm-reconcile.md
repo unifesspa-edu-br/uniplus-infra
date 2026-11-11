@@ -6,7 +6,7 @@
 
 ## Contexto
 
-O chart `apps/keycloak-replica/` entrega o realm `uniplus` a partir de
+O chart `apps/keycloak-replica/` entrega o realm a partir de
 `apps/keycloak-replica/files/uniplus-realm.json`, importado com `--import-realm`. O Keycloak 26.x
 ignora o import quando o realm já existe, então mudanças posteriores no arquivo (clients,
 protocolMappers, roles, scopes) não chegam ao realm vivo. Corrigir à mão com `kcadm.sh` deixa o
