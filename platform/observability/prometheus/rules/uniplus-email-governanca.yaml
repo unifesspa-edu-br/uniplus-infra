@@ -1,0 +1,117 @@
+# Alertas do envio de e-mail e da governança de perfis da uniplus-api.
+#
+# Nomes das séries no Prometheus (medidor da API -> OTLP -> remote write):
+# pontos viram `_`, contadores ganham `_total` e gauges com unidade `s` ganham
+# `_seconds`. Todas as instâncias leem o mesmo banco: gauges se agregam com
+# `max`, contadores com `sum`. Nenhuma série nem anotação carrega dado pessoal.
+# Testes: tests/uniplus-email-governanca.test.yaml (promtool test rules).
+groups:
+  - name: uniplus-email
+    rules:
+      # Os dois gauges guardam instantes (segundos desde a época Unix). O máximo
+      # no tempo é o mais recente já visto, sobrevive a reinício e a nova
+      # instância. A janela de 2 h cobre o ciclo inteiro de reenvio (cerca de
+      # 1 h 41 min até as mortas). Sem envio desde a partida, os dois são 0 e o
+      # alerta não dispara.
+      - alert: UniplusEmailEnvioParado
+        expr: |
+          max_over_time(max(uniplus_email_ultima_falha_seconds)[2h:])
+            > max_over_time(max(uniplus_email_ultimo_envio_seconds)[2h:])
+        for: 15m
+        labels:
+          severity: critical
+          sistema: uniplus
+        annotations:
+          summary: O servidor de e-mail deixou de aceitar as mensagens do Uni+
+          description: >-
+            A última falha de envio é posterior ao último envio aceito há mais de
+            15 minutos. Os e-mails (convites, avisos e notificações) não estão
+            saindo.
+          o_que_fazer: >-
+            Verificar se o relay SMTP institucional está no ar e se a credencial
+            do segredo smtp no Vault continua válida; consultar as falhas
+            recentes nos logs da uniplus-api-host (tipo transitória ou
+            permanente). O alerta se resolve no primeiro envio aceito.
+
+      - alert: UniplusEmailFilaSemConsumidor
+        expr: max(uniplus_email_fila_atrasadas) > 0
+        for: 10m
+        labels:
+          severity: critical
+          sistema: uniplus
+        annotations:
+          summary: Há e-mails na fila há mais de 5 minutos sem ninguém para enviá-los
+          description: >-
+            Mensagens prontas para envio estão paradas na fila durável por mais
+            de 10 minutos, o que indica que nenhuma instância as está retirando.
+          o_que_fazer: >-
+            Conferir se os pods da uniplus-api-host estão em execução e
+            saudáveis, se o processamento de mensagens do Wolverine está ativo
+            e se o banco está acessível.
+
+      - alert: UniplusEmailMensagemMorta
+        expr: max(uniplus_email_mortas) > 0
+        labels:
+          severity: critical
+          sistema: uniplus
+        annotations:
+          summary: Há e-mails nas mensagens mortas, sem envio possível
+          description: >-
+            Mensagens de e-mail esgotaram o ciclo de reenvio e estão nas
+            mortas do Wolverine. É estoque: o alerta dura enquanto elas
+            existirem.
+          o_que_fazer: >-
+            Corrigir a causa do envio (ver o alerta de envio parado e os logs da
+            uniplus-api-host) e reprocessar ou descartar as mensagens mortas
+            conforme o runbook de operação da API.
+
+      - alert: UniplusEmailAmostraVencida
+        expr: |
+          max(uniplus_email_amostra_idade_seconds) > 900
+            or absent_over_time(uniplus_email_amostra_idade_seconds[15m])
+        labels:
+          severity: warning
+          sistema: uniplus
+        annotations:
+          summary: A medição da fila de e-mail parou ou não chega ao Prometheus
+          description: >-
+            A última amostragem bem-sucedida da fila tem mais de 15 minutos, ou
+            a série ficou ausente por 15 minutos. Os alertas da fila de e-mail
+            ficam cegos enquanto isso.
+          o_que_fazer: >-
+            Verificar a uniplus-api-host (pods e acesso ao banco) e o caminho
+            das métricas até o Prometheus (OTel Collector e remote write).
+
+  - name: uniplus-autorizacao
+    rules:
+      - alert: UniplusAutorizacaoAmostraVencida
+        expr: |
+          max(uniplus_autorizacao_amostra_idade_seconds) > 900
+            or absent_over_time(uniplus_autorizacao_amostra_idade_seconds[15m])
+        labels:
+          severity: warning
+          sistema: uniplus
+        annotations:
+          summary: A medição da governança de perfis parou ou não chega ao Prometheus
+          description: >-
+            A última amostragem bem-sucedida da governança tem mais de 15
+            minutos, ou a série ficou ausente por 15 minutos.
+          o_que_fazer: >-
+            Verificar a uniplus-api-host (pods e acesso ao banco) e o caminho
+            das métricas até o Prometheus (OTel Collector e remote write).
+
+      - alert: UniplusAutorizacaoDivergenciaDaGovernanca
+        expr: max(uniplus_autorizacao_divergencias_da_governanca) > 0
+        labels:
+          severity: warning
+          sistema: uniplus
+        annotations:
+          summary: A conferência do catálogo de perfis em vigor encontrou divergências
+          description: >-
+            O catálogo de permissões em vigor diverge do que a governança
+            aprovou. Versões vencendo e reclassificações pendentes não alertam;
+            ficam no painel Uni+ — E-mail e governança.
+          o_que_fazer: >-
+            Abrir a governança de acessos no Uni+, identificar a divergência
+            apontada pela conferência e regularizar o catálogo com a pessoa
+            responsável pela aprovação.

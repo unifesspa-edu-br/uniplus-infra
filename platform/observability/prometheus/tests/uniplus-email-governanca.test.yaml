@@ -1,0 +1,217 @@
+# promtool test rules tests/uniplus-email-governanca.test.yaml
+# Instantes dos gauges em segundos desde a época Unix: usa-se 1000000 + t.
+rule_files:
+  - ../rules/uniplus-email-governanca.yaml
+
+evaluation_interval: 1m
+
+tests:
+  # Primeira falha em t=10m, sem aceite posterior: dispara 15 min depois (25m)
+  # e permanece até as mortas, inclusive nos 60 minutos finais (cerca de 1h41).
+  - name: envio parado dispara 15 minutos depois da primeira falha e persiste
+    interval: 1m
+    input_series:
+      - series: 'uniplus_email_ultimo_envio_seconds{service_name="uniplus-api-host"}'
+        values: '1000000+0x200'
+      - series: 'uniplus_email_ultima_falha_seconds{service_name="uniplus-api-host"}'
+        values: '0x10 1000600+0x190'
+    alert_rule_test:
+      - eval_time: 24m
+        alertname: UniplusEmailEnvioParado
+        exp_alerts: []
+      - eval_time: 26m
+        alertname: UniplusEmailEnvioParado
+        exp_alerts:
+          - exp_labels: {severity: critical, sistema: uniplus}
+            exp_annotations: &envio_parado
+              summary: O servidor de e-mail deixou de aceitar as mensagens do Uni+
+              description: >-
+                A última falha de envio é posterior ao último envio aceito há mais de
+                15 minutos. Os e-mails (convites, avisos e notificações) não estão
+                saindo.
+              o_que_fazer: >-
+                Verificar se o relay SMTP institucional está no ar e se a credencial
+                do segredo smtp no Vault continua válida; consultar as falhas
+                recentes nos logs da uniplus-api-host (tipo transitória ou
+                permanente). O alerta se resolve no primeiro envio aceito.
+      - eval_time: 120m
+        alertname: UniplusEmailEnvioParado
+        exp_alerts:
+          - exp_labels: {severity: critical, sistema: uniplus}
+            exp_annotations: *envio_parado
+
+  # O aceite de qualquer mensagem (inclusive de outra) desfaz o alerta.
+  - name: aceite de outra mensagem desfaz o alerta
+    interval: 1m
+    input_series:
+      - series: 'uniplus_email_ultimo_envio_seconds{service_name="uniplus-api-host"}'
+        values: '1000000+0x60 1004000+0x140'
+      - series: 'uniplus_email_ultima_falha_seconds{service_name="uniplus-api-host"}'
+        values: '0x10 1000600+0x190'
+    alert_rule_test:
+      - eval_time: 50m
+        alertname: UniplusEmailEnvioParado
+        exp_alerts:
+          - exp_labels: {severity: critical, sistema: uniplus}
+            exp_annotations: *envio_parado
+      - eval_time: 62m
+        alertname: UniplusEmailEnvioParado
+        exp_alerts: []
+
+  # Instância que nunca enviou: os dois gauges começam em 0.
+  - name: sem envio desde a partida nao dispara
+    interval: 1m
+    input_series:
+      - series: 'uniplus_email_ultimo_envio_seconds{service_name="uniplus-api-host"}'
+        values: '0x120'
+      - series: 'uniplus_email_ultima_falha_seconds{service_name="uniplus-api-host"}'
+        values: '0x120'
+    alert_rule_test:
+      - eval_time: 60m
+        alertname: UniplusEmailEnvioParado
+        exp_alerts: []
+
+  # Reinício (série antiga some, a nova volta com 0) e segunda instância nos
+  # 60 minutos finais: o máximo no tempo mantém a falha e o alerta fica ativo.
+  - name: reinicio e segunda instancia mantem o alerta ativo
+    interval: 1m
+    input_series:
+      - series: 'uniplus_email_ultimo_envio_seconds{service_name="uniplus-api-host",instance="a"}'
+        values: '1000000+0x60 _x140'
+      - series: 'uniplus_email_ultima_falha_seconds{service_name="uniplus-api-host",instance="a"}'
+        values: '0x10 1000600+0x50 _x140'
+      - series: 'uniplus_email_ultimo_envio_seconds{service_name="uniplus-api-host",instance="b"}'
+        values: '_x61 0x139'
+      - series: 'uniplus_email_ultima_falha_seconds{service_name="uniplus-api-host",instance="b"}'
+        values: '_x61 0x139'
+    alert_rule_test:
+      - eval_time: 90m
+        alertname: UniplusEmailEnvioParado
+        exp_alerts:
+          - exp_labels: {severity: critical, sistema: uniplus}
+            exp_annotations: *envio_parado
+
+  - name: fila sem consumidor dispara apos 10 minutos
+    interval: 1m
+    input_series:
+      - series: 'uniplus_email_fila_atrasadas{service_name="uniplus-api-host"}'
+        values: '0x5 3x30'
+    alert_rule_test:
+      - eval_time: 14m
+        alertname: UniplusEmailFilaSemConsumidor
+        exp_alerts: []
+      - eval_time: 16m
+        alertname: UniplusEmailFilaSemConsumidor
+        exp_alerts:
+          - exp_labels: {severity: critical, sistema: uniplus}
+            exp_annotations:
+              summary: Há e-mails na fila há mais de 5 minutos sem ninguém para enviá-los
+              description: >-
+                Mensagens prontas para envio estão paradas na fila durável por mais
+                de 10 minutos, o que indica que nenhuma instância as está retirando.
+              o_que_fazer: >-
+                Conferir se os pods da uniplus-api-host estão em execução e
+                saudáveis, se o processamento de mensagens do Wolverine está ativo
+                e se o banco está acessível.
+
+  - name: mensagem morta dispara enquanto houver estoque
+    interval: 1m
+    input_series:
+      - series: 'uniplus_email_mortas{service_name="uniplus-api-host"}'
+        values: '0x5 1x10 0x10'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: UniplusEmailMensagemMorta
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: UniplusEmailMensagemMorta
+        exp_alerts:
+          - exp_labels: {severity: critical, sistema: uniplus}
+            exp_annotations:
+              summary: Há e-mails nas mensagens mortas, sem envio possível
+              description: >-
+                Mensagens de e-mail esgotaram o ciclo de reenvio e estão nas
+                mortas do Wolverine. É estoque: o alerta dura enquanto elas
+                existirem.
+              o_que_fazer: >-
+                Corrigir a causa do envio (ver o alerta de envio parado e os logs da
+                uniplus-api-host) e reprocessar ou descartar as mensagens mortas
+                conforme o runbook de operação da API.
+      - eval_time: 20m
+        alertname: UniplusEmailMensagemMorta
+        exp_alerts: []
+
+  - name: amostra de e-mail vencida dispara e a ausente da serie tambem
+    interval: 1m
+    input_series:
+      - series: 'uniplus_email_amostra_idade_seconds{service_name="uniplus-api-host"}'
+        values: '30+0x5 1000x10 _x40'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: UniplusEmailAmostraVencida
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: UniplusEmailAmostraVencida
+        exp_alerts:
+          - exp_labels: {severity: warning, sistema: uniplus}
+            exp_annotations: &amostra
+              summary: A medição da fila de e-mail parou ou não chega ao Prometheus
+              description: >-
+                A última amostragem bem-sucedida da fila tem mais de 15 minutos, ou
+                a série ficou ausente por 15 minutos. Os alertas da fila de e-mail
+                ficam cegos enquanto isso.
+              o_que_fazer: >-
+                Verificar a uniplus-api-host (pods e acesso ao banco) e o caminho
+                das métricas até o Prometheus (OTel Collector e remote write).
+      # a série some depois de t=15m; com 15 min sem amostra, o alerta volta
+      - eval_time: 45m
+        alertname: UniplusEmailAmostraVencida
+        exp_alerts:
+          - exp_labels: {severity: warning, sistema: uniplus}
+            exp_annotations: *amostra
+
+  - name: amostra da governanca vencida dispara
+    interval: 1m
+    input_series:
+      - series: 'uniplus_autorizacao_amostra_idade_seconds{service_name="uniplus-api-host"}'
+        values: '30+0x5 1000x10'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: UniplusAutorizacaoAmostraVencida
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: UniplusAutorizacaoAmostraVencida
+        exp_alerts:
+          - exp_labels: {severity: warning, sistema: uniplus}
+            exp_annotations:
+              summary: A medição da governança de perfis parou ou não chega ao Prometheus
+              description: >-
+                A última amostragem bem-sucedida da governança tem mais de 15
+                minutos, ou a série ficou ausente por 15 minutos.
+              o_que_fazer: >-
+                Verificar a uniplus-api-host (pods e acesso ao banco) e o caminho
+                das métricas até o Prometheus (OTel Collector e remote write).
+
+  - name: divergencia da governanca dispara
+    interval: 1m
+    input_series:
+      - series: 'uniplus_autorizacao_divergencias_da_governanca{service_name="uniplus-api-host"}'
+        values: '0x3 2x10'
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: UniplusAutorizacaoDivergenciaDaGovernanca
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: UniplusAutorizacaoDivergenciaDaGovernanca
+        exp_alerts:
+          - exp_labels: {severity: warning, sistema: uniplus}
+            exp_annotations:
+              summary: A conferência do catálogo de perfis em vigor encontrou divergências
+              description: >-
+                O catálogo de permissões em vigor diverge do que a governança
+                aprovou. Versões vencendo e reclassificações pendentes não alertam;
+                ficam no painel Uni+ — E-mail e governança.
+              o_que_fazer: >-
+                Abrir a governança de acessos no Uni+, identificar a divergência
+                apontada pela conferência e regularizar o catálogo com a pessoa
+                responsável pela aprovação.
