@@ -1,17 +1,13 @@
-# Defaults para o Grafana no cluster Uni+.
+# Defaults do Grafana. Os valores de cada ambiente vivem no repositório de
+# implantação; aqui ficam só os defaults seguros.
 #
-# Roda em cada cluster.
+# Datasources provisionados: Prometheus, Loki e Tempo, com os uids fixos
+# `prometheus`, `loki` e `tempo` que os dashboards em dashboards/ referenciam.
 #
-# Datasources:
-# - Prometheus: pré-configurado, aponta pro Service do chart
-#   `platform/observability/prometheus/` (release name no namespace
-#   `observability-prometheus` per ApplicationSet pattern).
-# - Loki: gateado por `datasources.loki.enabled` (false até #28 mergear).
-# - Tempo: gateado por `datasources.tempo.enabled` (false até #29 mergear).
-#
-# Admin password: placeholder no chart wrapper (default `admin/uniplus`).
-# Em produção, sobrescrever via External Secret (#24 ESO já mergeado;
-# requer Vault inicializado #64). Não commitar senha real no values.
+# Conta de administrador: vem de um Secret criado pelo ExternalSecret
+# (`externalSecrets.admin`), a partir do Vault. O ambiente aponta
+# `admin.existingSecret` para o mesmo nome. Sem Secret, o subchart gera
+# uma senha aleatória.
 
 grafana:
   enabled: true
@@ -23,10 +19,8 @@ grafana:
   extraLabels:
     app.kubernetes.io/part-of: uniplus
 
-  # 1 réplica no ambiente de nó único; produção elevam para 2.
   replicas: 1
 
-  # Recursos — Tabela 10.1 (Grafana é leve em uso normal).
   resources:
     requests:
       cpu: 100m
@@ -39,9 +33,8 @@ grafana:
   image:
     tag: "12.3.1"
 
-  # Persistence: 5Gi PVC para o sqlite (sessions + dashboards modificados
-  # via UI, embora o pattern preferido seja provisionar via ConfigMap).
-  # StorageClass nomeada pelo environment.
+  # PVC do sqlite (sessões e dashboards editados pela UI; o padrão é
+  # provisionar dashboards por ConfigMap). A StorageClass vem do ambiente.
   persistence:
     enabled: true
     type: pvc
@@ -49,14 +42,12 @@ grafana:
     size: 5Gi
     # storageClassName: <definido por environment>
 
-  # Admin: senha placeholder. Em produção sobrescrever via ESO
-  # apontando para Secret no Vault (path secret/grafana/admin).
+  # Conta de administrador lida do Secret `existingSecret` (criado pelo
+  # ExternalSecret em externalSecrets.admin).
   admin:
-    existingSecret: ""              # default vazio — usa adminPassword abaixo
+    existingSecret: ""
     userKey: admin-user
     passwordKey: admin-password
-  adminUser: admin
-  adminPassword: uniplus            # PLACEHOLDER — sobrescrever por env+ESO
 
   # Service: ClusterIP (acesso via IngressRoute do Traefik).
   service:
@@ -68,37 +59,29 @@ grafana:
   ingress:
     enabled: false
 
-  # IngressRoute Traefik (template wrapper Uni+ — platform/observability/grafana/
-  # templates/ingressroute.yaml). Suporta dois patterns:
-  #
-  # 1) Subpath: host raiz + pathPrefix (ex.: uniplus.unifesspa.edu.br/grafana/*).
-  #    Exige serve_from_sub_path: true em grafana.ini.server e root_url terminando
-  #    em /grafana/. Wrapper emite um Middleware StripPrefix automaticamente.
-  #
-  # 2) Subdomain: host dedicado (ex.: uniplus.unifesspa.edu.br) com
-  #    pathPrefix vazio. Pattern dos outros admin UIs Uni+ (kafka-ui,
-  #    schema-registry, redis-ui).
-  #
-  # Default OFF — habilitado em environments/<env>/values.yaml por env.
+  # IngressRoute Traefik (templates/ingressroute.yaml), desligada por padrão.
+  # Com pathPrefix vazio o Grafana responde na raiz de um host dedicado.
+  # Com pathPrefix (ex.: /grafana) exige `serve_from_sub_path: true` e
+  # `root_url` terminando no mesmo prefixo.
   ingressRoute:
     enabled: false
     entryPoint: websecure
-    host: ""              # ex.: uniplus.unifesspa.edu.br
+    host: ""              # FQDN da rota; obrigatório quando enabled
     pathPrefix: ""        # subpath (ex.: /grafana) ou vazio (subdomain)
-    serviceName: ""       # default: <Release.Name>-grafana (Service do subchart)
+    serviceName: ""       # vazio = Service do subchart (nome calculado pelo chart)
     servicePort: 80       # porta do Service do subchart Grafana
     middlewares: []       # Middlewares Traefik da rota (ex.: restrição por rede)
     tls:
       enabled: true
-      secretName: ""      # vazio = Traefik usa default cert (LE prod via cert-manager + Certificate emitido em outro template ou chart)
+      secretName: ""      # vazio = certificado padrão do Traefik
 
-  # Métricas Prometheus do próprio Grafana. ServiceMonitor vem do upstream
-  # (gateado por `serviceMonitor.enabled`); wrapper não emite SM próprio.
+  # ServiceMonitor do próprio Grafana (vem do subchart).
   serviceMonitor:
-    enabled: false  # ligar quando Prometheus (#26) consumidor estiver pronto
+    enabled: false
 
-  # Datasources provisionados via ConfigMap. Prometheus pré-configurado;
-  # Loki/Tempo gateados até as charts (#28/#29) aterrissarem.
+  # Datasources provisionados por ConfigMap. Os Services seguem o nome da
+  # release `platform-observability-<componente>` no namespace
+  # `observability-<componente>`.
   datasources:
     datasources.yaml:
       apiVersion: 1
@@ -107,16 +90,34 @@ grafana:
           type: prometheus
           uid: prometheus
           access: proxy
-          # Service do Prometheus da release platform-observability-prometheus:
-          # o kube-prometheus-stack trunca o prefixo para caber no limite de nome.
+          # O kube-prometheus-stack trunca o nome da release para `-pro-`.
           url: http://platform-observability-pro-prometheus.observability-prometheus.svc.cluster.local:9090
           isDefault: true
           jsonData:
             timeInterval: 30s
+        - name: Loki
+          type: loki
+          uid: loki
+          access: proxy
+          url: http://platform-observability-loki.observability-loki.svc.cluster.local:3100
+        - name: Tempo
+          type: tempo
+          uid: tempo
+          access: proxy
+          url: http://platform-observability-tempo.observability-tempo.svc.cluster.local:3200
+          jsonData:
+            tracesToLogsV2:
+              datasourceUid: loki
+              spanStartTimeShift: -5m
+              spanEndTimeShift: 5m
+              filterByTraceID: true
+            serviceMap:
+              datasourceUid: prometheus
+            nodeGraph:
+              enabled: true
 
-  # Dashboards iniciais — carregados via sidecar do upstream chart se
-  # `sidecar.dashboards.enabled: true`. Default off no wrapper para ficar
-  # leve; ligar quando dashboards Uni+ específicos forem provisionados.
+  # Dashboards de dashboards/ entram por ConfigMap (templates/dashboards.yaml)
+  # e o sidecar os carrega.
   sidecar:
     dashboards:
       enabled: true
@@ -124,8 +125,7 @@ grafana:
       labelValue: "1"
       folder: /tmp/dashboards
       searchNamespace: ALL
-      # Nome da annotation nos ConfigMaps que define a folder de destino no Grafana.
-      # Deve bater com a annotation `grafana_folder` emitida por templates/dashboards.yaml.
+      # Deve bater com a annotation emitida por templates/dashboards.yaml.
       folderAnnotation: grafana_folder
     datasources:
       enabled: true
@@ -133,53 +133,25 @@ grafana:
       labelValue: "1"
       searchNamespace: ALL
 
-  # SSO via OIDC (Keycloak — ADR-003). Em environments com Keycloak local
-  # (ex.: produção) habilitar setando `oidc.enabled: true` + URLs reais
-  # + ExternalSecret materializando client_secret no Secret K8s referenciado.
-  # O bloco grafana.grafana.ini.auth.generic_oauth abaixo só deve ser ativado
-  # quando oidc.enabled=true. Login local admin/* permanece como fallback.
-  oidc:
-    enabled: false
-    # Identificação humana exibida no botão de login (auth.generic_oauth.name).
-    providerName: "Uni+ Keycloak"
-    clientId: grafana
-    # URLs Keycloak realm `uniplus`. Override em environments/<env>/values.yaml.
-    issuerBaseUrl: ""  # ex.: https://uniplus.unifesspa.edu.br/auth/realms/uniplus
-    # JMESPath para mapear claim `groups` → role Grafana. Default canônico
-    # alinhado com pattern AKHQ (grupos /admins/<app> + /editors/<app>).
-    roleAttributePath: |
-      contains(groups[*], '/admins/grafana') && 'Admin' || contains(groups[*], '/editors/grafana') && 'Editor' || 'Viewer'
-    # Permite assignment como Server Admin via grupo (cuidado: ServerAdmin
-    # tem permissão total cross-org). Default true para alinhar com o
-    # mapping de `/admins/grafana` → Admin no role_attribute_path.
-    allowAssignGrafanaAdmin: true
-    # Auto-login redireciona direto para Keycloak sem mostrar o form local.
-    # Default false para preservar fallback admin local em incidente.
-    autoLogin: false
-
-  # ExternalSecret que materializa o client_secret do client OIDC `grafana`
-  # do realm uniplus no namespace observability-grafana. Consumido via env
-  # OIDC_CLIENT_SECRET pelo Pod Grafana e referenciado em
-  # `grafana.ini.auth.generic_oauth.client_secret` como ${OIDC_CLIENT_SECRET}.
+  # ExternalSecret da conta de administrador, lido do Vault pela store
+  # indicada. As propriedades do Vault são `user` e `password`.
   externalSecrets:
-    enabled: false
     refreshInterval: "1h"
     secretStoreRef:
       kind: ClusterSecretStore
       name: plataforma
-    oidcClient:
-      vaultPath: ""  # ex.: keycloak/grafana
-      clientSecretKey: client_secret
+    admin:
+      enabled: false
+      vaultPath: grafana/admin
+      secretName: grafana-admin
+      userProperty: user
+      passwordProperty: password
 
   grafana.ini:
     server:
-      root_url: ""  # override por env (ex.: https://uniplus.unifesspa.edu.br/grafana/)
-      # Habilita Grafana servir corretamente quando atrás de PathPrefix.
-      # Quando root_url contém subpath (ex.: /grafana/), Grafana reescreve
-      # URLs internas com o prefix. Sem isso, login redireciona para /login
-      # (em vez de /grafana/login) e quebra cookies/CSRF. Override por env
-      # via environments/<env>/values.yaml quando subpath. Subdomain root
-      # (sem subpath) deixa false (default).
+      # Definido pelo ambiente; com subpath, `serve_from_sub_path` precisa
+      # ser true e o root_url terminar no prefixo.
+      root_url: ""
       serve_from_sub_path: false
     analytics:
       reporting_enabled: false
@@ -192,15 +164,10 @@ grafana:
       mode: console
       level: info
 
-  # Pod security — non-root (Grafana já roda como UID 472 por default).
   securityContext:
     runAsNonRoot: true
     runAsUser: 472
     fsGroup: 472
 
-# ============================================================================
-# NetworkPolicy custom Uni+. Subchart upstream tem suas próprias NPs;
-# wrapper deixa pra subchart. Override por env se precisar.
-# ============================================================================
 networkPolicy:
   enabled: false
