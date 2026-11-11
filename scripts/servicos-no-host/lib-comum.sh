@@ -11,6 +11,7 @@ INFRA_IP="${INFRA_IP:-200.139.48.122}"
 # VM de automação: só o role de backup alcança o PostgreSQL a partir dela.
 AUTOMACAO_IP="${AUTOMACAO_IP:-200.139.48.114}"
 ROLE_BACKUP="${ROLE_BACKUP:-uniplus_backup}"
+INFRA_FQDN_INFORMADO="${INFRA_FQDN:-}"
 INFRA_FQDN="${INFRA_FQDN:-uniplus-prod-infra.unifesspa.edu.br}"
 # Origem das conexões da aplicação aos serviços de dados. Com as duas VMs, é o
 # IP da VM de aplicação; num host só, os pods chegam com o IP da rede de pods.
@@ -58,6 +59,15 @@ definir_url_do_vault() {
 exigir_app_fqdn() {
     [[ -n "$APP_FQDN" ]] || {
         log_error "Informe APP_FQDN (nome da VM de aplicação de AMBIENTE=$AMBIENTE)."
+        exit 2
+    }
+}
+
+# O padrão de INFRA_FQDN é o da produção; fora dela o nome precisa ser informado,
+# para que um script de HML nunca alcance os serviços de dados de produção.
+exigir_infra_fqdn() {
+    [[ "$AMBIENTE" == prd || -n "$INFRA_FQDN_INFORMADO" ]] || {
+        log_error "Informe INFRA_FQDN (nome da VM de dados de AMBIENTE=$AMBIENTE)."
         exit 2
     }
 }
