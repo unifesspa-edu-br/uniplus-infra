@@ -53,6 +53,20 @@
                 }
               }
             },
+            "oidcClient": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": { "type": "boolean" },
+                "vaultPath": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "Caminho no KV da store (ex.: keycloak/grafana)."
+                },
+                "secretName": { "type": "string", "minLength": 1 },
+                "property": { "type": "string", "minLength": 1 }
+              }
+            },
             "admin": {
               "type": "object",
               "additionalProperties": false,
