@@ -1,0 +1,15 @@
+# Regras de alerta do envio de e-mail e da governança de perfis da uniplus-api.
+# O conteúdo vive em rules/ (YAML puro, testável com `promtool test rules`).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: uniplus-email-governanca
+  labels:
+    app.kubernetes.io/name: uniplus-email-governanca
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    app.kubernetes.io/part-of: uniplus
+    helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version }}
+spec:
+{{ .Files.Get "rules/uniplus-email-governanca.yaml" | indent 2 }}
