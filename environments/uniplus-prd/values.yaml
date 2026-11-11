@@ -13,7 +13,7 @@
 # sincroniza sozinha.
 #
 # Desligado explicitamente o que o chart liga por padrão e esta produção não usa
-# (observabilidade, Keycloak próprio).
+# (Keycloak próprio).
 
 cluster:
   name: uniplus-prd
@@ -668,17 +668,118 @@ redisUi:
 keycloak:
   enabled: false
 
+# ----------------------------------------------------------------------------
+# Observabilidade (ordem de ligar: prometheus, loki e tempo, otelcol, grafana)
+# ----------------------------------------------------------------------------
+
 kubePrometheusStack:
-  enabled: false
+  enabled: true
+
+  prometheus:
+    prometheusSpec:
+      externalLabels:
+        cluster: uniplus-prd
+      storageSpec:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: prod-local-nvme
+
+  alertmanager:
+    alertmanagerSpec:
+      storage:
+        volumeClaimTemplate:
+          spec:
+            storageClassName: prod-local-nvme
 
 grafana:
-  enabled: false
+  enabled: true
+
+  persistence:
+    storageClassName: prod-local-nvme
+
+  admin:
+    existingSecret: grafana-admin
+
+  externalSecrets:
+    admin:
+      enabled: true
+
+  ingressRoute:
+    enabled: true
+    host: uniplus-grafana.unifesspa.edu.br
+    middlewares:
+      - name: uniplus-admin-interno
+        namespace: traefik
+    tls:
+      enabled: true
+      secretName: uniplus-unifesspa-tls
+
+  grafana.ini:
+    server:
+      root_url: https://uniplus-grafana.unifesspa.edu.br/
 
 loki:
-  enabled: false
+  enabled: true
+
+  singleBinary:
+    extraEnvFrom:
+      - secretRef:
+          name: loki-s3-creds
+    persistence:
+      storageClass: prod-local-nvme
+
+lokiWrapper:
+  externalSecrets:
+    enabled: true
+  networkPolicy:
+    enabled: true
+    minioCIDR: 200.139.48.122/32
+    kubeApiCidrs:
+      - 200.139.48.121/32
 
 tempo:
-  enabled: false
+  enabled: true
+
+  persistence:
+    storageClassName: prod-local-nvme
+
+  tempo:
+    extraEnvFrom:
+      - secretRef:
+          name: tempo-s3-creds
+    metricsGenerator:
+      enabled: true
+      remoteWriteUrl: http://platform-observability-pro-prometheus.observability-prometheus.svc.cluster.local:9090/api/v1/write
+    overrides:
+      defaults:
+        metrics_generator:
+          processors:
+            - service-graphs
+            - span-metrics
+
+tempoWrapper:
+  externalSecrets:
+    enabled: true
+  networkPolicy:
+    enabled: true
+    minioCIDR: 200.139.48.122/32
+    kubeApiCidrs:
+      - 200.139.48.121/32
+    egressPrometheusNamespace: observability-prometheus
 
 otelCollector:
-  enabled: false
+  enabled: true
+
+  extraEnvs:
+    - name: LOKI_OTLP_ENDPOINT
+      value: http://platform-observability-loki.observability-loki.svc.cluster.local:3100/otlp
+    - name: TEMPO_OTLP_ENDPOINT
+      value: http://platform-observability-tempo.observability-tempo.svc.cluster.local:4318
+    - name: PROMETHEUS_REMOTE_WRITE_ENDPOINT
+      value: http://platform-observability-pro-prometheus.observability-prometheus.svc.cluster.local:9090/api/v1/write
+
+otelCollectorWrapper:
+  networkPolicy:
+    enabled: true
+    kubeApiCidrs:
+      - 200.139.48.121/32
