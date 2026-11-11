@@ -33,6 +33,13 @@ kubePrometheusStack:
 
   prometheusOperator:
     enabled: true
+    # Sem webhook de admissão: os Jobs de hook que geram o certificado dele
+    # ficam presos no finalizer do ArgoCD e travam todo sync. As regras vêm do
+    # Git e são validadas no render do CI.
+    admissionWebhooks:
+      enabled: false
+    tls:
+      enabled: false
     resources:
       requests:
         cpu: 100m
