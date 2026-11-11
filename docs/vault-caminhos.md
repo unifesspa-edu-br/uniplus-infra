@@ -10,6 +10,18 @@ O Vault tem um KV v2 por sistema e ambiente. Cada KV é lido por uma `ClusterSec
 
 Os charts guardam só o nome da store e o caminho interno (sem KV nem prefixo). Os scripts de `scripts/servicos-no-host/` recebem `<sistema>/<caminho interno>` e resolvem o KV pelo `AMBIENTE` (`prd` por padrão).
 
+## Observabilidade
+
+Gravados por `provisionar-observabilidade.sh` em `plataforma-<amb>`, lidos pelos ExternalSecrets dos charts de `platform/observability/`:
+
+| Caminho | Propriedades | Quem lê |
+|---|---|---|
+| `minio/loki` | `accesskey`, `secretkey`, `endpoint` (`<nome do host de dados>:9000`, sem esquema), `region` (`us-east-1`) | Loki (`loki-s3-creds`) |
+| `minio/tempo` | as mesmas | Tempo (`tempo-s3-creds`) |
+| `grafana/admin` | `username`, `password` | Grafana (`grafana-admin`) |
+
+A store `plataforma` precisa listar `observability-grafana`, `observability-loki` e `observability-tempo` entre os namespaces atendidos.
+
 ## Segredo compartilhado
 
 Um sistema não lê o KV de outro. O segredo usado por mais de um sistema é gravado no KV de cada um (os scripts de semente fazem isso):
