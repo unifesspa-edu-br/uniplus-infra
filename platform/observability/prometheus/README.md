@@ -20,7 +20,8 @@ com o Grafana desligado (tem [chart próprio](../grafana/README.md)).
   `alertmanager.yaml` inteiro a partir do segredo `smtp` do Vault (o mesmo da API) e o Operator o
   lê por `alertmanagerSpec.configSecret`. `Watchdog` e `InfoInhibitor` vão ao receptor `null`.
   Com `alertasEmail.enabled=false`, o chart cria no lugar um Secret de mesmo nome que descarta os
-  alertas (receptor `null`).
+  alertas (receptor `null`). O namespace `observability-prometheus` precisa constar dos namespaces
+  permitidos do store `plataforma`, inclusive nos values do repositório de implantação.
 - **Alertas do Uni+:** `PrometheusRule` `uniplus-email-governanca` (envio de e-mail e governança de
   perfis da uniplus-api), com as regras em `rules/` e os testes em `tests/`.
 - **Seleção:** aceita ServiceMonitors, PodMonitors e regras de qualquer namespace
