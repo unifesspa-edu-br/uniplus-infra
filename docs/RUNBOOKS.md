@@ -392,6 +392,10 @@ O ambiente também informa, nos values do repositório de implantação:
 
 Depois, nas APIs, `otel.enabled: true` com
 `exporter.endpoint: http://otelcol.observability-otelcol.svc.cluster.local:4317` e `protocol: grpc`.
+Cada API com OTLP ligado entra também na lista `otelCollector.alternateConfig.receivers.filelog.exclude`
+do ambiente (com a exclusão do próprio coletor repetida, porque a lista substitui a do chart), para o
+log dela não chegar duas vezes ao Loki. API sem OTLP fica fora dessa lista: o arquivo do contêiner é o
+único caminho do log dela.
 O verificador (`apps/verificador-rede`) só emite OTLP depois de ganhar a regra de egress para o
 `observability-otelcol`.
 

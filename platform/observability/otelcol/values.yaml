@@ -65,16 +65,13 @@ otelCollector:
           http:
             endpoint: ${env:MY_POD_IP}:4318
       # O preset logsCollection gera o filelog; aqui só a lista de exclusão,
-      # que substitui a dele. Ficam de fora os contêineres que já mandam os
-      # próprios logs por OTLP (com traceId), para não chegarem duas vezes ao
-      # Loki, e o próprio coletor, que o padrão do preset procura no
-      # namespace default.
+      # que substitui a dele (o padrão do preset procura o coletor no
+      # namespace default). O ambiente acrescenta os contêineres que já mandam
+      # os próprios logs por OTLP, para não chegarem duas vezes ao Loki; a
+      # lista do ambiente substitui esta inteira e precisa repetir o coletor.
       filelog:
         exclude:
           - /var/log/pods/observability-otelcol_otelcol-*/*/*.log
-          - /var/log/pods/uniplus_uniplus-api-host-*/api/*.log
-          - /var/log/pods/uniplus_uniplus-api-portal-*/api/*.log
-          - /var/log/pods/geo_unifesspa-geo-api-*/geo-api/*.log
 
     processors:
       # Sempre o primeiro da pipeline, contra OOM.
