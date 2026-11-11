@@ -405,11 +405,17 @@ subida; depois ela fica no banco do PVC. Para trocar:
 
 1. regravar o caminho no Vault e forçar o ExternalSecret, conferindo que o Secret `grafana-admin`
    mudou;
-2. aplicar a nova senha no banco, passando-a pela entrada padrão:
-   `kubectl -n observability-grafana exec -i deploy/platform-observability-grafana -c grafana -- grafana cli admin reset-admin-password --password-from-stdin`;
+2. aplicar a nova senha no banco, lida do Vault direto para a entrada padrão, sem passar pela tela:
+   `vault kv get -mount=plataforma-<amb> -field=password grafana/admin | kubectl -n observability-grafana exec -i deploy/platform-observability-grafana -c grafana -- grafana cli admin reset-admin-password --password-from-stdin`;
 3. reiniciar o Deployment, para os sidecars de dashboards e fontes de dados lerem a senha nova.
 
 Sem o passo 2, a senha antiga continua valendo.
+
+**Credencial do MinIO do Loki ou do Tempo:** apagar o caminho com `vault kv metadata delete` (`plataforma/minio/loki` ou
+`plataforma/minio/tempo`) no Vault, rodar de novo `provisionar-observabilidade.sh`, que gera a senha
+nova e a reaplica no usuário do MinIO, forçar o ExternalSecret e reiniciar o StatefulSet do
+componente, que lê a credencial por variável de ambiente só na subida. Entre o provisionamento e o
+reinício, o componente não grava no bucket.
 
 ### 7.4 Retenção e volume
 

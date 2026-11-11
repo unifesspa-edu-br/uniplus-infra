@@ -42,6 +42,6 @@ volumetria baixa, e o MinIO roda fora do cluster, no host de dados, por TLS com 
 - Uma réplica só: um crash perde os logs ainda em memória e o Loki fica indisponível durante o
   restart. Aceito para esta volumetria.
 - Sem caches, a primeira consulta de um intervalo lê direto do MinIO.
-- Rotacionar a credencial exige regravar o Vault e esperar o refresh do ExternalSecret (1 hora) ou
-  forçá-lo.
+- Rotacionar a credencial do MinIO envolve o MinIO, o Vault e o reinício do pod
+  (`docs/RUNBOOKS.md`, seção de observabilidade).
 - A retenção de 7 dias é uma decisão operacional, ajustável por ambiente.
