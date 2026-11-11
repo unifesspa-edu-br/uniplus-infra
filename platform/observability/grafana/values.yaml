@@ -134,7 +134,7 @@ grafana:
       searchNamespace: ALL
 
   # ExternalSecret da conta de administrador, lido do Vault pela store
-  # indicada. As propriedades do Vault são `user` e `password`.
+  # indicada. As propriedades do Vault são `username` e `password`.
   externalSecrets:
     refreshInterval: "1h"
     secretStoreRef:
@@ -144,7 +144,7 @@ grafana:
       enabled: false
       vaultPath: grafana/admin
       secretName: grafana-admin
-      userProperty: user
+      userProperty: username
       passwordProperty: password
 
   grafana.ini:
