@@ -21,7 +21,7 @@ Este diretório contém as decisões arquiteturais da infraestrutura da platafor
 | 007 | [Vault HA com auto-unseal Transit centralizado em PA1](ADR-007-vault-ha-storage-unseal.md) | ⛔ Superseded | 2026-05-03 → 2026-05-19 | [#13](https://github.com/unifesspa-edu-br/uniplus-infra/issues/13) |
 | 008 | [Topologia `standalone` como modelo paralelo provider-agnostic](ADR-008-topologia-standalone.md) | ⛔ Substituída pela 015 | 2026-05-03 | [#47](https://github.com/unifesspa-edu-br/uniplus-infra/issues/47) |
 | 009 | [Kafka com SASL_SSL, SCRAM-SHA-512 e StandardAuthorizer](ADR-009-kafka-sasl-ssl-scram.md) | ✅ Aceito | 2026-05-07 | [#138](https://github.com/unifesspa-edu-br/uniplus-infra/issues/138) |
-| 010 | [Reconciliação automática do realm Keycloak via keycloak-config-cli](ADR-010-keycloak-config-cli-realm-reconcile.md) | ✅ Aceito | 2026-05-07 | — |
+| 010 | [Reconciliação automática do realm Keycloak via keycloak-config-cli](ADR-010-keycloak-config-cli-realm-reconcile.md) | ✅ Aceito | 2026-05-10 | [#177](https://github.com/unifesspa-edu-br/uniplus-infra/issues/177) | |
 | 011 | [Loki em SingleBinary com armazenamento S3 no MinIO](ADR-011-loki-singlebinary-s3-minio.md) | ✅ Aceito | 2026-05-10 | [#785](https://github.com/unifesspa-edu-br/uniplus-infra/issues/785) |
 | 012 | [Tempo em single-binary com armazenamento S3 no MinIO](ADR-012-tempo-singlebinary-s3-minio.md) | ✅ Aceito | 2026-05-10 | [#785](https://github.com/unifesspa-edu-br/uniplus-infra/issues/785) |
 | 013 | [OpenTelemetry Collector em DaemonSet único, sem porta no nó](ADR-013-otel-collector-daemonset.md) | ✅ Aceito | 2026-05-10 | [#785](https://github.com/unifesspa-edu-br/uniplus-infra/issues/785) |
