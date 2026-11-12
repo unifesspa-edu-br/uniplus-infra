@@ -15,7 +15,7 @@ negar o que não foi liberado.
 
 1. **Listener `SASL_SSL`** nos dois ambientes, sem porta em texto claro. O `instalar-kafka.sh`
    instala o certificado do domínio quando informado e, sem ele, gera
-   um PEM autoassinado. Um par já instalado é preservado.
+   um PEM autoassinado.
 2. **Autenticação por `SCRAM-SHA-512`**, único mecanismo habilitado. Há um usuário `admin`, que
    também serve ao tráfego entre os nós do Kafka, e um usuário por aplicação.
 3. **Autorização por `StandardAuthorizer`** (nativo do KRaft), em modo fechado
