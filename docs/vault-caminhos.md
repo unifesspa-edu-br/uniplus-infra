@@ -22,6 +22,19 @@ Gravados por `provisionar-observabilidade.sh` em `plataforma-<amb>`, lidos pelos
 
 A store `plataforma` precisa listar `observability-grafana`, `observability-loki` e `observability-tempo` entre os namespaces atendidos.
 
+## Keycloak institucional
+
+O KV `oidc-prd` guarda os segredos do Keycloak institucional (`keycloak.unifesspa.edu.br`), que roda fora do cluster. Nenhuma store lê esse KV: ele é o original dos segredos que o pipeline do repositório `disi/uniplus-keycloak-providers` (GitLab institucional) recebe como variáveis protegidas.
+
+| Caminho | Propriedades | Uso |
+|---|---|---|
+| `keycloak/banco` | `host`, `database`, `username`, `password` | banco `keycloak` no PostgreSQL da VM de infraestrutura |
+| `keycloak/implantacao-ssh` | `private_key`, `public_key`, `known_hosts` | usuário `implantacao` do servidor, só a partir da VM de automação |
+| `keycloak/admin-master` | `username`, `password` | administrador do realm `master` |
+| `harbor/robo-ci` | `username`, `password` | robô do projeto `disi` no Harbor institucional |
+
+Trocar um desses segredos começa no serviço que o valida (o role no PostgreSQL, a chave em `authorized_keys` do servidor, a senha no Keycloak, o robô no Harbor) segue no Vault e na variável do projeto no GitLab, e termina no botão `prd:implantar-versao`, que regrava o `.env` do servidor e recria o container com o valor novo.
+
 ## Segredo compartilhado
 
 Um sistema não lê o KV de outro. O segredo usado por mais de um sistema é gravado no KV de cada um (os scripts de semente fazem isso):
