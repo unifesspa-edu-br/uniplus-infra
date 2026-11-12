@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Firewall da VM de infraestrutura: só a VM de aplicação alcança as portas dos
 # serviços de dados, todas com TLS. A VM de automação alcança só o PostgreSQL, para
-# o backup antes da migration. Carregado com `source` por bootstrap-infra.sh.
+# o backup antes da migration; o servidor do Keycloak institucional, também só ele. Carregado com `source` por bootstrap-infra.sh.
 # Não mexe no acesso SSH nem liga o firewall: ele já vem ativo da VM.
 
 PORTAS_INFRA=(5432 6379 9000 9092 5671 15671)
@@ -17,4 +17,7 @@ step_firewall() {
         run "sudo ufw allow from $APP_IP to any port $porta proto tcp"
     done
     run "sudo ufw allow from $AUTOMACAO_IP to any port 5432 proto tcp"
+    if [[ -n "$KEYCLOAK_INSTITUCIONAL_IP" ]]; then
+        run "sudo ufw allow from $KEYCLOAK_INSTITUCIONAL_IP to any port 5432 proto tcp"
+    fi
 }
