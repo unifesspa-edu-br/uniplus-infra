@@ -29,3 +29,4 @@ Este diretório contém as decisões arquiteturais da infraestrutura da platafor
 | 015 | [Produção em duas VMs, TLS entre elas e atualização manual](ADR-015-producao-em-duas-vms-com-tls-e-atualizacao-manual.md) | ✅ Aceito | 2026-11-07 | [#757](https://github.com/unifesspa-edu-br/uniplus-infra/issues/757) |
 | 016 | [Produção lê o repositório de implantação](ADR-016-producao-le-o-repositorio-de-implantacao.md) | ✅ Aceito (sync substituído pela 017) | 2026-11-09 | — |
 | 017 | [Produção aplicada pelo pipeline na VM de automação](ADR-017-producao-aplicada-pelo-pipeline-na-vm-de-automacao.md) | ✅ Aceito | 2026-11-11 | [#779](https://github.com/unifesspa-edu-br/uniplus-infra/issues/779) |
+| 018 | [Retenção e controle de acesso aos registros de acesso](ADR-018-retencao-e-acesso-aos-registros-de-acesso.md) | 🟡 Proposto | 2026-11-12 | [#798](https://github.com/unifesspa-edu-br/uniplus-infra/issues/798) |
