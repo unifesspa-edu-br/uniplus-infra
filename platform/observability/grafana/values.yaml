@@ -172,10 +172,17 @@ grafana:
       mode: console
       level: info
 
+  # O kubelet ajusta o dono do volume pelo fsGroup; o init-chown-data do
+  # subchart falha em subpastas que o próprio Grafana cria com modo 700
+  # (csv, pdf, png), e o pod novo não sobe depois do primeiro uso.
+  initChownData:
+    enabled: false
   securityContext:
     runAsNonRoot: true
     runAsUser: 472
+    runAsGroup: 472
     fsGroup: 472
+    fsGroupChangePolicy: OnRootMismatch
 
 networkPolicy:
   enabled: false
