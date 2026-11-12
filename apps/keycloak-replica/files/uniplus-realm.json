@@ -132,7 +132,7 @@
       "clientId": "grafana",
       "name": "Grafana — Observability Dashboards (admin/editor/viewer)",
       "description": "Cliente OIDC do Grafana. Confidential, secret no Vault (keycloak/grafana). Papel pelo grupo: /admins/grafana=Admin, /editors/grafana=Editor, /viewers/grafana=Viewer; fora deles o login é recusado.",
-      "secret": "${GRAFANA_CLIENT_SECRET}",
+      "secret": "$(env:GRAFANA_CLIENT_SECRET)",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": false,

@@ -159,9 +159,9 @@ spec:
           {{- if or .Values.keycloak.oidcClientSecrets.enabled .Values.keycloak.smtp.enabled }}
           envFrom:
             {{- if .Values.keycloak.oidcClientSecrets.enabled }}
-            # Client secrets OIDC consumidos pelas substituições ${envName}
+            # Client secrets OIDC consumidos pelas substituições $(env:envName)
             # no realm.json (IMPORT_VARSUBSTITUTION_ENABLED=true). Sem isso,
-            # clients confidential ficam com secret literal "${GRAFANA_CLIENT_SECRET}",
+            # clients confidential ficam com secret literal "$(env:GRAFANA_CLIENT_SECRET)",
             # quebrando o handshake OIDC do consumidor.
             - secretRef:
                 name: {{ include "keycloak-replica.oidcClientSecretsName" . }}
