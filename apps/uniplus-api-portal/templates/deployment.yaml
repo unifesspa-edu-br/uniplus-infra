@@ -301,12 +301,13 @@ spec:
               path: /health/live
               port: http
             periodSeconds: {{ .Values.uniplusApiPortal.livenessProbe.periodSeconds }}
-          # Readiness usa /health (agregado com checks externos: Postgres,
-          # Redis, etc.). Pod sai de Ready quando dependência está down —
-          # comportamento desejado pra service mesh remover do load balancer.
+          # Readiness em /health/ready: só as verificações que cada API marca
+          # como necessárias para atender. O provedor de identidade
+          # fica fora, para lentidão do Keycloak não tirar as rotas públicas do
+          # balanceamento; /health segue completo, para diagnóstico.
           readinessProbe:
             httpGet:
-              path: /health
+              path: /health/ready
               port: http
             periodSeconds: {{ .Values.uniplusApiPortal.readinessProbe.periodSeconds }}
           resources:
