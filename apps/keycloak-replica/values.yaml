@@ -317,7 +317,7 @@ keycloak:
       name: plataforma
     # Lista de clientes OIDC a sincronizar do Vault.
     # Cada item: { envName, vaultPath, vaultKey }
-    #   envName  — variável injetada no Pod (referenciada como ${envName} no realm.json)
+    #   envName  — variável injetada no Pod (referenciada como $(env:envName) no realm.json)
     #   vaultPath — path no Vault (ex.: keycloak/grafana)
     #   vaultKey — propriedade dentro do segredo (ex.: client_secret)
     clients: []
