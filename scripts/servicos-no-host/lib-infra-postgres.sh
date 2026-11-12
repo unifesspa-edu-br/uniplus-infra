@@ -4,19 +4,27 @@
 #
 # Só aceita conexão TLS (hostssl), com o certificado curinga da instituição; o
 # cliente valida o nome pelo FQDN da VM. A aplicação entra de APP_CIDR; o role de
-# backup, somente leitura, só da VM de automação e de nenhuma outra origem.
+# backup, somente leitura, só da VM de automação e de nenhuma outra origem; o
+# Keycloak institucional, só no banco dele.
 
 POSTGRES_IMAGE="postgis/postgis:18-3.6"
 POSTGRES_UID=999
 POSTGRES_TLS_DIR="$DATA_BASE/postgres/tls"
 POSTGRES_CONFIG_DIR="$DATA_BASE/postgres/config"
 
+# A primeira linha que casa decide: as do Keycloak vêm antes da regra da aplicação,
+# para que um APP_CIDR mais largo não abra a ele os outros bancos.
 hba_postgres() {
     printf '%s\n' \
         'local all all trust' \
         "hostssl all ${ROLE_BACKUP} ${AUTOMACAO_IP}/32 scram-sha-256" \
-        "host all ${ROLE_BACKUP} all reject" \
-        "hostssl all all ${APP_CIDR} scram-sha-256"
+        "host all ${ROLE_BACKUP} all reject"
+    if [[ -n "$KEYCLOAK_INSTITUCIONAL_IP" ]]; then
+        printf '%s\n' \
+            "hostssl keycloak keycloak ${KEYCLOAK_INSTITUCIONAL_IP}/32 scram-sha-256" \
+            "host all all ${KEYCLOAK_INSTITUCIONAL_IP}/32 reject"
+    fi
+    echo "hostssl all all ${APP_CIDR} scram-sha-256"
 }
 
 unidade_postgres() {

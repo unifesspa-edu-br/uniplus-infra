@@ -21,6 +21,9 @@ source "$SCRIPT_DIR/lib-provisionar.sh"
 source "$SCRIPT_DIR/lib-transit.sh"
 
 SISTEMAS=(uniplus geo plataforma)
+# KV sem store: guarda o original dos segredos do Keycloak institucional, que roda
+# fora do cluster e os recebe do pipeline dele (docs/vault-caminhos.md).
+KV_SEM_STORE=(oidc)
 
 mostrar_uso() {
     echo "Uso: $0 [--dry-run]"
@@ -138,6 +141,9 @@ if $DRY_RUN; then
     for sistema in "${SISTEMAS[@]}"; do
         echo "[DRY-RUN] montaria $sistema-$AMBIENTE/ (KV v2) e aplicaria a política e a role external-secrets-$sistema em $VAULT_URL"
     done
+    for sistema in "${KV_SEM_STORE[@]}"; do
+        echo "[DRY-RUN] montaria $sistema-$AMBIENTE/ (KV v2), sem política nem role, em $VAULT_URL"
+    done
     echo "[DRY-RUN] habilitaria a auditoria em stdout/ e em file/ (/vault/audit/audit.log)"
     echo "[DRY-RUN] habilitaria auth/kubernetes"
     echo "[DRY-RUN] aplicaria a política e o AppRole $POLITICA_SNAPSHOT (só lê sys/storage/raft/snapshot)"
@@ -150,6 +156,9 @@ habilitar_auth_kubernetes
 for sistema in "${SISTEMAS[@]}"; do
     montar_kv "$sistema-$AMBIENTE"
     criar_politica_e_role "$sistema" "$sistema-$AMBIENTE"
+done
+for sistema in "${KV_SEM_STORE[@]}"; do
+    montar_kv "$sistema-$AMBIENTE"
 done
 configurar_transit
 criar_acesso_de_snapshot

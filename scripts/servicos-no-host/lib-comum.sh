@@ -11,6 +11,14 @@ INFRA_IP="${INFRA_IP:-200.139.48.122}"
 # VM de automação: só o role de backup alcança o PostgreSQL a partir dela.
 AUTOMACAO_IP="${AUTOMACAO_IP:-200.139.48.114}"
 ROLE_BACKUP="${ROLE_BACKUP:-uniplus_backup}"
+# Servidor do Keycloak institucional: em produção, o banco dele vive no PostgreSQL
+# da VM de infraestrutura e só o role `keycloak` entra de lá, no banco `keycloak`.
+# Vazio fora de produção.
+if [[ "$AMBIENTE" == prd ]]; then
+    KEYCLOAK_INSTITUCIONAL_IP="${KEYCLOAK_INSTITUCIONAL_IP:-200.139.48.23}"
+else
+    KEYCLOAK_INSTITUCIONAL_IP="${KEYCLOAK_INSTITUCIONAL_IP:-}"
+fi
 INFRA_FQDN_INFORMADO="${INFRA_FQDN:-}"
 INFRA_FQDN="${INFRA_FQDN:-uniplus-prod-infra.unifesspa.edu.br}"
 # Origem das conexões da aplicação aos serviços de dados. Com as duas VMs, é o
