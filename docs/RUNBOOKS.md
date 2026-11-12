@@ -370,7 +370,8 @@ namespace).
 
 O ambiente também informa, nos values do repositório de implantação:
 
-- a store `plataforma` atendendo `observability-grafana`, `observability-loki` e `observability-tempo`;
+- a store `plataforma` atendendo `observability-grafana`, `observability-loki`, `observability-tempo` e
+  `observability-prometheus` (o Alertmanager lê o segredo `smtp`);
 - StorageClass de Prometheus, Alertmanager, Grafana, Loki e Tempo (`hml-local-nvme` ou `prod-local-nvme`);
 - `lokiWrapper` e `tempoWrapper`: `networkPolicy.minioCIDR` (IP do host de dados, `/32`) e
   `kubeApiCidrs` (IP do host do cluster, `/32`);
@@ -414,6 +415,15 @@ subida; depois ela fica no banco do PVC. Para trocar:
 3. reiniciar o Deployment, para os sidecars de dashboards e fontes de dados lerem a senha nova.
 
 Sem o passo 2, a senha antiga continua valendo.
+
+**Login pelo Keycloak (ambiente com Keycloak próprio, hoje HML).** O client `grafana` do realm recebe
+o host do ambiente em `keycloak.realmImport.grafanaClient` e o secret de `plataforma/keycloak/grafana`
+(propriedade `client_secret`), lido pelo Keycloak (`keycloak.oidcClientSecrets`) e pelo Grafana
+(`grafana.externalSecrets.oidcClient` e `envValueFrom`). O papel vem do grupo: `/admins/grafana`
+(Admin), `/editors/grafana` (Editor) e `/viewers/grafana` (Viewer); com `role_attribute_strict`, quem
+não está em nenhum deles é recusado. Dar acesso é incluir a pessoa no grupo, no realm. A conta local
+continua valendo para quando o Keycloak estiver fora. Em produção o Keycloak é o institucional e o
+Grafana usa só a conta local.
 
 **Credencial do MinIO do Loki ou do Tempo:** apagar o caminho com `vault kv metadata delete -mount=plataforma-<amb>` (`minio/loki` ou
 `minio/tempo`) no Vault, rodar de novo `provisionar-observabilidade.sh`, que gera a senha
