@@ -203,12 +203,13 @@ spec:
               path: /health/live
               port: http
             periodSeconds: {{ .Values.unifesspaGeoApi.livenessProbe.periodSeconds }}
-          # Readiness usa /health (agregado com checks externos: Postgres,
-          # Redis, OIDC discovery). Pod sai de Ready quando dependência está
-          # down — comportamento desejado pra remover do load balancer.
+          # Readiness em /health/ready: só as verificações que cada API marca
+          # como necessárias para atender. O provedor de identidade
+          # fica fora, para lentidão do Keycloak não tirar as rotas públicas do
+          # balanceamento; /health segue completo, para diagnóstico.
           readinessProbe:
             httpGet:
-              path: /health
+              path: /health/ready
               port: http
             periodSeconds: {{ .Values.unifesspaGeoApi.readinessProbe.periodSeconds }}
           resources:

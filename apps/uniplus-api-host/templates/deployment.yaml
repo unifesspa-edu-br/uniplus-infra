@@ -211,12 +211,13 @@ spec:
               path: /health/live
               port: http
             periodSeconds: {{ .Values.uniplusApiHost.livenessProbe.periodSeconds }}
-          # Readiness usa /health (agregado — os 4 módulos compartilham o banco
-          # `uniplus`, então um único check de banco+infra cobre o processo).
-          # Pod sai de Ready quando dependência está down.
+          # Readiness em /health/ready: só as verificações que cada API marca
+          # como necessárias para atender. O provedor de identidade
+          # fica fora, para lentidão do Keycloak não tirar as rotas públicas do
+          # balanceamento; /health segue completo, para diagnóstico.
           readinessProbe:
             httpGet:
-              path: /health
+              path: /health/ready
               port: http
             periodSeconds: {{ .Values.uniplusApiHost.readinessProbe.periodSeconds }}
           resources:
