@@ -22,6 +22,16 @@ Gravados por `provisionar-observabilidade.sh` em `plataforma-<amb>`, lidos pelos
 
 A store `plataforma` precisa listar `observability-grafana`, `observability-loki` e `observability-tempo` entre os namespaces atendidos.
 
+## Kafka UI
+
+Em `plataforma-<amb>`, lidos pelos ExternalSecrets do chart `apps/kafka-ui` (namespace `kafka-ui`). A credencial do Kafka UI é própria e só de leitura no broker; o chart recusa `kafka/admin` como caminho dela.
+
+| Caminho | Propriedades | Gravado por | Quem lê |
+|---|---|---|---|
+| `kafka/kafka-ui` | `username` (`uniplus-kafka-ui-svc`), `password`, `ca_cert` (CA do broker) | `provisionar-kafka-ui.sh` (o `ca_cert` também é regravado por `renovar-certificado.sh`) | AKHQ, conexão SASL_SSL com o Kafka |
+| `keycloak/kafka-ui` | `client_secret` | operador | AKHQ, login OIDC |
+| `kafka-ui/jwt` | `signing_secret` | operador | AKHQ, assinatura da sessão |
+
 ## Keycloak institucional
 
 O KV `oidc-prd` guarda os segredos do Keycloak institucional (`keycloak.unifesspa.edu.br`), que roda fora do cluster. Nenhuma store lê esse KV: ele é o original dos segredos que o pipeline do repositório `disi/uniplus-keycloak-providers` (GitLab institucional) recebe como variáveis protegidas.
