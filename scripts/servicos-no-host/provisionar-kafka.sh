@@ -29,6 +29,8 @@
 #
 # Variáveis (as de lib-comum.sh valem aqui):
 #   INFRA_FQDN    nome do broker, validado pelo certificado
+#   BOOTSTRAP     default $INFRA_FQDN:9092
+#   CA_CRT        CA do broker, default /etc/uniplus-kafka/certs/ca.crt
 #   KAFKA_IMAGE   default apache/kafka:4.2.0
 #   VAULT_URL     ver lib-vault.sh
 set -euo pipefail
@@ -38,19 +40,16 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib-comum.sh"
 
 KAFKA_IMAGE="${KAFKA_IMAGE:-apache/kafka:4.2.0}"
-BOOTSTRAP="$INFRA_FQDN:9092"
+BOOTSTRAP="${BOOTSTRAP:-$INFRA_FQDN:9092}"
 USUARIO="uniplus-api-registro-acesso-svc"
 TOPICO="autorizacao_registros_de_acesso"
 PARTICOES=3
 VAULT_CAMINHO="uniplus/kafka/$USUARIO"
 VAULT_CAMINHO_CA="uniplus/kafka/ca"
 ADMIN_PROPERTIES="$DATA_BASE/kafka/admin.properties"
-CA_CRT="/etc/uniplus-kafka/certs/ca.crt"
+CA_CRT="${CA_CRT:-/etc/uniplus-kafka/certs/ca.crt}"
 
 log() { echo "[$(date -u +%H:%M:%S)] $*"; }
-falha() { echo "ERRO: $*" >&2; exit 1; }
-# Só ASCII: letras, dígitos e ._~- (bytes fora disso não casam com LC_ALL=C).
-senha_no_alfabeto() { [[ "$1" =~ ^[0-9A-Za-z._~-]+$ ]]; }
 
 mostrar_uso() {
     echo "Uso: $0 [--dry-run] [provisionar|ca|verificar]"
@@ -82,35 +81,10 @@ trap cleanup EXIT
 
 # shellcheck source=lib-vault.sh
 source "$SCRIPT_DIR/lib-vault.sh"
+# shellcheck source=lib-kafka.sh
+source "$SCRIPT_DIR/lib-kafka.sh"
 command -v docker >/dev/null || falha "docker ausente"
 sudo test -r "$ADMIN_PROPERTIES" || falha "$ADMIN_PROPERTIES ausente ou ilegível"
-
-# Ferramenta do Kafka com a credencial `admin` (admin.properties montado só leitura).
-kafka_admin() {
-    local ferramenta="$1"
-    shift
-    sudo docker run --rm --network host \
-        -v "$ADMIN_PROPERTIES:/tmp/admin.properties:ro" \
-        -v "$CA_CRT:/etc/uniplus-kafka/certs/ca.crt:ro" \
-        --entrypoint "/opt/kafka/bin/$ferramenta" "$KAFKA_IMAGE" "$@"
-}
-
-# Contêiner com `sh -c <roteiro>`; a senha do usuário chega por stdin, que o roteiro lê.
-# $1 = roteiro; $2 = "admin" monta também o admin.properties.
-kafka_sh_com_senha() {
-    local roteiro="$1" extra=()
-    if [[ "${2:-}" == admin ]]; then
-        extra=(-v "$ADMIN_PROPERTIES:/tmp/admin.properties:ro")
-    fi
-    sudo docker run --rm -i --network host \
-        -v "$CA_CRT:/etc/uniplus-kafka/certs/ca.crt:ro" "${extra[@]}" \
-        -e "BOOTSTRAP=$BOOTSTRAP" -e "USUARIO=$USUARIO" -e "TOPICO=$TOPICO" \
-        --entrypoint sh "$KAFKA_IMAGE" -c "$roteiro"
-}
-
-senha_do_vault() {
-    vault_get "$VAULT_CAMINHO" password || falha "senha de $USUARIO ausente no Vault ($VAULT_CAMINHO); rodar 'provisionar'"
-}
 
 # Grava o CA do broker no Vault (chave ca_cert), se ainda não está igual. O PEM não passa
 # por argv: vai de arquivo 0600 do tmpdir para o corpo da requisição (`@arquivo`) e é
@@ -154,43 +128,29 @@ provisionar() {
         [[ "$(senha_do_vault)" == "$senha" ]] || falha "a senha lida do Vault difere da gravada"
     fi
 
-    # 2) Usuário SCRAM (o upsert é idempotente). A credencial vai num arquivo 0600 do
-    # /tmp do contêiner descartável, lido por --add-config-file: argumento de processo
-    # aparece no `ps` do host, arquivo dentro do contêiner não. O arquivo é lido como
-    # Java properties, que interpreta escapes e bytes não ASCII; uma senha fora do
-    # alfabeto que este script gera chegaria alterada ao broker, então é recusada.
-    LC_ALL=C senha_no_alfabeto "$senha" \
-        || falha "a senha de $USUARIO no Vault tem caractere fora de [0-9A-Za-z._~-]; gerar outra"
-    log "Aplicando o usuário SCRAM $USUARIO"
-    # shellcheck disable=SC2016  # expansão deliberada dentro do contêiner
-    printf '%s\n' "$senha" | kafka_sh_com_senha \
-        'umask 077; read -r APP_PW; printf "SCRAM-SHA-512=password=%s\n" "$APP_PW" > /tmp/scram.properties; unset APP_PW
-/opt/kafka/bin/kafka-configs.sh --bootstrap-server "$BOOTSTRAP" --command-config /tmp/admin.properties --alter --add-config-file /tmp/scram.properties --entity-type users --entity-name "$USUARIO"; s=$?; rm -f /tmp/scram.properties; exit $s' admin
+    # 2) Usuário SCRAM, com a senha que acabou de ir ao Vault.
+    aplicar_usuario_scram
     unset senha
 
     # 3) Tópico. Existente com outro número de partições é divergência a resolver
     # à mão: aumentar partições muda a chave de ordenação, e reduzir não existe.
     log "Criando o tópico $TOPICO (se ainda não existir)"
-    kafka_admin kafka-topics.sh --bootstrap-server "$BOOTSTRAP" --command-config /tmp/admin.properties \
+    kafka_admin kafka-topics.sh \
         --create --if-not-exists --topic "$TOPICO" --partitions "$PARTICOES" --replication-factor 1 \
         --config retention.ms=-1 --config cleanup.policy=delete
     local descricao
-    descricao=$(kafka_admin kafka-topics.sh --bootstrap-server "$BOOTSTRAP" --command-config /tmp/admin.properties \
-        --describe --topic "$TOPICO")
+    descricao=$(kafka_admin kafka-topics.sh --describe --topic "$TOPICO")
     grep -q "PartitionCount: $PARTICOES" <<<"$descricao" \
         || falha "o tópico $TOPICO existe com número de partições diferente de $PARTICOES"
-    kafka_admin kafka-configs.sh --bootstrap-server "$BOOTSTRAP" --command-config /tmp/admin.properties \
-        --alter --entity-type topics --entity-name "$TOPICO" \
+    kafka_admin kafka-configs.sh --alter --entity-type topics --entity-name "$TOPICO" \
         --add-config retention.ms=-1,cleanup.policy=delete
 
     # 4) ACL literal: só Write e Describe.
     log "Concedendo Write e Describe em $TOPICO a User:$USUARIO"
-    kafka_admin kafka-acls.sh --bootstrap-server "$BOOTSTRAP" --command-config /tmp/admin.properties \
-        --add --allow-principal "User:$USUARIO" --operation Write --operation Describe --topic "$TOPICO"
+    kafka_admin kafka-acls.sh --add --allow-principal "User:$USUARIO" --operation Write --operation Describe --topic "$TOPICO"
 
     local acls
-    acls=$(kafka_admin kafka-acls.sh --bootstrap-server "$BOOTSTRAP" --command-config /tmp/admin.properties \
-        --list --principal "User:$USUARIO")
+    acls=$(kafka_admin kafka-acls.sh --list --principal "User:$USUARIO")
     echo "$acls"
     local operacoes
     operacoes=$(grep -o 'operation=[A-Za-z]*' <<<"$acls" | sort | tr '\n' ' ')
@@ -206,10 +166,8 @@ provisionar() {
 # Soma, nas partições do tópico, (fim - início) dos offsets: 0 = tópico vazio.
 registros_no_topico() {
     local fim inicio
-    fim=$(kafka_admin kafka-get-offsets.sh --bootstrap-server "$BOOTSTRAP" --command-config /tmp/admin.properties \
-        --topic "$TOPICO" --time -1 | awk -F: '{s+=$3} END{print s+0}')
-    inicio=$(kafka_admin kafka-get-offsets.sh --bootstrap-server "$BOOTSTRAP" --command-config /tmp/admin.properties \
-        --topic "$TOPICO" --time -2 | awk -F: '{s+=$3} END{print s+0}')
+    fim=$(kafka_admin kafka-get-offsets.sh --topic "$TOPICO" --time -1 | awk -F: '{s+=$3} END{print s+0}')
+    inicio=$(kafka_admin kafka-get-offsets.sh --topic "$TOPICO" --time -2 | awk -F: '{s+=$3} END{print s+0}')
     echo $((fim - inicio))
 }
 
@@ -219,29 +177,9 @@ registros_no_topico() {
 # de Delete, Alter, Read, Create e de ACL prefixada ou com curinga: se a conta tivesse
 # permissão demais, a tentativa executaria de verdade na trilha.
 conferir_acls() {
-    local acls alcancadas esperadas
-    acls=$(kafka_admin kafka-acls.sh --bootstrap-server "$BOOTSTRAP" --command-config /tmp/admin.properties --list)
-    alcancadas=$(awk -v u="User:$USUARIO" '
-        /^Current ACLs for resource/ {
-            r = $0
-            sub(/^[^(]*\(/, "", r); sub(/\)`?:? *$/, "", r)
-            gsub(/resourceType=|name=|patternType=/, "", r); gsub(/, /, "|", r)
-            next
-        }
-        /principal=/ {
-            p = $0; sub(/.*principal=/, "", p); sub(/,.*/, "", p)
-            o = $0; sub(/.*operation=/, "", o); sub(/,.*/, "", o)
-            t = $0; sub(/.*permissionType=/, "", t); sub(/\).*/, "", t)
-            if (p == u || p == "User:*") print r "|" p "|" o "|" t
-        }' <<<"$acls" | sort)
-    esperadas=$(printf '%s\n' \
+    conferir_acls_do_usuario "Write e Describe literais em $TOPICO" \
         "TOPIC|$TOPICO|LITERAL|User:$USUARIO|DESCRIBE|ALLOW" \
-        "TOPIC|$TOPICO|LITERAL|User:$USUARIO|WRITE|ALLOW" | sort)
-    if [[ "$alcancadas" != "$esperadas" ]]; then
-        echo "ACLs que alcançam $USUARIO:" >&2
-        echo "$alcancadas" >&2
-        falha "as ACLs de $USUARIO (ou do curinga User:*) diferem de Write e Describe literais em $TOPICO"
-    fi
+        "TOPIC|$TOPICO|LITERAL|User:$USUARIO|WRITE|ALLOW"
     log "ACLs conferidas: só Write e Describe literais em $TOPICO, nada por curinga ou prefixo."
 }
 
@@ -258,7 +196,7 @@ api_usa_o_topico() {
 
 # Fim (offset do próximo registro) de uma partição do tópico.
 fim_da_particao() {
-    kafka_admin kafka-get-offsets.sh --bootstrap-server "$BOOTSTRAP" --command-config /tmp/admin.properties \
+    kafka_admin kafka-get-offsets.sh \
         --topic "$TOPICO" --time -1 | awk -F: -v p="$1" '$2 == p {print $3}'
 }
 
@@ -285,78 +223,18 @@ verificar() {
         for p in 0 1 2; do fim_antes[p]=$(fim_da_particao "$p"); done
     fi
 
-    # Roteiro executado DENTRO do contêiner descartável com a credencial do registro de
-    # acesso. A senha vem por stdin e só é escrita no /tmp do próprio contêiner, que some
-    # com ele (--rm). Nada aqui apaga ou altera o tópico real.
-    # shellcheck disable=SC2016  # expansões deliberadas dentro do contêiner
-    local roteiro='
-read -r SENHA
-C=/tmp/cliente.properties
-cat > "$C" <<PROP
-security.protocol=SASL_SSL
-sasl.mechanism=SCRAM-SHA-512
-sasl.jaas.config=org.apache.kafka.common.security.scram.ScramLoginModule required username="$USUARIO" password="$SENHA";
-ssl.truststore.type=PEM
-ssl.truststore.location=/etc/uniplus-kafka/certs/ca.crt
-ssl.endpoint.identification.algorithm=
-enable.idempotence=true
-PROP
-B=/opt/kafka/bin
-N=verificacao_752_negativa
-
-recusado() { # $1 = nome, $2 = arquivo de saída. Os clientes de console saem com 0 mesmo
-  # quando o broker recusa, então a recusa se reconhece pela exceção de autorização.
-  if grep -qi "authorization\|not authorized" "$2" && ! grep -q "752\\.0" "$2"; then
-    echo "$1: RECUSADO pelo broker (autorização)"
-  else
-    echo "$1: NAO RECUSADO <<<<<< FALHA"; sed "s/$SENHA/***/g" "$2" | tail -5
-  fi
-}
-
-if [ "$PUBLICAR" = 1 ]; then
-  # O produtor verificável devolve partição e offset gravados no broker.
-  $B/kafka-verifiable-producer.sh --bootstrap-server "$BOOTSTRAP" --producer.config "$C" --topic "$TOPICO" \
-    --max-messages 1 --acks -1 --value-prefix 752 >/tmp/o_pub 2>&1
-  echo "publicar: rc=$?"
-  grep "producer_send_success" /tmp/o_pub | sed "s/^/produce: /"
-  grep -qi "authorization" /tmp/o_pub && echo "publicar: BROKER RECUSOU <<<<<< FALHA"
-fi
-
-# Describe: listar offsets pede só Describe no tópico (kafka-topics --describe pede também DescribeConfigs).
-$B/kafka-get-offsets.sh --bootstrap-server "$BOOTSTRAP" --command-config "$C" --topic "$TOPICO" --time -1 >/tmp/o_desc 2>&1
-rc=$?
-echo "descrever (Describe): rc=$rc"
-[ "$rc" -ne 0 ] && echo "descrever: FALHA"
-
-$B/kafka-console-consumer.sh --bootstrap-server "$BOOTSTRAP" --consumer.config "$C" --topic "$TOPICO" \
-  --from-beginning --max-messages 1 --timeout-ms 15000 --group verificacao-752 >/tmp/o_ler 2>&1
-recusado "ler (Read)" /tmp/o_ler
-
-# Sem assinatura de grupo (atribuição manual), a recusa vem do Read no próprio tópico.
-$B/kafka-console-consumer.sh --bootstrap-server "$BOOTSTRAP" --consumer.config "$C" --topic "$TOPICO" \
-  --partition 0 --offset earliest --max-messages 1 --timeout-ms 15000 >/tmp/o_ler2 2>&1
-recusado "ler o tópico sem grupo (Read)" /tmp/o_ler2
-
-# Tópico descartável: se a criação passar, o roteiro do host o apaga e a verificação falha.
-$B/kafka-topics.sh --bootstrap-server "$BOOTSTRAP" --command-config "$C" --create --topic "$N" \
-  --partitions 1 --replication-factor 1 >/tmp/o_cri 2>&1
-recusado "criar outro tópico (Create)" /tmp/o_cri
-'
+    local descartavel=verificacao_752_negativa
     log "Rodando o cliente temporário (contêiner --rm) com a credencial $USUARIO"
     local resultado
-    resultado=$(printf '%s\n' "$senha" | sudo docker run --rm -i --network host \
-        -v "$CA_CRT:/etc/uniplus-kafka/certs/ca.crt:ro" \
-        -e "BOOTSTRAP=$BOOTSTRAP" -e "USUARIO=$USUARIO" -e "TOPICO=$TOPICO" -e "PUBLICAR=$publicar" \
-        --entrypoint sh "$KAFKA_IMAGE" -c "$roteiro")
+    resultado=$(printf '%s\n' "$senha" | conteiner_usuario_com_roteiro verificar-credencial-registro-acesso.sh \
+        "TOPICO=$TOPICO" "PUBLICAR=$publicar" "DESCARTAVEL=$descartavel") \
+        || falha "o cliente de verificação terminou com erro"
     unset senha
     echo "$resultado"
 
     # O tópico descartável não pode sobrar, passe ou não a verificação.
-    local descartavel=verificacao_752_negativa
-    if kafka_admin kafka-topics.sh --bootstrap-server "$BOOTSTRAP" --command-config /tmp/admin.properties --list \
-        | grep -qx "$descartavel"; then
-        kafka_admin kafka-topics.sh --bootstrap-server "$BOOTSTRAP" --command-config /tmp/admin.properties \
-            --delete --topic "$descartavel"
+    if kafka_admin kafka-topics.sh --list | grep -qx "$descartavel"; then
+        kafka_admin kafka-topics.sh --delete --topic "$descartavel"
         falha "a credencial criou o tópico $descartavel (apagado): tem mais permissão do que deveria"
     fi
     if grep -q 'FALHA' <<<"$resultado"; then
@@ -364,15 +242,13 @@ recusado "criar outro tópico (Create)" /tmp/o_cri
     fi
 
     log "Conferindo o estado do tópico como admin"
-    kafka_admin kafka-topics.sh --bootstrap-server "$BOOTSTRAP" --command-config /tmp/admin.properties \
-        --describe --topic "$TOPICO"
-    kafka_admin kafka-configs.sh --bootstrap-server "$BOOTSTRAP" --command-config /tmp/admin.properties \
-        --describe --entity-type topics --entity-name "$TOPICO"
+    kafka_admin kafka-topics.sh --describe --topic "$TOPICO"
+    kafka_admin kafka-configs.sh --describe --entity-type topics --entity-name "$TOPICO"
 
     if [[ "$publicar" == 1 ]]; then
         # Partição e offset devolvidos pelo broker à própria mensagem de teste.
         local enviado particao offset
-        enviado=$(grep 'producer_send_success' <<<"$resultado" | head -n1)
+        enviado=$(grep 'producer_send_success' <<<"$resultado" | head -n1 || true)
         particao=$(sed -n 's/.*"partition":\([0-9]*\).*/\1/p' <<<"$enviado")
         offset=$(sed -n 's/.*"offset":\([0-9]*\).*/\1/p' <<<"$enviado")
         [[ -n "$particao" && -n "$offset" ]] || falha "o produtor não devolveu partição e offset; nada foi removido"
@@ -382,8 +258,7 @@ recusado "criar outro tópico (Create)" /tmp/o_cri
             falha "offset inesperado para o registro de teste"
         fi
         local lido
-        lido=$(kafka_admin kafka-console-consumer.sh --bootstrap-server "$BOOTSTRAP" \
-            --consumer.config /tmp/admin.properties --topic "$TOPICO" --partition "$particao" --offset "$offset" \
+        lido=$(kafka_admin kafka-console-consumer.sh --topic "$TOPICO" --partition "$particao" --offset "$offset" \
             --max-messages 1 --timeout-ms 15000 2>/dev/null)
         grep -qx '752\.0' <<<"$lido" || falha "o registro de teste não foi lido de volta pelo admin"
         log "Publicação confirmada (partição $particao, offset $offset). Removendo só esse registro."
