@@ -43,7 +43,7 @@ kafkaUi:
     # Nome do cluster como aparecerá na UI.
     clusterName: uniplus
     bootstrapServers: ""  # ex.: 10.0.2.87:9092
-    # SASL_SSL + SCRAM-SHA-512 via creds sintetizadas pelo ESO.
+    # SASL_SSL + SCRAM-SHA-512 com a credencial própria da interface (ESO).
     # `ssl.endpoint.identification.algorithm=` vazio aceita SAN do
     # self-signed que cobre IP da subnet privada.
     securityProtocol: SASL_SSL
@@ -64,8 +64,20 @@ kafkaUi:
     # `groups` no client `kafka-ui` do realm.
     groupsClaim: groups
     groups:
+      # Papel `admin` do AKHQ. No broker o que ele pode fazer é limitado pelas
+      # ACLs da credencial `kafkaCredentials`, não pelo papel.
       kafkaAdminsClaim: "/admins/kafka"
-      kafkaReadOnlyClaim: "/users/uniplus"
+      # Única porta para ler o conteúdo das mensagens pela interface: grupo de
+      # concessão justificada e registrada (docs/RUNBOOK-KAFKA-UI.md). Quem não está em
+      # nenhum dos dois grupos cai no `no-roles`, inclusive `/users/uniplus`.
+      kafkaDataReadersClaim: "/users/kafka-ui-leitores"
+
+  # Tópicos que o papel de leitura de conteúdo não abre na interface, por nome
+  # literal. Para `autorizacao_registros_de_acesso` o broker também recusa a
+  # leitura à credencial da interface (provisionar-kafka-ui.sh); qualquer outro
+  # nome incluído aqui só é barrado na interface, até ganhar o mesmo DENY no broker.
+  topicosSemLeituraNaInterface:
+    - autorizacao_registros_de_acesso
 
   # === ExternalSecrets (Vault → K8s Secret) ===
   externalSecrets:
@@ -75,13 +87,13 @@ kafkaUi:
       kind: ClusterSecretStore
       name: plataforma
 
-    # SCRAM admin do Kafka + CA cert do broker self-signed.
-    # Gerados em `kafka/admin` via docs/RUNBOOKS.md
-    # após bootstrap. ca_cert é PEM completo do CA do broker (necessário
-    # para AKHQ validar o handshake TLS — broker usa self-signed sem
-    # cadeia institucional).
-    kafkaAdmin:
-      vaultPath: kafka/admin
+    # Credencial SCRAM própria da interface (`uniplus-kafka-ui-svc`, só ACLs de
+    # leitura; criada por provisionar-kafka-ui.sh) e o CA do broker, em PEM
+    # completo, para o AKHQ validar o handshake TLS. O caminho `kafka/admin` é
+    # recusado pelo schema: o administrador do broker é super usuário e passa
+    # por cima das ACLs.
+    kafkaCredentials:
+      vaultPath: kafka/kafka-ui
       usernameKey: username
       passwordKey: password
       caCertKey: ca_cert

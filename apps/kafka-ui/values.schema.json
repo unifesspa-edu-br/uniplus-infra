@@ -65,11 +65,17 @@
               "additionalProperties": false,
               "properties": {
                 "kafkaAdminsClaim": { "type": "string" },
-                "kafkaReadOnlyClaim": { "type": "string" }
-              }
+                "kafkaDataReadersClaim": { "type": "string", "minLength": 1, "not": { "enum": ["/users/uniplus", "/users"] } }
+              },
+              "required": ["kafkaAdminsClaim", "kafkaDataReadersClaim"]
             }
           },
           "required": ["enabled", "providerName", "clientId", "groupsClaim", "groups"]
+        },
+        "topicosSemLeituraNaInterface": {
+          "type": "array",
+          "items": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$", "maxLength": 249 },
+          "uniqueItems": true
         },
         "externalSecrets": {
           "type": "object",
@@ -86,11 +92,11 @@
               },
               "required": ["kind", "name"]
             },
-            "kafkaAdmin": {
+            "kafkaCredentials": {
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "vaultPath": { "type": "string" },
+                "vaultPath": { "type": "string", "minLength": 1, "not": { "const": "kafka/admin" } },
                 "usernameKey": { "type": "string" },
                 "passwordKey": { "type": "string" },
                 "caCertKey": { "type": "string" }
@@ -115,7 +121,8 @@
               },
               "required": ["vaultPath", "signingSecretKey"]
             }
-          }
+          },
+          "required": ["kafkaCredentials"]
         },
         "ingress": {
           "type": "object",

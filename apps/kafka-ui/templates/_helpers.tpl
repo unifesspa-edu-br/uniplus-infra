@@ -47,11 +47,11 @@ fullname com sufixo "-sa".
 {{- end -}}
 
 {{/*
-Nome do Secret K8s sintetizado pelo ESO `kafkaAdmin` — convenção
-<fullname>-kafka-admin (consumido por envFrom no deployment).
+Nome do Secret K8s sintetizado pelo ESO `kafkaCredentials` — convenção
+<fullname>-kafka-credentials (usuário e senha por secretKeyRef; CA por volume).
 */}}
-{{- define "kafkaUi.kafkaAdminSecretName" -}}
-{{ include "kafkaUi.fullname" . }}-kafka-admin
+{{- define "kafkaUi.kafkaCredentialsSecretName" -}}
+{{ include "kafkaUi.fullname" . }}-kafka-credentials
 {{- end -}}
 
 {{/*
@@ -74,4 +74,22 @@ Nome do ConfigMap com application.yml renderizado.
 */}}
 {{- define "kafkaUi.configMapName" -}}
 {{ include "kafkaUi.fullname" . }}-config
+{{- end -}}
+
+{{/*
+Padrão de nome dos tópicos que o papel de leitura de conteúdo pode abrir: todos,
+menos os de topicosSemLeituraNaInterface. O AKHQ só aceita padrões positivos
+(regex Java, o recurso precisa casar com ao menos um); a exclusão é um lookahead
+negativo ancorado no nome inteiro, com cada nome escapado como literal.
+*/}}
+{{- define "kafkaUi.padraoDeTopicosLegiveis" -}}
+{{- $excluidos := list -}}
+{{- range .Values.kafkaUi.topicosSemLeituraNaInterface -}}
+{{- $excluidos = append $excluidos (regexQuoteMeta .) -}}
+{{- end -}}
+{{- if $excluidos -}}
+^(?!(?:{{ join "|" $excluidos }})$).*$
+{{- else -}}
+.*
+{{- end -}}
 {{- end -}}
