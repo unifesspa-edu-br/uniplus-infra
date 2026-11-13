@@ -474,7 +474,8 @@
     {
       "name": "users",
       "subGroups": [
-        { "name": "uniplus", "path": "/users/uniplus" }
+        { "name": "uniplus", "path": "/users/uniplus" },
+        { "name": "kafka-ui-leitores", "path": "/users/kafka-ui-leitores" }
       ]
     }
   ],

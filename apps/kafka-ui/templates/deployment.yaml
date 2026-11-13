@@ -52,21 +52,21 @@ spec:
             - name: MICRONAUT_CONFIG_FILES
               value: /app/application.yml
             # Kafka SCRAM creds explícitas via secretKeyRef — NÃO `envFrom`
-            # do Secret kafka-admin: ele tem 3 keys (KAFKA_USERNAME,
+            # do Secret kafka-credentials: ele tem 3 keys (KAFKA_USERNAME,
             # KAFKA_PASSWORD, ca.crt) e `ca.crt` contém ponto, que é caractere
             # inválido em env var name. Kubernetes emite Warning event
             # `InvalidEnvironmentVariableNames` em cada (re)start poluindo o
             # event stream. ca.crt é consumido apenas via projected volume
-            # (volumeMounts abaixo). Code-reviewer P1 round 1.
+            # (volumeMounts abaixo).
             - name: KAFKA_USERNAME
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "kafkaUi.kafkaAdminSecretName" . }}
+                  name: {{ include "kafkaUi.kafkaCredentialsSecretName" . }}
                   key: KAFKA_USERNAME
             - name: KAFKA_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "kafkaUi.kafkaAdminSecretName" . }}
+                  name: {{ include "kafkaUi.kafkaCredentialsSecretName" . }}
                   key: KAFKA_PASSWORD
             {{- if .Values.kafkaUi.oidc.enabled }}
             # JWT signing secret — Micronaut convention: env var name é a
@@ -96,7 +96,7 @@ spec:
               subPath: application.yml
               readOnly: true
             # CA cert PEM do broker Kafka (self-signed). Vem do Secret
-            # sintetizado pelo ESO `kafkaAdmin` na key `ca.crt`.
+            # sintetizado pelo ESO `kafkaCredentials` na key `ca.crt`.
             - name: kafka-ca
               mountPath: /etc/akhq/certs/ca.crt
               subPath: ca.crt
@@ -125,7 +125,7 @@ spec:
             name: {{ include "kafkaUi.configMapName" . }}
         - name: kafka-ca
           secret:
-            secretName: {{ include "kafkaUi.kafkaAdminSecretName" . }}
+            secretName: {{ include "kafkaUi.kafkaCredentialsSecretName" . }}
             items:
               - key: ca.crt
                 path: ca.crt

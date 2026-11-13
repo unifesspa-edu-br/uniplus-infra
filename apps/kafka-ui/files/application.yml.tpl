@@ -1,8 +1,8 @@
 akhq:
-  # Conexões a clusters Kafka. No ambiente de nó único só temos 1; o `bootstrap-servers`
-  # vem do values; SCRAM credentials são injetadas via env (envFrom do Secret
-  # sintetizado pelo ESO `kafka-admin`). CA cert PEM montado em /etc/akhq/certs/ca.crt
-  # via projected volume — também sintetizado pelo ESO.
+  # Conexões a clusters Kafka. Só há um; o `bootstrap-servers` vem do values. A
+  # credencial SCRAM é a própria da interface (`kafkaCredentials`, só leitura no
+  # broker), injetada por env do Secret sintetizado pelo ESO. O CA PEM do broker
+  # é montado em /etc/akhq/certs/ca.crt, do mesmo Secret.
   connections:
     {{ .Values.kafkaUi.kafka.clusterName }}:
       properties:
@@ -10,7 +10,7 @@ akhq:
         security.protocol: {{ .Values.kafkaUi.kafka.securityProtocol }}
         sasl.mechanism: {{ .Values.kafkaUi.kafka.saslMechanism }}
         # JAAS config interpolado de env (KAFKA_USERNAME + KAFKA_PASSWORD
-        # vêm do envFrom do Secret kafka-admin sintetizado pelo ESO).
+        # vêm do Secret kafka-credentials sintetizado pelo ESO).
         sasl.jaas.config: 'org.apache.kafka.common.security.scram.ScramLoginModule required username="${KAFKA_USERNAME}" password="${KAFKA_PASSWORD}";'
         ssl.truststore.type: PEM
         ssl.truststore.location: /etc/akhq/certs/ca.crt
@@ -20,50 +20,49 @@ akhq:
 
   # Segurança: OIDC via Keycloak realm `uniplus`.
   #
-  # AKHQ 0.25+ traz groups built-in `admin` (full RW), `reader` (read only)
-  # e `no-roles` (default sem permissão). Mapear groups OIDC diretamente
-  # para esses nomes built-in evita declarar custom roles/groups (pattern
-  # mais simples; menos drift; alinhado com defaults).
+  # O AKHQ traz os grupos embutidos `admin` (tudo), `reader` (leitura de tudo,
+  # inclusive o conteúdo das mensagens) e `no-roles` (nada). O grupo OIDC de
+  # administração mapeia direto para `admin`. A leitura de conteúdo não usa o
+  # `reader` irrestrito: o grupo `leitor-de-conteudo` abaixo reaproveita o papel
+  # `reader` com o padrão que exclui os tópicos de topicosSemLeituraNaInterface.
+  # Quem não casa com nenhum grupo mapeado (inclusive `/users/uniplus`) fica no
+  # `default-group: no-roles`.
   #
-  # Tentativa anterior usava sintaxe antiga deprecated
-  # (groups.<name>.roles: [topic/read, ...]) que parseia sem erro mas
-  # resolve para role=null no JWT — user reconhecido como group mas sem
-  # permissions. Bug descoberto via decode JWT cookie pós-#150.
+  # Padrões de grupo são regex positivas: o recurso precisa casar com ao menos
+  # uma. A exclusão é o lookahead negativo montado em
+  # kafkaUi.padraoDeTopicosLegiveis. Só a interface é restringida; o limite
+  # firme é a ACL de `Read` negada à credencial no broker.
+  #
+  # Exige o segredo de assinatura do JWT (ver abaixo): sem ele o AKHQ aplica os
+  # grupos só na interface, não na API.
   security:
     default-group: no-roles
+    groups:
+      leitor-de-conteudo:
+        - role: reader
+          patterns:
+            - '{{ include "kafkaUi.padraoDeTopicosLegiveis" . }}'
 {{- if .Values.kafkaUi.oidc.enabled }}
     oidc:
       enabled: true
       providers:
         {{ .Values.kafkaUi.oidc.providerName }}:
           label: "Login Uni+"
-          # Mapping do claim `groups` (do Keycloak) para grupos AKHQ.
-          # O token JWT do Keycloak deve ter um mapper `groups` configurado
-          # para incluir o membership do usuário.
           groups-field: {{ .Values.kafkaUi.oidc.groupsClaim }}
           username-field: preferred_username
-          # AKHQ OIDC mapping (sintaxe correta — verificada via doc oficial
-          # https://akhq.io/docs/configuration/authentifications/oidc.html
-          # após bug runtime descoberto em login real):
-          #   - `name:` é o VALOR do claim do IdP (ex: "/admins/kafka")
-          #   - `groups:` lista os AKHQ role groups (definidos em
-          #     akhq.security.groups acima) que o user assume
-          # Inverso: usar `name: kafka-admins` + `groups: [/admins/kafka]`
-          # passa silenciosamente em start (sem erro de schema) mas mapa
-          # nunca match — user fica com roles=[isAuthenticated()] only,
-          # cookie JWT tem groups vazio "{}", "página inicial" não carrega
-          # tópicos. Esse foi o bug que ficou pendente em #142 → #149.
-          # Mapeamento direto para AKHQ built-in groups:
-          #   admin    — full RW (todos resources × actions)
-          #   reader   — read only
-          #   no-roles — sem permissão (default)
+          # Mapeamento do claim `groups` do Keycloak (o client precisa do mapper
+          # `groups` com caminho completo):
+          #   - `name:` é o VALOR do claim no IdP (ex.: "/admins/kafka");
+          #   - `groups:` lista os grupos do AKHQ que o usuário assume.
+          # Inverter (`name:` com o nome do grupo do AKHQ) passa sem erro na
+          # partida, mas nunca casa, e o usuário entra sem nenhum papel.
           groups:
             - name: "{{ .Values.kafkaUi.oidc.groups.kafkaAdminsClaim }}"
               groups:
                 - admin
-            - name: "{{ .Values.kafkaUi.oidc.groups.kafkaReadOnlyClaim }}"
+            - name: "{{ .Values.kafkaUi.oidc.groups.kafkaDataReadersClaim }}"
               groups:
-                - reader
+                - leitor-de-conteudo
 {{- end }}
 
 # Micronaut OIDC (consumido pelo AKHQ). issuer + client_id no values;
