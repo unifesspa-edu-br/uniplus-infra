@@ -47,11 +47,11 @@ fullname com sufixo "-sa".
 {{- end -}}
 
 {{/*
-Nome do Secret K8s sintetizado pelo ESO `kafkaAdmin` — convenção
-<fullname>-kafka-admin (consumido por envFrom no deployment).
+Nome do Secret K8s sintetizado pelo ESO `kafkaCredencial` (usuário SCRAM
+próprio do AKHQ e CA do broker) — convenção <fullname>-kafka-credencial.
 */}}
-{{- define "kafkaUi.kafkaAdminSecretName" -}}
-{{ include "kafkaUi.fullname" . }}-kafka-admin
+{{- define "kafkaUi.kafkaCredencialSecretName" -}}
+{{ include "kafkaUi.fullname" . }}-kafka-credencial
 {{- end -}}
 
 {{/*

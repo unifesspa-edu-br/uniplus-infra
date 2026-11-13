@@ -7,9 +7,8 @@ metadata:
     {{- include "kafkaUi.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.kafkaUi.replicas }}
-  # Stateless app — RollingUpdate sem maxSurge para forçar 1-at-a-time
-  # (cluster Kafka aceita múltiplos clients admin sem corrida; mas mantemos
-  # zero downtime trivial assim).
+  # Stateless: o pod novo sobe antes de o antigo sair (maxSurge 1,
+  # maxUnavailable 0); dois AKHQ conectados ao mesmo tempo não disputam nada.
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -51,27 +50,25 @@ spec:
             # mountamos via ConfigMap nessa path.
             - name: MICRONAUT_CONFIG_FILES
               value: /app/application.yml
-            # Kafka SCRAM creds explícitas via secretKeyRef — NÃO `envFrom`
-            # do Secret kafka-admin: ele tem 3 keys (KAFKA_USERNAME,
-            # KAFKA_PASSWORD, ca.crt) e `ca.crt` contém ponto, que é caractere
-            # inválido em env var name. Kubernetes emite Warning event
-            # `InvalidEnvironmentVariableNames` em cada (re)start poluindo o
-            # event stream. ca.crt é consumido apenas via projected volume
-            # (volumeMounts abaixo). Code-reviewer P1 round 1.
+            # Usuário SCRAM próprio do AKHQ por secretKeyRef, não `envFrom`:
+            # o Secret kafka-credencial também tem `ca.crt`, nome inválido de
+            # variável, e o envFrom geraria o evento
+            # `InvalidEnvironmentVariableNames` a cada início. O ca.crt vai só
+            # pelo volume (volumeMounts abaixo).
             - name: KAFKA_USERNAME
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "kafkaUi.kafkaAdminSecretName" . }}
+                  name: {{ include "kafkaUi.kafkaCredencialSecretName" . }}
                   key: KAFKA_USERNAME
             - name: KAFKA_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "kafkaUi.kafkaAdminSecretName" . }}
+                  name: {{ include "kafkaUi.kafkaCredencialSecretName" . }}
                   key: KAFKA_PASSWORD
             {{- if .Values.kafkaUi.oidc.enabled }}
             # JWT signing secret — Micronaut convention: env var name é a
             # property dotted convertida em snake-case maiúsculo. Sem essa
-            # env, group restrictions do AKHQ ficam UI-only (Codex P1 round 2).
+            # env, os grupos do AKHQ valem só na interface, não na API.
             - name: MICRONAUT_SECURITY_TOKEN_JWT_SIGNATURES_SECRET_GENERATOR_SECRET
               valueFrom:
                 secretKeyRef:
@@ -95,8 +92,8 @@ spec:
               mountPath: /app/application.yml
               subPath: application.yml
               readOnly: true
-            # CA cert PEM do broker Kafka (self-signed). Vem do Secret
-            # sintetizado pelo ESO `kafkaAdmin` na key `ca.crt`.
+            # CA do broker Kafka (PEM). Vem do Secret sintetizado pelo ESO
+            # `kafkaCredencial`, na key `ca.crt`.
             - name: kafka-ca
               mountPath: /etc/akhq/certs/ca.crt
               subPath: ca.crt
@@ -125,7 +122,7 @@ spec:
             name: {{ include "kafkaUi.configMapName" . }}
         - name: kafka-ca
           secret:
-            secretName: {{ include "kafkaUi.kafkaAdminSecretName" . }}
+            secretName: {{ include "kafkaUi.kafkaCredencialSecretName" . }}
             items:
               - key: ca.crt
                 path: ca.crt

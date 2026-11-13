@@ -7,7 +7,7 @@ description: |
 type: application
 
 # Versão do chart wrapper Uni+. Bump em qualquer mudança de template/values.
-version: 0.1.0
+version: 0.2.0
 
 # Versão do AKHQ upstream empacotado (sincronizar com image.tag).
 appVersion: "0.27.0"

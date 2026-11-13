@@ -1,83 +1,78 @@
 # kafka-ui (AKHQ)
 
-Helm chart wrapper Uni+ para [AKHQ](https://github.com/tchiotludo/akhq) — Web UI de gerenciamento do cluster Apache Kafka. Conecta ao broker SASL_SSL no `data-host` (ADR-009) via SCRAM-SHA-512; autentica usuários via OIDC do realm `uniplus` no Keycloak local.
-
-## Status
-
-Provisionado no ambiente de produção (issue #139, sub-issue de #40). Bloqueado por #138 (Kafka SASL_SSL hardening, mergeado em PR #140 + hotfix #141 — ADR-009).
+Helm chart wrapper Uni+ para [AKHQ](https://github.com/tchiotludo/akhq), a interface web de consulta ao Apache Kafka do ambiente. Conecta-se ao broker por SASL_SSL com SCRAM-SHA-512, com um usuário próprio e ACLs mínimas, e autentica as pessoas pelo OIDC do Keycloak.
 
 ## Arquitetura
 
+```text
+Navegador (rede institucional ou VPN)
+  └── HTTPS via Traefik IngressRoute (middleware adminInterno)
+       └── AKHQ (namespace kafka-ui)
+            ├── OIDC: client confidencial `kafka-ui` (segredo em keycloak/kafka-ui)
+            ├── Kafka: usuário SCRAM `uniplus-kafka-ui-svc` (kafka/kafka-ui), nunca o `admin`
+            ├── CA do broker: mesmo Secret, montado em /etc/akhq/certs/ca.crt
+            └── SASL_SSL → broker da VM de infraestrutura, porta 9092
 ```
-Browser (admin Uni+)
-  └── HTTPS via Traefik IngressRoute
-       https://uniplus.unifesspa.edu.br
-            └── AKHQ pod (apps/kafka-ui chart, namespace uniplus)
-                 ├── OIDC client `kafka-ui` no realm `uniplus` (confidential)
-                 ├── SCRAM admin via ESO (`kafka/admin`)
-                 ├── CA cert PEM via projected volume (mesmo Secret ESO)
-                 └── conexão SASL_SSL → 10.2.2.11:9092
-```
 
-## Permissões via groups Keycloak → roles AKHQ
+## Credencial no Kafka
 
-Mapping no `application.yml` renderizado pelo chart:
+O AKHQ usa o usuário `uniplus-kafka-ui-svc`, criado por `scripts/servicos-no-host/provisionar-kafka-ui.sh`, que guarda a senha só no Vault (`plataforma/kafka/kafka-ui`) e aplica as ACLs:
 
-| Grupo Keycloak | Role AKHQ | Capacidades |
+| Recurso | Operações | Para quê |
 |---|---|---|
-| `/admins/kafka` | `kafka-admins` | criar/deletar tópicos, gerenciar ACLs, alterar consumer groups, configurar broker |
-| `/users/uniplus` | `kafka-readonly` | listar tópicos, inspecionar mensagens, ver consumer groups (sem write) |
-| (sem grupo) | `no-roles` | sem acesso (default-group) |
+| cluster | `Describe`, `DescribeConfigs` | nós, configuração do broker, ACLs |
+| tópicos (`*`) | `Describe`, `DescribeConfigs`, `Read` | lista, partições, offsets e mensagens |
+| grupos de consumo (`*`) | `Describe` | grupos e atraso |
+| `autorizacao_registros_de_acesso` | `Read` **negado** (`DENY`) | a trilha de acessos não é lida pela interface |
 
-## Pré-requisitos antes do ArgoCD sync
+Não há `Write`, `Create`, `Delete` nem `Alter`: criar, apagar ou alterar tópicos continua com o `admin`, pelos scripts da VM de infraestrutura. No Kafka a negação prevalece sobre a permissão, então nenhuma ACL de leitura concedida depois reabre a trilha. O schema do chart recusa `kafka/admin` como `externalSecrets.kafkaCredencial.vaultPath`: o `admin` é superusuário do broker e passa por cima de todas as ACLs.
 
-1. **Realm `uniplus` com client `kafka-ui` confidential criado** + mapper `groups` exportando membership em `groups` claim do JWT
-2. **`kafka/admin` em Vault** com keys `username`, `password`, `ca_cert`
-3. **`keycloak/kafka-ui` em Vault** com `client_secret` do client OIDC (custódia manual via `vault kv put`)
+## Permissões: grupos do Keycloak → grupos do AKHQ
 
-Sem esses 3, ESOs ficam em `SecretNotFound` e o pod entra em `CreateContainerConfigError`.
+| Grupo do Keycloak | Grupo do AKHQ | O que vê |
+|---|---|---|
+| `/admins/kafka` | `admin` (embutido) | tudo o que a credencial do broker permite; as ações de escrita são recusadas pelo Kafka |
+| `/users/kafka-ui-leitores` | `kafka-ui-leitores` | metadados de tópicos, grupos, nós e ACLs, e o conteúdo das mensagens, menos os tópicos de `topicosSemLeituraNaInterface` |
+| qualquer outro, inclusive `/users/uniplus` | `no-roles` (embutido) | nada |
+
+O grupo embutido `reader` do AKHQ não é usado: ele lê o conteúdo de todos os tópicos. A participação em `/users/kafka-ui-leitores` é individual, justificada e registrada (`docs/RUNBOOKS.md`, seção 9).
+
+`topicosSemLeituraNaInterface` (padrão: `autorizacao_registros_de_acesso`; o schema exige que ele continue na lista) vira um padrão que exclui esses tópicos do papel de leitura de mensagens. É defesa em profundidade: o broker já nega a leitura à credencial do AKHQ.
+
+## Pré-requisitos antes do sync
+
+1. Client `kafka-ui` confidencial no realm, com o mapper `groups` exportando o caminho completo dos grupos.
+2. `kafka/kafka-ui` no KV de plataforma, com `username`, `password` e `ca_cert` (`provisionar-kafka-ui.sh`).
+3. `keycloak/kafka-ui` com o `client_secret` do client OIDC, e `kafka-ui/jwt` com `signing_secret` (`semear-vault.sh`).
+
+Sem eles, os ExternalSecrets ficam em `SecretNotFound` e o pod em `CreateContainerConfigError`.
 
 ## Configuração mínima para habilitar
-
-Em `environments/uniplus-prd/values.yaml`:
 
 ```yaml
 kafkaUi:
   enabled: true
   kafka:
-    bootstrapServers: 10.0.2.87:9092
+    bootstrapServers: <nome-do-host-de-dados>:9092
+    sslEndpointIdentification: https
   oidc:
-    issuerUri: https://uniplus.unifesspa.edu.br/auth/realms/uniplus
+    issuerUri: https://<keycloak>/realms/<realm>
   ingress:
     enabled: true
-    host: uniplus.unifesspa.edu.br
-    tls:
-      certManager:
-        enabled: true
-        clusterIssuer: letsencrypt-staging
+    host: <host-do-kafka-ui>
   networkPolicy:
-    dataHostCIDR: 10.0.2.0/24
+    dataHostCIDR: <ip-do-host-de-dados>/32
+    oidcIssuerCIDR: <ip-do-issuer>/32
 ```
-
-## Operações comuns
-
-Ver `docs/RUNBOOKS.md` para procedimentos:
-
-- §14.1 Pré-flight: secrets em Vault + client OIDC no realm
-- §14.2 Smoke test (login admin → criar tópico → produzir/consumir → ver no UI)
-- §14.3 Adicionar usuário ao grupo `/admins/kafka` no Keycloak
-- §14.4 Troubleshooting (OIDC redirect, SCRAM auth, cert PKIX, NetworkPolicy)
 
 ## Trade-offs e limitações
 
-- **AKHQ é stateless** — perda de pod sem impacto em state (estado vive no Kafka).
-- **OIDC PKCE não suportado em provider customizado em 0.27.x** — usamos confidential client com `client_secret` em Vault. AKHQ é backend (não SPA), então confidential é correto arquiteturalmente.
-- **Audit log de operações no AKHQ → SIEM** ainda não integrado (futuro hardening).
-- **Multi-cluster** desligado — só o Kafka do ambiente.
+- **Stateless**: perder o pod não perde estado.
+- **PKCE não suportado** em provedor OIDC customizado no AKHQ 0.27.x: o client é confidencial, com `client_secret` no Vault.
+- **Auditoria das consultas feitas no AKHQ** não é enviada a um SIEM.
 
 ## Referências
 
-- [AKHQ docs](https://akhq.io/docs/)
-- [Apache Kafka 4.2 docs](https://kafka.apache.org/42/documentation.html)
+- [Documentação do AKHQ](https://akhq.io/docs/)
+- [Autorização e ACLs do Apache Kafka](https://kafka.apache.org/42/documentation.html#security_authz)
 - ADR-009 — Kafka SASL_SSL + SCRAM-SHA-512
-- Issue #139 — escopo deste chart

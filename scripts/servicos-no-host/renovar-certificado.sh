@@ -128,21 +128,32 @@ conferir_certificado_do_vault() {
     log_success "O Vault serve o certificado novo."
 }
 
+# Regrava o ca_cert de uma credencial do Kafka (<sistema>/<caminho>). No KV v2 cada
+# gravação troca o conteúdo inteiro, então o usuário e a senha são relidos antes.
+regravar_ca_da_credencial_kafka() {
+    local caminho="$1" usuario senha
+    usuario=$(vault_get "$caminho" username) \
+        || { log_error "Não foi possível ler o usuário de $caminho."; exit 1; }
+    senha=$(vault_get "$caminho" password) \
+        || { log_error "Não foi possível ler a senha de $caminho."; exit 1; }
+    vault_put "$caminho" "username=$usuario" "password=$senha" "ca_cert=$(cat "$TLS_BUNDLE")"
+}
+
 # Regrava no Vault o que carrega o certificado: o do servidor KES (plataforma), o CA
-# do Kafka (uniplus) e o ca_cert do administrador do Kafka, que existe no KV do
-# Uni+ e no de plataforma. No KV v2 cada gravação troca o conteúdo inteiro, então
-# o usuário e a senha do administrador são relidos de cada KV.
+# do Kafka (uniplus), o ca_cert do administrador do Kafka (KV do Uni+ e de
+# plataforma) e o da credencial do Kafka UI (plataforma), se já provisionada.
 atualizar_vault() {
-    local sistema usuario senha
+    local sistema
     vault_put plataforma/kes/server "cert=$(cat "$TLS_BUNDLE")" "key=$(sudo cat "$TLS_KEY")"
     vault_put uniplus/kafka/ca "ca_cert=$(cat "$TLS_BUNDLE")"
     for sistema in uniplus plataforma; do
-        usuario=$(vault_get "$sistema/kafka/admin" username) \
-            || { log_error "Não foi possível ler o usuário de $sistema/kafka/admin."; exit 1; }
-        senha=$(vault_get "$sistema/kafka/admin" password) \
-            || { log_error "Não foi possível ler a senha de $sistema/kafka/admin."; exit 1; }
-        vault_put "$sistema/kafka/admin" "username=$usuario" "password=$senha" "ca_cert=$(cat "$TLS_BUNDLE")"
+        regravar_ca_da_credencial_kafka "$sistema/kafka/admin"
     done
+    if vault_existe plataforma/kafka/kafka-ui; then
+        regravar_ca_da_credencial_kafka plataforma/kafka/kafka-ui
+    else
+        log_warn "plataforma/kafka/kafka-ui ausente; rodar provisionar-kafka-ui.sh na infraestrutura."
+    fi
 }
 
 renovar_app() {
@@ -150,7 +161,7 @@ renovar_app() {
     publicar_segredo_tls
     if $DRY_RUN; then
         echo "[DRY-RUN] mandaria o Vault reler o certificado (SIGHUP em cada pod) e conferiria o certificado servido"
-        echo "[DRY-RUN] regravaria no Vault (port-forward local) plataforma/kes/server, uniplus/kafka/ca e kafka/admin (uniplus e plataforma)"
+        echo "[DRY-RUN] regravaria no Vault (port-forward local) plataforma/kes/server, uniplus/kafka/ca, kafka/admin (uniplus e plataforma) e plataforma/kafka/kafka-ui"
         echo "[DRY-RUN] esperaria os ExternalSecrets do KES sincronizarem e reiniciaria o KES"
         return 0
     fi

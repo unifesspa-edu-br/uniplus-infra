@@ -64,12 +64,24 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "kafkaAdminsClaim": { "type": "string" },
-                "kafkaReadOnlyClaim": { "type": "string" }
-              }
+                "kafkaAdminsClaim": { "type": "string", "minLength": 1 },
+                "leitoresDeConteudoClaim": {
+                  "type": "string",
+                  "minLength": 1,
+                  "not": { "enum": ["/users/uniplus", "/users"] }
+                }
+              },
+              "required": ["kafkaAdminsClaim", "leitoresDeConteudoClaim"]
             }
           },
           "required": ["enabled", "providerName", "clientId", "groupsClaim", "groups"]
+        },
+        "topicosSemLeituraNaInterface": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "contains": { "const": "autorizacao_registros_de_acesso" },
+          "items": { "type": "string", "pattern": "^[A-Za-z0-9._-]+$" }
         },
         "externalSecrets": {
           "type": "object",
@@ -86,11 +98,15 @@
               },
               "required": ["kind", "name"]
             },
-            "kafkaAdmin": {
+            "kafkaCredencial": {
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "vaultPath": { "type": "string" },
+                "vaultPath": {
+                  "type": "string",
+                  "minLength": 1,
+                  "not": { "pattern": "(^|/)kafka/admin/?$" }
+                },
                 "usernameKey": { "type": "string" },
                 "passwordKey": { "type": "string" },
                 "caCertKey": { "type": "string" }
@@ -190,7 +206,7 @@
           "type": "array"
         }
       },
-      "required": ["enabled", "image", "kafka", "oidc"]
+      "required": ["enabled", "image", "kafka", "oidc", "topicosSemLeituraNaInterface"]
     }
   }
 }

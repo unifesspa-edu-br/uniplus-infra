@@ -60,12 +60,27 @@ kafkaUi:
     providerName: keycloak
     issuerUri: ""                  # ex.: https://uniplus.unifesspa.edu.br/auth/realms/uniplus
     clientId: kafka-ui
-    # Mapping de claim `groups` → roles AKHQ. Requer mapper
-    # `groups` no client `kafka-ui` do realm.
+    # Mapping de claim `groups` → grupos do AKHQ. Requer mapper
+    # `groups` (caminho completo) no client `kafka-ui` do realm.
+    # Quem não está em nenhum dos dois grupos cai no `no-roles` e não vê nada.
+    # `/users/uniplus` NÃO entra aqui: é grupo amplo e não tem motivo para
+    # ler mensagens do Kafka (uniplus-infra#805).
     groupsClaim: groups
     groups:
+      # Papel `admin` do AKHQ. No broker, a credencial do AKHQ não tem
+      # Write, Create, Delete nem Alter, então as ações de escrita da
+      # interface são recusadas pelo Kafka.
       kafkaAdminsClaim: "/admins/kafka"
-      kafkaReadOnlyClaim: "/users/uniplus"
+      # Leitura de mensagens, menos os tópicos de `topicosSemLeituraNaInterface`.
+      # Concessão individual e justificada (docs/RUNBOOKS.md, seção 9).
+      leitoresDeConteudoClaim: "/users/kafka-ui-leitores"
+
+  # Tópicos cujo conteúdo o papel de leitura do AKHQ não alcança. Defesa em
+  # profundidade: o broker já nega `Read` nesses tópicos à credencial do AKHQ
+  # (scripts/servicos-no-host/provisionar-kafka-ui.sh). Listar e ver offsets
+  # continua permitido.
+  topicosSemLeituraNaInterface:
+    - autorizacao_registros_de_acesso
 
   # === ExternalSecrets (Vault → K8s Secret) ===
   externalSecrets:
@@ -75,13 +90,15 @@ kafkaUi:
       kind: ClusterSecretStore
       name: plataforma
 
-    # SCRAM admin do Kafka + CA cert do broker self-signed.
-    # Gerados em `kafka/admin` via docs/RUNBOOKS.md
-    # após bootstrap. ca_cert é PEM completo do CA do broker (necessário
-    # para AKHQ validar o handshake TLS — broker usa self-signed sem
-    # cadeia institucional).
-    kafkaAdmin:
-      vaultPath: kafka/admin
+    # Usuário SCRAM próprio do AKHQ (`uniplus-kafka-ui-svc`) + CA do broker.
+    # Gravados em `kafka/kafka-ui` por
+    # scripts/servicos-no-host/provisionar-kafka-ui.sh, que também aplica as
+    # ACLs: só leitura de metadados e de mensagens, com `Read` negado em
+    # `autorizacao_registros_de_acesso`. Nunca `kafka/admin`: o `admin` é
+    # superusuário do broker e passa por cima das ACLs (o schema recusa).
+    # ca_cert é o PEM do CA do broker, para o AKHQ validar o TLS.
+    kafkaCredencial:
+      vaultPath: kafka/kafka-ui
       usernameKey: username
       passwordKey: password
       caCertKey: ca_cert
@@ -94,11 +111,10 @@ kafkaUi:
       vaultPath: keycloak/kafka-ui
       clientSecretKey: client_secret
 
-    # JWT signing secret — assina cookies/tokens internos do Micronaut
-    # security AKHQ. Sem isso, AKHQ 0.25+ NÃO enforce group restrictions
-    # no API layer (apenas UI), permitindo bypass via direct backend
-    # requests (Codex P1 round 2). Operador gera 32 bytes hex e custodia
-    # em Vault durante pré-flight (docs/RUNBOOKS.md).
+    # JWT signing secret — assina o cookie de sessão do Micronaut no AKHQ.
+    # Sem ele, o AKHQ 0.25+ aplica os grupos só na interface, e uma
+    # requisição direta à API do AKHQ passa por cima deles. Gerado por
+    # scripts/servicos-no-host/semear-vault.sh (32 bytes hex).
     jwt:
       vaultPath: kafka-ui/jwt
       signingSecretKey: signing_secret
@@ -136,11 +152,9 @@ kafkaUi:
     # o issuer URL (ex.: uniplus.unifesspa.edu.br resolve pra k8s-host
     # public IP que entra via Traefik IngressRoute do Keycloak). Sem essa
     # entrada, o pod resolve o DNS mas o handshake TLS é bloqueado pelo
-    # default-deny do egress. Codex P1 round 1.
+    # default-deny do egress.
     #
-    # No ambiente de nó único OCI (k8s-host 164.152.53.29) → /32 é precise; em
-    # outros providers ajustar para o IP público real ou CIDR mais largo
-    # (NUNCA 0.0.0.0/0 — defesa em profundidade).
+    # Usar o /32 do issuer; NUNCA 0.0.0.0/0 (defesa em profundidade).
     oidcIssuerCIDR: ""
     oidcIssuerPort: 443
 
