@@ -12,6 +12,7 @@ Procedimentos do ambiente `uniplus-prd`. A decisão da topologia está na [ADR-0
 6. [Política do acervo público](#6-política-do-acervo-público)
 7. [Observabilidade](#7-observabilidade)
 8. [Diagnóstico](#8-diagnóstico)
+9. [Kafka UI](#9-kafka-ui)
 
 ## 1. Rotina
 
@@ -149,7 +150,8 @@ O `--platform linux/amd64` evita um import truncado no containerd.
    segredo ser semeado e antes do `provisionar-verificacao.sh`, que exige a `uniplus-kes-kek`.
 6. **Segredos e bancos**, na `uniplus-prod-infra`, com o Vault aberto e o token em mãos (pedido sem
    eco), nesta ordem: `semear-vault.sh`, `provisionar-bancos.sh`, `provisionar-kafka.sh` (tópico
-   e usuário SCRAM do registro de acesso, CA do broker), `provisionar-verificacao.sh` e
+   e usuário SCRAM do registro de acesso, CA do broker), `provisionar-kafka-ui.sh` (usuário SCRAM
+   e ACLs do Kafka UI, [seção 9](#9-kafka-ui)), `provisionar-verificacao.sh` e
    `provisionar-rabbitmq.sh`. Todos falam com `https://uniplus-vault.unifesspa.edu.br`.
 7. **Segredos que vêm de fora** (não nascem em nenhum script; quem opera os grava no Vault):
    `smtp` (`host`, `username`, `password`), nos KVs `uniplus-prd` e `plataforma-prd` e o `client_secret` de cada client
@@ -316,7 +318,7 @@ Nas duas VMs, uma de cada vez, com o mesmo par novo:
 O script confere chave, validade e nome, guarda o par anterior em `/etc/uniplus/tls/anterior`,
 reinstala o par para cada serviço e reinicia `uniplus-postgres`, `uniplus-redis`, `uniplus-minio`,
 `uniplus-kafka` e `uniplus-rabbitmq` (infra), ou atualiza o Secret TLS dos namespaces, regrava no
-Vault o certificado do KES e o CA do Kafka (`kafka/ca` e `kafka/admin`), manda o Vault reler o
+Vault o certificado do KES e o CA do Kafka (`kafka/ca`, `kafka/admin` e `kafka/kafka-ui`), manda o Vault reler o
 certificado do listener (`SIGHUP`, sem selá-lo), espera os ExternalSecrets
 sincronizarem e reinicia o KES (app). Na infra também troca o `kes.crt` em que o MinIO confia.
 Fazer a VM de aplicação primeiro. O script fala com o Vault por port-forward neste host. Os clientes revalidam o certificado na próxima conexão; conferir depois com
@@ -454,3 +456,39 @@ espaço no MinIO é liberado depois do `retention_delete_delay` (2 horas no Loki
 - **Pod sem subir por imagem:** conferir `imagePullSecrets` e, para as imagens do MinIO, a [seção 2.3](#23-imagens-do-minio).
 - **Cliente recusa o certificado das VMs:** conferir permissões de `/etc/uniplus/tls` ([seção 2.2](#22-certificado)) e a validade com `openssl x509 -noout -dates`.
 - **Migração do `uniplus-api-host` falhou:** ver o passo do primeiro sync na [seção 2.4](#24-bootstrap-ordem).
+
+## 9. Kafka UI
+
+O Kafka UI (AKHQ, chart `apps/kafka-ui`) é só de consulta e nunca lê a trilha de acessos (`autorizacao_registros_de_acesso`). Duas barreiras garantem isso:
+
+- **No broker:** o AKHQ se conecta com o usuário SCRAM `uniplus-kafka-ui-svc`, nunca com o `admin` (superusuário, que passa por cima das ACLs). As ACLs dele são `Describe` e `DescribeConfigs` no cluster e em todos os tópicos, `Describe` nos grupos de consumo, `Read` em todos os tópicos e `DENY Read` literal em `autorizacao_registros_de_acesso`. A negação prevalece sobre qualquer permissão. Sem `Write`, `Create`, `Delete` nem `Alter`.
+- **Na interface:** quem não está em `/admins/kafka` nem em `/users/kafka-ui-leitores` entra sem permissão nenhuma. `/users/uniplus` não dá acesso. O papel de leitura de mensagens exclui os tópicos de `kafkaUi.topicosSemLeituraNaInterface`.
+
+### 9.1 Provisionamento
+
+Na `uniplus-prod-infra`, com o Vault aberto, depois de `provisionar-kafka.sh`:
+
+```bash
+./scripts/servicos-no-host/provisionar-kafka-ui.sh --dry-run
+./scripts/servicos-no-host/provisionar-kafka-ui.sh             # usuário, senha no Vault e ACLs
+./scripts/servicos-no-host/provisionar-kafka-ui.sh verificar   # prova o que a credencial lê e o que é recusado
+```
+
+O `provisionar` grava `plataforma-prd/kafka/kafka-ui` (`username`, `password`, `ca_cert`), aplica o usuário e as ACLs e confere que nenhuma ACL que alcança o usuário (dele ou do curinga `User:*`) foge da lista acima. O `verificar` confere as ACLs de novo e, num contêiner descartável com a credencial do AKHQ, lista os offsets da trilha (permitido) e tenta ler uma mensagem dela e criar um tópico (os dois têm de ser recusados pelo broker). A senha nunca passa por argv. Depois, sincronizar a Application do `kafka-ui`: o ExternalSecret passa a ler `kafka/kafka-ui`.
+
+### 9.2 Conceder a leitura de mensagens
+
+A participação em `/users/kafka-ui-leitores` (Keycloak institucional) é individual e justificada:
+
+1. A pessoa pede pela issue de operação no `uniplus-infra`, dizendo para que precisa ler mensagens (ex.: diagnosticar um consumidor parado) e por quanto tempo.
+2. O responsável pela infraestrutura aprova na própria issue.
+3. Quem administra o Keycloak adiciona a pessoa ao grupo e anota a data de revisão na issue.
+4. Na data de revisão, ou ao fim da necessidade, a pessoa sai do grupo e a issue é fechada.
+
+Ver só tópicos, offsets e grupos não exige o grupo de leitores: basta `/admins/kafka`, cujo papel `admin` do AKHQ fica limitado pelas ACLs acima (as ações de escrita são recusadas pelo broker).
+
+### 9.3 Conferência rápida
+
+- `GET /api/me` no AKHQ, logado com alguém só de `/users/uniplus`, responde sem `roles`; `GET /api/<cluster>/topic` e `GET /api/<cluster>/topic/<tópico>/data` não devolvem dados.
+- Logado com alguém de `/users/kafka-ui-leitores`, `GET /api/<cluster>/topic/autorizacao_registros_de_acesso/data` é recusado pelo AKHQ (403).
+- Logado com alguém de `/admins/kafka`, a mesma requisição não devolve mensagens: o broker recusa a leitura (erro de autorização no tópico).
