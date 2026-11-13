@@ -149,8 +149,8 @@ O `--platform linux/amd64` evita um import truncado no containerd.
    segredo ser semeado e antes do `provisionar-verificacao.sh`, que exige a `uniplus-kes-kek`.
 6. **Segredos e bancos**, na `uniplus-prod-infra`, com o Vault aberto e o token em mãos (pedido sem
    eco), nesta ordem: `semear-vault.sh`, `provisionar-bancos.sh`, `provisionar-kafka.sh` (tópico
-   e usuário SCRAM do registro de acesso, CA do broker), `provisionar-verificacao.sh` e
-   `provisionar-rabbitmq.sh`. Todos falam com `https://uniplus-vault.unifesspa.edu.br`.
+   e usuário SCRAM do registro de acesso, CA do broker), `provisionar-kafka-ui.sh` (credencial do
+   Kafka UI, [runbook](RUNBOOK-KAFKA-UI.md)), `provisionar-verificacao.sh` e `provisionar-rabbitmq.sh`. Todos falam com `https://uniplus-vault.unifesspa.edu.br`.
 7. **Segredos que vêm de fora** (não nascem em nenhum script; quem opera os grava no Vault):
    `smtp` (`host`, `username`, `password`), nos KVs `uniplus-prd` e `plataforma-prd` e o `client_secret` de cada client
    do Keycloak institucional, em `uniplus-prd` (`keycloak/uniplus-api-host`, `keycloak/uniplus-api-portal`,
@@ -316,7 +316,7 @@ Nas duas VMs, uma de cada vez, com o mesmo par novo:
 O script confere chave, validade e nome, guarda o par anterior em `/etc/uniplus/tls/anterior`,
 reinstala o par para cada serviço e reinicia `uniplus-postgres`, `uniplus-redis`, `uniplus-minio`,
 `uniplus-kafka` e `uniplus-rabbitmq` (infra), ou atualiza o Secret TLS dos namespaces, regrava no
-Vault o certificado do KES e o CA do Kafka (`kafka/ca` e `kafka/admin`), manda o Vault reler o
+Vault o certificado do KES e o CA do Kafka (`kafka/ca`, `kafka/admin` e, se existir, `plataforma/kafka/kafka-ui`), manda o Vault reler o
 certificado do listener (`SIGHUP`, sem selá-lo), espera os ExternalSecrets
 sincronizarem e reinicia o KES (app). Na infra também troca o `kes.crt` em que o MinIO confia.
 Fazer a VM de aplicação primeiro. O script fala com o Vault por port-forward neste host. Os clientes revalidam o certificado na próxima conexão; conferir depois com
