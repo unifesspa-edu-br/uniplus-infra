@@ -137,22 +137,17 @@ indentação do include e produziria itens fora da lista.
 - name: ASPNETCORE_URLS
   value: {{ .Values.uniplusApiHost.aspnet.urls | quote }}
 # === Postgres — banco único `uniplus`, schema-por-módulo (ADR-0097).
-# As 8 connection strings (UniPlusDb/ConfiguracaoDb/OrganizacaoDb/
-# SelecaoDb/IngressoDb/PublicacoesDb/DiscentesDb/AutorizacaoDb) apontam para o
-# MESMO host/database/role — cada DbContext usa seu próprio schema
-# via HasDefaultSchema. UniPlusDb é consumida pelo outbox Wolverine
-# (schema `wolverine`) e pelos health checks
-# (AddUniPlusHealthChecks connectionStringName). ===
+# Uma única connection string, UniPlusDb, serve ao contexto único dos módulos
+# (ADR-0170), ao outbox Wolverine (schema `wolverine`) e aos health checks;
+# cada módulo usa o seu schema dentro do mesmo banco e do mesmo role. ===
 - name: POSTGRES_PASSWORD
   valueFrom:
     secretKeyRef:
       name: {{ include "uniplusApiHost.postgresSecretName" . }}
       key: POSTGRES_PASSWORD
 {{- $db := .Values.uniplusApiHost.database }}
-{{- range list "UniPlusDb" "ConfiguracaoDb" "OrganizacaoDb" "SelecaoDb" "IngressoDb" "PublicacoesDb" "DiscentesDb" "AutorizacaoDb" }}
-- name: ConnectionStrings__{{ . }}
+- name: ConnectionStrings__UniPlusDb
   value: "Host={{ $db.host }};Port={{ $db.port }};Database={{ $db.name }};Username={{ $db.username }};Password=$(POSTGRES_PASSWORD){{ with $db.sslMode }};SSL Mode={{ . }}{{ end }}"
-{{- end }}
 # === Redis (Connection string formato StackExchange.Redis) ===
 - name: REDIS_PASSWORD
   valueFrom:
