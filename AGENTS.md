@@ -18,7 +18,7 @@ Repositório de IaC declarativa para o Uni+. Charts Helm de aplicação em `apps
 
 ## Estilo de Codificação e Convenções de Nomenclatura
 
-YAML com indentação de 2 espaços. Nomes de recursos, branches, labels e charts em `kebab-case` (`uniplus-api-selecao`, nunca `uniplus_api_selecao`). Recursos Kubernetes devem trazer os labels `app.kubernetes.io/{name,instance,version,managed-by}` mais `app.kubernetes.io/part-of: uniplus`. Scripts em Bash com `set -euo pipefail`, sem vazar segredos em logs.
+YAML com indentação de 2 espaços. Nomes de recursos, branches, labels e charts em `kebab-case` (`uniplus-api-host`, nunca `uniplus_api_host`). Recursos Kubernetes devem trazer os labels `app.kubernetes.io/{name,instance,version,managed-by}` mais `app.kubernetes.io/part-of: uniplus`. Scripts em Bash com `set -euo pipefail`, sem vazar segredos em logs.
 
 ## Diretrizes de Teste
 

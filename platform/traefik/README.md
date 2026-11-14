@@ -93,8 +93,7 @@ FQDN único `uniplus.unifesspa.edu.br` com pathing controlado pelo Traefik:
 | `/` | `apps/uniplus-web` (portal Angular) |
 | `/auth/*` | `apps/keycloak-replica` |
 | `/api/portal/*` | `apps/uniplus-api-portal` |
-| `/api/ingresso/*` | `apps/uniplus-api-ingresso` |
-| `/api/selecao/*` | `apps/uniplus-api-selecao` |
+| `/api/ingresso/*`, `/api/selecao/*`, `/api/configuracao/*` | `apps/uniplus-api-host` |
 
 IngressRoutes específicas serão adicionadas pelos charts de cada app (sub-issues da Story #99 de validação integrada).
 
