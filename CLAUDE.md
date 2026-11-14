@@ -60,7 +60,7 @@ Sempre rodar `--dry-run` antes em mudanças nos scripts. A ordem completa está 
 ## Convenções específicas de manifests
 
 - Indentação YAML: **2 espaços, sem tabs**.
-- Nomes (charts, recursos, branches, labels): **kebab-case** — `uniplus-api-selecao`, nunca `uniplus_api_selecao`.
+- Nomes (charts, recursos, branches, labels): **kebab-case** — `uniplus-api-host`, nunca `uniplus_api_host`.
 - Todos os recursos K8s carregam os labels padrão `app.kubernetes.io/{name,instance,version,managed-by}` **mais** `app.kubernetes.io/part-of: uniplus`.
 - **Nunca** commitar credenciais, kubeconfigs, unseal keys do Vault, certificados, IPs internos UNIFESSPA. Secrets vivem no Vault e são injetadas via `ExternalSecret` — manifests no Git contêm apenas referências.
 - `helm-docs` gera `README.md` dos charts a partir dos `values.yaml`; `values.schema.json` recomendado quando aplicável.
