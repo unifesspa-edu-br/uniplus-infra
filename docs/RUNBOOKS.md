@@ -12,6 +12,7 @@ Procedimentos do ambiente `uniplus-prd`. A decisão da topologia está na [ADR-0
 6. [Política do acervo público](#6-política-do-acervo-público)
 7. [Observabilidade](#7-observabilidade)
 8. [Diagnóstico](#8-diagnóstico)
+9. [Instalação dos primeiros gestores de acessos](#9-instalação-dos-primeiros-gestores-de-acessos)
 
 ## 1. Rotina
 
@@ -454,3 +455,101 @@ espaço no MinIO é liberado depois do `retention_delete_delay` (2 horas no Loki
 - **Pod sem subir por imagem:** conferir `imagePullSecrets` e, para as imagens do MinIO, a [seção 2.3](#23-imagens-do-minio).
 - **Cliente recusa o certificado das VMs:** conferir permissões de `/etc/uniplus/tls` ([seção 2.2](#22-certificado)) e a validade com `openssl x509 -noout -dates`.
 - **Migração do `uniplus-api-host` falhou:** ver o passo do primeiro sync na [seção 2.4](#24-bootstrap-ordem).
+
+## 9. Instalação dos primeiros gestores de acessos
+
+Num banco recém-criado ou recriado (por exemplo, quando uma versão troca as migrations) não há concessão
+nenhuma: o token não concede acesso, e só a área do candidato funciona até que os dois primeiros **gestores de
+acessos** sejam instalados ([ADR-0152](https://github.com/unifesspa-edu-br/uniplus-api/blob/main/docs/adrs/0152-governanca-das-concessoes-de-acesso.md)
+do `uniplus-api`). Sem a instalação, nenhuma outra concessão pode ser pedida. Este procedimento vale para HML,
+que tem Keycloak próprio (`uniplus-oidc-hml.unifesspa.edu.br`, realm `unifesspa`) e API em
+`uniplus-api-hml.unifesspa.edu.br`. Em produção o Keycloak é o institucional, e quem o administra atribui o papel.
+
+A instalação é feita por uma **conta executora**, que tem o papel de realm `uniplus-instalacao`. O papel só habilita
+a instalação, só funciona enquanto **não há gestor de acessos ativo** e não concede mais nada.
+
+### 9.1 Pré-condições
+
+- Nenhum gestor de acessos ativo (`instalacao.ja_ha_gestor` se houver).
+- **Dois gestores de acessos** com conta no realm `unifesspa`, e-mail institucional verificado e domínio aceito pela
+  chave `Autorizacao:Instalacao:DominiosInstitucionais` da API (por igualdade exata). Conta com e-mail pessoal é
+  recusada (`instalacao.gestores_invalidos`).
+- **Conta executora** diferente dos dois gestores (`instalacao.executor_entre_gestores`), com e-mail institucional
+  verificado: o código de confirmação vai só para esse e-mail, e a pessoa precisa ler a caixa durante o passo 3.
+- **Documento de designação** em PDF (até 10 MB) e o **número do protocolo** dele (até 60 caracteres). Em teste, vale
+  um PDF e um protocolo fictícios.
+- Verificador de arquivos no ar: sem ele o passo 2 não termina.
+- `jq` e `curl` na máquina de quem executa. O `contaId` de cada gestor é o id do usuário no Keycloak; o emissor é o
+  `iss` do token da conta executora.
+
+### 9.2 Atribuir o papel `uniplus-instalacao` (temporário)
+
+Com o administrador do realm `master` do Keycloak do ambiente, atribuir o papel de realm `uniplus-instalacao`, **no realm
+`unifesspa`** (o da API e da conta executora; no `master` o papel não vale), à conta executora, pelo console de administração (Usuários, Mapeamento de papéis) ou pela API de administração. Conferir que
+mais ninguém o tem. O token da conta executora precisa ser **emitido depois** do papel: token anterior responde 403.
+Peça um login novo.
+
+### 9.3 Os quatro passos da API
+
+O token da conta executora vale 5 minutos; renove-o pelo refresh token (30 minutos) em vez de refazer o login. Não
+grave token em arquivo nem em histórico compartilhado. Cada chamada que grava leva um `Idempotency-Key` (UUID), novo para cada passo. Para repetir uma
+chamada cuja resposta se perdeu, reenvie com a **mesma** chave: a API devolve a resposta guardada sem executar de novo.
+Chave nova no passo 1 abandona a tentativa pendente e abre outra.
+
+1. **Iniciar** (`POST /api/autorizacao/instalacao`): corpo com os dois gestores (`emissor`, `contaId`, `email`, `nome`),
+   `numeroDoDocumento` e `tamanhoDoPdf`. Responde 201 com o `id` e a `urlDeEnvio` (PUT assinado, válido por 15 minutos).
+2. **Enviar e confirmar o documento:** `PUT` do PDF na `urlDeEnvio` com `Content-Type: application/pdf`; o `ETag` vem
+   no cabeçalho da resposta. Depois, `POST /api/autorizacao/instalacao/{id}/documento/confirmacao` com `{"etag": <ETag>}`.
+   Consultar `GET /api/autorizacao/instalacao/{id}` até `situacao = documento_verificado` (segundos).
+3. **Enviar o código:** `POST /api/autorizacao/instalacao/{id}/codigo`. O código de 2 horas chega ao e-mail da conta
+   executora. Quem executa avisa a pessoa antes de disparar.
+4. **Confirmar:** `POST /api/autorizacao/instalacao/confirmacao` com `{"codigo": "<código>"}`. Responde 204 e os dois
+   gestores passam a valer. Cinco tentativas, uso único; esgotadas, recomeçar no passo 1.
+
+### 9.4 Retirar o papel e apagar o token
+
+Logo após o 204: remover o papel `uniplus-instalacao` da conta executora, conferir que nenhuma conta o tem, e apagar
+qualquer arquivo temporário com token ou refresh token. O papel não volta a ser necessário enquanto houver gestor ativo.
+
+### 9.5 Demais concessões
+
+Os demais gestores de acessos, o Representante do controlador e o Encarregado de dados entram pelo fluxo de pedido e
+aprovação da ADR-0152, pela tela de Configuração (`/acessos`), nesta ordem:
+
+1. Um gestor publica o **termo de responsabilidade** (200 a 20.000 caracteres). Sem termo, o pedido de perfil protegido
+   é recusado.
+2. O pedido de perfil de governança leva o documento de designação em PDF, obrigatório, e o número do protocolo.
+3. O beneficiário **aceita o termo**.
+4. Um gestor aprova a etapa do gestor. Com dois gestores ativos, um não aprova o pedido do outro: o pedido de um em
+   favor do outro espera um terceiro.
+5. **Segunda etapa:** o pedido de perfil com permissão pessoal, identificadora ou sensível (o do Representante do
+   controlador e o do Encarregado de dados, por exemplo) só vale depois de um Representante, diferente do solicitante,
+   decidir a segunda etapa. O pedido segue pendente até lá. A exceção é a **primeira** designação de Representante,
+   que dispensa a segunda etapa (ADR-0162), desde que não haja outro Representante vigente.
+6. A mesma pessoa não acumula Representante e Encarregado de dados.
+
+### 9.6 Conferir
+
+Com a conta de cada pessoa que recebeu perfil, em token novo:
+
+- `GET /api/profile/me` lista os perfis com o escopo (`instituicao`, sem prazo para gestor).
+- `GET /api/autorizacao/permissoes/efetivas` lista as permissões efetivas do perfil.
+- Com a permissão de administrar concessões, `GET /api/autorizacao/concessoes` lista as concessões ativas, com a
+  origem (`instalacao` ou `pedido`).
+
+Repetir a instalação responde `422 instalacao.ja_ha_gestor`: é o esperado.
+
+### 9.7 Problemas comuns
+
+| Sintoma | Causa provável |
+|---|---|
+| `403` no passo 1 | A conta executora não tem `uniplus-instalacao`, ou o token é anterior ao papel. |
+| `422 instalacao.gestores_invalidos` | E-mail de gestor fora dos domínios aceitos, ou campo ausente. |
+| `422 instalacao.email_nao_institucional` no passo 3 | E-mail da conta executora fora dos domínios aceitos, ou não verificado. |
+| `422 instalacao.executor_entre_gestores` | A conta executora foi listada como gestor. |
+| Passo 3 recusa com `instalacao.situacao_invalida` | O verificador ainda não deu o veredicto, ou não está no ar. |
+| `422 instalacao.documento_invalido` | Arquivo que não é PDF, acima de 10 MB, ou `ETag` que não é o do PUT. |
+| `422 instalacao.codigo_invalido` | Código errado, expirado (2 horas), já usado ou de outra instalação. |
+| `503 registro_de_acesso.falha_ao_gravar` depois de instalar | O tópico `autorizacao_registros_de_acesso` não existe no Kafka do ambiente. |
+
+Os códigos completos levam o prefixo `uniplus.autorizacao.`.
