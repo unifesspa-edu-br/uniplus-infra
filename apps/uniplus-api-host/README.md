@@ -17,9 +17,6 @@ backend Uni+ **não é** "uma API por módulo de negócio". São 3 executáveis:
 - **Geo** (`apps/unifesspa-geo-api/`) — deployable autônomo, banco próprio.
 - **Portal** (`apps/uniplus-api-portal/`) — deployable autônomo, banco próprio.
 
-Os charts `apps/uniplus-api-{selecao,ingresso}/` representavam a topologia
-anterior (uma imagem por módulo), abandonada pelo ADR-0097.
-
 ## Pré-requisitos
 
 | Recurso | De onde vem |
@@ -31,7 +28,7 @@ anterior (uma imagem por módulo), abandonada pelo ADR-0097.
 
 ## Kafka: sempre `Kafka__BootstrapServers` setado, nunca omitido
 
-Diferente dos charts `uniplus-api-{selecao,portal}` (que omitem a env var
+Diferente do chart `uniplus-api-portal` (que omite a env var
 inteira via `{{- if kafka.enabled }}` quando desligado), este chart
 **sempre** renderiza `Kafka__BootstrapServers` — com o valor real quando
 `kafka.enabled=true`, ou `" "` (um espaço) quando `false`.
@@ -45,7 +42,7 @@ transporte Kafka de forma limpa sem disparar a validação fatal
 do uniplus-api). Mesma receita documentada em
 `uniplus-api/docker/docker-compose.monolito.yml`.
 
-Omitir a env var por completo (o padrão dos outros 2 charts) **não é
+Omitir a env var por completo (o padrão do chart `uniplus-api-portal`) **não é
 equivalente** aqui — descoberto por bug real durante a Task uniplus-infra#412
 (revertida): sem a env var setada, o SDK Confluent.Kafka cai no default
 `localhost:9092` e fica em loop de reconexão eterno, mantendo `/health`
@@ -81,7 +78,7 @@ quando forem expostos no mesmo domínio.
 
 | Variável | Default | Notas |
 |---|---|---|
-| `uniplusApiHost.database.name`/`username` | `uniplus`/`uniplus` | Banco único — 6 connection strings (`UniPlusDb`, `ConfiguracaoDb`, `OrganizacaoDb`, `SelecaoDb`, `IngressoDb`, `PublicacoesDb`) apontam todas para cá |
+| `uniplusApiHost.database.name`/`username` | `uniplus`/`uniplus` | Banco único — uma só connection string, `UniPlusDb` (`ConnectionStrings__UniPlusDb`), serve ao contexto único dos módulos, ao outbox Wolverine e aos health checks; cada módulo usa o seu schema |
 | `uniplusApiHost.kafka.enabled` | `false` | Desligado até o Apicurio Registry entrar no lab (issue #423) |
 | `uniplusApiHost.registroDeAcesso.enabled` | `false` | Liga o Kafka do registro de acesso (`RegistroDeAcesso__Kafka__*`), independente de `kafka.enabled`. Exige `kafka.bootstrapServers` do bloco próprio e o usuário SCRAM no Vault (docs/RUNBOOKS.md) |
 | `uniplusApiHost.schemaRegistry.url` | `""` | Feature off; ver bloco Kafka acima |

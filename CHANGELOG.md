@@ -15,6 +15,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ### Removido
 
+- Restos dos charts `uniplus-api-selecao` e `uniplus-api-ingresso` (já removidos de `apps/`): a tabela de rotas do `platform/traefik/README.md` aponta `/api/ingresso`, `/api/selecao` e `/api/configuracao` para `apps/uniplus-api-host`, e os comentários do chart do host deixam de citá-los. Issue #810.
 - Mecanismo antigo de atualização da produção (ADR-015, item 3): `argocd/` (ApplicationSets, projeto e verificador), `atualizar-producao.sh`, o parâmetro `--revisao` do `bootstrap-app.sh` e o label `uniplus.io/revision` do Secret de cluster. A produção passa a ler versões e values do repositório de implantação (ADR-016); o bootstrap registra o cluster e orienta a criar a credencial do repositório e aplicar a Application raiz.
 - Rota `/api/auth` dos prefixos do Host em `hml-standalone-single`: a `uniplus-api#2161` removeu o `GET /api/auth/me`, único endpoint do grupo. `/api/profile` continua com o Host. Issue #745.
 - Chart `keycloak-replica` (0.3.5) retira o papel `candidato` da composição de `default-roles-<realm>` e da lista de papéis do realm. O login só identifica a pessoa (ADR-0152 da `uniplus-api`); a política `Candidato` da API identifica o titular pelo CPF desde a v0.47.0. O `realm-reconcile-job` não apaga papel (`IMPORT_MANAGED_ROLE=no-delete`): o RUNBOOKS §10.8 traz a exclusão pelo `kcadm.sh`. Issue #745.
@@ -23,6 +24,7 @@ e este projeto adere ao [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ### Alterado
 
+- Chart `uniplus-api-host` monta uma única connection string, `ConnectionStrings__UniPlusDb`, no lugar das oito (`UniPlusDb`, `ConfiguracaoDb`, `OrganizacaoDb`, `SelecaoDb`, `IngressoDb`, `PublicacoesDb`, `DiscentesDb`, `AutorizacaoDb`), alinhado ao contexto único da `uniplus-api#2435`. O host e o Job de migration compartilham o mesmo bloco de variáveis; o banco, o role e a senha no Vault não mudam. Exige imagem do host que já use só `UniPlusDb`. Issue #810.
 - ADRs 001 (3 DCs lógicos) e 007 (Vault auto-unseal Transit em PA1) marcados como **Superseded** por ADR-008 (topologia standalone). ADR-002, 003, 004, 005, 006 e 008+ continuam vigentes — suas decisões ainda valem no `standalone-compact` (stateful fora do K8s, OIDC gov.br, borda externa fora do escopo, systemd, ArgoCD).
 - `docs/ARCHITECTURE.md` §2.2 e §5.5.3 reescritos para apresentar o modelo 3-DC como referência futura e o `standalone-compact` como ambiente em produção; anexos atualizados.
 - `docs/RUNBOOKS.md` ganha banner identificando §1-§7 como referência histórica do modelo 3-DC e §8-§9 como operação atual do standalone-compact.
