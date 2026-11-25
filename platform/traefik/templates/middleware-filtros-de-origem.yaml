@@ -1,0 +1,49 @@
+{{- if and .Values.middlewares.enabled .Values.traefik.enabled }}
+{{- $nomes := dict }}
+{{- $nomesFixos := include "traefik.nomesMiddlewaresFixos" . | fromJson | values }}
+{{- $octeto := `(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])` }}
+{{- $cidr := printf `^%s\.%s\.%s\.%s/(3[0-2]|[12]?[0-9])$` $octeto $octeto $octeto $octeto }}
+{{- range $indice, $filtro := .Values.middlewares.filtrosDeOrigem }}
+{{- $nome := $filtro.nome | default "" }}
+{{- if gt (len $nome) 63 }}
+{{- fail (printf "Filtro %d (%s): o nome deve ter no máximo 63 caracteres; tamanho informado: %d." $indice $nome (len $nome)) }}
+{{- end }}
+{{- if not (hasPrefix "uniplus-" $nome) }}
+{{- fail (printf "Filtro %d (%s): o nome deve começar com uniplus-." $indice $nome) }}
+{{- end }}
+{{- if not (regexMatch `^uniplus-[a-z0-9]([-a-z0-9]*[a-z0-9])?$` $nome) }}
+{{- fail (printf "Filtro %d (%s): são permitidos letras minúsculas, números e hífen, começando e terminando com letra ou número." $indice $nome) }}
+{{- end }}
+{{- if has $nome $nomesFixos }}
+{{- fail (printf "Filtro %d (%s): este nome já é usado por um filtro do próprio chart." $indice $nome) }}
+{{- end }}
+{{- if hasKey $nomes $nome }}
+{{- fail (printf "Filtro %d (%s): os nomes dos filtros não podem se repetir." $indice $nome) }}
+{{- end }}
+{{- $_ := set $nomes $nome true }}
+{{- if not $filtro.sourceRange }}
+{{- fail (printf "Filtro %d (%s): informe ao menos uma faixa; sem faixas o filtro não liberaria ninguém." $indice $nome) }}
+{{- end }}
+{{- range $faixa := $filtro.sourceRange }}
+{{- if not (regexMatch $cidr $faixa) }}
+{{- fail (printf "Filtro %d (%s): a faixa %s não é um CIDR IPv4 válido." $indice $nome $faixa) }}
+{{- end }}
+{{- end }}
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: {{ $nome }}
+  labels:
+    app.kubernetes.io/name: traefik
+    app.kubernetes.io/instance: {{ $.Release.Name }}
+    app.kubernetes.io/version: {{ $.Chart.AppVersion | quote }}
+    app.kubernetes.io/managed-by: {{ $.Release.Service }}
+    app.kubernetes.io/part-of: uniplus
+    app.kubernetes.io/component: traefik
+spec:
+  ipAllowList:
+    sourceRange:
+      {{- toYaml $filtro.sourceRange | nindent 6 }}
+{{- end }}
+{{- end }}

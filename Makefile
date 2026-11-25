@@ -109,7 +109,7 @@ shellcheck:  ## Roda shellcheck em scripts/*.sh (skip gracefully se não instala
 # binário instalado leva reprovação por achado que ninguém precisa corrigir.
 	@printf "$(BLUE)→ shellcheck$(RESET)\n"
 	@if command -v shellcheck >/dev/null 2>&1; then \
-	    shellcheck --severity=warning scripts/servicos-no-host/*.sh; \
+	    shellcheck --severity=warning scripts/servicos-no-host/*.sh scripts/*.sh; \
 	else \
 	    printf "$(YELLOW)⚠ shellcheck não instalado — esta verificação NÃO foi executada$(RESET)\n"; \
 	    printf "  O CI a executa no PR; localmente, instale para exercer o gate antes de abrir:\n"; \
@@ -162,8 +162,12 @@ prod-render-check:  ## Falha se o render de produção citar hml, 192.168.21.134
 .PHONY: lint
 lint: yaml-lint helm-lint markdown-lint shellcheck  ## Roda todos os linters
 
+.PHONY: traefik-filtros-teste
+traefik-filtros-teste:  ## Testa os filtros de origem do Traefik
+	@bash scripts/testar-filtros-de-origem-traefik.sh
+
 .PHONY: validate
-validate: helm-deps lint schema-validate routing-validate prod-render-check  ## Lint + render de templates contra schemas
+validate: helm-deps lint schema-validate routing-validate prod-render-check traefik-filtros-teste  ## Lint + render de templates contra schemas
 # Ordem importa: helm-deps PRIMEIRO popula charts/ — sem isso, helm-lint e
 # schema-validate podem falhar em fresh checkout com "missing in charts/ directory".
 

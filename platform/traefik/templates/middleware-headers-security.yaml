@@ -10,7 +10,7 @@
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
-  name: uniplus-headers-security
+  name: {{ (include "traefik.nomesMiddlewaresFixos" . | fromJson).headersSecurity }}
   labels:
     app.kubernetes.io/name: traefik
     app.kubernetes.io/instance: {{ .Release.Name }}

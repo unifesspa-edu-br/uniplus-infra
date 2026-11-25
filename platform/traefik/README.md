@@ -51,9 +51,29 @@ Após o ApplicationSet sincronizar:
 | `traefik.ingressRoute.dashboard.enabled` | `false` | Habilitar atrás de OIDC + IP allowlist |
 | `traefik.metrics.prometheus.serviceMonitor.enabled` | `false` | Ligar quando #26 (Prometheus) chegar |
 | `middlewares.headersSecurity.enabled` | `true` | HSTS, frameDeny, nosniff, referrer-policy |
+| `middlewares.filtrosDeOrigem` | `[]` | Filtros adicionais de origem |
 | `middlewares.compress.enabled` | `true` | gzip/br nas respostas |
 | `networkPolicy.enabled` | `true` | Ingress 80/443 + egress aos namespaces das apps |
 | `networkPolicy.appNamespaces` | `[uniplus, vault, keycloak]` | Namespaces dos backends — ajustar por env |
+
+## Filtros de origem
+
+Configure filtros independentes de `middlewares.adminInterno` para liberar faixas
+específicas por rota:
+
+```yaml
+middlewares:
+  filtrosDeOrigem:
+    - nome: uniplus-vault-interno
+      sourceRange:
+        - 192.0.2.0/24
+```
+
+Os nomes devem começar com `uniplus-`, ser únicos e usar letras minúsculas,
+números e hífens. `uniplus-admin-interno` é reservado. Cada filtro precisa de
+pelo menos uma faixa CIDR IPv4 válida; IPv6 não é aceito. Os filtros são criados
+quando `middlewares.enabled` e `traefik.enabled` estão ligados. Para usá-los,
+referencie o nome do filtro e o namespace do Traefik na rota desejada.
 
 ## Como criar uma IngressRoute em apps Uni+
 

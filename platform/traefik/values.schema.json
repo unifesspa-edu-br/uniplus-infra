@@ -82,6 +82,18 @@
             "referrerPolicy": { "type": "string" }
           }
         },
+        "filtrosDeOrigem": {
+          "type": "array",
+          "description": "Filtros de origem adicionais. Nome, faixas e CIDR são validados no modelo, com mensagem em português.",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "properties": {
+              "nome": { "type": "string" },
+              "sourceRange": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
         "adminInterno": {
           "type": "object",
           "additionalProperties": true,
