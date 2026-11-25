@@ -175,6 +175,9 @@ middlewares:
   compress:
     enabled: true
 
+  # Filtros adicionais de origem, independentes do filtro administrativo.
+  filtrosDeOrigem: []
+
   # Restrição das rotas de administração por origem (middleware
   # uniplus-admin-interno). Desligado por default.
   adminInterno:
