@@ -161,38 +161,6 @@ indentação do include e produziria itens fora da lista.
       key: REDIS_PASSWORD
 - name: Redis__ConnectionString
   value: "{{ .Values.uniplusApiHost.redis.host }}:{{ .Values.uniplusApiHost.redis.port }},user={{ .Values.uniplusApiHost.redis.username }},password=$(REDIS_PASSWORD){{ if .Values.uniplusApiHost.redis.tls }},ssl=true{{ end }}"
-# === Kafka — BootstrapServers SEMPRE setado (nunca omitido). O host
-# lê via string.IsNullOrWhiteSpace em dois pontos independentes
-# (WolverineOutboxConfiguration + SelecaoMessagingRegistration no
-# uniplus-api) — " " (espaço) é tratado como "vazio" por essa
-# checagem, desligando o transporte Kafka de forma limpa sem
-# disparar a validação fatal "Kafka:BootstrapServers populado mas
-# SchemaRegistry:Url vazio" (ADR-0051). Mesma receita documentada em
-# uniplus-api/docker/docker-compose.monolito.yml e já replicada em
-# apps/uniplus-api-portal/templates/deployment.yaml (issue #423).
-# Omitir a env var por completo (como ainda fazem os charts legados
-# uniplus-api-{selecao,ingresso}, mantidos só para uniplus-prd)
-# NÃO é equivalente aqui: description completa no values.yaml.
-- name: Kafka__BootstrapServers
-  value: {{ if .Values.uniplusApiHost.kafka.enabled }}{{ .Values.uniplusApiHost.kafka.bootstrapServers | quote }}{{ else }}" "{{ end }}
-{{- if .Values.uniplusApiHost.kafka.enabled }}
-- name: Kafka__SecurityProtocol
-  value: {{ .Values.uniplusApiHost.kafka.securityProtocol | quote }}
-- name: Kafka__SaslMechanism
-  value: {{ .Values.uniplusApiHost.kafka.saslMechanism | quote }}
-- name: Kafka__SaslUsername
-  valueFrom:
-    secretKeyRef:
-      name: {{ include "uniplusApiHost.kafkaSecretName" . }}
-      key: KAFKA_USERNAME
-- name: Kafka__SaslPassword
-  valueFrom:
-    secretKeyRef:
-      name: {{ include "uniplusApiHost.kafkaSecretName" . }}
-      key: KAFKA_PASSWORD
-- name: Kafka__SslCaLocation
-  value: {{ .Values.uniplusApiHost.kafka.caCertPath | quote }}
-{{- end }}
 # === MinIO (Storage:* binding) ===
 - name: MINIO_ACCESS_KEY
   valueFrom:
@@ -344,27 +312,6 @@ indentação do include e produziria itens fora da lista.
 - name: UniPlus__Encryption__KubernetesRole
   value: {{ .Values.uniplusApiHost.encryption.kubernetesRole | quote }}
 {{- end }}
-# === Schema Registry (ADR-0051) — Apicurio Confluent-compat ===
-# url vazio = feature off (default no lab — issue #423). AuthType
-# OAuthBearer exige tokenEndpoint+clientId; client_secret vem do
-# ESO 5 (oidcSecretName).
-{{- if .Values.uniplusApiHost.schemaRegistry.url }}
-- name: SchemaRegistry__Url
-  value: {{ .Values.uniplusApiHost.schemaRegistry.url | quote }}
-- name: SchemaRegistry__AuthType
-  value: {{ .Values.uniplusApiHost.schemaRegistry.authType | quote }}
-{{- if eq .Values.uniplusApiHost.schemaRegistry.authType "OAuthBearer" }}
-- name: SchemaRegistry__OAuth__TokenEndpoint
-  value: {{ .Values.uniplusApiHost.schemaRegistry.oauth.tokenEndpoint | quote }}
-- name: SchemaRegistry__OAuth__ClientId
-  value: {{ .Values.uniplusApiHost.schemaRegistry.oauth.clientId | quote }}
-- name: SchemaRegistry__OAuth__ClientSecret
-  valueFrom:
-    secretKeyRef:
-      name: {{ include "uniplusApiHost.oidcSecretName" . }}
-      key: OIDC_CLIENT_SECRET
-{{- end }}
-{{- end }}
 {{- with .Values.uniplusApiHost.geo }}
 {{- if .baseUrl }}
 # === Geo — conferência do endereço do candidato (uniplus-api#1865) ===
@@ -412,44 +359,6 @@ indentação do include e produziria itens fora da lista.
 {{- toYaml . | nindent 0 }}
 {{- end }}
 {{- end }}
-
-{{/*
-  Variáveis do registro de acesso (RegistroDeAcesso:Kafka). Entram SÓ no
-  Deployment, e não em `uniplusApiHost.env`, de propósito: o Job de migration
-  sobe em `PreSync`, antes de o Sync criar o ExternalSecret da credencial, então
-  um `secretKeyRef` dele para o Secret novo nunca resolveria e o sync abortaria
-  sem criar o próprio Secret. O Job também não precisa delas: em `ApplyAndExit`
-  o host é construído mas não iniciado, e a validação das opções e o produtor
-  do registro só rodam na partida do servidor.
-*/}}
-{{- define "uniplusApiHost.envRegistroDeAcesso" -}}
-{{- $ra := .Values.uniplusApiHost.registroDeAcesso.kafka }}
-# === Registro de acesso (RegistroDeAcesso:Kafka) — independe de kafka.enabled.
-- name: RegistroDeAcesso__Kafka__BootstrapServers
-  value: {{ $ra.bootstrapServers | quote }}
-- name: RegistroDeAcesso__Kafka__Topico
-  value: {{ $ra.topico | quote }}
-- name: RegistroDeAcesso__Kafka__SecurityProtocol
-  value: {{ $ra.securityProtocol | quote }}
-- name: RegistroDeAcesso__Kafka__SaslMechanism
-  value: {{ $ra.saslMechanism | quote }}
-- name: RegistroDeAcesso__Kafka__Usuario
-  valueFrom:
-    secretKeyRef:
-      name: {{ include "uniplusApiHost.registroDeAcessoKafkaSecretName" . }}
-      key: KAFKA_USERNAME
-- name: RegistroDeAcesso__Kafka__Senha
-  valueFrom:
-    secretKeyRef:
-      name: {{ include "uniplusApiHost.registroDeAcessoKafkaSecretName" . }}
-      key: KAFKA_PASSWORD
-- name: RegistroDeAcesso__Kafka__CaminhoDoCertificadoCa
-  value: {{ $ra.caCertPath | quote }}
-{{- if $ra.prazoDeConfirmacao }}
-- name: RegistroDeAcesso__Kafka__PrazoDeConfirmacao
-  value: {{ $ra.prazoDeConfirmacao | quote }}
-{{- end }}
-{{- end -}}
 
 {{/*
   Referência da imagem. Com image.digest preenchido, a imagem é puxada pelo

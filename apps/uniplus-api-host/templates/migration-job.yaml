@@ -29,6 +29,13 @@
   num banco vazio, sem versão anterior a proteger — e o Job entra a partir da
   segunda promoção.
 
+  O Job recebe só o que a aplicação lê para montar o processo e aplicar o banco
+  (banco, cache, armazenamento, e-mail). Mensageria (Kafka de transporte,
+  registro de esquemas e registro de acesso) fica só no Deployment, e o Kafka
+  entra em branco no Job. Assim, credencial nova de mensageria não exige ordem
+  de sync. ServiceAccount e os demais Secrets do Job continuam sob a restrição
+  de promoção abaixo; num ambiente novo, o Job fica desligado no primeiro sync.
+
   O Deployment NÃO recebe `Skip` — ver o comentário em deployment.yaml. Em
   resumo: com o Job tendo aplicado, o pod não tem o que fazer de todo modo, e
   mantê-lo capaz de aplicar cobre os cenários legítimos sem Job.
@@ -137,19 +144,17 @@ spec:
           securityContext:
             {{- toYaml .Values.uniplusApiHost.containerSecurityContext | nindent 12 }}
           env:
-            {{- /* As mesmas variáveis do Deployment: a imagem é a mesma e o
-                   composition root valida a configuração inteira no boot. */}}
+            {{- /* A mesma imagem e as variáveis de banco, cache, armazenamento e
+                   e-mail do Deployment. Mensageria não entra: ver
+                   uniplusApiHost.envMensageria. Kafka em branco desliga o
+                   transporte, e sem ele a API não exige registro de esquemas. */}}
             {{- include "uniplusApiHost.env" . | nindent 12 }}
+            - name: Kafka__BootstrapServers
+              value: " "
             - name: UniPlus__Migrations__Mode
               value: ApplyAndExit
-          {{- if or .Values.uniplusApiHost.kafka.enabled .Values.uniplusApiHost.customCA.enabled }}
+          {{- if .Values.uniplusApiHost.customCA.enabled }}
           volumeMounts:
-            {{- if .Values.uniplusApiHost.kafka.enabled }}
-            - name: kafka-ca
-              mountPath: /etc/uniplus-kafka/ca.crt
-              subPath: ca.crt
-              readOnly: true
-            {{- end }}
             {{- if .Values.uniplusApiHost.customCA.enabled }}
             - name: merged-ca-certs
               mountPath: /etc/ssl/certs
@@ -158,16 +163,8 @@ spec:
           {{- end }}
           resources:
             {{- toYaml .Values.uniplusApiHost.migrationJob.resources | nindent 12 }}
-      {{- if or .Values.uniplusApiHost.kafka.enabled .Values.uniplusApiHost.customCA.enabled }}
+      {{- if .Values.uniplusApiHost.customCA.enabled }}
       volumes:
-        {{- if .Values.uniplusApiHost.kafka.enabled }}
-        - name: kafka-ca
-          secret:
-            secretName: {{ include "uniplusApiHost.kafkaSecretName" . }}
-            items:
-              - key: ca.crt
-                path: ca.crt
-        {{- end }}
         {{- if .Values.uniplusApiHost.customCA.enabled }}
         - name: custom-ca-source
           {{- if .Values.uniplusApiHost.customCA.existingSecretName }}
