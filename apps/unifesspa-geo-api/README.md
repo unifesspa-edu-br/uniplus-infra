@@ -54,6 +54,8 @@ Transit). Health: /health (readiness agregado), /health/live (liveness),
 | unifesspaGeoApi.externalSecrets.encryptionLocalKey.vaultPath | string | `"encryption"` |  |
 | unifesspaGeoApi.externalSecrets.postgresApp.passwordKey | string | `"password"` |  |
 | unifesspaGeoApi.externalSecrets.postgresApp.vaultPath | string | `"postgres"` |  |
+| unifesspaGeoApi.externalSecrets.postgresStaging.passwordKey | string | `"password"` |  |
+| unifesspaGeoApi.externalSecrets.postgresStaging.vaultPath | string | `"postgres-staging"` |  |
 | unifesspaGeoApi.externalSecrets.redisDefault.passwordKey | string | `"password"` |  |
 | unifesspaGeoApi.externalSecrets.redisDefault.vaultPath | string | `"redis"` |  |
 | unifesspaGeoApi.externalSecrets.refreshInterval | string | `"1h"` |  |
@@ -109,6 +111,10 @@ Transit). Health: /health (readiness agregado), /health/live (liveness),
 | unifesspaGeoApi.serviceAccount.name | string | `""` |  |
 | unifesspaGeoApi.serviceMonitor.enabled | bool | `false` |  |
 | unifesspaGeoApi.serviceMonitor.interval | string | `"30s"` |  |
+| unifesspaGeoApi.stagingDatabase.connectionStringName | string | `"GeoStagingDb"` |  |
+| unifesspaGeoApi.stagingDatabase.enabled | bool | `false` |  |
+| unifesspaGeoApi.stagingDatabase.name | string | `"uniplus_geo_staging"` |  |
+| unifesspaGeoApi.stagingDatabase.username | string | `"uniplus_geo_staging_app"` |  |
 | unifesspaGeoApi.startupProbe.failureThreshold | int | `60` |  |
 | unifesspaGeoApi.startupProbe.periodSeconds | int | `5` |  |
 

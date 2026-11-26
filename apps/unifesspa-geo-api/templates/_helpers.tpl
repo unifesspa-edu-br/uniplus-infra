@@ -37,6 +37,10 @@ helm.sh/chart: {{ printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" }}
 {{ include "unifesspaGeoApi.fullname" . }}-postgres
 {{- end -}}
 
+{{- define "unifesspaGeoApi.postgresStagingSecretName" -}}
+{{ include "unifesspaGeoApi.fullname" . }}-postgres-staging
+{{- end -}}
+
 {{- define "unifesspaGeoApi.redisSecretName" -}}
 {{ include "unifesspaGeoApi.fullname" . }}-redis
 {{- end -}}

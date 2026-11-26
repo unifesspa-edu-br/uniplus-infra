@@ -397,6 +397,10 @@ unifesspaGeoApi:
     host: uniplus-prod-infra.unifesspa.edu.br
     sslMode: VerifyFull
 
+  # Banco de preparação da carga da DNE: mesmo servidor, outro banco e outro papel.
+  stagingDatabase:
+    enabled: true
+
   redis:
     host: uniplus-prod-infra.unifesspa.edu.br
     tls: true
