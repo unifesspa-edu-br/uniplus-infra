@@ -8,7 +8,7 @@
   "duplicateEmailsAllowed": false,
   "resetPasswordAllowed": true,
   "editUsernameAllowed": false,
-  "rememberMe": true,
+  "rememberMe": false,
   "verifyEmail": false,
   {{- if .Values.keycloak.smtp.enabled }}
   {{- /* $(env:VAR) é a sintaxe do keycloak-config-cli; ${VAR} ficaria literal. */}}
@@ -31,6 +31,22 @@
   "accessTokenLifespan": 300,
   "ssoSessionIdleTimeout": 1800,
   "ssoSessionMaxLifespan": 36000,
+  "bruteForceProtected": true,
+  "permanentLockout": false,
+  "maxTemporaryLockouts": 0,
+  "bruteForceStrategy": "MULTIPLE",
+  "failureFactor": 5,
+  "waitIncrementSeconds": 60,
+  "maxFailureWaitSeconds": 900,
+  "minimumQuickLoginWaitSeconds": 10,
+  "quickLoginCheckMilliSeconds": 1000,
+  "maxDeltaTimeSeconds": 43200,
+  "eventsEnabled": true,
+  "eventsExpiration": 2592000,
+  "eventsListeners": ["jboss-logging"],
+  "enabledEventTypes": ["LOGIN", "LOGIN_ERROR", "LOGOUT", "LOGOUT_ERROR", "REFRESH_TOKEN", "REFRESH_TOKEN_ERROR", "CODE_TO_TOKEN", "CODE_TO_TOKEN_ERROR", "UPDATE_PASSWORD", "UPDATE_PASSWORD_ERROR", "SEND_RESET_PASSWORD", "SEND_RESET_PASSWORD_ERROR", "RESET_PASSWORD", "RESET_PASSWORD_ERROR", "IDENTITY_PROVIDER_LOGIN", "IDENTITY_PROVIDER_LOGIN_ERROR", "CLIENT_LOGIN", "CLIENT_LOGIN_ERROR", "TOKEN_EXCHANGE", "TOKEN_EXCHANGE_ERROR", "PERMISSION_TOKEN"],
+  "adminEventsEnabled": true,
+  "adminEventsDetailsEnabled": false,
   "browserSecurityHeaders": {
     "contentSecurityPolicy": "frame-src 'self'; frame-ancestors 'self'; object-src 'none';",
     "xContentTypeOptions": "nosniff",
@@ -1295,5 +1311,5 @@
     ]
   },
   "requiredCredentials": ["password"],
-  "passwordPolicy": "length(8)"
+  "passwordPolicy": "length(8) and upperCase(1) and lowerCase(1) and digits(1) and notUsername"
 }
