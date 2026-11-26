@@ -88,6 +88,37 @@
       ]
     },
     {
+      "clientId": "admin-cli",
+      "name": "${client_admin-cli}",
+      "description": "Cliente de linha de comando do Keycloak, usado pelos roteiros de instalação e de governança. Entra por usuário e senha. O token completo (sem a opção de token leve) traz os papéis do realm, como uniplus-instalacao.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "fullScopeAllowed": true,
+      "attributes": {
+        "client.use.lightweight.access.token.enabled": "false"
+      },
+      "defaultClientScopes": [
+        "basic",
+        "web-origins",
+        "acr",
+        "profile",
+        "roles",
+        "email"
+      ],
+      "optionalClientScopes": [
+        "address",
+        "phone",
+        "organization",
+        "offline_access",
+        "microprofile-jwt"
+      ]
+    },
+    {
       "clientId": "kafka-ui",
       "name": "AKHQ — Kafka Web UI (admin)",
       "description": "Cliente OIDC do AKHQ (apps/kafka-ui). Confidential — secret em keycloak/kafka-ui via kcadm pós-import. docs/RUNBOOKS.md",
