@@ -64,6 +64,19 @@ unifesspaGeoApi:
     # Nome em ConnectionStrings__<Name> (.NET config binding) — GeoDb.
     connectionStringName: GeoDb
 
+  # === Banco de preparação da carga da base dos Correios (opcional) ===
+  # A carga da DNE lê este banco, dedicado e fora do banco de dados do Geo (docs
+  # do unifesspa-geo-api, "Estratégia: banco de staging dedicado"). O servidor,
+  # a porta e o modo SSL são os de `database`; só o banco e o papel mudam, e a
+  # senha vem do segredo `externalSecrets.postgresStaging`. Desligado: a carga
+  # recusa a importação por falta da ConnectionStrings__GeoStagingDb.
+  stagingDatabase:
+    enabled: false
+    name: uniplus_geo_staging
+    username: uniplus_geo_staging_app
+    # Nome em ConnectionStrings__<Name> (.NET config binding) — GeoStagingDb.
+    connectionStringName: GeoStagingDb
+
   # === Backend Redis (default user) ===
   redis:
     host: ""                    # ex.: 10.0.2.87
@@ -146,6 +159,11 @@ unifesspaGeoApi:
 
     postgresApp:
       vaultPath: postgres
+      passwordKey: password
+
+    # Senha do papel do banco de preparação; só lida quando stagingDatabase.enabled=true.
+    postgresStaging:
+      vaultPath: postgres-staging
       passwordKey: password
 
     redisDefault:
