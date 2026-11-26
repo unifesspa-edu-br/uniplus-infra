@@ -152,8 +152,8 @@ kubePrometheusStack:
   kubeEtcd:
     enabled: false
 
-# Destino dos alertas: e-mail do grupo de operação do Uni+ pelo relay SMTP
-# institucional. Host, usuário e senha vêm do segredo `smtp` do Vault (o mesmo
+# Destino dos alertas: e-mail do grupo de alertas automáticos do Uni+ pelo relay
+# SMTP institucional. Host, usuário e senha vêm do segredo `smtp` do Vault (o mesmo
 # da API), via ExternalSecret que monta o alertmanager.yaml. Alertas
 # `critical` e `warning` seguem para receptores distintos, com repetição
 # própria. O Secret criado tem o nome de
@@ -171,7 +171,7 @@ alertasEmail:
   porta: 25
   exigirTls: true             # STARTTLS, como o Keycloak
   remetente: nao-responda@unifesspa.edu.br
-  destinatario: sistema-uniplus@unifesspa.edu.br
+  destinatario: uniplus-alertas@unifesspa.edu.br
   repeticaoCritico: 4h
   repeticaoAviso: 12h
 

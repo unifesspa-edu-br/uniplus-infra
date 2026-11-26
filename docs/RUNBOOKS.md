@@ -447,6 +447,16 @@ antes de cumprir os 7 dias: confira `prometheus_tsdb_storage_blocks_bytes` e aum
 reduza a retenção nos values do ambiente. O Loki e o Tempo só apagam o que passou da retenção; o
 espaço no MinIO é liberado depois do `retention_delete_delay` (2 horas no Loki).
 
+### 7.5 Alertas automáticos
+
+Os alertas do Alertmanager vão por e-mail ao grupo `uniplus-alertas`, lido por quem opera o sistema.
+O destinatário está em `alertasEmail.destinatario` de `platform/observability/prometheus/values.yaml`;
+os values de HML e de produção, no repositório de implantação, não o sobrescrevem. Alertas críticos
+se repetem a cada 4 horas e avisos a cada 12 horas, enquanto o problema durar.
+
+O assunto traz o nome do alerta e o rótulo `cluster`, que os values de cada ambiente definem como
+`uniplus-hml` ou `uniplus-prd`. Leia o grupo todos os dias.
+
 ## 8. Diagnóstico
 
 - **ExternalSecret sem sincronizar:** `kubectl describe externalsecret <nome> -n <namespace>`. Causas comuns: Vault selado, caminho inexistente no KV do sistema, ou a store não atende o namespace (`spec.conditions` da `ClusterSecretStore`).
