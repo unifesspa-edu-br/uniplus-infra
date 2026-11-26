@@ -16,7 +16,8 @@ com o Grafana desligado (tem [chart próprio](../grafana/README.md)).
 - **Remote write:** `enableRemoteWriteReceiver: true`; o OTel Collector envia as métricas das
   aplicações para `/api/v1/write`.
 - **Alertmanager:** receptores de e-mail por severidade (`critical` e `warning`) para o grupo de
-  operação do Uni+, pelo relay SMTP institucional. O ExternalSecret `alertasEmail` monta o
+  alertas automáticos do Uni+ (`uniplus-alertas`), pelo relay SMTP institucional. O assunto de cada
+  mensagem traz o nome do alerta e o rótulo `cluster`, definido nos values de cada ambiente. O ExternalSecret `alertasEmail` monta o
   `alertmanager.yaml` inteiro a partir do segredo `smtp` do Vault (o mesmo da API) e o Operator o
   lê por `alertmanagerSpec.configSecret`. `Watchdog` e `InfoInhibitor` vão ao receptor `null`.
   Com `alertasEmail.enabled=false`, o chart cria no lugar um Secret de mesmo nome que descarta os
