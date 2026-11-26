@@ -105,6 +105,12 @@ keycloak:
       webOrigins:
         - "+"
 
+    # Clients públicos adicionais das aplicações web (Authorization Code +
+    # PKCE S256), com os mesmos escopos e o mesmo mapeador de audiência do
+    # portalClient. Cada item: clientId, rootUrl, redirectUris, e opcionais
+    # name e webOrigins (padrão "+"). Vazio por padrão.
+    webClients: []
+
     # Client OIDC do Apicurio Registry (UI + Confluent SR API). Default
     # aqui reproduz o valor que estava hardcoded no uniplus-realm.json antes
     # da parametrização — preserva o comportamento de uniplus-prd.

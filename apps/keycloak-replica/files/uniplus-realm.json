@@ -86,7 +86,50 @@
           }
         }
       ]
-    },
+    }
+    {{- $usados := dict "admin-cli" true "account" true "account-console" true "broker" true "realm-management" true "security-admin-console" true "kafka-ui" true "grafana" true "uniplus-api-host" true "uniplus-api-portal" true "uniplus-api-selecao" true "uniplus-api-ingresso" true }}
+    {{- $_ := set $usados .Values.keycloak.realmImport.portalClient.clientId true }}
+    {{- $_ := set $usados .Values.keycloak.realmImport.apicurioClient.clientId true }}
+    {{- if and .Values.keycloak.realmImport.webClients (or (not .Values.keycloak.realmReconcile.enabled) (not .Values.keycloak.realmImport.enabled)) }}{{ fail "keycloak.realmImport.webClients exige realmImport.enabled=true e realmReconcile.enabled=true: o import inicial ignora realm já existente" }}{{ end }}
+    {{- range .Values.keycloak.realmImport.webClients }}
+    {{- if hasKey $usados .clientId }}{{ fail (printf "keycloak.realmImport.webClients: clientId repetido ou já usado pelo realm: %s" .clientId) }}{{ end }}
+    {{- $_ := set $usados .clientId true }},
+    {
+      "clientId": {{ .clientId | toJson }},
+      "name": {{ default .clientId .name | toJson }},
+      "description": "Cliente OIDC de aplicação web do Uni+. Public client + Authorization Code + PKCE (S256), sem client_secret.",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "frontchannelLogout": true,
+      "rootUrl": {{ .rootUrl | toJson }},
+      "redirectUris": {{ .redirectUris | toJson }},
+      "webOrigins": {{ (ternary .webOrigins (list "+") (hasKey . "webOrigins")) | toJson }},
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "+"
+      },
+      "defaultClientScopes": ["basic", "web-origins", "acr", "profile", "roles", "email", "uniplus-profile"],
+      "optionalClientScopes": ["address", "phone", "offline_access"],
+      "protocolMappers": [
+        {
+          "name": "audience-uniplus",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "consentRequired": false,
+          "config": {
+            "included.custom.audience": "uniplus",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    }
+    {{- end }},
     {
       "clientId": "admin-cli",
       "name": "${client_admin-cli}",
