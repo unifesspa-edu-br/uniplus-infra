@@ -15,11 +15,13 @@ source "$SCRIPT_DIR/lib-provisionar.sh"
 
 # role:banco:caminho da senha no Vault[:template]. O Geo nasce de template_postgis,
 # que já traz as extensões do PostGIS: o role da aplicação não é superusuário e
-# não conseguiria instalá-las.
+# não conseguiria instalá-las. O banco de preparação da carga da DNE só guarda as
+# tabelas restauradas dos arquivos dos Correios e não precisa do PostGIS.
 BANCOS=(
     "uniplus:uniplus:uniplus/postgres"
     "portal:uniplus_portal:uniplus/postgres-portal"
     "uniplus_geo_app:uniplus_geo:geo/postgres:template_postgis"
+    "uniplus_geo_staging_app:uniplus_geo_staging:geo/postgres-staging"
     "apicurio:apicurio:plataforma/postgres/apicurio"
 )
 
