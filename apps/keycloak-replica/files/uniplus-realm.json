@@ -151,7 +151,8 @@
         "acr",
         "profile",
         "roles",
-        "email"
+        "email",
+        "uniplus-profile"
       ],
       "optionalClientScopes": [
         "address",
