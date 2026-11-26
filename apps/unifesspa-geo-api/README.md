@@ -41,9 +41,9 @@ Transit). Health: /health (readiness agregado), /health/live (liveness),
 | unifesspaGeoApi.customCA.existingSecretName | string | `""` |  |
 | unifesspaGeoApi.database.connectionStringName | string | `"GeoDb"` |  |
 | unifesspaGeoApi.database.host | string | `""` |  |
-| unifesspaGeoApi.database.name | string | `"uniplus_geo"` |  |
+| unifesspaGeoApi.database.name | string | `"geo"` |  |
 | unifesspaGeoApi.database.port | int | `5432` |  |
-| unifesspaGeoApi.database.username | string | `"uniplus_geo_app"` |  |
+| unifesspaGeoApi.database.username | string | `"geo_app"` |  |
 | unifesspaGeoApi.enabled | bool | `false` |  |
 | unifesspaGeoApi.encryption.kubernetesRole | string | `""` |  |
 | unifesspaGeoApi.encryption.provider | string | `"local"` |  |
@@ -113,8 +113,8 @@ Transit). Health: /health (readiness agregado), /health/live (liveness),
 | unifesspaGeoApi.serviceMonitor.interval | string | `"30s"` |  |
 | unifesspaGeoApi.stagingDatabase.connectionStringName | string | `"GeoStagingDb"` |  |
 | unifesspaGeoApi.stagingDatabase.enabled | bool | `false` |  |
-| unifesspaGeoApi.stagingDatabase.name | string | `"uniplus_geo_staging"` |  |
-| unifesspaGeoApi.stagingDatabase.username | string | `"uniplus_geo_staging_app"` |  |
+| unifesspaGeoApi.stagingDatabase.name | string | `"geo_staging"` |  |
+| unifesspaGeoApi.stagingDatabase.username | string | `"geo_staging_app"` |  |
 | unifesspaGeoApi.startupProbe.failureThreshold | int | `60` |  |
 | unifesspaGeoApi.startupProbe.periodSeconds | int | `5` |  |
 

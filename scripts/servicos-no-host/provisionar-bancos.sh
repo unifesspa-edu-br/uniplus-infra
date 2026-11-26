@@ -20,8 +20,8 @@ source "$SCRIPT_DIR/lib-provisionar.sh"
 BANCOS=(
     "uniplus:uniplus:uniplus/postgres"
     "portal:uniplus_portal:uniplus/postgres-portal"
-    "uniplus_geo_app:uniplus_geo:geo/postgres:template_postgis"
-    "uniplus_geo_staging_app:uniplus_geo_staging:geo/postgres-staging"
+    "geo_app:geo:geo/postgres:template_postgis"
+    "geo_staging_app:geo_staging:geo/postgres-staging"
     "apicurio:apicurio:plataforma/postgres/apicurio"
 )
 
@@ -29,8 +29,31 @@ mostrar_uso() {
     echo "Uso: $0 [--dry-run]"
 }
 
+# Nomes antigos do banco do Geo (tinham o prefixo do Uni+). Num ambiente que ainda
+# os tem, criar o banco novo deixaria um banco vazio ao lado do que tem os dados:
+# enquanto o nome antigo existir, o provisionamento recusa e manda renomear
+# (ALTER DATABASE ... RENAME TO).
+NOMES_ANTIGOS=(
+    "geo:uniplus_geo"
+    "geo_staging:uniplus_geo_staging"
+)
+
+recusar_banco_com_nome_antigo() {
+    local banco="$1" par antigo existe_antigo
+    for par in "${NOMES_ANTIGOS[@]}"; do
+        [[ "${par%%:*}" == "$banco" ]] || continue
+        antigo="${par#*:}"
+        existe_antigo=$(psql_superusuario -c "SELECT 1 FROM pg_database WHERE datname = '$antigo'")
+        if [[ -n "$existe_antigo" ]]; then
+            log_error "O banco $antigo ainda existe: renomeie-o para $banco (e o papel dono) antes de provisionar."
+            exit 1
+        fi
+    done
+}
+
 provisionar_banco() {
     local role="$1" banco="$2" caminho="$3" template="${4:-}" senha criacao
+    recusar_banco_com_nome_antigo "$banco"
     if [[ -n "$template" ]]; then
         criacao="TEMPLATE $template"
     else
