@@ -111,6 +111,27 @@
                 }
               }
             },
+            "webClients": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["clientId", "rootUrl", "redirectUris"],
+                "properties": {
+                  "clientId": { "type": "string" },
+                  "name": { "type": "string" },
+                  "rootUrl": { "type": "string" },
+                  "redirectUris": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  },
+                  "webOrigins": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  }
+                }
+              }
+            },
             "grafanaClient": {
               "type": "object",
               "additionalProperties": false,
