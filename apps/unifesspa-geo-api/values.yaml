@@ -56,8 +56,8 @@ unifesspaGeoApi:
   database:
     host: ""                    # ex.: 10.0.2.87
     port: 5432
-    name: uniplus_geo
-    username: uniplus_geo_app
+    name: geo
+    username: geo_app
     # Modo SSL do Npgsql (ex.: VerifyFull valida cadeia e nome do certificado).
     # Vazio: a connection string não traz o parâmetro.
     sslMode: ""
@@ -72,8 +72,8 @@ unifesspaGeoApi:
   # recusa a importação por falta da ConnectionStrings__GeoStagingDb.
   stagingDatabase:
     enabled: false
-    name: uniplus_geo_staging
-    username: uniplus_geo_staging_app
+    name: geo_staging
+    username: geo_staging_app
     # Nome em ConnectionStrings__<Name> (.NET config binding) — GeoStagingDb.
     connectionStringName: GeoStagingDb
 
