@@ -148,6 +148,7 @@ spec:
               containerPort: 8080
               protocol: TCP
           env:
+            {{- include "uniplusApiHost.envMensageria" . | nindent 12 }}
             {{- include "uniplusApiHost.env" . | nindent 12 }}
             {{- if .Values.uniplusApiHost.registroDeAcesso.enabled }}
             {{- include "uniplusApiHost.envRegistroDeAcesso" . | nindent 12 }}
