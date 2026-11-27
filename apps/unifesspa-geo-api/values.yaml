@@ -49,6 +49,12 @@ unifesspaGeoApi:
     mountPath: /var/run/pacote-dne
     limiteDoVolume: 128Mi
 
+  # Carga da base dos Correios (DNE).
+  cargaDne:
+    # De quanto em quanto tempo a carga em andamento renova a trava que impede duas cargas ao mesmo tempo
+    # (formato hh:mm:ss). Valor igual ao padrão do aplicativo; não tem valor próprio no repositório de implantação.
+    intervaloDoSinalDeVidaDaTrava: "00:00:30"
+
   # Nome FIXO: a role Vault `unifesspa-geo-api` (scripts/servicos-no-host/lib-transit.sh)
   # vincula bound_service_account_names a esta SA no namespace `geo`. Um nome gerado
   # pelo release não autenticaria (o login Kubernetes seria negado).

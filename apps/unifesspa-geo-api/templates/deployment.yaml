@@ -194,6 +194,8 @@ spec:
             - name: Geo__Etl__DiretorioDoPacote
               value: {{ .Values.unifesspaGeoApi.envioDoPacote.mountPath | quote }}
             {{- end }}
+            - name: Geo__Etl__IntervaloDoSinalDeVidaDaTrava
+              value: {{ .Values.unifesspaGeoApi.cargaDne.intervaloDoSinalDeVidaDaTrava | quote }}
             {{- with .Values.unifesspaGeoApi.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
