@@ -29,6 +29,7 @@ Transit). Health: /health (readiness agregado), /health/live (liveness),
 | commonLabels."app.kubernetes.io/part-of" | string | `"uniplus"` |  |
 | unifesspaGeoApi.aspnet.environment | string | `"Production"` |  |
 | unifesspaGeoApi.aspnet.urls | string | `"http://+:8080"` |  |
+| unifesspaGeoApi.cargaDne.intervaloDoSinalDeVidaDaTrava | string | `"00:00:30"` | Intervalo em que a carga em andamento renova a trava de exclusividade (hh:mm:ss) |
 | unifesspaGeoApi.containerSecurityContext.allowPrivilegeEscalation | bool | `false` |  |
 | unifesspaGeoApi.containerSecurityContext.capabilities.drop[0] | string | `"ALL"` |  |
 | unifesspaGeoApi.containerSecurityContext.readOnlyRootFilesystem | bool | `false` |  |
