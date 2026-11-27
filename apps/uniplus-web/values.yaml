@@ -89,6 +89,9 @@ uniplusWeb:
         oidc:
           issuerUrl: ""  # ex.: https://uniplus.unifesspa.edu.br/auth/realms/uniplus
           clientId: uniplus-portal
+          # Segundos antes de o acesso vencer em que a aplicação o renova (só enquanto a pessoa usa). O acesso dura 300 s.
+          # Obrigatório e maior que zero na web: sem ele a aplicação não inicia.
+          antecedenciaDaRenovacaoEmSegundos: 60
         keycloak:
           url: ""  # ex.: https://uniplus.unifesspa.edu.br/auth
           realm: uniplus
@@ -113,6 +116,7 @@ uniplusWeb:
         oidc:
           issuerUrl: ""
           clientId: uniplus-portal
+          antecedenciaDaRenovacaoEmSegundos: 60
         keycloak:
           url: ""
           realm: uniplus
@@ -137,6 +141,7 @@ uniplusWeb:
         oidc:
           issuerUrl: ""
           clientId: uniplus-portal
+          antecedenciaDaRenovacaoEmSegundos: 60
         keycloak:
           url: ""
           realm: uniplus
@@ -164,6 +169,7 @@ uniplusWeb:
         oidc:
           issuerUrl: ""
           clientId: uniplus-portal
+          antecedenciaDaRenovacaoEmSegundos: 60
         keycloak:
           url: ""
           realm: uniplus
