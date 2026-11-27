@@ -107,7 +107,7 @@ Um mount Transit por sistema e ambiente. O mount genérico `transit/` deixa de e
 |---|---|---|---|
 | `uniplus-<amb>-transit` | `uniplus-selecao-identificadores-aesgcm`, `uniplus-selecao-sensiveis-aesgcm`, `uniplus-discentes-identificadores-aesgcm`, `uniplus-idempotency-aesgcm` | `uniplus-api-host` (namespace `uniplus`) | `encrypt`, `decrypt` |
 | `uniplus-<amb>-transit` | `uniplus-selecao-identificadores-hmac`, `uniplus-selecao-sensiveis-hmac`, `instalacao-codigo` | `uniplus-api-host` | `hmac` (e `hmac/<chave>/<algoritmo>`) |
-| `geo-<amb>-transit` | `geo-idempotency-aesgcm` | `unifesspa-geo-api` (namespace `geo`) | `encrypt`, `decrypt` |
+| `geo-<amb>-transit` | `geo-idempotency-aesgcm`, `geo-cursor-aesgcm` | `unifesspa-geo-api` (namespace `geo`) | `encrypt`, `decrypt` |
 | `plataforma-<amb>-transit` | `uniplus-kes-kek` | KES (namespace `kes`) | `encrypt`, `decrypt` |
 
 Todas as operações são `update` sobre `<mount>/<operação>/<chave>`. O `uniplus-api-portal` não cifra (o `Program.cs` dele não registra a cifragem), então não tem role nem política. A `uniplus-kes-kek` mantém o nome porque protege arquivos já cifrados; onde ela já existe no mount `transit/`, move-se com `vault secrets move transit/ plataforma-<amb>-transit/` **antes** de rodar `configurar-vault.sh`, que recusa seguir enquanto ela estiver lá.
