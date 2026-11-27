@@ -29,6 +29,8 @@
   "defaultLocale": "pt-BR",
   "sslRequired": "external",
   "accessTokenLifespan": 300,
+  "revokeRefreshToken": false,
+  "refreshTokenMaxReuse": 0,
   "ssoSessionIdleTimeout": 1800,
   "ssoSessionMaxLifespan": 36000,
   "bruteForceProtected": true,
