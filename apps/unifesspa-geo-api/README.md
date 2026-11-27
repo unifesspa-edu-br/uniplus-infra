@@ -61,6 +61,9 @@ Transit). Health: /health (readiness agregado), /health/live (liveness),
 | unifesspaGeoApi.externalSecrets.refreshInterval | string | `"1h"` |  |
 | unifesspaGeoApi.externalSecrets.secretStoreRef.kind | string | `"ClusterSecretStore"` |  |
 | unifesspaGeoApi.externalSecrets.secretStoreRef.name | string | `"geo"` |  |
+| unifesspaGeoApi.envioDoPacote.enabled | bool | `true` | Volume em memória para o pacote da DNE enviado pela API |
+| unifesspaGeoApi.envioDoPacote.limiteDoVolume | string | `"128Mi"` |  |
+| unifesspaGeoApi.envioDoPacote.mountPath | string | `"/var/run/pacote-dne"` |  |
 | unifesspaGeoApi.extraEnv | list | `[]` |  |
 | unifesspaGeoApi.image.digest | string | `""` | Digest da imagem (sha256:...). Preenchido, a imagem é puxada por tag@digest: o que roda não muda se a tag for movida no registro. |
 | unifesspaGeoApi.image.pullPolicy | string | `"IfNotPresent"` |  |
@@ -104,9 +107,9 @@ Transit). Health: /health (readiness agregado), /health/live (liveness),
 | unifesspaGeoApi.redis.username | string | `"default"` |  |
 | unifesspaGeoApi.replicas | int | `1` |  |
 | unifesspaGeoApi.resources.limits.cpu | string | `"1000m"` |  |
-| unifesspaGeoApi.resources.limits.memory | string | `"512Mi"` |  |
+| unifesspaGeoApi.resources.limits.memory | string | `"1536Mi"` |  |
 | unifesspaGeoApi.resources.requests.cpu | string | `"100m"` |  |
-| unifesspaGeoApi.resources.requests.memory | string | `"256Mi"` |  |
+| unifesspaGeoApi.resources.requests.memory | string | `"512Mi"` |  |
 | unifesspaGeoApi.serviceAccount.create | bool | `true` |  |
 | unifesspaGeoApi.serviceAccount.name | string | `""` |  |
 | unifesspaGeoApi.serviceMonitor.enabled | bool | `false` |  |

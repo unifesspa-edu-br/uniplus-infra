@@ -36,10 +36,18 @@ unifesspaGeoApi:
   resources:
     requests:
       cpu: 100m
-      memory: 256Mi
+      memory: 512Mi
     limits:
       cpu: 1000m
-      memory: 512Mi
+      memory: 1536Mi
+
+  # Envio do pacote da DNE pela API (POST /api/admin/geo/importacoes, application/zip, até 128 MiB).
+  # O arquivo fica num volume em MEMÓRIA do pod (0600, apagado ao fim da carga), que conta no limite
+  # de memória do contêiner: o limite abaixo precisa cobrir a API (~330 MiB medidos) + o volume.
+  envioDoPacote:
+    enabled: true
+    mountPath: /var/run/pacote-dne
+    limiteDoVolume: 128Mi
 
   # Nome FIXO: a role Vault `unifesspa-geo-api` (scripts/servicos-no-host/lib-transit.sh)
   # vincula bound_service_account_names a esta SA no namespace `geo`. Um nome gerado

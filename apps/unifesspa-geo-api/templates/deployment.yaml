@@ -190,11 +190,21 @@ spec:
             - name: ReverseProxy__TrustedNetworks__{{ $i }}
               value: {{ $rede | quote }}
             {{- end }}
+            {{- if .Values.unifesspaGeoApi.envioDoPacote.enabled }}
+            - name: Geo__Etl__DiretorioDoPacote
+              value: {{ .Values.unifesspaGeoApi.envioDoPacote.mountPath | quote }}
+            {{- end }}
             {{- with .Values.unifesspaGeoApi.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
-          {{- if .Values.unifesspaGeoApi.customCA.enabled }}
+          {{- if or .Values.unifesspaGeoApi.customCA.enabled .Values.unifesspaGeoApi.envioDoPacote.enabled }}
           volumeMounts:
+          {{- if .Values.unifesspaGeoApi.envioDoPacote.enabled }}
+            # Pacote da DNE recebido pela API: fica só em memória, nunca em disco.
+            - name: pacote-dne
+              mountPath: {{ .Values.unifesspaGeoApi.envioDoPacote.mountPath | quote }}
+          {{- end }}
+          {{- if .Values.unifesspaGeoApi.customCA.enabled }}
             # Bundle de CAs já mesclado pelo initContainer install-custom-ca
             # (sistema + certificado extra) — sobrepõe o bundle default da
             # imagem, que o container principal (non-root) não pode
@@ -203,6 +213,7 @@ spec:
             - name: merged-ca-certs
               mountPath: /etc/ssl/certs
               readOnly: true
+          {{- end }}
           {{- end }}
           startupProbe:
             httpGet:
@@ -265,8 +276,15 @@ spec:
             - name: merged-ca-certs
               mountPath: /merged-ca-certs
       {{- end }}
-      {{- if .Values.unifesspaGeoApi.customCA.enabled }}
+      {{- if or .Values.unifesspaGeoApi.customCA.enabled .Values.unifesspaGeoApi.envioDoPacote.enabled }}
       volumes:
+      {{- if .Values.unifesspaGeoApi.envioDoPacote.enabled }}
+        - name: pacote-dne
+          emptyDir:
+            medium: Memory
+            sizeLimit: {{ .Values.unifesspaGeoApi.envioDoPacote.limiteDoVolume | quote }}
+      {{- end }}
+      {{- if .Values.unifesspaGeoApi.customCA.enabled }}
         - name: custom-ca-source
           {{- if .Values.unifesspaGeoApi.customCA.existingSecretName }}
           secret:
@@ -280,5 +298,6 @@ spec:
           {{- end }}
         - name: merged-ca-certs
           emptyDir: {}
+      {{- end }}
       {{- end }}
 {{- end }}
