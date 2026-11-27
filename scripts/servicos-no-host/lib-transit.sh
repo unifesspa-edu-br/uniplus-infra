@@ -25,7 +25,7 @@ CHAVES_HMAC_UNIPLUS=(
     uniplus-selecao-sensiveis-hmac
     instalacao-codigo
 )
-CHAVES_AES_GEO=(geo-idempotency-aesgcm)
+CHAVES_AES_GEO=(geo-idempotency-aesgcm geo-cursor-aesgcm)
 # Chave que cifra as chaves mestras do KES. O nome não muda: ela protege arquivos
 # já cifrados.
 CHAVES_PLATAFORMA=(uniplus-kes-kek)
