@@ -56,6 +56,9 @@ jobs:
       - name: Testar filtros de origem do Traefik
         run: make traefik-filtros-teste
 
+      - name: Conferir o período da sessão dos apps web contra o realm
+        run: make periodo-da-sessao-do-web-teste
+
   shellcheck:
     name: ShellCheck
     runs-on: ubuntu-latest

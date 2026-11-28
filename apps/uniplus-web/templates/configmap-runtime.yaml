@@ -13,6 +13,9 @@
 {{- if not (gt (int $cfg.runtimeConfig.oidc.antecedenciaDaRenovacaoEmSegundos) 0) -}}
 {{- fail (printf "uniplusWeb.apps.%s.runtimeConfig.oidc.antecedenciaDaRenovacaoEmSegundos é obrigatório e deve ser maior que zero (ex.: 60). Sem ele a aplicação web não inicia." $app) -}}
 {{- end -}}
+{{- if not (gt (int $cfg.runtimeConfig.oidc.periodoMaximoDaSessaoEmSegundos) 0) -}}
+{{- fail (printf "uniplusWeb.apps.%s.runtimeConfig.oidc.periodoMaximoDaSessaoEmSegundos é obrigatório e deve ser maior que zero (igual ao ssoSessionMaxLifespan do realm, ex.: 36000). Sem ele a aplicação web não inicia." $app) -}}
+{{- end -}}
 {{- if not $cfg.runtimeConfig.keycloak.url -}}
 {{- fail (printf "uniplusWeb.apps.%s.runtimeConfig.keycloak.url é obrigatório — mantido em paralelo a oidc.issuerUrl enquanto os ambientes de nó único rodam v0.2.1 (pré-contrato neutro)." $app) -}}
 {{- end -}}
@@ -59,7 +62,8 @@ data:
       "oidc": {
         "issuerUrl": {{ $cfg.runtimeConfig.oidc.issuerUrl | quote }},
         "clientId": {{ $cfg.runtimeConfig.oidc.clientId | quote }},
-        "antecedenciaDaRenovacaoEmSegundos": {{ int $cfg.runtimeConfig.oidc.antecedenciaDaRenovacaoEmSegundos }}
+        "antecedenciaDaRenovacaoEmSegundos": {{ int $cfg.runtimeConfig.oidc.antecedenciaDaRenovacaoEmSegundos }},
+        "periodoMaximoDaSessaoEmSegundos": {{ int $cfg.runtimeConfig.oidc.periodoMaximoDaSessaoEmSegundos }}
       },
       "keycloak": {
         "url": {{ $cfg.runtimeConfig.keycloak.url | quote }},
