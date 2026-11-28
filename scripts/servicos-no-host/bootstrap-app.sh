@@ -68,6 +68,8 @@ step_argocd() {
     run "kubectl apply --server-side --force-conflicts -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/$ARGOCD_VERSION/manifests/install.yaml"
     run "kubectl wait --for=condition=available --timeout=300s -n argocd \
         deployment/argocd-server deployment/argocd-repo-server deployment/argocd-applicationset-controller"
+    # A comparação pelo servidor vale para todas as Applications; as das aplicações, aplicadas
+    # pelo cliente, a desligam por anotação no repositório de implantação (ADR-019).
     # O Traefik termina o TLS; o servidor atende em HTTP dentro do cluster.
     run "kubectl -n argocd patch configmap argocd-cmd-params-cm --type merge \
         -p '{\"data\":{\"controller.diff.server.side\":\"true\",\"server.insecure\":\"true\"}}'"
