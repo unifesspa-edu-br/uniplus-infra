@@ -31,6 +31,8 @@ cifrados do banco e os arquivos do MinIO ficam ilegíveis.
 
 A produção lê os charts deste repositório num commit fixado em `prd/versao.yaml` do repositório de implantação, nunca de `main` (ver [seção 3](#3-atualização-de-versão)). O fluxo de uma mudança é: PR aprovado e mesclado em `main`, validação em homologação, merge request no repositório de implantação que fixa o commit em `prd/` e aplicação pelos botões do pipeline.
 
+Uma mudança de chart que REMOVE campo (item de `env`, volume, porta) só aparece na comparação do ArgoCD porque as Applications das aplicações comparam pelo cliente (anotação `ServerSideDiff=false` no repositório de implantação, [ADR-019](adrs/ADR-019-aplicacoes-comparam-pelo-cliente-no-argocd.md)). Sem essa anotação, a Application fica "Synced" e o recurso mantém o item removido; o caminho de emergência é subir a versão do `Chart.yaml`, que muda o rótulo `helm.sh/chart`.
+
 ### 1.3 Adicionar um segredo no Vault
 
 1. Gravar no KV do sistema dono (`uniplus-prd`, `geo-prd` ou `plataforma-prd`), no caminho interno que o chart declara. Segredo usado por mais de um sistema é gravado no KV de cada um (ver [vault-caminhos.md](vault-caminhos.md)).
