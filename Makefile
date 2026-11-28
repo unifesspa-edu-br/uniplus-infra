@@ -166,8 +166,12 @@ lint: yaml-lint helm-lint markdown-lint shellcheck  ## Roda todos os linters
 traefik-filtros-teste:  ## Testa os filtros de origem do Traefik
 	@bash scripts/testar-filtros-de-origem-traefik.sh
 
+.PHONY: periodo-da-sessao-do-web-teste
+periodo-da-sessao-do-web-teste:  ## Confere o período da sessão dos apps web contra o realm
+	@bash scripts/verificar-periodo-da-sessao-do-web.sh
+
 .PHONY: validate
-validate: helm-deps lint schema-validate routing-validate prod-render-check traefik-filtros-teste  ## Lint + render de templates contra schemas
+validate: helm-deps lint schema-validate routing-validate prod-render-check traefik-filtros-teste periodo-da-sessao-do-web-teste  ## Lint + render de templates contra schemas
 # Ordem importa: helm-deps PRIMEIRO popula charts/ — sem isso, helm-lint e
 # schema-validate podem falhar em fresh checkout com "missing in charts/ directory".
 

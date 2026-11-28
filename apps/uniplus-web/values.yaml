@@ -92,6 +92,9 @@ uniplusWeb:
           # Segundos antes de o acesso vencer em que a aplicação o renova (só enquanto a pessoa usa). O acesso dura 300 s.
           # Obrigatório e maior que zero na web: sem ele a aplicação não inicia.
           antecedenciaDaRenovacaoEmSegundos: 60
+          # Tempo máximo da sessão de login em segundos; igual ao ssoSessionMaxLifespan do realm
+          # (apps/keycloak-replica/files/uniplus-realm.json). Obrigatório e maior que zero na web.
+          periodoMaximoDaSessaoEmSegundos: 36000
         keycloak:
           url: ""  # ex.: https://uniplus.unifesspa.edu.br/auth
           realm: uniplus
@@ -117,6 +120,9 @@ uniplusWeb:
           issuerUrl: ""
           clientId: uniplus-portal
           antecedenciaDaRenovacaoEmSegundos: 60
+          # Tempo máximo da sessão de login em segundos; igual ao ssoSessionMaxLifespan do realm
+          # (apps/keycloak-replica/files/uniplus-realm.json). Obrigatório e maior que zero na web.
+          periodoMaximoDaSessaoEmSegundos: 36000
         keycloak:
           url: ""
           realm: uniplus
@@ -142,6 +148,9 @@ uniplusWeb:
           issuerUrl: ""
           clientId: uniplus-portal
           antecedenciaDaRenovacaoEmSegundos: 60
+          # Tempo máximo da sessão de login em segundos; igual ao ssoSessionMaxLifespan do realm
+          # (apps/keycloak-replica/files/uniplus-realm.json). Obrigatório e maior que zero na web.
+          periodoMaximoDaSessaoEmSegundos: 36000
         keycloak:
           url: ""
           realm: uniplus
@@ -170,6 +179,9 @@ uniplusWeb:
           issuerUrl: ""
           clientId: uniplus-portal
           antecedenciaDaRenovacaoEmSegundos: 60
+          # Tempo máximo da sessão de login em segundos; igual ao ssoSessionMaxLifespan do realm
+          # (apps/keycloak-replica/files/uniplus-realm.json). Obrigatório e maior que zero na web.
+          periodoMaximoDaSessaoEmSegundos: 36000
         keycloak:
           url: ""
           realm: uniplus
